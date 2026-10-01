@@ -1,0 +1,866 @@
+# AGENTS.md — CareConnect (microservices)
+
+> Hướng dẫn **dùng chung cho mọi service** trong `CareConnect/`. Đọc hết file này trước khi viết hoặc sửa code.
+> Service nào có quy ước riêng thì ghi thêm ở `<Service>/AGENTS.md` (chỉ ghi phần khác, không chép lại file này).
+>
+> Quy ước được mang sang từ `../backend/CLAUDE.md` (dự án AIMA của cùng tác giả), chủ yếu §3 Code Conventions,
+> §4 Authentication Flow và §7 Rules, rồi chỉnh lại cho kiến trúc microservice. **Chỉ lấy cách code, không lấy
+> nghiệp vụ AIMA**: không có brand/content/Meta/AI/payOS, không dùng mã FR/BR của AIMA, **không dùng Flyway**.
+>
+> Khi tài liệu này và code hiện tại khác nhau thì **tài liệu này là chuẩn** — báo lại chỗ lệch, không tự refactor
+> khi đang làm việc khác. IdentityService đã được refactor theo chuẩn ngày 2026-10-01 (§8).
+
+---
+
+## 1. Project Overview
+
+**CareConnect** là nền tảng trung gian giúp người thân tìm và đặt người chăm sóc tại nhà. Khách hàng xem hồ sơ
+caregiver (chuyên môn, kinh nghiệm, bằng cấp, đánh giá) rồi đặt lịch theo giờ / theo ngày / theo ca. Trung tâm
+chăm sóc quản lý caregiver, dịch vụ, giá và phân công. Admin quản trị toàn nền tảng. Caregiver dùng **app mobile**
+để nhận lịch, cập nhật tiến độ và gửi báo cáo chăm sóc.
+
+### Roles
+
+| Role code (DB / code / JWT) | Nhãn hiển thị | Quyền chính |
+|---|---|---|
+| `CUSTOMER` | Người thân / khách hàng | Đặt lịch, xem caregiver, xem report, đánh giá |
+| `CAREGIVER` | Người chăm sóc | Xem lịch được giao, cập nhật trạng thái ca, gửi report |
+| `CENTER_MANAGER` | Center Manager | Quản lý caregiver của trung tâm, dịch vụ & giá, booking + phân công, đánh giá/phản hồi, khiếu nại cấp 1, thống kê trung tâm |
+| `ADMIN` | Quản trị hệ thống | Quản lý trung tâm, khách hàng, danh mục dịch vụ chuẩn, chính sách nền tảng, khiếu nại cấp cao, thống kê toàn hệ thống |
+
+Luôn dùng `CENTER_MANAGER` trong code/DB/token; "Center Manager" chỉ là nhãn UI.
+
+### Chức năng theo role → domain sở hữu
+
+Mỗi chức năng thuộc về **một** domain/service. Tên các service ngoài IdentityService **chưa chốt** — khi tạo
+service mới, hỏi tên rồi cập nhật bảng này.
+
+| Chức năng (theo mô tả nghiệp vụ) | Domain sở hữu |
+|---|---|
+| Đăng ký, đăng nhập, cập nhật thông tin cá nhân, đổi mật khẩu; khóa/mở khóa tài khoản khách hàng, trung tâm; xem danh sách người dùng toàn hệ thống; tạo tài khoản manager/caregiver; role & permission | **Identity** (`IdentityService`) |
+| Hồ sơ người bệnh / người cần chăm sóc (tạo, sửa, nhiều hồ sơ), ghi chú đặc biệt | Care recipient (chưa có service) |
+| Trung tâm: đăng ký, duyệt/onboard, trạng thái hoạt động | Center (chưa có service) |
+| Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | Caregiver profile (chưa có service) |
+| Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | Service catalog (chưa có service) |
+| Tìm kiếm / lọc caregiver (kỹ năng, kinh nghiệm, giới tính, giá, đánh giá) | Đọc tổng hợp từ caregiver profile + catalog + review (chưa chốt cách làm) |
+| Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | Booking (chưa có service) |
+| Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | Care session / report (chưa có service) |
+| Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | Review & complaint (chưa có service) |
+| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | Payment / policy (chưa có service) |
+| Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | Notification (chưa có service) |
+| Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
+
+> ⚠️ **Phạm vi hiện tại: chỉ IdentityService** (xác thực, phân quyền, quản lý người dùng). Không tạo service hay
+> bảng của các domain khác khi chưa được yêu cầu.
+>
+> **Chưa chốt — hỏi trước khi code phần liên quan:** tỷ lệ đặt cọc / mốc & % hoàn tiền; ai được sửa giá dịch vụ
+> trung tâm (mô tả có chồng lấn admin ↔ manager); permission catalog của các domain sau; TTL token production;
+> tên + ranh giới các service còn lại; công nghệ / cấu hình API gateway (đã chốt **sẽ có gateway**, chưa tạo — §2).
+
+### IdentityService — thông số
+
+| Field | Value |
+|---|---|
+| **Thư mục** | `CareConnect/IdentityService/` |
+| **Artifact** | `mss301:IdentityService:0.0.1-SNAPSHOT` |
+| **Base package** | `mss301.identityservice` (service mới: `mss301.<tênservice>` viết thường) |
+| **Java** | 21 |
+| **Spring Boot** | 4.1.1 (+ Spring Cloud BOM theo `pom.xml`) |
+| **Build tool** | Maven Wrapper (`mvnw` / `mvnw.cmd`) |
+| **Port** | `IDENTITY_SERVER_PORT` (mặc định 8081) |
+
+> ⚠️ Build/run bằng **JDK 21** (`JAVA_HOME` phải trỏ JDK 21, nếu không Maven báo `release version 21 not supported`).
+
+**Dependencies (từ `pom.xml`):**
+
+| Library | Ghi chú |
+|---|---|
+| Spring Boot Starter WebMVC / Data JPA / Security / Validation / Actuator | `/actuator/health` (không lộ chi tiết) |
+| Spring Boot Starter Security OAuth2 **Resource Server** | Xác minh JWT bằng `JwtDecoder` của Spring — **khác AIMA** (AIMA dùng filter tự viết) |
+| Spring Boot Starter Data Redis | Refresh `jti`, access blacklist, OTP state |
+| PostgreSQL JDBC | runtime |
+| Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) | annotation processors khai báo trong `maven-compiler-plugin` |
+| springdoc-openapi-starter-webmvc-ui 3.1.0 | Swagger UI |
+| Spring Cloud OpenFeign | Khai báo sẵn cho gọi service-to-service; chưa dùng |
+| H2 + `*-test` starters | chỉ test |
+
+Email gửi qua **Brevo HTTP API** bằng `RestClient` (không SMTP, không mail starter). **Không** thêm Flyway, jjwt,
+WebFlux vào service MVC.
+
+---
+
+## 2. Project Structure
+
+### Repo
+
+```
+CareConnect/
+├── AGENTS.md                    — file này (quy ước chung mọi service)
+├── .gitignore                   — ignore chung mọi service (target/, .env, keys/, IDE...); service mới không cần file riêng
+├── docs/PLAN.md                 — checklist tiến độ của CareConnect (độc lập với ../docs/PLAN.md của AIMA)
+└── IdentityService/             — mỗi service là một Maven project độc lập
+    ├── pom.xml, mvnw, mvnw.cmd
+    ├── docker-compose.yml       — PostgreSQL + Redis RIÊNG của service (loopback)
+    ├── .env / .env.example      — .env bị gitignore; .env.example chỉ placeholder, chia nhóm bằng dòng trống
+    ├── keys/                    — RSA PEM dev (gitignore) — chỉ IdentityService có private key
+    ├── schema/identity.sql      — DDL khởi tạo DB mới (áp dụng tay, KHÔNG Flyway)
+    ├── scripts/                 — New-DevKeys.ps1, Start-Dev.ps1 (nạp .env rồi chạy), GenerateDevKeys.java
+    ├── README.md                — cách chạy + API contract của service
+    └── src/main/resources/application.yaml   — MỘT file cấu hình duy nhất, mọi giá trị đọc từ env
+```
+
+### Microservice boundaries
+
+- **Mỗi service sở hữu DB + Redis namespace riêng.** Không dùng chung JPA entity/repository, không query DB của
+  service khác, không FK xuyên DB. Tham chiếu chéo bằng **UUID** (`userId`, `centerId`, `bookingId`…).
+- Dữ liệu cần từ service khác → gọi **API contract** (client trong `client/`) hoặc nhận **event** (khi có broker).
+  Không import class của service khác; DTO của client là bản sao riêng trong service gọi.
+- IdentityService sở hữu: danh tính đăng nhập, password hash, trạng thái tài khoản, role, permission, gán quyền,
+  phiên (refresh/blacklist trên Redis), membership trung tâm (`users.center_id`) và audit quản trị tài khoản.
+  **Không** sở hữu hồ sơ chuyên môn caregiver, hồ sơ người bệnh, trung tâm, dịch vụ, booking, report, review, tiền.
+- Mỗi service tự xác minh JWT và tự phân quyền (kể cả khi đã có gateway). Không tin header `X-User-Id` /
+  `X-Roles` do client gửi.
+- **API gateway: đã chốt sẽ có, hiện CHƯA tạo** — không tự dựng gateway khi chưa được yêu cầu. Khi tạo cần giữ:
+  gateway chỉ định tuyến (+ có thể kiểm token sớm), **chuyển nguyên** header `Authorization`, cookie
+  (`access_token`, `refresh_token`, `XSRF-TOKEN`) và header `X-XSRF-TOKEN` tới service; service vẫn tự xác minh.
+  Cookie path/domain và CORS phải chốt lại theo domain của gateway (CORS có thể dời lên gateway — khi đó bỏ ở
+  service để không trùng header). JWKS `/.well-known/jwks.json` của IdentityService phải truy cập được từ các
+  service phía sau gateway. Code hiện tại không được hardcode host/port để còn đặt sau gateway.
+- Không tạo thư viện common, discovery server, message broker hay distributed transaction khi chưa có nhu cầu cụ
+  thể được yêu cầu. Các class giống nhau giữa service (`APIResponse`, `AppException`, `ErrorCode`,
+  `GlobalExceptionHandler`, `BaseEntity`) **chép theo cùng mẫu** vào từng service.
+
+### Package layout (áp dụng cho mọi service)
+
+```
+src/main/java/mss301/<service>/
+├── <Service>Application.java          — @SpringBootApplication
+├── config/                            — @Configuration, @ConfigurationProperties, DataInitializer (seed idempotent), Converter
+│   └── swagger/
+│       ├── OpenApiConfig.java         — OpenAPI bean, global error responses, bearer scheme
+│       └── SwaggerExamples.java       — MỌI chuỗi @ExampleObject (chỉ constants)
+├── security/                          — CHỈ cấu hình / adapter bảo mật: SecurityConfig, JwtConfig, CookieUtils,
+│                                        entry point, access-denied handler, Permissions (hằng permission code)
+├── controller/                        — @RestController mỏng
+├── dto/
+│   ├── request/
+│   └── response/                      — APIResponse<T> + response DTO
+├── entity/                            — BaseEntity + entity JPA
+├── enums/
+├── exception/                         — AppException, ErrorCode, GlobalExceptionHandler
+├── mapper/                            — MapStruct, một mapper / domain
+├── repository/
+├── service/                           — interface FooService
+│   └── Impl/                          — FooServiceImpl (giữ chữ I hoa)
+├── client/                            — client + DTO gọi service khác (chỉ tạo khi cần)
+├── scheduler/                         — @Scheduled job (chỉ tạo khi cần)
+├── util/                              — helper tĩnh thuần (vd EmailNormalizer), final class + private constructor
+└── validation/                        — custom constraint (vd @StrongPassword)
+```
+
+Logic token / user-detail nằm ở `service/` + `service/Impl/` (`JwtService`, `IdentityStateService`,
+`CurrentIdentityService`…), **không** nằm trong `security/`. Chỉ tạo package khi có code cần dùng.
+
+**IdentityService hiện có** (tóm tắt):
+
+```
+controller/   AuthenticationController (/auth/**), AccountController (/users/**), RoleController (/roles),
+              PermissionController (/permissions), JwksController (/.well-known/jwks.json)
+service/      AuthenticationService, AccountService, RegistrationService (OTP đăng ký + quên mật khẩu),
+              RoleService, JwtService, IdentityStateService (Redis), CurrentIdentityService, EmailService (Brevo)
+entity/       BaseEntity, User, Role, Permission, UserRole(+UserRoleId), RolePermission(+RolePermissionId), IdentityAudit
+enums/        RoleCode, UserStatus (ACTIVE/LOCKED), TokenType (access/refresh), AuditAction
+dto/response/ APIResponse, UserResponse, RoleResponse, PermissionResponse, OtpResponse, AuthenticationResponse,
+              CsrfResponse, AuthenticatedUser (nội bộ: user + authzVersion để phát token)
+mapper/       UserMapper, RoleMapper, IdentityAuditMapper, RegistrationMapper, AuthenticationMapper,
+              @IgnoreServerManagedUserFields (gom các @Mapping ignore khi tạo User)
+config/       IdentityProperties (identity.*), IdentityConfig (BCrypt), BrevoConfig (RestClient + timeout), WebConfig,
+              RedisKeys (key/field Redis), DataInitializer (seed role/permission), BootstrapAdmin, swagger/
+security/     SecurityConfig, JwtConfig (RS256 encoder + decoder), IdentityAuthenticationConverter (JWT → quyền hiện hành),
+              SecurityErrorHandler (401/403/503 envelope), CurrentUserId + CurrentUserIdArgumentResolver,
+              CookieUtils, Permissions, TokenClaims (tên claim JWT)
+util/         EmailNormalizer
+validation/   StrongPassword + StrongPasswordValidator (kèm giới hạn 72 byte BCrypt)
+```
+
+---
+
+## 3. Code Conventions
+
+### Lombok pattern on service / controller classes
+
+```java
+@Service                                                        // hoặc @RestController
+@RequiredArgsConstructor                                        // constructor injection — không @Autowired
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)   // mọi field inject đã private final
+@Slf4j
+public class AccountServiceImpl implements AccountService {
+    UserRepository userRepository;                              // KHÔNG viết thêm "private final"
+    RoleRepository roleRepository;
+    UserMapper userMapper;
+    PasswordEncoder passwordEncoder;
+
+    static String SOME_CONSTANT = "...";                        // hằng nội bộ: static (FieldDefaults lo private final)
+
+    @NonFinal
+    @Value("${some.property}")                                  // chỉ khi thật sự cần @Value lẻ
+    String someProperty;
+}
+```
+
+- **Tên field inject = tên kiểu viết camelCase đầy đủ**: `userRepository`, `userMapper`, `accountService`,
+  `identityStateService`. Không đặt tắt kiểu `users`, `mapper`, `service`, `state`, `accounts`.
+- Không viết `private final` khi đã có `@FieldDefaults(makeFinal = true)` (thừa, lệch mẫu).
+
+### Config classes
+
+`@Configuration` dùng **constructor injection** (`@RequiredArgsConstructor` + `@FieldDefaults` như trên, hoặc
+`private final`) hoặc **`@Bean` method-parameter injection**. Không field-level `@Autowired`. Nhóm cấu hình liên
+quan dùng `@ConfigurationProperties` (vd `IdentityProperties` ← `identity.*`).
+
+### Code style (theo code thực tế ở `../backend`)
+
+- **Import tường minh từng class**, không `import x.y.*`. Ngoại lệ giống AIMA: `lombok.*` (DTO/entity),
+  `jakarta.persistence.*` (entity), `org.springframework.web.bind.annotation.*` và `dto.request.*` (controller).
+  Không viết tên đầy đủ (`java.util.UUID`, `org.springframework...`) trong thân code — import vào.
+- **Mỗi annotation một dòng** trên class/method; không dồn `@PostMapping @SecurityRequirements @Operation` trên
+  một dòng.
+- Không viết method một dòng kiểu `{ return x; }` cho method public; `if` luôn có `{ }`, không
+  `if (...) throw ...;` cùng dòng; mỗi statement một dòng (không `a.setX(); b.setY();` cùng dòng).
+- Một dòng trống giữa các method; thứ tự trong class: constants → fields inject → `@NonFinal` config → public
+  methods (`@Override`) → private helpers.
+- Không dùng `var` cho kiểu không hiển nhiên; tên helper private là **động từ** rõ nghĩa
+  (`findActiveUser`, `checkCenterScope`, `assignRole`), không đặt tên một từ mơ hồ (`require`, `is`, `scope`).
+- Comment tiếng Việt, ngắn, giải thích **vì sao** (không lặp lại code làm gì).
+- Logging: `log.info` cho sự kiện nghiệp vụ (tạo tài khoản, khóa, gán role…), `log.warn` cho bất thường có thể
+  phục hồi, `log.error` kèm exception cho lỗi dependency. Không log secret (xem rule #26).
+
+### Repository
+
+```java
+@Repository                                                     // luôn có, kể cả interface JpaRepository
+public interface UserRepository extends JpaRepository<User, UUID> {
+    Optional<User> findByIdAndDeletedAtIsNull(UUID id);         // lookup luôn lọc bản ghi xóa mềm
+
+    @Query("select u from User u where u.id = :id and u.deletedAt is null")
+    Optional<User> findForUpdate(@Param("id") UUID id);         // @Query luôn dùng @Param tường minh
+}
+```
+
+- Không nhúng literal nghiệp vụ trong JPQL (`'ADMIN'`, `'CAREGIVER'`) — bind tham số và truyền `RoleCode.X.name()`.
+- Không `findAll()` rồi lọc `deletedAt` trong Java — viết method `...AndDeletedAtIsNull`.
+- Method khóa dòng (`@Lock(PESSIMISTIC_WRITE)`) đặt tên `findForUpdate` và có comment vì sao cần khóa.
+- PostgreSQL: tham số nullable trong native query cần `CAST(:x AS ...)`; filter động dùng JPA Specification.
+
+### Người dùng hiện tại trong controller
+
+Dùng `@CurrentUserId UUID actorId` (resolver ở `security/CurrentUserIdArgumentResolver`, đăng ký trong
+`config/WebConfig`) — tương đương `@AuthenticationPrincipal UserDetails` của AIMA. Controller **không** nhận
+`Authentication` rồi tự `UUID.fromString(...)`. Tham số này bị ẩn khỏi Swagger (`OpenApiConfig`).
+
+```java
+@GetMapping("/me")
+public APIResponse<UserResponse> me(@CurrentUserId UUID actorId) {
+    return accountService.me(actorId);
+}
+```
+
+### DTO pattern
+
+Mọi DTO dùng `@Data @Builder @AllArgsConstructor @NoArgsConstructor @FieldDefaults(level = AccessLevel.PRIVATE)`.
+Request DTO có Bean Validation với `message` = **key của `ErrorCode`**:
+
+```java
+@NotBlank(message = "EMAIL_REQUIRED")   // → ErrorCode.EMAIL_REQUIRED
+@Email(message = "INVALID_EMAIL_FORMAT")
+String email;
+
+@StrongPassword                          // message mặc định = "WEAK_PASSWORD"
+String password;
+```
+
+- Tách `dto/request` và `dto/response`. Không trả entity, không nhận entity làm request body. Không trả
+  `Map<String, …>` làm result — tạo response DTO (ngoại lệ duy nhất: JWKS, xem rule #3).
+- Request public (đăng ký, sửa hồ sơ) **không** chứa role/permission/status/centerId/actor — chống mass assignment;
+  `spring.jackson.deserialization.fail-on-unknown-properties: true` đang bật, giữ nguyên.
+
+**Entity:** `@Entity @Table @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@FieldDefaults(level = AccessLevel.PRIVATE)`; collection/giá trị mặc định dùng `@Builder.Default`. Không `@Data`
+trên entity (lazy relation + `toString` lộ password). Entity thường **extends `BaseEntity`**
+(`id` UUID `@UuidGenerator`, `createdAt`, `updatedAt`, `deletedAt` — kiểu `Instant` ↔ `timestamptz`). Đổi tên cột
+PK bằng `@AttributeOverride(name = "id", column = @Column(name = "user_id"))`. Bảng liên kết có metadata
+(`user_roles`, `role_permissions`) là entity riêng với `@EmbeddedId` + `@MapsId`, **không** `@ManyToMany`.
+
+### Error handling
+
+**Mọi method service/`*Impl` phải chặn input và các nhánh lỗi bằng exception tường minh — không để giá trị sai,
+entity thiếu hay trùng lặp đi tiếp âm thầm.**
+
+1. **Validate request DTO ở boundary**: Bean Validation với `message = "ERROR_CODE_KEY"`, param controller có
+   `@Valid`. Thêm `ErrorCode` tương ứng cho mọi message validation mới.
+2. **Chặn trong service trước khi thao tác:**
+   - Lookup có thể thiếu → `.orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED))`.
+   - Uniqueness / điều kiện trước → kiểm rồi `throw new AppException(ErrorCode.EMAIL_EXISTED)`; **đồng thời** có
+     unique constraint ở DB (hai request song song vẫn có thể lọt qua bước kiểm).
+   - Trạng thái nghiệp vụ (tài khoản LOCKED, OTP hết hạn, sai mật khẩu hiện tại, ngoài phạm vi trung tâm…) →
+     `ErrorCode` riêng.
+3. Service ném `new AppException(ErrorCode.X)`; điều kiện mới chưa có code → **thêm vào `ErrorCode`** (code +
+   message tiếng Việt thân thiện + `HttpStatus`). `AppException` truyền message của `ErrorCode` lên `super(...)`
+   nên `e.getMessage()` luôn có nghĩa trong log.
+4. `GlobalExceptionHandler` bắt và trả `APIResponse` với `code`/`message` từ `ErrorCode` + đúng HTTP status.
+5. **Không** ném raw exception ra controller, **không** tự dựng `APIResponse` lỗi (kể cả `APIResponse.error(...)`).
+6. `try/catch` chỉ khi cần dịch lỗi dependency / fallback có chủ đích: log bằng `@Slf4j` rồi ném lại
+   `AppException` hoặc fallback rõ ràng — không nuốt lỗi.
+7. Mã HTTP: token thiếu/sai/hết hạn/bị thu hồi → **401**; đã xác thực nhưng thiếu quyền/ngoài phạm vi → **403**;
+   không tồn tại → 404; input/enum sai → 400; trùng → 409 (hoặc 400 theo `ErrorCode` hiện có); Redis/DB/email
+   không khả dụng → 503. Danh sách rỗng → 200 + list rỗng (không ném lỗi).
+
+### Response envelope
+
+Mọi endpoint nghiệp vụ trả **`APIResponse<T>`** (giữ đúng tên `APIResponse` của dự án này, không đổi sang
+`ApiResponse` như AIMA):
+
+```java
+return APIResponse.success("message", result);   // thành công có payload
+return APIResponse.success("message");           // thành công không payload
+```
+
+`@JsonInclude(NON_NULL)` trên `APIResponse` là cố ý — field null bị bỏ khỏi JSON. Format chung:
+`{ "code": 200, "message": "...", "result": ... }`. Không dùng `APIResponse.builder()` ở service (thiếu `code` →
+thành 0); builder chỉ dùng trong `GlobalExceptionHandler`/security handler để dựng lỗi từ `ErrorCode`.
+
+**Giữ `return` ngắn — tính result DTO vào biến có tên trước:**
+
+```java
+UserResponse userResponse = userMapper.toResponse(savedUser);        // ✅
+return APIResponse.success("Tạo tài khoản thành công", userResponse);
+
+return APIResponse.success("...", userMapper.toResponse(savedUser)); // ❌
+```
+
+### Naming (controllers & services)
+
+- **CRUD**: `create` / `list` / `get` / `update` / `delete` / `updateStatus`. **Business action** dùng động từ
+  riêng: `register`, `verify`, `login`, `refresh`, `logout`, `assign`, `revoke`, `lock`… Tên method **không lặp
+  tên entity** đã có trong tên class (`AccountController.get`, không `getUser`).
+- Interface `FooService` ở `service/`, implementation `FooServiceImpl` ở `service/Impl/`.
+- Async job (khi có ở service sau): service `start...` + `getJob`; worker luôn `process(UUID)`.
+- Method cũ trái quy tắc được đổi tên khi chạm tới — không mass-rename.
+
+### Swagger
+
+- `@Tag(name = ..., description = ...)` trên mỗi controller. **Không** dùng `@Operation` và
+  `@io.swagger.v3.oas.annotations.parameters.RequestBody` trong controller (bỏ ngày 2026-10-01) — springdoc tự suy
+  ra endpoint và schema request từ `@RequestBody` của Spring.
+- Endpoint public có `@SecurityRequirements({})` **và** phải nằm trong danh sách permit của `SecurityConfig`.
+- Controller **chỉ** dùng `mss301.<service>.dto.response.APIResponse`; không dùng annotation Swagger
+  `io.swagger.v3.oas.annotations.responses.ApiResponse`. Global 400/401/403/500 khai báo trong `OpenApiConfig`.
+
+### MapStruct
+
+```java
+@Mapper(componentModel = "spring")   // luôn spring component model
+public interface UserMapper { ... }
+```
+
+**Mọi chuyển đổi entity ↔ DTO đi qua method MapStruct — không tự dựng DTO/entity bằng `.builder()` / `new` /
+setters trong service**, cho toàn bộ CRUD:
+
+- **Create:** request → entity (`userMapper.toUser(request)`), rồi chỉ set phần mapper không làm được (password
+  hash, role đã lookup, status, centerId lấy từ actor).
+- **Read:** entity → response (`toResponse`, `toResponseList`).
+- **Update:** `void update(RequestDto request, @MappingTarget Entity entity)` với
+  `@BeanMapping(nullValuePropertyMappingStrategy = IGNORE)` cho partial update. IGNORE nghĩa là "bỏ qua"; nếu nghiệp
+  vụ cần xóa giá trị thì thiết kế semantics riêng.
+- **Delete:** map entity bị ảnh hưởng → response khi cần trả về.
+- Entity liên kết (`UserRole`, `RolePermission`, `IdentityAudit`) cũng tạo qua mapper (vd
+  `toUserRole(User user, Role role, UUID assignedBy)`), không `new` + setters trong service.
+
+Giữ mapper trong file sẵn có — **một mapper / domain**, không tạo mapper riêng cho từng DTO.
+
+**Đặt tên method mapper** (không lặp tên entity của mapper): `toResponse` / `toResponseList`; response phụ
+`toMeResponse`; request → entity `to<Entity>` (`toUser`, `toRole`); update `update(...)`, thêm hậu tố khi có nhiều
+nguồn (`updateProfile`).
+
+**Mapper entity→entity hoặc tạo entity kế thừa `BaseEntity` PHẢI ignore `id` + `createdAt/updatedAt/deletedAt`**
+— nếu không, id nguồn bị chép sang → JPA `merge` sai. Mapper tạo `User` còn phải ignore `password`, `status`,
+`centerId`, `authzVersion`, `userRoles` (service tự set).
+
+**Chỉ thêm `@Mapping` khi MapStruct không tự suy ra**: field cùng tên, enum → `String`, tham số trùng tên property
+đều tự map. Dùng `@Mapping` cho field đổi tên/lồng nhau, `ignore = true`, constant. Password hash, OTP, refresh
+token, private key không bao giờ xuất hiện trong response mapper.
+
+---
+
+## 4. Authentication Flow
+
+> **Kiến trúc:** IdentityService là nơi **duy nhất phát token**. JWT ký **RS256** bằng private key (chỉ
+> IdentityService giữ), public key công bố qua **JWKS** `GET /.well-known/jwks.json` (có `kid`). Mọi service
+> (kể cả IdentityService) xác minh token bằng **Spring Security OAuth2 Resource Server** (`JwtDecoder` +
+> converter authorities) — **không** viết `JwtAuthenticationFilter` tự chế như AIMA, không chạy song song hai cơ
+> chế. Token state (refresh `jti`, blacklist, OTP) nằm trên **Redis của IdentityService**, không có bảng token
+> trong DB. Logic token ở `service/JwtService` + `service/Impl/JwtServiceImpl`; `security/` chỉ cấu hình.
+
+### ACCESS token (RS256)
+
+```
+header: alg=RS256, kid=IDENTITY_JWT_KEY_ID
+sub (= userId UUID, KHÔNG phải email), iss, aud[], iat, exp, jti,
+token_type="access", authz_version (số), roles[] (role code), permissions[] (permission code),
+center_id (chỉ khi user có membership trung tâm)
+```
+
+- TTL: `IDENTITY_ACCESS_TTL` (bắt buộc cấu hình; dev mẫu 15 phút).
+- Web: HttpOnly cookie `access_token`. Mobile/Swagger: header `Authorization: Bearer <token>`.
+- Blacklist khi logout: Redis `careconnect:identity:blacklist:{jti}`, TTL = thời gian sống còn lại.
+- Không nhét dữ liệu nhạy cảm (hồ sơ bệnh nhân, giấy tờ, password) vào JWT — JWT ký chứ không mã hóa.
+- Converter: `roles[]` → `ROLE_<code>`, `permissions[]` → giữ nguyên mã (`user:read`). Không trộn prefix.
+
+### REFRESH token (cũng là JWT, `token_type="refresh"`)
+
+JWT RS256 không có roles/permissions. Web: HttpOnly cookie `refresh_token`; mobile: trả trong body, app lưu ở OS
+secure storage. `jti` được lưu Redis `careconnect:identity:rt:{jti}` → userId. Rotation **claim nguyên tử bằng Lua
+script** (`IdentityStateService.consumeRefresh`): chỉ một request refresh đồng thời thành công; token đã rotate /
+thu hồi → 401. Refresh token **không** dùng để gọi API (decoder resource server bắt buộc `token_type=access`).
+
+### Xác minh ở mọi service (Resource Server)
+
+Decoder bắt buộc kiểm: chữ ký RS256 (allowlist thuật toán), `iss`, `aud` chứa audience của service, `exp`/`iat`,
+`jti`, `sub` là UUID, `token_type == "access"` (`JwtConfig`: bean `identityJwtDecoder` kiểm claim chung, bean
+`@Primary jwtDecoder` chỉ nhận access). IdentityService còn kiểm thêm mỗi request (`IdentityAuthenticationConverter`
+→ `CurrentIdentityService.getActiveUser`): jti không bị blacklist, user tồn tại, chưa soft delete, `ACTIVE`,
+`authz_version` khớp DB, rồi nạp quyền **hiện hành** từ DB — nên khóa tài khoản / thu hồi quyền có hiệu lực ngay tại
+IdentityService. Tên authentication = userId (đọc bằng `@CurrentUserId`).
+
+> ⚠️ Service khác chỉ xác minh offline thì **không** biết ngay việc khóa/thu hồi — độ trễ tối đa = access TTL.
+> Không tuyên bố "thu hồi ngay toàn hệ thống" cho tới khi có contract kiểm `authz_version`/status (chưa chốt).
+> Audience hiện chỉ có IdentityService; thêm service mới phải chốt audience, **không** tắt kiểm audience cho tiện.
+
+### Login — `POST /auth/login` (web) · `POST /auth/mobile/login` (mobile)
+
+1. Chuẩn hóa email (trim + lowercase), tìm user chưa xóa.
+2. BCrypt verify. Email không tồn tại và sai mật khẩu trả **cùng** `INVALID_CREDENTIALS` (không lộ tài khoản).
+3. Kiểm status: `LOCKED` → `USER_INACTIVE` (403).
+4. Phát ACCESS + REFRESH (jti mới), lưu refresh jti vào Redis **trước** khi trả thành công (Redis lỗi → 503, không
+   login nửa vời).
+5. Web: set 2 HttpOnly cookie qua `CookieUtils`, trả `csrfToken` mới, **không** trả token trong body.
+   Mobile: trả access + refresh trong body, không set cookie.
+
+### Registration CUSTOMER — email/password + OTP
+
+Tài khoản chỉ được tạo **sau khi** xác thực email. State trên Redis
+`careconnect:identity:otp:{purpose}:{email}` (purpose tách đăng ký và quên mật khẩu):
+
+1. `POST /users/register` — email đã tồn tại → `EMAIL_EXISTED` 1003, không gửi OTP. Còn cooldown →
+   `OTP_RESEND_TOO_SOON` 1079. Lưu pending (fullName, phone, password **đã BCrypt**) + hash OTP (`SecureRandom`
+   6 số), gửi email qua `EmailService`. Gửi lỗi → xóa OTP để user thử lại ngay (`EMAIL_DELIVERY_FAILED` 1106).
+2. `POST /users/register/resend-otp` — cần pending còn hạn (`REGISTRATION_SESSION_EXPIRED` 1080); mã mới thay mã
+   cũ, reset bộ đếm sai.
+3. `POST /users/register/verify` — sai mã → `INVALID_OTP_OR_EMAIL` 1063; quá `IDENTITY_OTP_MAX_ATTEMPTS` →
+   `OTP_ATTEMPTS_EXCEEDED` 1072; hết hạn → `OTP_NOT_FOUND` 1060. Mã đúng **dùng một lần** (consume nguyên tử).
+   Kiểm lại email (unique violation → 1003), tạo user + gán role `CUSTOMER` trong **một transaction**, ghi audit.
+   Không tự login — client gọi login riêng.
+
+Đăng ký public **chỉ** cấp `CUSTOMER`; caller không chọn được role khác.
+
+### Provision tài khoản (quản trị) — `POST /users`
+
+- `ADMIN` tạo `CUSTOMER` hoặc `CENTER_MANAGER` (bắt buộc `centerId` cho manager).
+- `CENTER_MANAGER` tạo `CAREGIVER`; `centerId` **lấy từ manager**, gửi centerId khác → từ chối.
+- Tài khoản provision **chưa có password** (`password` null); chủ email tự đặt qua quên mật khẩu (OTP).
+- Chưa có CenterService nên IdentityService chưa xác minh `centerId` tồn tại (xem `docs/PLAN.md`).
+
+### Refresh — `POST /auth/refresh` (web, cookie) · `POST /auth/mobile/refresh` (mobile, body)
+
+1. Lấy refresh token → thiếu → `UNAUTHENTICATED`.
+2. `JwtService.parseRefresh` (chữ ký, claims, `token_type == "refresh"`).
+3. Consume `jti` nguyên tử trên Redis → không còn → 401 (đã rotate/thu hồi).
+4. Kiểm user còn `ACTIVE`, chưa xóa, `authz_version` khớp; lấy role/permission **hiện hành** từ DB.
+5. Phát cặp token mới, lưu jti mới; web set lại cookie + trả `csrfToken` mới.
+
+### Logout — `POST /auth/logout` · `POST /auth/mobile/logout` · `POST /auth/logout-all`
+
+- Logout: thu hồi refresh jti, blacklist access hiện tại tới `exp`, xóa cookie (cả CSRF) — token đã hết hạn vẫn
+  logout được.
+- Logout-all (authenticated): tăng `users.authz_version` → mọi token cũ mất hiệu lực tại IdentityService.
+- Đổi mật khẩu, reset mật khẩu, khóa tài khoản, xóa mềm cũng tăng `authz_version`.
+
+### Web cookies, CSRF, CORS
+
+- Web lấy CSRF qua `GET /auth/csrf`, gửi header `X-XSRF-TOKEN` ở mọi request ghi (kể cả refresh/logout). Cookie
+  CSRF `XSRF-TOKEN`. Request mang cookie **luôn** phải qua CSRF, kể cả khi có thêm bearer header; request bearer
+  thuần (mobile) được miễn. Thiếu/sai CSRF → 403 `CSRF_INVALID` 1111 (tách khỏi `UNAUTHORIZED` 403 thiếu quyền).
+- Swagger: scheme `csrf` (apiKey header `X-XSRF-TOKEN`) được `OpenApiConfig.csrfRequirements` gắn vào mọi
+  POST/PUT/PATCH/DELETE trừ `/auth/mobile/*`; cookie CSRF là HttpOnly nên phải dán `result.token` của `/auth/csrf`
+  vào Authorize (tính năng tự gắn CSRF của springdoc không đọc được cookie).
+- Cookie `Secure` theo `IDENTITY_COOKIE_SECURE` (production = true), SameSite theo `IDENTITY_COOKIE_SAME_SITE`.
+- CORS allowlist từ `IDENTITY_ALLOWED_ORIGINS` + credentials; không wildcard origin khi có credentials.
+- FE web không đọc/lưu token; gọi `GET /users/me` để biết mình là ai.
+
+### Email transport (Brevo HTTP API)
+
+`EmailService`/`EmailServiceImpl` dựng nội dung và gửi qua Brevo Transactional Email API bằng `RestClient` có
+connect/read timeout. Config `identity.brevo.*` (env `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME`).
+**Không** gửi email trong DB transaction; test luôn mock email.
+
+### Password policy
+
+Đăng ký, reset, đổi mật khẩu dùng **cùng** `@StrongPassword` (`WEAK_PASSWORD` 1074): ≥ 8 ký tự gồm chữ thường,
+chữ hoa, số, ký tự đặc biệt, tối đa **72 byte UTF-8** (giới hạn BCrypt). Lưu BCrypt hash, không bao giờ plain text.
+
+### Password reset (OTP) & đổi mật khẩu
+
+- `POST /users/forgot-password` — luôn trả message trung tính (không lộ email có tồn tại); gửi OTP purpose reset.
+- `POST /users/reset-password` — `email, otpCode, newPassword`; OTP được consume **ngay trong thao tác reset**
+  (không có bước verify tạo cờ dùng lại được). Thành công → cập nhật hash + tăng `authz_version`.
+- `POST /users/me/change-password` — authenticated, cần `currentPassword` (`PASSWORD_INCORRECT` 1070); thành công
+  thu hồi mọi phiên. **Không** áp giới hạn 7 ngày của AIMA.
+
+### Protected request flow
+
+```
+Request → BearerTokenAuthenticationFilter (Resource Server)
+       → BearerTokenResolver: Authorization header, hoặc cookie access_token (web)
+       → JwtDecoder: RS256 + iss + aud + exp + jti + sub UUID + token_type=access
+       → blacklist jti? (Redis) → 401
+       → IdentityAuthenticationConverter → CurrentIdentityService.getActiveUser(userId, authz_version)
+         → user ACTIVE + version khớp, nạp authorities hiện hành (ROLE_<code> + permission code)
+       → @EnableMethodSecurity: @PreAuthorize (role + permission) ở controller
+       → @CurrentUserId bind userId → service kiểm resource scope (self / cùng trung tâm / target role)
+   SecurityErrorHandler (entry point + access denied + failure handler, serialize APIResponse bằng ObjectMapper):
+   token sai → 401; thiếu quyền → 403; Redis/DB sập → 503 AUTH_DEPENDENCY_UNAVAILABLE (không giả làm 401, không bypass).
+```
+
+### Không có trong phạm vi hiện tại
+
+Google OAuth2, OAuth2/OIDC Authorization Server chuẩn (discovery/grant), xóa tài khoản kiểu GDPR / grace period
+30 ngày, key ring rotate RSA không gián đoạn. Làm khi được yêu cầu; nếu làm Google login thì không tự ghép tài
+khoản chỉ vì trùng email và không ghi đè phương thức đăng nhập.
+
+---
+
+## 5. Database & Redis
+
+### Không dùng Flyway
+
+- Mỗi service có file DDL khởi tạo `schema/<service>.sql` (IdentityService: `schema/identity.sql`) — **áp dụng tay
+  một lần cho DB mới** (`psql -v ON_ERROR_STOP=1`). DB đã có dữ liệu → viết change script riêng, được review, đặt
+  ở `schema/changes/` (vd `schema/changes/2026-10-05_add_x.sql`) **và** cập nhật luôn `schema/<service>.sql`.
+- `spring.jpa.hibernate.ddl-auto: validate`, `spring.sql.init.mode: never`. Không `update`/`create`/`create-drop`
+  ngoài test DB cô lập; không chạy DDL trong initializer lúc khởi động.
+- `validate` không kiểm index/CHECK/unique — những thứ đó phải có trong SQL. Thêm giá trị enum → sửa CHECK
+  constraint trong SQL cùng lúc.
+- Thời điểm dùng `Instant` ↔ `timestamptz`, JVM/Hibernate chạy UTC (`hibernate.jdbc.time_zone: UTC`); FE tự đổi
+  sang múi giờ người dùng.
+
+### PostgreSQL / Redis của IdentityService
+
+```
+DB:     IDENTITY_DB_URL (…/CARECONNECT_IDENTITY), IDENTITY_DB_USERNAME, IDENTITY_DB_PASSWORD — dev Docker 127.0.0.1:5441
+Redis:  IDENTITY_REDIS_HOST / IDENTITY_REDIS_PORT (dev 6381) / IDENTITY_REDIS_PASSWORD, timeout 2s
+Prefix: careconnect:identity:  → rt:{jti}, blacklist:{jti}, otp:{purpose}:{email}
+```
+
+Service mới dùng DB riêng và prefix Redis `careconnect:<service>:`. Không đọc Redis/DB nội bộ của IdentityService.
+
+### `users` — `User.java` (extends `BaseEntity`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | UUID (PK) | `@AttributeOverride` của `BaseEntity.id` |
+| `email` | VARCHAR | not null, unique (`uk_users_email`), CHECK lưu dạng `lower(btrim(email))` |
+| `password` | VARCHAR | BCrypt; **nullable** (tài khoản provision chưa đặt mật khẩu) |
+| `full_name` | VARCHAR | not null |
+| `phone_number` | VARCHAR | nullable |
+| `user_status` | VARCHAR | `UserStatus` (`@Enumerated(STRING)`): `ACTIVE`, `LOCKED` — CHECK constraint |
+| `center_id` | UUID | nullable; tham chiếu **ngoài** tới trung tâm (không FK). Manager/caregiver thuộc đúng một trung tâm |
+| `authz_version` | BIGINT | not null, mặc định 0; tăng khi logout-all / đổi-reset mật khẩu / khóa / xóa mềm |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | từ `BaseEntity` (soft delete) |
+
+### `roles` — `Role.java` (extends `BaseEntity`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `role_id` | UUID (PK) | |
+| `role_code` | VARCHAR | unique (`uk_roles_code`); 4 role nền tảng theo `RoleCode` |
+| `role_name` | VARCHAR | not null |
+| `description` | VARCHAR | nullable |
+| `is_active` | BOOLEAN | `false` → role bị loại khỏi quyền hiệu lực (kể cả lúc refresh) |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | |
+
+### `permissions` — `Permission.java` (extends `BaseEntity`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `permission_id` | UUID (PK) | |
+| `permission_code` | VARCHAR | unique; dạng `<resource>:<action>` |
+| `permission_name` | VARCHAR | not null |
+| `resource` | VARCHAR | not null |
+| `description` | VARCHAR | nullable |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | |
+
+### `user_roles` — `UserRole.java` (`@EmbeddedId UserRoleId`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` + `role_id` | UUID (PK composite, FK nội bộ) | `@MapsId` |
+| `assigned_by` | UUID | actor lấy từ token, **không** từ request |
+| `assigned_at` | TIMESTAMPTZ | not null |
+
+### `role_permissions` — `RolePermission.java` (`@EmbeddedId RolePermissionId`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `role_id` + `permission_id` | UUID (PK composite, FK nội bộ) | `@MapsId` |
+| `granted_at` | TIMESTAMPTZ | not null |
+
+### `identity_audit` — `IdentityAudit.java`
+
+`id`, `actor_id`, `target_id`, `center_id`, `action`, `detail`, `created_at` — ghi mọi thao tác quản trị
+(tạo/khóa/xóa tài khoản, gán/thu hồi role, đổi permission của role).
+
+### Permission catalog hiện có (`security/Permissions`)
+
+| Code | Dùng cho |
+|---|---|
+| `user:read` | Xem danh sách / chi tiết tài khoản trong phạm vi |
+| `user:manage` | Sửa hồ sơ, khóa/mở, xóa mềm tài khoản trong phạm vi |
+| `manager:create` | ADMIN tạo CENTER_MANAGER |
+| `caregiver:create` | CENTER_MANAGER tạo CAREGIVER |
+| `role:manage` | ADMIN quản lý role/permission, gán/thu hồi role |
+
+Role/permission seed **idempotent** ở `DataInitializer`; grants của 4 role nền tảng cố định, không sửa qua API.
+Role bổ sung (custom) có thể tạo và cấu hình permission. Không seed tài khoản admin có mật khẩu hardcode — admin
+đầu tiên qua `IDENTITY_BOOTSTRAP_*` (bật một lần rồi tắt). Service sau thêm permission theo cùng dạng
+`<resource>:<action>` (vd `booking:assign`, `care_report:create`) — catalog chưa chốt, hỏi trước.
+
+---
+
+## 6. Commands
+
+Trong `CareConnect/IdentityService` (PowerShell, JDK 21, Docker):
+
+```powershell
+Copy-Item .env.example .env          # điền DB password, Brevo key/sender
+.\scripts\New-DevKeys.ps1            # tạo RSA PEM vào keys/ (không ghi đè)
+docker compose up -d                 # PostgreSQL :5441 + Redis :6381 riêng của service
+Get-Content -Raw schema/identity.sql | docker compose exec -T postgres psql -U careconnect_identity -d CARECONNECT_IDENTITY -v ON_ERROR_STOP=1   # chỉ DB mới
+.\scripts\Start-Dev.ps1              # nạp .env vào process env rồi spring-boot:run
+.\mvnw.cmd test                      # test mặc định: H2 + Redis giả trong bộ nhớ + email mock
+.\mvnw.cmd package                   # build JAR
+```
+
+- Spring Boot **không tự đọc `.env`** — chạy qua `Start-Dev.ps1` hoặc tự cấp env trong IDE.
+- Kiểm PostgreSQL/Redis thật: dùng container test riêng (xem `IdentityService/README.md`), cờ
+  `-Didentity.testing.postgres=true -Didentity.testing.real-state=true`. Không trỏ test vào DB thật.
+- Không dùng `-DskipTests` làm bằng chứng đã kiểm chứng.
+
+**Runtime URLs (IdentityService, dev):**
+
+```
+API:      http://localhost:8081
+Swagger:  /swagger-ui.html   (tắt bằng IDENTITY_SWAGGER_ENABLED=false ở production)
+OpenAPI:  /v3/api-docs
+JWKS:     /.well-known/jwks.json
+Health:   /actuator/health
+```
+
+**Biến môi trường** (xem `.env.example`, chia nhóm): `IDENTITY_SERVER_PORT`, `IDENTITY_SWAGGER_ENABLED` ·
+`IDENTITY_DB_*` · `IDENTITY_REDIS_*` · `IDENTITY_JWT_ISSUER/AUDIENCE/KEY_ID/PRIVATE_KEY/PUBLIC_KEY` ·
+`IDENTITY_ACCESS_TTL/REFRESH_TTL/OTP_TTL/OTP_COOLDOWN/OTP_MAX_ATTEMPTS` (bắt buộc, không có default) ·
+`IDENTITY_ALLOWED_ORIGINS`, `IDENTITY_COOKIE_SECURE`, `IDENTITY_COOKIE_SAME_SITE` · `BREVO_*` ·
+`IDENTITY_BOOTSTRAP_*`. Service mới dùng prefix env riêng (`<SERVICE>_...`), port riêng, không đụng port của AIMA.
+
+---
+
+## 7. Rules
+
+> ⚠️ **BẮT BUỘC — không phải gợi ý.** Mọi thay đổi trong `CareConnect/` PHẢI theo package layout ở §2 và mọi rule
+> dưới đây. Trước khi kết thúc task, agent PHẢI tự đối chiếu diff với mục này và sửa chỗ lệch. Nếu thật sự không
+> đáp ứng được, DỪNG lại và nói rõ lý do — không âm thầm phá cấu trúc. File mới đặt đúng package theo vai trò
+> (`controller/`, `service/` + `service/Impl/`, `dto/request|response/`, `mapper/`, `config/...`); controller
+> không bao giờ chứa business logic hay dựng DTO.
+
+1. **Không đổi tên** package, class, interface public, key `ErrorCode` đã có (`APIResponse`,
+   `mss301.identityservice`, `AccountService`…). Chỉ đổi khi được yêu cầu và sửa mọi caller cùng lúc.
+
+   **1a. Một `AccountController` thống nhất cho quản lý tài khoản — KHÔNG tách user/admin thành controller
+   riêng.** Đăng ký, hồ sơ, mật khẩu, và thao tác quản trị (`GET /users`, `POST /users`, khóa, xóa, gán role) đều ở
+   `AccountController` (`/users`), phân quyền **từng method** bằng `@PreAuthorize`. Không tạo
+   `AdminUserController`/`AdminController`. Login/refresh/logout ở `AuthenticationController` (`/auth`); role và
+   permission có controller theo resource (`RoleController`, `PermissionController`).
+
+2. **Key `ErrorCode` chính là key message validation.** Mọi `@NotBlank(message = "KEY")` ánh xạ `ErrorCode.KEY`;
+   validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
+   riêng** để FE/gateway phân biệt: IdentityService `1000–1999` (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service
+   mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
+
+3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.
+   *Ngoại lệ duy nhất đã ghi nhận:* `JwksController.get` trả JWK Set nguyên dạng (giao thức JWKS yêu cầu
+   `{"keys":[...]}` ở top-level). `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
+   response để đặt HTTP status. Không thêm ngoại lệ khác nếu chưa ghi vào đây kèm lý do.
+
+4. **`@JsonInclude(NON_NULL)` trên `APIResponse` là cố ý** — không bỏ.
+
+5. **JWT ký RS256**, private key chỉ ở IdentityService (`IDENTITY_JWT_PRIVATE_KEY`, file PEM ngoài git). Không
+   đổi thuật toán, không dùng HS512/shared secret, không phát private key cho service khác.
+
+6. **Xác minh token bằng Spring OAuth2 Resource Server** (`JwtDecoder` + validator + converter) ở mọi service —
+   không viết custom JWT filter. Claim loại token là `token_type` (`access`/`refresh`); danh tính là
+   **`sub` = userId UUID** (không phải email). Refresh token không bao giờ được chấp nhận làm access.
+
+7. **Controller không dùng `@Operation` / Swagger `@RequestBody`** (chỉ `@Tag`, `@SecurityRequirements`). Không
+   inline JSON example trong annotation ở controller.
+
+8. **`@SecurityRequirements({})` bắt buộc trên mọi endpoint public** và endpoint đó phải được permit trong
+   `SecurityConfig`. Marker Swagger không thay cho runtime authorization.
+
+9. **Soft delete mặc định.** Entity kế thừa `BaseEntity` (`deleted_at`); đánh dấu `deleted_at` thay vì xóa vật lý.
+   Mọi query/lookup lọc bản ghi đã xóa (`...AndDeletedAtIsNull`). Không cascade xóa sang dữ liệu lịch sử hay sang
+   service khác. Bảng liên kết role (`user_roles`) được xóa dòng khi thu hồi nhưng phải có audit.
+
+10. **Không Flyway; schema do SQL trong repo quản lý; `ddl-auto: validate`.** Mọi thay đổi entity/index/constraint
+    phải cập nhật `schema/<service>.sql` + change script cho DB đã có (§5). Không runtime DDL, không
+    `create`/`create-drop`/`update` trên DB có dữ liệu. Không tự chuyển sang Liquibase.
+
+    **10a. Đổi enum phải sửa CHECK constraint trong SQL.** Cột NOT NULL mới trên bảng có dữ liệu cần backfill an
+    toàn trong change script.
+
+11. **Implementation nằm ở `service/Impl/`**, không ở `service/`. Giữ cặp `FooService` (interface) +
+    `FooServiceImpl`.
+
+12. **Constructor injection qua `@RequiredArgsConstructor` + `@FieldDefaults(makeFinal = true)`** cho service và
+    controller; không field-level `@Autowired`; không viết thừa `private final`. Field đặt tên đầy đủ theo kiểu
+    (`userRepository`, không `users`).
+
+13. **Refresh token là JWT ký (`token_type="refresh"`), theo dõi bằng `jti` trên Redis** (`IdentityStateService`,
+    key `careconnect:identity:rt:{jti}`). Rotation phải consume nguyên tử (Lua). Không log, không trả raw refresh
+    token ngoài cookie HttpOnly (web) hoặc body của endpoint `/auth/mobile/*`.
+
+14. **`password` và `phone_number` của `User` nullable** — luôn null-check (tài khoản provision chưa có password
+    thì login trả `INVALID_CREDENTIALS`, không NPE).
+
+15. **Blacklist access token và OTP nằm trên Redis**, không tạo bảng DB cho token. Redis key luôn có prefix
+    `careconnect:<service>:` và được định nghĩa ở một chỗ.
+
+16. **Thứ tự side effect DB ↔ Redis phải có chủ đích.** DB và Redis không commit nguyên tử chung qua
+    `@Transactional`. Login chỉ thành công khi đã lưu refresh jti; Redis lỗi → 503, không bypass kiểm tra. Ghi
+    rõ hành vi khi một bên lỗi (vd OTP đã consume mà DB lỗi → yêu cầu OTP mới).
+
+17. **Write có `@Transactional` ở service boundary**, đọc thuần `@Transactional(readOnly = true)`. Không gọi
+    method `@Transactional`/`@Async` qua self-invocation (proxy không áp dụng).
+
+18. **MapStruct cho mọi chuyển đổi entity↔DTO trên toàn bộ CRUD — không tự dựng DTO/entity trong service.**
+    Kể cả entity liên kết và audit. Dùng `@Mapping` cho field đổi tên/lồng nhau.
+
+19. **Lỗi luôn qua `AppException` + `ErrorCode` — chặn input và nhánh lỗi ở mọi method service.** `@Valid` +
+    `message = "ERROR_CODE_KEY"` ở boundary; trong `*Impl` chặn mọi lookup (`.orElseThrow`), uniqueness, trạng
+    thái nghiệp vụ. Không ném raw exception ra controller, không tự dựng `APIResponse` lỗi, không nuốt exception.
+
+20. **401/403 trả envelope sạch ở cả filter lẫn controller.** Lỗi trong security filter không tới
+    `@ControllerAdvice` → dùng `AuthenticationEntryPoint` / `AccessDeniedHandler`, serialize `APIResponse` bằng
+    `ObjectMapper` từ `ErrorCode` (không ghép chuỗi JSON tay). Token sai không bao giờ thành 500.
+
+21. **Tác vụ tốn thời gian chạy nền** (gửi thông báo hàng loạt, thống kê nặng, xử lý file…) — trả job/handle ngay,
+    xử lý background. Login/authorization **không** bao giờ thành async job.
+
+22. **Controller mỏng — service trả `APIResponse<T>`; controller chỉ delegate.** Thân method controller là một
+    `return xxxService.method(...)`; KHÔNG chứa business logic, parse chuỗi (kể cả `UUID.fromString`), lookup
+    entity hay dựng DTO, kể cả đọc cookie (`CookieUtils.read`) — truyền `HttpServletRequest` xuống service.
+    Người dùng hiện tại: `@CurrentUserId UUID actorId` (§3), không `UUID.fromString(authentication.getName())`.
+    Không dùng cờ `boolean` để rẽ nhánh hành vi (vd `mobile`) — tách thành method riêng (`login` / `loginMobile`).
+    Enum path/query variable bind bằng Spring `Converter` trong `config/`, không parse trong controller. Service
+    tầng thấp (token, Redis, email, client) được trả primitive/DTO; service đứng sau controller mới dựng envelope.
+
+23. **Hằng dùng chung có một nguồn duy nhất** — role code (`RoleCode`), permission code (`Permissions`), tên
+    cookie (`CookieUtils`), prefix Redis, tên claim JWT (`token_type`, `roles`, `permissions`, `center_id`,
+    `authz_version`) và giá trị `"access"`/`"refresh"`. Không lặp magic string ở nhiều class.
+
+24. **Không I/O mạng trong DB transaction đang mở.** Gửi email, gọi service khác, gọi API ngoài chạy ngoài
+    transaction; side effect chỉ khi thành công thì dùng `TransactionSynchronization.afterCommit()`. Cleanup
+    best-effort log lỗi, không làm hỏng luồng chính. Event liên service bắt buộc tin cậy → cần outbox (khi có).
+
+25. **Background worker** (khi service sau cần): service tạo job + dispatch ở `afterCommit`; worker là **bean
+    riêng** (`service/` + `Impl/`, `@Async` trên executor có tên) với `process(UUID)`; gọi mạng ngoài transaction,
+    mỗi lần ghi DB là transaction ngắn (`TransactionTemplate`); map mọi lỗi sang `ErrorCode`, lỗi một item không
+    làm sập scheduler. Retry chỉ cho lỗi tạm thời, có giới hạn — không retry sai credentials/OTP/quyền.
+
+26. **Secret không bao giờ ra log hay response**: password/hash, OTP, refresh/access token, private key, header
+    `Authorization`/`Cookie`, Brevo key. Hạn chế log dữ liệu cá nhân (email đầy đủ, hồ sơ bệnh nhân, giấy tờ).
+    Không dùng `@Data` (`toString`) trên class chứa secret.
+
+27. **Ranh giới microservice** (§2): không cross-DB join/FK/shared entity; tham chiếu bằng UUID; gọi service khác
+    qua `client/` với URL + timeout cấu hình bằng env (không hardcode host/port). Service-to-service có danh tính
+    và least privilege riêng — không dùng tài khoản ADMIN làm machine credential.
+
+28. **Phân quyền = role + permission + phạm vi tài nguyên.** `hasRole('ADMIN')` ↔ `ROLE_ADMIN`;
+    `hasAuthority('user:manage')` ↔ mã permission. Có permission vẫn phải đúng phạm vi: CUSTOMER chỉ dữ liệu của
+    mình; CAREGIVER chỉ ca được giao; CENTER_MANAGER chỉ caregiver/booking **cùng `center_id`** và không bao giờ
+    thao tác ADMIN/manager khác; ADMIN không tự động kế thừa mọi quyền nghiệp vụ của role khác. Không self-elevation,
+    manager không gán ADMIN. Bảo vệ **ADMIN hoạt động cuối cùng** (`LAST_ADMIN` 1104). Kiểm phạm vi ở **service sở
+    hữu tài nguyên**, không đẩy hết về IdentityService.
+
+29. **Mọi thay đổi role/permission/status có audit** (`identity_audit`) và tăng `authz_version` khi làm giảm quyền.
+    Không tuyên bố quyền bị thu hồi ngay trên service khác khi chưa có cơ chế đảm bảo (§4).
+
+30. **Kiểm thử phù hợp thay đổi.** Auth/security cần test: thiếu/sai/hết hạn token, refresh dùng làm access, sai
+    issuer/audience, thiếu role, tài khoản khóa, refresh reuse/đồng thời, OTP reuse, truy cập user/trung tâm của
+    người khác. Test dùng DB/Redis cô lập, mock email/HTTP ngoài; không gửi email thật, không dùng secret thật.
+    Context-load test không chứng minh authorization đúng. Báo rõ đã chạy gì, kết quả, giới hạn.
+
+31. **Cập nhật tài liệu cùng thay đổi.** Hoàn thành + kiểm chứng một hạng mục → đánh `[x]` + ngày trong
+    `CareConnect/docs/PLAN.md` (độc lập với `../docs/PLAN.md` của AIMA). Đổi contract/schema/quy ước → sửa
+    `<Service>/README.md`, `schema/*.sql` và file này cùng lúc. Thiếu business rule (tỷ lệ cọc/hoàn tiền, TTL,
+    permission catalog…) → **hỏi**, không tự đặt số.
+
+32. **Repository luôn có `@Repository`**, `@Query` dùng `@Param` tường minh, không literal nghiệp vụ trong JPQL,
+    lookup lọc `deletedAt` ở query (§3 "Repository").
+
+---
+
+## 8. Refactor IdentityService theo quy ước (2026-10-01)
+
+Code IdentityService ban đầu do một AI khác viết, lệch cách code ở `../backend`. Đã refactor toàn bộ `src/main`
+theo §3/§7, **giữ nguyên API contract** (path, request/response field, mã lỗi, cookie, claim JWT). Kiểm chứng:
+45/45 test pass trên H2 và trên PostgreSQL 17 + Redis 7 thật (container test riêng), `mvnw package` exit 0.
+
+Đã sửa:
+- **Style:** bỏ import wildcard; mỗi annotation một dòng; bỏ method/`if` một dòng và nhiều statement trên một dòng;
+  sửa thụt lề `AppException`; bỏ `var` và tên class viết đầy đủ trong code.
+- **Lombok/field:** bỏ `private final` thừa; field đổi sang tên đầy đủ (`userRepository`, `accountService`…);
+  thêm `@Slf4j` + log sự kiện nghiệp vụ; `JwtServiceImpl`, `EmailServiceImpl` dùng `@RequiredArgsConstructor`
+  (RestClient Brevo chuyển thành bean `BrevoConfig.brevoRestClient`, decoder dùng chung thành bean
+  `JwtConfig.identityJwtDecoder`).
+- **Controller mỏng:** `@CurrentUserId` thay cho `UUID.fromString(authentication.getName())`; đọc cookie refresh
+  chuyển xuống service; `AuthenticationService` tách `login/refresh/logout` (web) và `loginMobile/refreshMobile/
+  logoutMobile` thay cho cờ `boolean mobile`; thêm `@Tag`, `@Operation(description)` và `SwaggerExamples`.
+- **Response:** `/auth/csrf` trả `CsrfResponse` (field `token`, `headerName` như cũ); `AccountService.Subject`
+  (record lồng) → `dto/response/AuthenticatedUser`; xóa `APIResponse.error(...)`.
+- **Error handling:** `SecurityErrorHandler` (entry point + access denied + failure handler) serialize `APIResponse`
+  bằng `ObjectMapper` thay cho ghép chuỗi JSON; 404 dùng `ErrorCode.PATH_NOT_FOUND` (code 404 như cũ).
+- **MapStruct:** `UserRole`/`RolePermission` tạo qua `UserMapper.toUserRole` / `RoleMapper.toRolePermission`;
+  `AuthenticationResponse`/`OtpResponse`/`CsrfResponse` qua mapper (`AuthenticationMapper`, `RegistrationMapper`);
+  9 `@Mapping(ignore)` lặp gom vào `@IgnoreServerManagedUserFields`; `RoleMapper` thêm `toResponseList`,
+  `toPermissionResponse(List)`.
+- **Magic string:** `TokenType` (access/refresh), `TokenClaims` (tên claim, `ROLE_`, `Bearer `), `AuditAction`,
+  `RedisKeys` (prefix + field OTP), `Permissions.ALL`, `EmailNormalizer`, `StrongPasswordValidator.BCRYPT_MAX_BYTES`.
+- **Repository:** thêm `@Repository` + `@Param`; bỏ literal `'ADMIN'`/`'CAREGIVER'` trong JPQL
+  (`countActiveByRoleCode`, `findByCenterAndRole`, `RoleRepository.findForUpdate(roleCode)`); thêm
+  `...AndDeletedAtIsNull` thay cho `findAll()/findById()` rồi lọc trong Java.
+- **Service:** helper đổi tên rõ nghĩa (`findActiveActor`, `lockTargetUser`, `checkManageScope`, `checkNotLastAdmin`,
+  `assignRole`, `revokeSessions`, `writeAudit`…); `RoleService.permissions` → `listPermissions`;
+  `CurrentIdentityService.get` → `getActiveUser`; `AccountService.credentials/invalidate` → `verifyCredentials/
+  invalidateSessions`.
+- **ErrorCode:** xóa hằng kế thừa AIMA không dùng: `USER_EXISTED`, `USERNAME_INVALID`, `USERNAME_REQUIRED`,
+  `INVALID_PASSWORD`, `DATE_OF_BIRTH_REQUIRED`, `INVALID_DATE_OF_BIRTH`, `DOB_REQUIRED`, `INVALID_DOB`,
+  `ACCOUNT_ALREADY_PENDING_DELETE`, `ACCOUNT_NOT_PENDING_DELETE`, `PASSWORD_CHANGE_LIMIT`,
+  `PROFILE_ALREADY_COMPLETED`, `INVALID_AVATAR_URL`, `USER_LIST_EMPTY`.
+
+Thay đổi hành vi nhỏ (có chủ đích): message thành công đổi từ `"Success"` sang tiếng Việt; `/auth/mobile/logout`
+không còn gửi header `Set-Cookie` xóa cookie (mobile không dùng cookie).
+
+Còn lại (chưa làm, chờ quyết định):
+- `ErrorCode` chưa dùng nhưng có thể cần sau: `USER_NOT_FOUND`, `PHONE_REQUIRED`, `DELETE_ADMIN_INVALID`,
+  `DELETE_OTHER_ADMIN_INVALID`, `EMAIL_NOT_FOUND`, `OTP_EXPIRED`, `TOKEN_NOT_FOUND`, `PASSWORDS_NOT_MATCH`,
+  `CONFIRM_PASSWORD_REQUIRED`, `OTP_NOT_VERIFIED`, `REGISTER_OTP_INCORRECT`.
+- Code test (`src/test`) mới chỉ sửa cho khớp API mới, chưa restyle.

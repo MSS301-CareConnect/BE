@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: IdentityService
+
+  datasource:
+    url: ${IDENTITY_DB_URL}
+    username: ${IDENTITY_DB_USERNAME}
+    password: ${IDENTITY_DB_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  sql:
+    init:
+      mode: never
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  data:
+    redis:
+      repositories:
+        enabled: false
+      host: ${IDENTITY_REDIS_HOST:localhost}
+      port: ${IDENTITY_REDIS_PORT:6379}
+      password: ${IDENTITY_REDIS_PASSWORD:}
+      timeout: 2s
+
+server:
+  port: ${IDENTITY_SERVER_PORT:8081}
+
+springdoc:
+  api-docs:
+    enabled: ${IDENTITY_SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${IDENTITY_SWAGGER_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+identity:
+  issuer: ${IDENTITY_JWT_ISSUER}
+  audience: ${IDENTITY_JWT_AUDIENCE}
+  key-id: ${IDENTITY_JWT_KEY_ID}
+  private-key: ${IDENTITY_JWT_PRIVATE_KEY}
+  public-key: ${IDENTITY_JWT_PUBLIC_KEY}
+  access-ttl: ${IDENTITY_ACCESS_TTL}
+  refresh-ttl: ${IDENTITY_REFRESH_TTL}
+  otp-ttl: ${IDENTITY_OTP_TTL}
+  otp-cooldown: ${IDENTITY_OTP_COOLDOWN}
+  otp-max-attempts: ${IDENTITY_OTP_MAX_ATTEMPTS}
+  allowed-origins: ${IDENTITY_ALLOWED_ORIGINS}
+  cookie-secure: ${IDENTITY_COOKIE_SECURE:true}
+  cookie-same-site: ${IDENTITY_COOKIE_SAME_SITE:Lax}
+
+  brevo:
+    api-key: ${BREVO_API_KEY:}
+    sender-email: ${BREVO_SENDER_EMAIL:}
+    sender-name: ${BREVO_SENDER_NAME:CareConnect}
+
+  bootstrap:
+    enabled: ${IDENTITY_BOOTSTRAP_ENABLED:false}
+    email: ${IDENTITY_BOOTSTRAP_EMAIL:}
+    password: ${IDENTITY_BOOTSTRAP_PASSWORD:}
