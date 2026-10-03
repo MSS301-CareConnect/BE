@@ -5,6 +5,7 @@ import mss301.identityservice.entity.User;
 import mss301.identityservice.enums.UserStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,6 +27,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByEmailIgnoreCase(String email);
 
     Page<User> findAllByDeletedAtIsNull(Pageable pageable);
+
+    // Nạp sẵn role trong cùng query — batch cho service khác không được N+1 theo số user.
+    @EntityGraph(attributePaths = {"userRoles", "userRoles.role"})
+    List<User> findAllByIdInAndDeletedAtIsNull(Collection<UUID> ids);
 
     // Khóa dòng user để ghi tuần tự với khóa tài khoản / đổi mật khẩu — tránh ghi đè trạng thái cũ.
     @Lock(LockModeType.PESSIMISTIC_WRITE)

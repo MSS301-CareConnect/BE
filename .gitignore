@@ -21,9 +21,35 @@ keys/
 *.p12
 *.jks
 
+### Local config overrides (có thể chứa secret / cấu hình riêng từng máy) ###
+**/src/main/resources/application-local.*
+docker-compose.override.yml
+compose.override.yml
+http-client.private.env.json
+*.pfx
+*.keystore
+*.truststore
+*.secret
+secrets/
+
 ### Logs ###
 *.log
 logs/
+
+### Dump dữ liệu / runtime (có thể chứa dữ liệu người dùng, người bệnh) ###
+*.dump
+*.backup
+*.hprof
+*.tmp
+
+### Python (scripts/e2e) ###
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+### Claude Code (cấu hình cá nhân) ###
+.claude/settings.local.json
 
 ### STS ###
 .apt_generated

@@ -65,6 +65,8 @@ identity:
   allowed-origins: ${IDENTITY_ALLOWED_ORIGINS}
   cookie-secure: ${IDENTITY_COOKIE_SECURE:true}
   cookie-same-site: ${IDENTITY_COOKIE_SAME_SITE:Lax}
+  internal-secret: ${IDENTITY_INTERNAL_SECRET:}
+  open-api-server-url: ${IDENTITY_OPENAPI_SERVER_URL:}
 
   brevo:
     api-key: ${BREVO_API_KEY:}

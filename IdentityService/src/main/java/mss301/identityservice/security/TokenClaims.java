@@ -10,6 +10,10 @@ public final class TokenClaims {
     public static final String PERMISSIONS = "permissions";
     public static final String CENTER_ID = "center_id";
 
+    // Audience chung của mọi service backend (CareRecipient, service sau, gateway) — chỉ có trong access token.
+    // IdentityService vẫn kiểm audience riêng (identity.audience) nên token phát trước khi thêm giá trị này vẫn hợp lệ ở đây.
+    public static final String API_AUDIENCE = "careconnect-api";
+
     public static final String ROLE_AUTHORITY_PREFIX = "ROLE_";
 
     // Tiền tố header Authorization của mobile/Swagger

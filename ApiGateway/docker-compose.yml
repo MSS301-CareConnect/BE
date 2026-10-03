@@ -1,0 +1,20 @@
+# Tùy chọn: chạy ApiGateway trong container từ JAR đã build (.\mvnw.cmd package), trỏ về IdentityService /
+# CareRecipientService đang chạy trên máy host. Gateway không có hạ tầng riêng (không DB/Redis).
+# Cách chạy thông thường khi dev vẫn là .\scripts\Start-Dev.ps1.
+services:
+  gateway:
+    image: eclipse-temurin:21-jre
+    command: ["java", "-jar", "/app/app.jar"]
+    volumes:
+      - ./target/ApiGateway-0.0.1-SNAPSHOT.jar:/app/app.jar:ro
+    env_file: .env
+    environment:
+      GATEWAY_SERVER_PORT: "8080"
+      # Trong container "localhost" là chính container → gọi service trên host qua host.docker.internal.
+      GATEWAY_IDENTITY_URL: ${GATEWAY_DOCKER_IDENTITY_URL:-http://host.docker.internal:8081}
+      GATEWAY_CARE_RECIPIENT_URL: ${GATEWAY_DOCKER_CARE_RECIPIENT_URL:-http://host.docker.internal:8082}
+      GATEWAY_JWT_JWKS_URI: ${GATEWAY_DOCKER_JWKS_URI:-http://host.docker.internal:8081/.well-known/jwks.json}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${GATEWAY_SERVER_PORT:-8080}:8080"

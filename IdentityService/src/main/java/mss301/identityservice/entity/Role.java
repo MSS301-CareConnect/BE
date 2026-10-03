@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "roles", uniqueConstraints = @UniqueConstraint(name = "uk_roles_code", columnNames = "role_code"))
@@ -33,4 +34,14 @@ public class Role extends BaseEntity {
     @OneToMany(mappedBy = "role")
     @Builder.Default
     Set<RolePermission> rolePermissions = new HashSet<>();
+
+    // Mã permission còn hiệu lực của role (bỏ permission đã xóa mềm). Không đặt tên getXxx để không thành thuộc tính
+    // của entity với MapStruct/Jackson.
+    public Set<String> activePermissionCodes() {
+        return rolePermissions.stream()
+                .map(RolePermission::getPermission)
+                .filter(permission -> permission.getDeletedAt() == null)
+                .map(Permission::getPermissionCode)
+                .collect(Collectors.toSet());
+    }
 }

@@ -1,0 +1,82 @@
+spring:
+  application:
+    name: CareRecipientService
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${CARE_RECIPIENT_DB_URL}
+    username: ${CARE_RECIPIENT_DB_USERNAME}
+    password: ${CARE_RECIPIENT_DB_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  sql:
+    init:
+      mode: never
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          identity:
+            connect-timeout: ${CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS:3000}
+            logger-level: none
+    circuitbreaker:
+      # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
+      resilience4j:
+        disable-thread-pool: true
+        disable-time-limiter: true
+      bulkhead:
+        resilience4j:
+          enabled: false
+
+server:
+  port: ${CARE_RECIPIENT_SERVER_PORT:8082}
+
+springdoc:
+  api-docs:
+    enabled: ${CARE_RECIPIENT_SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${CARE_RECIPIENT_SWAGGER_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+care-recipient:
+  internal-secret: ${CARE_RECIPIENT_INTERNAL_SECRET:}
+  open-api-server-url: ${CARE_RECIPIENT_OPENAPI_SERVER_URL:}
+
+  jwt:
+    issuer: ${CARE_RECIPIENT_JWT_ISSUER}
+    jwks-uri: ${CARE_RECIPIENT_JWT_JWKS_URI}
+
+  identity:
+    url: ${CARE_RECIPIENT_IDENTITY_URL}
+    internal-secret: ${CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET:}

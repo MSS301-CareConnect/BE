@@ -379,11 +379,11 @@ public class AccountServiceImpl implements AccountService {
     }
 
     private boolean hasRole(User user, RoleCode roleCode) {
-        return userMapper.roles(user).contains(roleCode.name());
+        return user.effectiveRoleCodes().contains(roleCode.name());
     }
 
     private boolean hasPermission(User user, String permission) {
-        return userMapper.permissions(user).contains(permission);
+        return user.effectivePermissionCodes().contains(permission);
     }
 
     private boolean isCenterScopedRole(Role role) {

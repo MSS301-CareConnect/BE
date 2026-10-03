@@ -38,7 +38,7 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Chức năng (theo mô tả nghiệp vụ) | Domain sở hữu |
 |---|---|
 | Đăng ký, đăng nhập, cập nhật thông tin cá nhân, đổi mật khẩu; khóa/mở khóa tài khoản khách hàng, trung tâm; xem danh sách người dùng toàn hệ thống; tạo tài khoản manager/caregiver; role & permission | **Identity** (`IdentityService`) |
-| Hồ sơ người bệnh / người cần chăm sóc (tạo, sửa, nhiều hồ sơ), ghi chú đặc biệt | Care recipient (chưa có service) |
+| Hồ sơ người bệnh / người cần chăm sóc (tạo, sửa, nhiều hồ sơ), ghi chú đặc biệt, thuốc, liên hệ khẩn cấp, người thân cùng quản lý (OWNER/EDITOR/VIEWER) | **Care recipient** (`CareRecipientService`) |
 | Trung tâm: đăng ký, duyệt/onboard, trạng thái hoạt động | Center (chưa có service) |
 | Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | Caregiver profile (chưa có service) |
 | Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | Service catalog (chưa có service) |
@@ -50,12 +50,12 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | Notification (chưa có service) |
 | Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
 
-> ⚠️ **Phạm vi hiện tại: chỉ IdentityService** (xác thực, phân quyền, quản lý người dùng). Không tạo service hay
-> bảng của các domain khác khi chưa được yêu cầu.
+> ⚠️ **Phạm vi hiện tại: IdentityService, CareRecipientService, ApiGateway** (2026-10-03). Không tạo service hay bảng
+> của các domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
 >
 > **Chưa chốt — hỏi trước khi code phần liên quan:** tỷ lệ đặt cọc / mốc & % hoàn tiền; ai được sửa giá dịch vụ
 > trung tâm (mô tả có chồng lấn admin ↔ manager); permission catalog của các domain sau; TTL token production;
-> tên + ranh giới các service còn lại; công nghệ / cấu hình API gateway (đã chốt **sẽ có gateway**, chưa tạo — §2).
+> tên + ranh giới các service còn lại; rate limiting tại gateway.
 
 ### IdentityService — thông số
 
@@ -98,6 +98,11 @@ CareConnect/
 ├── AGENTS.md                    — file này (quy ước chung mọi service)
 ├── .gitignore                   — ignore chung mọi service (target/, .env, keys/, IDE...); service mới không cần file riêng
 ├── docs/PLAN.md                 — checklist tiến độ của CareConnect (độc lập với ../docs/PLAN.md của AIMA)
+├── docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md — plan + kết quả CareRecipientService / ApiGateway / internal API
+│                                  (plan theo phiên làm việc đặt tên <yyyy-MM-dd>-<TÊN>.md)
+├── scripts/e2e/                 — Run-E2E.ps1 (dựng hạ tầng e2e riêng + chạy 3 JAR + e2e.py), e2e.py, SeedCustomers.java
+├── ApiGateway/                  — Spring Cloud Gateway Server MVC, port 8080 (xem ApiGateway/AGENTS.md)
+├── CareRecipientService/        — hồ sơ người bệnh, port 8082, PostgreSQL riêng 5442 (xem CareRecipientService/AGENTS.md)
 └── IdentityService/             — mỗi service là một Maven project độc lập
     ├── pom.xml, mvnw, mvnw.cmd
     ├── docker-compose.yml       — PostgreSQL + Redis RIÊNG của service (loopback)
@@ -120,12 +125,15 @@ CareConnect/
   **Không** sở hữu hồ sơ chuyên môn caregiver, hồ sơ người bệnh, trung tâm, dịch vụ, booking, report, review, tiền.
 - Mỗi service tự xác minh JWT và tự phân quyền (kể cả khi đã có gateway). Không tin header `X-User-Id` /
   `X-Roles` do client gửi.
-- **API gateway: đã chốt sẽ có, hiện CHƯA tạo** — không tự dựng gateway khi chưa được yêu cầu. Khi tạo cần giữ:
-  gateway chỉ định tuyến (+ có thể kiểm token sớm), **chuyển nguyên** header `Authorization`, cookie
-  (`access_token`, `refresh_token`, `XSRF-TOKEN`) và header `X-XSRF-TOKEN` tới service; service vẫn tự xác minh.
-  Cookie path/domain và CORS phải chốt lại theo domain của gateway (CORS có thể dời lên gateway — khi đó bỏ ở
-  service để không trùng header). JWKS `/.well-known/jwks.json` của IdentityService phải truy cập được từ các
-  service phía sau gateway. Code hiện tại không được hardcode host/port để còn đặt sau gateway.
+- **API gateway: `ApiGateway/` (2026-10-03)** — Gateway Server MVC, route `/api/v1/**` (cắt prefix) tới service, kiểm
+  token sớm, **chuyển nguyên** `Authorization`, cookie (`access_token`, `refresh_token`, `XSRF-TOKEN`) và
+  `X-XSRF-TOKEN`; service vẫn tự xác minh. Cookie Identity `Path=/` nên không rewrite path. CORS tập trung ở gateway,
+  gateway xóa `Origin` khi chuyển tiếp (CORS của Identity giữ cho gọi trực tiếp lúc dev). Gateway xóa `X-User-*` của
+  client và gắn lại `X-User-Id`/`X-User-Roles` từ JWT **chỉ để log**. Chặn mọi path `/internal`. JWKS của Identity gọi
+  trực tiếp (không qua gateway). Service không hardcode host/port.
+- **Service-to-service**: API nội bộ `/internal/**` mỗi service có chain bảo mật riêng, header `X-Internal-Secret` (secret
+  riêng của service bị gọi, env `<SERVICE>_INTERNAL_SECRET`, trống = khóa). Gọi bằng OpenFeign trong `client/` với URL +
+  timeout từ env, circuit breaker Resilience4j cho lời gọi chỉ đọc, ErrorDecoder map sang `ErrorCode` của service gọi.
 - Không tạo thư viện common, discovery server, message broker hay distributed transaction khi chưa có nhu cầu cụ
   thể được yêu cầu. Các class giống nhau giữa service (`APIResponse`, `AppException`, `ErrorCode`,
   `GlobalExceptionHandler`, `BaseEntity`) **chép theo cùng mẫu** vào từng service.
@@ -165,18 +173,21 @@ Logic token / user-detail nằm ở `service/` + `service/Impl/` (`JwtService`, 
 
 ```
 controller/   AuthenticationController (/auth/**), AccountController (/users/**), RoleController (/roles),
-              PermissionController (/permissions), JwksController (/.well-known/jwks.json)
+              PermissionController (/permissions), JwksController (/.well-known/jwks.json),
+              InternalUserController (/internal/users/** — service-to-service, X-Internal-Secret)
 service/      AuthenticationService, AccountService, RegistrationService (OTP đăng ký + quên mật khẩu),
-              RoleService, JwtService, IdentityStateService (Redis), CurrentIdentityService, EmailService (Brevo)
+              RoleService, JwtService, IdentityStateService (Redis), CurrentIdentityService, EmailService (Brevo),
+              InternalUserService (tra cứu user cho service khác)
 entity/       BaseEntity, User, Role, Permission, UserRole(+UserRoleId), RolePermission(+RolePermissionId), IdentityAudit
 enums/        RoleCode, UserStatus (ACTIVE/LOCKED), TokenType (access/refresh), AuditAction
 dto/response/ APIResponse, UserResponse, RoleResponse, PermissionResponse, OtpResponse, AuthenticationResponse,
               CsrfResponse, AuthenticatedUser (nội bộ: user + authzVersion để phát token)
-mapper/       UserMapper, RoleMapper, IdentityAuditMapper, RegistrationMapper, AuthenticationMapper,
-              @IgnoreServerManagedUserFields (gom các @Mapping ignore khi tạo User)
+mapper/       MapStructConfig (@MapperConfig chung), UserMapper, RoleMapper, IdentityAuditMapper, RegistrationMapper,
+              AuthenticationMapper, @IgnoreServerManagedFields (BaseEntity), @IgnoreServerManagedUserFields (field riêng User)
 config/       IdentityProperties (identity.*), IdentityConfig (BCrypt), BrevoConfig (RestClient + timeout), WebConfig,
               RedisKeys (key/field Redis), DataInitializer (seed role/permission), BootstrapAdmin, swagger/
-security/     SecurityConfig, JwtConfig (RS256 encoder + decoder), IdentityAuthenticationConverter (JWT → quyền hiện hành),
+security/     SecurityConfig, InternalSecurityConfig + InternalSecretFilter (chain riêng /internal/**),
+              JwtConfig (RS256 encoder + decoder), IdentityAuthenticationConverter (JWT → quyền hiện hành),
               SecurityErrorHandler (401/403/503 envelope), CurrentUserId + CurrentUserIdArgumentResolver,
               CookieUtils, Permissions, TokenClaims (tên claim JWT)
 util/         EmailNormalizer
@@ -356,39 +367,118 @@ return APIResponse.success("...", userMapper.toResponse(savedUser)); // ❌
 - Controller **chỉ** dùng `mss301.<service>.dto.response.APIResponse`; không dùng annotation Swagger
   `io.swagger.v3.oas.annotations.responses.ApiResponse`. Global 400/401/403/500 khai báo trong `OpenApiConfig`.
 
-### MapStruct
+### Quy tắc MapStruct / tầng mapper (BẮT BUỘC — mọi service, hiện tại và sau này)
+
+Chuẩn rút ra từ đợt rà soát 2026-10-03 (`docs/2026-10-03-MAPPER_REVIEW.md`). IdentityService và CareRecipientService
+đã theo đúng mục này; code cũ lệch quy tắc phải sửa khi chạm tới.
+
+**1. Cấu hình chung — mỗi service đúng MỘT `@MapperConfig`** (`mapper/MapStructConfig`), mọi mapper khai báo
+`@Mapper(config = MapStructConfig.class)` (thêm `uses`/`imports` khi cần), không tự cấu hình riêng:
 
 ```java
-@Mapper(componentModel = "spring")   // luôn spring component model
-public interface UserMapper { ... }
+@MapperConfig(
+        componentModel = MappingConstants.ComponentModel.SPRING,
+        unmappedTargetPolicy = ReportingPolicy.ERROR,        // quên map/ignore thuộc tính đích = lỗi compile
+        injectionStrategy = InjectionStrategy.CONSTRUCTOR,  // mapper con (uses) inject qua constructor
+        builder = @Builder(disableBuilder = true))          // builder Lombok không set được field của BaseEntity
+public interface MapStructConfig {
+}
 ```
 
-**Mọi chuyển đổi entity ↔ DTO đi qua method MapStruct — không tự dựng DTO/entity bằng `.builder()` / `new` /
-setters trong service**, cho toàn bộ CRUD:
+**2. Annotation ignore trường hệ thống — mỗi service có `mapper/IgnoreServerManagedFields`** (`id`, `createdAt`,
+`updatedAt`, `deletedAt` của `BaseEntity`), gắn trên MỌI method tạo/cập nhật entity kế thừa `BaseEntity`. Field server
+quản lý riêng của một entity, dùng lặp lại ở nhiều method, gom vào `IgnoreServerManaged<Entity>Fields` (vd
+`IgnoreServerManagedUserFields`: password, status, centerId, authzVersion, userRoles; `IgnoreServerManagedRecipientFields`:
+status, version) và gắn CÙNG `@IgnoreServerManagedFields`. Không lặp `@Mapping(target = "id", ignore = true)`… ở từng
+method (ngoại lệ: entity không kế thừa BaseEntity và chỉ có một method tạo — vd bảng liên kết).
 
-- **Create:** request → entity (`userMapper.toUser(request)`), rồi chỉ set phần mapper không làm được (password
-  hash, role đã lookup, status, centerId lấy từ actor).
-- **Read:** entity → response (`toResponse`, `toResponseList`).
-- **Update:** `void update(RequestDto request, @MappingTarget Entity entity)` với
-  `@BeanMapping(nullValuePropertyMappingStrategy = IGNORE)` cho partial update. IGNORE nghĩa là "bỏ qua"; nếu nghiệp
-  vụ cần xóa giá trị thì thiết kế semantics riêng.
-- **Delete:** map entity bị ảnh hưởng → response khi cần trả về.
-- Entity liên kết (`UserRole`, `RolePermission`, `IdentityAudit`) cũng tạo qua mapper (vd
-  `toUserRole(User user, Role role, UUID assignedBy)`), không `new` + setters trong service.
+**3. Giữ / bỏ `@Mapping`.** Chỉ GIỮ khi thuộc một trong các trường hợp:
+- tên nguồn và đích khác nhau (`userStatus ← profile.status`, `profile ← recipient`);
+- lấy từ object lồng / entity quan hệ (`recipientId ← recipient.id`, `myAccessLevel ← membership.accessLevel`);
+- nhiều tham số nguồn cùng có thuộc tính trùng tên → chỉ rõ nguồn (`id ← manager.id` khi `profile` cũng có `id`);
+- `ignore = true` cho trường server quản lý hoặc quan hệ entity không lấy từ request;
+- `expression` / `qualifiedByName` / `defaultValue` / `constant` thật sự cần (khóa ghép, giá trị dẫn xuất, null → giá trị
+  mặc định cho kiểu primitive);
+- một tham số nguồn mà chính tham số đó là thuộc tính đích (`user ← user` trong `toAuthenticatedUser(User user)`);
+- whitelist của `@BeanMapping(ignoreByDefault = true)`.
 
-Giữ mapper trong file sẵn có — **một mapper / domain**, không tạo mapper riêng cho từng DTO.
+BỎ mọi `@Mapping` MapStruct tự làm được: cùng tên + kiểu tương thích (kể cả enum → String, Boolean → boolean), tham số
+method trùng tên thuộc tính đích, thuộc tính chỉ một nguồn có.
 
-**Đặt tên method mapper** (không lặp tên entity của mapper): `toResponse` / `toResponseList`; response phụ
-`toMeResponse`; request → entity `to<Entity>` (`toUser`, `toRole`); update `update(...)`, thêm hậu tố khi có nhiều
-nguồn (`updateProfile`).
+**4. Phân loại method & tên**
 
-**Mapper entity→entity hoặc tạo entity kế thừa `BaseEntity` PHẢI ignore `id` + `createdAt/updatedAt/deletedAt`**
-— nếu không, id nguồn bị chép sang → JPA `merge` sai. Mapper tạo `User` còn phải ignore `password`, `status`,
-`centerId`, `authzVersion`, `userRoles` (service tự set).
+| Loại | Chữ ký / cấu hình | Ghi chú |
+|---|---|---|
+| Read | `toResponse(E)`, `toResponseList(List<E>)`; response phụ `toSummaryResponse`, `toDetailResponse`, `toSnapshotResponse`, `toMeResponse`… | Không lặp tên entity của mapper |
+| Create | `E to<Entity>(Request request[, giá trị service quyết định…])` | `@IgnoreServerManagedFields` (+ annotation riêng); quan hệ cha truyền vào (tham số hoặc `@Context`), không lấy từ request |
+| Danh sách con tạo cùng cha | `List<E> to<Entity>List(List<Request>, @Context Parent parent, …)` + `@IterableMapping(nullValueMappingStrategy = RETURN_DEFAULT)` | Service gọi `repository.saveAll(mapper.to…List(...))`, không tự viết vòng lặp map |
+| Update toàn phần (PUT) | `void update(Request, [UUID updatedBy,] @MappingTarget E)` — mặc định, **null ghi đè** | Field PUT không được đổi (vd `active`, `primary`, `version`) phải `ignore` rõ ràng + comment |
+| Update một phần (PATCH) | `@BeanMapping(ignoreByDefault = true, nullValuePropertyMappingStrategy = IGNORE)` + whitelist `@Mapping(target = …)` | Tên `update` (hoặc `updateXxx` khi có nhiều nguồn) |
+| Entity liên kết / audit | `toUserRole(User user, Role role, UUID assignedBy)`, `toAudit(...)` | Không `new` + setter trong service |
 
-**Chỉ thêm `@Mapping` khi MapStruct không tự suy ra**: field cùng tên, enum → `String`, tham số trùng tên property
-đều tự map. Dùng `@Mapping` cho field đổi tên/lồng nhau, `ignore = true`, constant. Password hash, OTP, refresh
-token, private key không bao giờ xuất hiện trong response mapper.
+Mỗi method PUT/PATCH phải khớp ngữ nghĩa contract của API gọi nó. Nếu contract đã công bố khác tên method HTTP (vd
+`PUT /users/me` của IdentityService là cập nhật một phần) thì giữ contract và ghi comment trên method mapper.
+Một mapper / domain; quan hệ cha–con dùng `uses = {...}`. Xóa method không ai gọi (method phần tử của list để MapStruct
+tự sinh); method phục vụ API nội bộ (`/internal/**`, snapshot, batch) giữ và ghi comment.
+
+**5. Không đưa vào mapper:** truy vấn DB, gọi Feign/HTTP, kiểm tra quyền, mã hóa mật khẩu, gán role, quy tắc nghiệp vụ
+(trạng thái mặc định như `ACTIVE` / `active = true`, OWNER / quản lý chính, ai là người tạo). Service quyết định rồi gán,
+hoặc truyền vào mapper dưới dạng tham số nếu chỉ là gán giá trị (vd `toCareRecipient(request, actorId)`). Logic dẫn xuất
+mà service cũng dùng (vd quyền hiệu lực) đặt ở entity (`User.effectiveRoleCodes()`) — mapper chỉ gọi qua `expression`;
+method đó không đặt tên `getXxx` để không thành thuộc tính. Hàm tính toán thuần chỉ phục vụ response (vd `calculateAge`)
+được là `default` method của mapper.
+
+**6. Trường nhạy cảm** (`password`, password hash, OTP, token, secret, private key): luôn `ignore` rõ ràng khi map vào
+entity (service tự gán sau khi xử lý) và KHÔNG BAO GIỜ có trong response DTO. Ngoại lệ duy nhất đã chốt:
+`AuthenticationResponse` của `/auth/mobile/*` trả access/refresh token theo thiết kế (rule #13); bản web phải `ignore`
+token. Có unit test khẳng định response DTO không có field nhạy cảm.
+
+**7. Ví dụ** (`RecipientManagerMapper` và `CareRecipientServiceImpl.create`, trước / sau 2026-10-03):
+
+```java
+// SAI — cấu hình riêng; createdAt/fullName/email/phoneNumber chỉ một nguồn có → @Mapping thừa
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR, builder = @Builder(disableBuilder = true))
+public interface RecipientManagerMapper {
+    @Mapping(target = "id", source = "manager.id")
+    @Mapping(target = "createdAt", source = "manager.createdAt")
+    @Mapping(target = "phoneNumber", source = "profile.phoneNumber")
+    @Mapping(target = "fullName", source = "profile.fullName")
+    @Mapping(target = "email", source = "profile.email")
+    @Mapping(target = "userStatus", source = "profile.status")
+    @Mapping(target = "profileAvailable", expression = "java(profile != null)")
+    RecipientManagerResponse toResponse(RecipientManager manager, IdentityUserResponse profile);
+
+// ĐÚNG — config chung; chỉ giữ trùng tên giữa nguồn (id), đổi tên (userStatus), dẫn xuất (profileAvailable)
+@Mapper(config = MapStructConfig.class)
+public interface RecipientManagerMapper {
+    @Mapping(target = "id", source = "manager.id")
+    @Mapping(target = "userStatus", source = "profile.status")
+    @Mapping(target = "profileAvailable", expression = "java(profile != null)")
+    RecipientManagerResponse toResponse(RecipientManager manager, IdentityUserResponse profile);
+```
+
+```java
+// SAI — service tự lặp và set tay field mapper làm được
+for (EmergencyContactRequest contactRequest : request.getEmergencyContacts()) {
+    EmergencyContact contact = emergencyContactMapper.toEmergencyContact(contactRequest, savedRecipient);
+    contact.setPrimary(Boolean.TRUE.equals(contactRequest.getPrimary()));
+    emergencyContacts.add(emergencyContactRepository.save(contact));
+}
+// ĐÚNG
+List<EmergencyContact> emergencyContacts = emergencyContactRepository.saveAll(
+        emergencyContactMapper.toEmergencyContactList(request.getEmergencyContacts(), savedRecipient));
+```
+
+**8. Checklist khi tạo service / mapper mới**
+- [ ] Có `mapper/MapStructConfig` (§1) và `mapper/IgnoreServerManagedFields` (§2); mọi mapper khai báo `config = ...`.
+- [ ] `mvnw clean compile` không lỗi, không warning của MapStruct.
+- [ ] Đọc `target/generated-sources/annotations/**/*MapperImpl.java`: mỗi field đích lấy đúng nguồn, không field nào bị
+  bỏ sót, không trường nhạy cảm / server quản lý nào bị chép từ request.
+- [ ] Mỗi `@Mapping` thuộc danh sách GIỮ ở §3; method không ai gọi đã xóa.
+- [ ] Service không còn `new XxxResponse`, builder gán từng field, hay chuỗi `entity.setX(request.getX())`.
+- [ ] Unit test cho mapping không hiển nhiên: nhiều nguồn trùng tên, nguồn phụ null (vd profile null →
+  `profileAvailable = false`), PATCH bỏ qua null, PUT ghi đè null, field server / nhạy cảm không bị chép
+  (mẫu: `IdentityMapperTests`, `CareRecipientMapperTests` — dùng thẳng `XxxMapperImpl`, không cần Spring).
 
 ---
 
@@ -405,7 +495,7 @@ token, private key không bao giờ xuất hiện trong response mapper.
 
 ```
 header: alg=RS256, kid=IDENTITY_JWT_KEY_ID
-sub (= userId UUID, KHÔNG phải email), iss, aud[], iat, exp, jti,
+sub (= userId UUID, KHÔNG phải email), iss, aud[] = [IDENTITY_JWT_AUDIENCE, "careconnect-api"], iat, exp, jti,
 token_type="access", authz_version (số), roles[] (role code), permissions[] (permission code),
 center_id (chỉ khi user có membership trung tâm)
 ```
@@ -434,7 +524,9 @@ IdentityService. Tên authentication = userId (đọc bằng `@CurrentUserId`).
 
 > ⚠️ Service khác chỉ xác minh offline thì **không** biết ngay việc khóa/thu hồi — độ trễ tối đa = access TTL.
 > Không tuyên bố "thu hồi ngay toàn hệ thống" cho tới khi có contract kiểm `authz_version`/status (chưa chốt).
-> Audience hiện chỉ có IdentityService; thêm service mới phải chốt audience, **không** tắt kiểm audience cho tiện.
+> Audience: IdentityService kiểm `careconnect-identity`; **mọi service backend khác và gateway chỉ kiểm audience chung
+> `careconnect-api`** (`TokenClaims.API_AUDIENCE`, chỉ có trong access token — refresh token không có). **Không** tắt
+> kiểm audience cho tiện.
 
 ### Login — `POST /auth/login` (web) · `POST /auth/mobile/login` (mobile)
 
@@ -489,7 +581,9 @@ Tài khoản chỉ được tạo **sau khi** xác thực email. State trên Red
 
 - Web lấy CSRF qua `GET /auth/csrf`, gửi header `X-XSRF-TOKEN` ở mọi request ghi (kể cả refresh/logout). Cookie
   CSRF `XSRF-TOKEN`. Request mang cookie **luôn** phải qua CSRF, kể cả khi có thêm bearer header; request bearer
-  thuần (mobile) được miễn. Thiếu/sai CSRF → 403 `CSRF_INVALID` 1111 (tách khỏi `UNAUTHORIZED` 403 thiếu quyền).
+  thuần (mobile) được miễn. Đăng ký / OTP / quên-đặt lại mật khẩu (`/users/register*`, `/users/forgot-password`,
+  `/users/reset-password`) được miễn khi request **không mang cookie nào** (mobile, 2026-10-03) — không dựa vào phiên,
+  không đặt cookie. Thiếu/sai CSRF → 403 `CSRF_INVALID` 1111 (tách khỏi `UNAUTHORIZED` 403 thiếu quyền).
 - Swagger: scheme `csrf` (apiKey header `X-XSRF-TOKEN`) được `OpenApiConfig.csrfRequirements` gắn vào mọi
   POST/PUT/PATCH/DELETE trừ `/auth/mobile/*`; cookie CSRF là HttpOnly nên phải dán `result.token` của `/auth/csrf`
   vào Authorize (tính năng tự gắn CSRF của springdoc không đọc được cookie).
@@ -546,6 +640,8 @@ khoản chỉ vì trùng email và không ghi đè phương thức đăng nhập
 - Mỗi service có file DDL khởi tạo `schema/<service>.sql` (IdentityService: `schema/identity.sql`) — **áp dụng tay
   một lần cho DB mới** (`psql -v ON_ERROR_STOP=1`). DB đã có dữ liệu → viết change script riêng, được review, đặt
   ở `schema/changes/` (vd `schema/changes/2026-10-05_add_x.sql`) **và** cập nhật luôn `schema/<service>.sql`.
+- **Nợ kỹ thuật (2026-10-03):** chuyển toàn bộ service sang Flyway trong **một đợt riêng** (chưa làm); tới lúc đó giữ
+  SQL áp tay cho mọi service, không chuyển lẻ.
 - `spring.jpa.hibernate.ddl-auto: validate`, `spring.sql.init.mode: never`. Không `update`/`create`/`create-drop`
   ngoài test DB cô lập; không chạy DDL trong initializer lúc khởi động.
 - `validate` không kiểm index/CHECK/unique — những thứ đó phải có trong SQL. Thêm giá trị enum → sửa CHECK
@@ -651,6 +747,9 @@ Get-Content -Raw schema/identity.sql | docker compose exec -T postgres psql -U c
 ```
 
 - Spring Boot **không tự đọc `.env`** — chạy qua `Start-Dev.ps1` hoặc tự cấp env trong IDE.
+- E2E toàn hệ thống (Identity + CareRecipient + Gateway, PostgreSQL/Redis thật, compose project riêng, không đụng DB
+  dev): từ thư mục `BE/` chạy `.\scripts\e2e\Run-E2E.ps1` (`-SkipBuild`, `-KeepInfra`). Cần JDK 21, Docker, Python 3,
+  `.env` của 3 service, port 8080–8082 trống.
 - Kiểm PostgreSQL/Redis thật: dùng container test riêng (xem `IdentityService/README.md`), cờ
   `-Didentity.testing.postgres=true -Didentity.testing.real-state=true`. Không trỏ test vào DB thật.
 - Không dùng `-DskipTests` làm bằng chứng đã kiểm chứng.
@@ -689,11 +788,13 @@ Health:   /actuator/health
    `AccountController` (`/users`), phân quyền **từng method** bằng `@PreAuthorize`. Không tạo
    `AdminUserController`/`AdminController`. Login/refresh/logout ở `AuthenticationController` (`/auth`); role và
    permission có controller theo resource (`RoleController`, `PermissionController`).
+   *Ngoại lệ đã chốt (2026-10-03):* API service-to-service `/internal/users/**` ở `InternalUserController` riêng —
+   khác cơ chế xác thực (header `X-Internal-Secret`, chain bảo mật riêng) và không phục vụ người dùng cuối.
 
 2. **Key `ErrorCode` chính là key message validation.** Mọi `@NotBlank(message = "KEY")` ánh xạ `ErrorCode.KEY`;
    validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
-   riêng** để FE/gateway phân biệt: IdentityService `1000–1999` (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service
-   mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
+   riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, ApiGateway `9000–9099`
+   (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
 
 3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.
    *Ngoại lệ duy nhất đã ghi nhận:* `JwksController.get` trả JWK Set nguyên dạng (giao thức JWKS yêu cầu
@@ -750,7 +851,8 @@ Health:   /actuator/health
 17. **Write có `@Transactional` ở service boundary**, đọc thuần `@Transactional(readOnly = true)`. Không gọi
     method `@Transactional`/`@Async` qua self-invocation (proxy không áp dụng).
 
-18. **MapStruct cho mọi chuyển đổi entity↔DTO trên toàn bộ CRUD — không tự dựng DTO/entity trong service.**
+18. **MapStruct cho mọi chuyển đổi entity↔DTO trên toàn bộ CRUD — không tự dựng DTO/entity trong service.** Theo đúng
+    §3 "Quy tắc MapStruct / tầng mapper" (config chung, annotation ignore, giữ/bỏ `@Mapping`, PUT/PATCH, trường nhạy cảm).
     Kể cả entity liên kết và audit. Dùng `@Mapping` cho field đổi tên/lồng nhau.
 
 19. **Lỗi luôn qua `AppException` + `ErrorCode` — chặn input và nhánh lỗi ở mọi method service.** `@Valid` +

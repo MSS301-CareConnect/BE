@@ -76,7 +76,11 @@ public enum ErrorCode {
     ROLE_CODE_REQUIRED(1108, "Mã role không được để trống", HttpStatus.BAD_REQUEST),
     ROLE_NAME_REQUIRED(1109, "Tên role không được để trống", HttpStatus.BAD_REQUEST),
     REFRESH_REQUIRED(1110, "Refresh token không được để trống", HttpStatus.BAD_REQUEST),
-    CSRF_INVALID(1111, "CSRF token bị thiếu hoặc không hợp lệ, hãy gọi GET /auth/csrf rồi gửi header X-XSRF-TOKEN", HttpStatus.FORBIDDEN);
+    CSRF_INVALID(1111, "CSRF token bị thiếu hoặc không hợp lệ, hãy gọi GET /auth/csrf rồi gửi header X-XSRF-TOKEN", HttpStatus.FORBIDDEN),
+
+    // API NỘI BỘ (service-to-service)
+    USER_IDS_REQUIRED(1112, "Danh sách userId không được để trống", HttpStatus.BAD_REQUEST),
+    USER_BATCH_TOO_LARGE(1113, "Danh sách userId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST);
 
     private int code;
     private String message;

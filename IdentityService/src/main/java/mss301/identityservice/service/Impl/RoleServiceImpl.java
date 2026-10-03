@@ -21,7 +21,6 @@ import mss301.identityservice.exception.AppException;
 import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.mapper.IdentityAuditMapper;
 import mss301.identityservice.mapper.RoleMapper;
-import mss301.identityservice.mapper.UserMapper;
 import mss301.identityservice.repository.IdentityAuditRepository;
 import mss301.identityservice.repository.PermissionRepository;
 import mss301.identityservice.repository.RolePermissionRepository;
@@ -50,7 +49,6 @@ public class RoleServiceImpl implements RoleService {
     UserRepository userRepository;
     IdentityAuditRepository identityAuditRepository;
     RoleMapper roleMapper;
-    UserMapper userMapper;
     IdentityAuditMapper identityAuditMapper;
 
     @Override
@@ -110,8 +108,8 @@ public class RoleServiceImpl implements RoleService {
         User actor = userRepository.findByIdAndDeletedAtIsNull(actorId)
                 .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
         boolean isRoleManager = actor.getStatus() == UserStatus.ACTIVE
-                && userMapper.roles(actor).contains(RoleCode.ADMIN.name())
-                && userMapper.permissions(actor).contains(Permissions.ROLE_MANAGE);
+                && actor.effectiveRoleCodes().contains(RoleCode.ADMIN.name())
+                && actor.effectivePermissionCodes().contains(Permissions.ROLE_MANAGE);
         if (!isRoleManager) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }

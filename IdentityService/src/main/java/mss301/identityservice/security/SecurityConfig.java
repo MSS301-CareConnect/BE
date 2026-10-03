@@ -50,6 +50,12 @@ public class SecurityConfig {
     )).toArray(String[]::new);
 
     static Set<String> TOKEN_FLOW_PATHS = Set.of(TOKEN_FLOW_ENDPOINTS);
+
+    // Đăng ký / OTP / quên-đặt lại mật khẩu: không dựa vào phiên đăng nhập, không đặt cookie → request KHÔNG mang cookie
+    // nào (mobile) được miễn CSRF; trình duyệt có cookie vẫn phải gửi CSRF như cũ.
+    static Set<String> COOKIELESS_CSRF_EXEMPT_PATHS = Set.of(
+            "/users/register", "/users/register/verify", "/users/register/resend-otp",
+            "/users/forgot-password", "/users/reset-password");
     static Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
     public static final String MOBILE_AUTH_PREFIX = "/auth/mobile/";
     public static final String CSRF_HEADER = "X-XSRF-TOKEN";
@@ -140,6 +146,10 @@ public class SecurityConfig {
         }
         if (CookieUtils.read(request, CookieUtils.ACCESS) != null || CookieUtils.read(request, CookieUtils.REFRESH) != null) {
             return true;
+        }
+        boolean hasNoCookies = request.getCookies() == null || request.getCookies().length == 0;
+        if (hasNoCookies && COOKIELESS_CSRF_EXEMPT_PATHS.contains(request.getRequestURI())) {
+            return false;
         }
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
         boolean hasBearer = header != null && header.startsWith(TokenClaims.BEARER_PREFIX);

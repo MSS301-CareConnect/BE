@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${CARE_RECIPIENT_DB_NAME:-CARECONNECT_CARE_RECIPIENT}
+      POSTGRES_USER: ${CARE_RECIPIENT_DB_USERNAME:?Set CARE_RECIPIENT_DB_USERNAME}
+      POSTGRES_PASSWORD: ${CARE_RECIPIENT_DB_PASSWORD:?Set CARE_RECIPIENT_DB_PASSWORD}
+
+    ports:
+      - "127.0.0.1:${CARE_RECIPIENT_DB_PORT:-5442}:5432"
+
+    volumes:
+      - care_recipient_postgres:/var/lib/postgresql/data
+
+volumes:
+  care_recipient_postgres:

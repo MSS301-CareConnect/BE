@@ -6,7 +6,7 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.springframework.security.web.csrf.CsrfToken;
 
-@Mapper(componentModel = "spring")
+@Mapper(config = MapStructConfig.class)
 public interface AuthenticationMapper {
     // Web: token nằm trong HttpOnly cookie, body chỉ có CSRF token mới.
     @Mapping(target = "authenticated", constant = "true")

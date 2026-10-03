@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: ApiGateway
+
+  threads:
+    virtual:
+      enabled: true
+
+  # Client HTTP gateway dùng để chuyển tiếp: timeout tới service phía sau, không tự đi theo redirect.
+  http:
+    clients:
+      connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:2s}
+      read-timeout: ${GATEWAY_READ_TIMEOUT:10s}
+      redirects: dont-follow
+
+server:
+  port: ${GATEWAY_SERVER_PORT:8080}
+
+# Swagger tổng hợp: UI của gateway đọc OpenAPI từng service qua route /api-docs/*.
+springdoc:
+  api-docs:
+    enabled: ${GATEWAY_SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${GATEWAY_SWAGGER_ENABLED:true}
+    urls-primary-name: identity
+    urls:
+      - name: identity
+        url: /api-docs/identity
+      - name: care-recipient
+        url: /api-docs/care-recipient
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+gateway:
+  identity-url: ${GATEWAY_IDENTITY_URL}
+  care-recipient-url: ${GATEWAY_CARE_RECIPIENT_URL}
+  allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
+
+  jwt:
+    issuer: ${GATEWAY_JWT_ISSUER}
+    jwks-uri: ${GATEWAY_JWT_JWKS_URI}

@@ -8,7 +8,10 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
+import mss301.identityservice.config.IdentityProperties;
 import mss301.identityservice.security.CurrentUserId;
+import mss301.identityservice.security.InternalSecretFilter;
 import mss301.identityservice.security.SecurityConfig;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
@@ -23,7 +26,10 @@ public class OpenApiConfig {
 
     private static final String BEARER_SCHEME = "bearerAuth";
     private static final String CSRF_SCHEME = "csrf";
-    private static final String CSRF_DESCRIPTION = "Chỉ cần cho luồng web (cookie) và các endpoint đăng ký / quên mật khẩu. "
+    private static final String INTERNAL_SCHEME = "internalSecret";
+    private static final String INTERNAL_PREFIX = "/internal/";
+    private static final String CSRF_DESCRIPTION = "Chỉ cần cho luồng web (cookie) và các endpoint đăng ký / quên mật khẩu "
+            + "khi trình duyệt đang có cookie (request không mang cookie nào — mobile — được miễn). "
             + "Gọi `GET /auth/csrf`, dán `result.token` vào đây. Sau `/auth/login` hoặc `/auth/refresh` phải thay bằng "
             + "`result.csrfToken` mới. Luồng `/auth/mobile/*` và request chỉ dùng Bearer không cần.";
     private static final Set<PathItem.HttpMethod> WRITE_METHODS = Set.of(
@@ -37,7 +43,7 @@ public class OpenApiConfig {
     }
 
     @Bean
-    public OpenAPI identityOpenApi() {
+    public OpenAPI identityOpenApi(IdentityProperties identityProperties) {
         Components components = new Components()
                 .addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
                         .type(SecurityScheme.Type.HTTP)
@@ -47,14 +53,27 @@ public class OpenApiConfig {
                         .type(SecurityScheme.Type.APIKEY)
                         .in(SecurityScheme.In.HEADER)
                         .name(SecurityConfig.CSRF_HEADER)
-                        .description(CSRF_DESCRIPTION));
+                        .description(CSRF_DESCRIPTION))
+                .addSecuritySchemes(INTERNAL_SCHEME, new SecurityScheme()
+                        .type(SecurityScheme.Type.APIKEY)
+                        .in(SecurityScheme.In.HEADER)
+                        .name(InternalSecretFilter.HEADER)
+                        .description("Chỉ cho /internal/** (service-to-service): giá trị IDENTITY_INTERNAL_SECRET."));
         for (String code : DOCUMENTED_RESPONSES) {
             components.addResponses(code, new ApiResponse().description("HTTP " + code + "; business endpoints return APIResponse"));
         }
-        return new OpenAPI()
+        OpenAPI openApi = new OpenAPI()
                 .info(new Info().title("CareConnect IdentityService").version("0.0.1"))
                 .components(components)
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME));
+        // Đứng sau gateway (cắt prefix /api/v1): "Try it out" phải gọi qua prefix của gateway; vẫn giữ "/" để gọi trực tiếp.
+        String gatewayServerUrl = identityProperties.getOpenApiServerUrl();
+        if (gatewayServerUrl != null && !gatewayServerUrl.isBlank()) {
+            openApi.servers(List.of(
+                    new Server().url(gatewayServerUrl).description("Qua API gateway"),
+                    new Server().url("/").description("Gọi trực tiếp IdentityService")));
+        }
+        return openApi;
     }
 
     @Bean
@@ -72,6 +91,12 @@ public class OpenApiConfig {
     public OpenApiCustomizer csrfRequirements() {
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
             if (path.startsWith(SecurityConfig.MOBILE_AUTH_PREFIX)) {
+                return;
+            }
+            // /internal/** không dùng bearer/cookie → chỉ yêu cầu internal secret, không CSRF.
+            if (path.startsWith(INTERNAL_PREFIX)) {
+                pathItem.readOperations().forEach(operation -> operation.setSecurity(
+                        List.of(new SecurityRequirement().addList(INTERNAL_SCHEME))));
                 return;
             }
             pathItem.readOperationsMap().forEach((method, operation) -> {

@@ -42,11 +42,15 @@ public class JwtServiceImpl implements JwtService {
     public Jwt issue(UserResponse user, long authzVersion, TokenType tokenType) {
         Instant now = Instant.now();
         Duration ttl = tokenType == TokenType.ACCESS ? identityProperties.getAccessTtl() : identityProperties.getRefreshTtl();
+        // Refresh token chỉ dùng tại IdentityService → không mang audience chung của các service backend.
+        List<String> audience = tokenType == TokenType.ACCESS
+                ? List.of(identityProperties.getAudience(), TokenClaims.API_AUDIENCE)
+                : List.of(identityProperties.getAudience());
         // sub = userId (ổn định kể cả khi đổi email); không nhét dữ liệu nhạy cảm vào JWT.
         JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer(identityProperties.getIssuer())
                 .subject(user.getId().toString())
-                .audience(List.of(identityProperties.getAudience()))
+                .audience(audience)
                 .issuedAt(now)
                 .expiresAt(now.plus(ttl))
                 .id(UUID.randomUUID().toString())
