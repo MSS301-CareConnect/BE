@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${CARE_CATALOG_DB_NAME:-CARECONNECT_CATALOG}
+      POSTGRES_USER: ${CARE_CATALOG_DB_USERNAME:?Set CARE_CATALOG_DB_USERNAME}
+      POSTGRES_PASSWORD: ${CARE_CATALOG_DB_PASSWORD:?Set CARE_CATALOG_DB_PASSWORD}
+
+    ports:
+      - "127.0.0.1:${CARE_CATALOG_DB_PORT:-5443}:5432"
+
+    volumes:
+      - care_catalog_postgres:/var/lib/postgresql/data
+
+volumes:
+  care_catalog_postgres:
