@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${PROVIDER_DB_NAME:-CARECONNECT_PROVIDER}
+      POSTGRES_USER: ${PROVIDER_DB_USERNAME:?Set PROVIDER_DB_USERNAME}
+      POSTGRES_PASSWORD: ${PROVIDER_DB_PASSWORD:?Set PROVIDER_DB_PASSWORD}
+
+    ports:
+      - "127.0.0.1:${PROVIDER_DB_PORT:-5444}:5432"
+
+    volumes:
+      - provider_postgres:/var/lib/postgresql/data
+
+volumes:
+  provider_postgres:

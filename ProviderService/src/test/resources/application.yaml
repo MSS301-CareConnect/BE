@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:provider_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  sql:
+    init:
+      mode: never
+
+provider:
+  internal-secret: provider-test-internal-secret-at-least-32-chars
+  jwt:
+    issuer: http://identity.test
+    jwks-uri: http://identity.test/.well-known/jwks.json
+  identity:
+    url: http://identity.test
+    internal-secret: identity-test-internal-secret-at-least-32-chars
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
