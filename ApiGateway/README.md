@@ -15,7 +15,15 @@ Gateway **cắt prefix `/api/v1`** rồi chuyển nguyên phần còn lại (k�
 | `/api/v1/roles/**`, `/api/v1/permissions/**` | IdentityService | `/roles/**`, `/permissions/**` |
 | `/api/v1/care-recipients/**` | CareRecipientService | `/care-recipients/**` |
 | `/api/v1/admin/care-recipients/**` | CareRecipientService | `/admin/care-recipients/**` |
-| `/api-docs/identity`, `/api-docs/care-recipient` | từng service | `/v3/api-docs` (Swagger tổng hợp) |
+| `/api/v1/caregiver/care-recipients/**` | CareRecipientService | `/caregiver/care-recipients/**` |
+| `/api/v1/bookings/**` | BookingService | `/bookings/**` |
+| `/api/v1/center/bookings/**` | BookingService | `/center/bookings/**` |
+| `/api/v1/admin/bookings/**` | BookingService | `/admin/bookings/**` |
+| `/api/v1/caregiver/occurrences/**` | BookingService | `/caregiver/occurrences/**` |
+| `/api-docs/identity`, `/api-docs/care-recipient`, `/api-docs/booking` | từng service | `/v3/api-docs` (Swagger tổng hợp) |
+
+- `/api/v1/caregiver/**` route **từng path cụ thể** (không route cả prefix): ProviderService cũng có `/caregiver/profile`,
+  `/caregiver/schedules`… (chưa route qua gateway).
 
 - **Không** có route tới `/internal/**` hay `/.well-known/jwks.json` (service gọi trực tiếp nhau).
 - Mọi path có segment `internal` (dạng thô hoặc đã decode, không phân biệt hoa thường) → **404** ngay, trước xác thực.
@@ -83,13 +91,14 @@ Tùy chọn chạy trong container từ JAR (gọi service trên host qua `host.
 | Biến | Ý nghĩa |
 |---|---|
 | `GATEWAY_SERVER_PORT`, `GATEWAY_SWAGGER_ENABLED` | Port, bật Swagger tổng hợp `/swagger-ui.html` |
-| `GATEWAY_IDENTITY_URL`, `GATEWAY_CARE_RECIPIENT_URL` | Base URL service phía sau |
+| `GATEWAY_IDENTITY_URL`, `GATEWAY_CARE_RECIPIENT_URL`, `GATEWAY_BOOKING_URL` | Base URL service phía sau |
 | `GATEWAY_CONNECT_TIMEOUT`, `GATEWAY_READ_TIMEOUT` | Timeout (Duration) khi chuyển tiếp |
 | `GATEWAY_JWT_ISSUER`, `GATEWAY_JWT_JWKS_URI` | Phải khớp IdentityService |
 | `GATEWAY_ALLOWED_ORIGINS` | Origin FE (CORS + credentials) |
 
-Swagger tổng hợp: `http://localhost:8080/swagger-ui.html` (chọn `identity` / `care-recipient`). Đặt
-`IDENTITY_OPENAPI_SERVER_URL=/api/v1` và `CARE_RECIPIENT_OPENAPI_SERVER_URL=/api/v1` để "Try it out" gọi qua gateway.
+Swagger tổng hợp: `http://localhost:8080/swagger-ui.html` (chọn `identity` / `care-recipient` / `booking`). Đặt
+`IDENTITY_OPENAPI_SERVER_URL=/api/v1`, `CARE_RECIPIENT_OPENAPI_SERVER_URL=/api/v1`, `BOOKING_OPENAPI_SERVER_URL=/api/v1`
+để "Try it out" gọi qua gateway.
 
 FE (`FE-careconnect`): Vite proxy hiện cắt `/api` rồi gọi thẳng service. Khi dùng gateway: `API_PROXY_TARGET=http://localhost:8080`
 và rewrite `/api` → `/api/v1` (hoặc đặt `VITE_API_BASE_URL=/api/v1` và bỏ rewrite) — thay đổi phía FE, chưa làm.
@@ -100,6 +109,10 @@ và rewrite `/api` → `/api/v1` (hoặc đặt `VITE_API_BASE_URL=/api/v1` và 
 cắt prefix, token sai/thiếu/refresh/sai audience, endpoint public bỏ qua cookie cũ, cookie `Path=/` đi qua `/api/v1/**`
 (login/ghi có CSRF/refresh), thay `X-User-*`, request id, chặn `/internal`, CORS + bỏ `Origin`, Swagger tổng hợp,
 timeout 504, upstream tắt 503, JWKS không truy cập được 503. E2E toàn hệ thống: `..\scripts\e2e\Run-E2E.ps1`; kết quả: `../docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md` §7.
+
+2026-10-09: **16/16** — thêm route BookingService (4 prefix + Idempotency-Key đi qua), `/caregiver/care-recipients`
+tới CareRecipient, `/caregiver/schedules` không bị route nhầm, chặn `/internal/bookings/**`. Test 404 cũ đổi path ví dụ
+từ `/api/v1/bookings` (nay đã có route) sang `/api/v1/unknown-resources`.
 
 ## Chưa làm
 

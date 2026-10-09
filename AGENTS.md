@@ -39,19 +39,20 @@ service mới, hỏi tên rồi cập nhật bảng này.
 |---|---|
 | Đăng ký, đăng nhập, cập nhật thông tin cá nhân, đổi mật khẩu; khóa/mở khóa tài khoản khách hàng, trung tâm; xem danh sách người dùng toàn hệ thống; tạo tài khoản manager/caregiver; role & permission | **Identity** (`IdentityService`) |
 | Hồ sơ người bệnh / người cần chăm sóc (tạo, sửa, nhiều hồ sơ), ghi chú đặc biệt, thuốc, liên hệ khẩn cấp, người thân cùng quản lý (OWNER/EDITOR/VIEWER) | **Care recipient** (`CareRecipientService`) |
-| Trung tâm: đăng ký, duyệt/onboard, trạng thái hoạt động | Center (chưa có service) |
-| Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | Caregiver profile (chưa có service) |
-| Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | Service catalog (chưa có service) |
+| Trung tâm: đăng ký, duyệt/onboard, trạng thái hoạt động | **Provider** (`ProviderService`, `care_centers`) |
+| Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | **Provider** (`ProviderService`; kỹ năng chưa có bảng — TODO `caregiver_services`) |
+| Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | **Care catalog** (`CareCatalogService`) |
 | Tìm kiếm / lọc caregiver (kỹ năng, kinh nghiệm, giới tính, giá, đánh giá) | Đọc tổng hợp từ caregiver profile + catalog + review (chưa chốt cách làm) |
-| Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | Booking (chưa có service) |
-| Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | Care session / report (chưa có service) |
+| Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá chờ nối Catalog) |
+| Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; start/end, checklist, care report: giai đoạn sau) |
 | Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | Review & complaint (chưa có service) |
 | Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | Payment / policy (chưa có service) |
 | Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | Notification (chưa có service) |
 | Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
 
-> ⚠️ **Phạm vi hiện tại: IdentityService, CareRecipientService, ApiGateway** (2026-10-03). Không tạo service hay bảng
-> của các domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
+> ⚠️ **Phạm vi hiện tại: IdentityService, CareRecipientService, ApiGateway, CareCatalogService, ProviderService,
+> BookingService** (BookingService 2026-10-09 — `docs/2026-10-09-PLAN_BOOKING.md`). Không tạo service hay bảng của các
+> domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
 >
 > **Chưa chốt — hỏi trước khi code phần liên quan:** tỷ lệ đặt cọc / mốc & % hoàn tiền; ai được sửa giá dịch vụ
 > trung tâm (mô tả có chồng lấn admin ↔ manager); permission catalog của các domain sau; TTL token production;
@@ -103,6 +104,9 @@ CareConnect/
 ├── scripts/e2e/                 — Run-E2E.ps1 (dựng hạ tầng e2e riêng + chạy 3 JAR + e2e.py), e2e.py, SeedCustomers.java
 ├── ApiGateway/                  — Spring Cloud Gateway Server MVC, port 8080 (xem ApiGateway/AGENTS.md)
 ├── CareRecipientService/        — hồ sơ người bệnh, port 8082, PostgreSQL riêng 5442 (xem CareRecipientService/AGENTS.md)
+├── CareCatalogService/          — danh mục dịch vụ + giá, port 8083, PostgreSQL riêng 5443
+├── ProviderService/             — trung tâm, caregiver, ca làm việc, port 8084, PostgreSQL riêng 5444
+├── BookingService/              — booking + buổi chăm sóc, port 8085, PostgreSQL riêng 5445 (xem BookingService/AGENTS.md)
 └── IdentityService/             — mỗi service là một Maven project độc lập
     ├── pom.xml, mvnw, mvnw.cmd
     ├── docker-compose.yml       — PostgreSQL + Redis RIÊNG của service (loopback)
@@ -793,7 +797,8 @@ Health:   /actuator/health
 
 2. **Key `ErrorCode` chính là key message validation.** Mọi `@NotBlank(message = "KEY")` ánh xạ `ErrorCode.KEY`;
    validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
-   riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, ApiGateway `9000–9099`
+   riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, CareCatalogService
+   `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, ApiGateway `9000–9099`
    (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
 
 3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.

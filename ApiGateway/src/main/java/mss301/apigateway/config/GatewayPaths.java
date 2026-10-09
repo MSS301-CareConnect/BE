@@ -13,7 +13,13 @@ public final class GatewayPaths {
     };
 
     public static final String[] CARE_RECIPIENT_ROUTES = {
-            "/api/v1/care-recipients/**", "/api/v1/admin/care-recipients/**"
+            "/api/v1/care-recipients/**", "/api/v1/admin/care-recipients/**", "/api/v1/caregiver/care-recipients/**"
+    };
+
+    // Route từng path cụ thể (không /api/v1/caregiver/**): ProviderService cũng có /caregiver/profile, /caregiver/schedules…
+    public static final String[] BOOKING_ROUTES = {
+            "/api/v1/bookings/**", "/api/v1/center/bookings/**", "/api/v1/admin/bookings/**",
+            "/api/v1/caregiver/occurrences/**"
     };
 
     // Luồng tự xử lý token của IdentityService (đăng nhập/refresh/đăng xuất/đăng ký/quên mật khẩu) — gateway không đọc
@@ -28,6 +34,7 @@ public final class GatewayPaths {
     // Swagger tổng hợp + health của chính gateway.
     public static final String IDENTITY_API_DOCS = "/api-docs/identity";
     public static final String CARE_RECIPIENT_API_DOCS = "/api-docs/care-recipient";
+    public static final String BOOKING_API_DOCS = "/api-docs/booking";
     public static final String[] DOCUMENTATION_ENDPOINTS = {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };

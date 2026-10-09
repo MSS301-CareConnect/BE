@@ -9,7 +9,7 @@
 | Thư mục / artifact | `CareConnect/CareRecipientService/` · `mss301:CareRecipientService:0.0.1-SNAPSHOT` |
 | Base package | `mss301.carerecipientservice` |
 | Port / env prefix | `8082` / `CARE_RECIPIENT_` |
-| Dải `ErrorCode` | **2000–2999** (+ 401/403/404/9999 dùng chung) — 20xx chung, 21xx hồ sơ, 22xx thuốc, 23xx liên hệ khẩn cấp, 24xx người quản lý, 25xx tích hợp Identity, 26xx API nội bộ |
+| Dải `ErrorCode` | **2000–2999** (+ 401/403/404/9999 dùng chung) — 20xx chung, 21xx hồ sơ, 22xx thuốc, 23xx liên hệ khẩn cấp, 24xx người quản lý, 25xx tích hợp Identity / Booking, 26xx API nội bộ |
 | DB | PostgreSQL riêng `127.0.0.1:5442`, `schema/care_recipient.sql` (áp tay, không Flyway). Không Redis |
 
 ## Khác với IdentityService
@@ -41,7 +41,10 @@
 6. `PageResponse.of(page, items)` và `APIResponse.success(...)` là wrapper chung (không qua MapStruct); mọi entity ↔ DTO
    qua mapper.
 7. API nội bộ `/internal/**` có chain bảo mật riêng (`InternalSecurityConfig`, header `X-Internal-Secret`), không nhận JWT.
+8. **Caregiver** chỉ đọc hồ sơ qua `/caregiver/care-recipients/{id}` sau khi `CaregiverAssignmentService` (Feign →
+   BookingService `caregiver-access`, truyền `sub` = user Identity) trả `allowed`; không phân công → 404, Booking lỗi → 503
+   (không bao giờ đoán là được phép). Gọi Booking ngoài transaction.
 
 ## TODO đã biết
 
-Đồng bộ người quản lý khi user bị khóa/xóa (event); quyền caregiver (Booking); audit; Flyway (đợt chung).
+Đồng bộ người quản lý khi user bị khóa/xóa (event); audit; Flyway (đợt chung).

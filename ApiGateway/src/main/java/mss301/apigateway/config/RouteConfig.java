@@ -55,6 +55,17 @@ public class RouteConfig {
                 .build();
     }
 
+    @Bean
+    public RouterFunction<ServerResponse> bookingRoutes() {
+        return route("booking")
+                .route(path(GatewayPaths.BOOKING_ROUTES), http())
+                .before(uri(gatewayProperties.getBookingUrl()))
+                .before(stripPrefix(GatewayPaths.API_PREFIX_SEGMENTS))
+                .before(GatewayRequestHeaders.sanitize())
+                .after(removeResponseHeader(RequestIdFilter.HEADER))
+                .build();
+    }
+
     // Swagger tổng hợp: swagger-ui của gateway đọc OpenAPI của từng service qua các route này.
     @Bean
     public RouterFunction<ServerResponse> apiDocsRoutes() {
@@ -70,6 +81,12 @@ public class RouteConfig {
                 .before(setPath(OPENAPI_PATH))
                 .before(GatewayRequestHeaders.sanitize())
                 .build();
-        return identityDocs.and(careRecipientDocs);
+        RouterFunction<ServerResponse> bookingDocs = route("booking-api-docs")
+                .route(path(GatewayPaths.BOOKING_API_DOCS), http())
+                .before(uri(gatewayProperties.getBookingUrl()))
+                .before(setPath(OPENAPI_PATH))
+                .before(GatewayRequestHeaders.sanitize())
+                .build();
+        return identityDocs.and(careRecipientDocs).and(bookingDocs);
     }
 }

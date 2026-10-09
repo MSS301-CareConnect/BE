@@ -95,10 +95,26 @@ Swagger: `http://localhost:8084/swagger-ui.html`
 
 Các request cập nhật dùng `version` để chống ghi đè dữ liệu đồng thời.
 
+### API nội bộ (service-to-service — gateway chặn `/internal/**`, thêm 2026-10-09 cho BookingService)
+
+Header bắt buộc `X-Internal-Secret: <PROVIDER_INTERNAL_SECRET>` (thiếu/sai → 401, không nhận JWT). Chỉ đọc; bản ghi
+không tồn tại / đã xóa mềm → 404 (`CAREGIVER_NOT_FOUND` 4200 / `CENTER_NOT_FOUND` 4100); trạng thái trả nguyên để
+service gọi tự quyết.
+
+- `GET /internal/caregivers/{caregiverId}` và `GET /internal/caregivers/by-user/{userId}` →
+  `caregiverId, userId (Identity), centerId, centerStatus, fullName, verificationStatus, caregiverStatus, careServiceIds`.
+  `careServiceIds` hiện **luôn null** = Provider chưa quản lý kỹ năng (khác `[]` = không làm được dịch vụ nào).
+  TODO: bảng `caregiver_services` + API quản lý (đợt riêng).
+- `GET /internal/centers/{centerId}` → `centerId, centerName, centerStatus, managerUserId`.
+
+Booking là nguồn sự thật về giờ đã đặt: Provider chỉ giữ khung giờ làm việc (`caregiver_schedules`), không đánh dấu slot
+đã đặt. TODO: API kiểm khung giờ làm việc cho Booking (`availability_slot_id` = `schedule_id`).
+
 ## Test
 
 ```powershell
 .\mvnw.cmd clean test
 ```
 
-Test dùng H2 PostgreSQL compatibility mode và không cần chạy Docker. Nếu chạy app bằng nút Run của IntelliJ, cần khai báo toàn bộ biến trong `.env` vào Run Configuration; cách đơn giản nhất khi dev là dùng `.\scripts\Start-Dev.ps1`.
+Test dùng H2 PostgreSQL compatibility mode và không cần chạy Docker. 2026-10-09: **17/17** (12 test cũ không đổi +
+5 test `InternalProviderApiTests` cho API nội bộ). Nếu chạy app bằng nút Run của IntelliJ, cần khai báo toàn bộ biến trong `.env` vào Run Configuration; cách đơn giản nhất khi dev là dùng `.\scripts\Start-Dev.ps1`.

@@ -1,0 +1,115 @@
+spring:
+  application:
+    name: BookingService
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${BOOKING_DB_URL}
+    username: ${BOOKING_DB_USERNAME}
+    password: ${BOOKING_DB_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  sql:
+    init:
+      mode: never
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          identity:
+            connect-timeout: ${BOOKING_IDENTITY_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_IDENTITY_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          care-recipient:
+            connect-timeout: ${BOOKING_CARE_RECIPIENT_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_CARE_RECIPIENT_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          provider:
+            connect-timeout: ${BOOKING_PROVIDER_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_PROVIDER_READ_TIMEOUT_MS:3000}
+            logger-level: none
+    circuitbreaker:
+      # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
+      resilience4j:
+        disable-thread-pool: true
+        disable-time-limiter: true
+      bulkhead:
+        resilience4j:
+          enabled: false
+
+server:
+  port: ${BOOKING_SERVER_PORT:8085}
+
+springdoc:
+  api-docs:
+    enabled: ${BOOKING_SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${BOOKING_SWAGGER_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+booking:
+  internal-secret: ${BOOKING_INTERNAL_SECRET:}
+  open-api-server-url: ${BOOKING_OPENAPI_SERVER_URL:}
+
+  jwt:
+    issuer: ${BOOKING_JWT_ISSUER}
+    jwks-uri: ${BOOKING_JWT_JWKS_URI}
+
+  identity:
+    url: ${BOOKING_IDENTITY_URL}
+    internal-secret: ${BOOKING_IDENTITY_INTERNAL_SECRET:}
+
+  care-recipient:
+    url: ${BOOKING_CARE_RECIPIENT_URL}
+    internal-secret: ${BOOKING_CARE_RECIPIENT_INTERNAL_SECRET:}
+
+  provider:
+    url: ${BOOKING_PROVIDER_URL}
+    internal-secret: ${BOOKING_PROVIDER_INTERNAL_SECRET:}
+
+  # Quy tắc lịch (docs/2026-10-09-PLAN_BOOKING.md §9). Duration dạng 12h, 30m, PT24H…
+  schedule:
+    timezone: ${BOOKING_TIMEZONE:Asia/Ho_Chi_Minh}
+    max-occurrences: ${BOOKING_MAX_OCCURRENCES:60}
+    max-span-days: ${BOOKING_MAX_SPAN_DAYS:90}
+    min-lead-time: ${BOOKING_MIN_LEAD_TIME:12h}
+    acceptance-timeout: ${BOOKING_ACCEPTANCE_TIMEOUT:24h}
+    deposit-timeout: ${BOOKING_DEPOSIT_TIMEOUT:24h}
+    max-caregiver-range-days: ${BOOKING_MAX_CAREGIVER_RANGE_DAYS:62}
+    expiry-batch-size: ${BOOKING_EXPIRY_BATCH_SIZE:100}
+    # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler).
+    expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:5m}
+
+  integration:
+    # TODO(CareCatalog): chưa có adapter thật — để false. Bật = app từ chối khởi động.
+    catalog-enabled: ${BOOKING_CATALOG_INTEGRATION_ENABLED:false}

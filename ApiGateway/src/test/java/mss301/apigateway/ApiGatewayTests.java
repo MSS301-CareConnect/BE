@@ -38,6 +38,7 @@ class ApiGatewayTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("gateway.identity-url", UPSTREAMS::identityUrl);
         registry.add("gateway.care-recipient-url", UPSTREAMS::careRecipientUrl);
+        registry.add("gateway.booking-url", UPSTREAMS::bookingUrl);
         registry.add("gateway.allowed-origins", () -> FRONTEND_ORIGIN);
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", UPSTREAMS::jwksUri);
@@ -65,9 +66,46 @@ class ApiGatewayTests {
     }
 
     @Test
+    void bookingRoutesReachBookingService() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        UUID id = UUID.randomUUID();
+        for (String path : List.of("/bookings", "/bookings/" + id + "/occurrences", "/center/bookings/" + id,
+                "/admin/bookings", "/caregiver/occurrences/" + id)) {
+            mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.service").value("booking"))
+                    .andExpect(jsonPath("$.result.path").value(path));
+        }
+        mockMvc.perform(post("/api/v1/bookings/" + id + "/cancel").header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", "k-1").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(jsonPath("$.result.service").value("booking"))
+                .andExpect(jsonPath("$.result.headers['idempotency-key']").value("k-1"));
+        // Caregiver xem hồ sơ người bệnh thuộc CareRecipientService
+        mockMvc.perform(get("/api/v1/caregiver/care-recipients/" + id).header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.result.service").value("care-recipient"))
+                .andExpect(jsonPath("$.result.path").value("/caregiver/care-recipients/" + id));
+        // Không route prefix chung /caregiver/** (Provider cũng có /caregiver/...)
+        mockMvc.perform(get("/api/v1/caregiver/schedules").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void internalBookingPathsAreBlocked() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "ADMIN");
+        int before = UPSTREAMS.receivedPaths().size();
+        for (String path : List.of("/internal/bookings/caregiver-access", "/api/v1/internal/bookings/x/deposit-paid",
+                "/api/v1/bookings/internal/x", "/api/v1/center/bookings/Internal/x")) {
+            mockMvc.perform(post(URI.create(path)).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value(404));
+        }
+        assertThat(UPSTREAMS.receivedPaths().size()).isEqualTo(before);
+    }
+
+    @Test
     void unknownPathIs404Envelope() throws Exception {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
-        mockMvc.perform(get("/api/v1/bookings").header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/v1/unknown-resources").header("Authorization", "Bearer " + token))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(404));
     }

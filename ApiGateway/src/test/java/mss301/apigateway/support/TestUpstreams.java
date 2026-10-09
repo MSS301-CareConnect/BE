@@ -49,6 +49,7 @@ public final class TestUpstreams {
     private final RSAKey signingKey;
     private final HttpServer identityServer;
     private final HttpServer careRecipientServer;
+    private final HttpServer bookingServer;
 
     private TestUpstreams() {
         try {
@@ -61,6 +62,7 @@ public final class TestUpstreams {
                     .build();
             identityServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             careRecipientServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            bookingServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -72,9 +74,12 @@ public final class TestUpstreams {
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"CareConnect IdentityService\"}}", Map.of()));
         identityServer.createContext("/", exchange -> echo(exchange, "identity"));
         careRecipientServer.createContext("/", exchange -> echo(exchange, "care-recipient"));
+        bookingServer.createContext("/", exchange -> echo(exchange, "booking"));
         // Nhiều thread: /users/slow không được chặn các request khác (JWKS…).
         identityServer.setExecutor(Executors.newCachedThreadPool());
         careRecipientServer.setExecutor(Executors.newCachedThreadPool());
+        bookingServer.setExecutor(Executors.newCachedThreadPool());
+        bookingServer.start();
         identityServer.start();
         careRecipientServer.start();
     }
@@ -89,6 +94,10 @@ public final class TestUpstreams {
 
     public String careRecipientUrl() {
         return "http://127.0.0.1:" + careRecipientServer.getAddress().getPort();
+    }
+
+    public String bookingUrl() {
+        return "http://127.0.0.1:" + bookingServer.getAddress().getPort();
     }
 
     public String jwksUri() {

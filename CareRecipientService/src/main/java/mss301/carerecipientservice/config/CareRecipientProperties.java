@@ -28,6 +28,9 @@ public class CareRecipientProperties {
     @Valid
     Identity identity = new Identity();
 
+    @Valid
+    Booking booking = new Booking();
+
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Jwt {
@@ -48,6 +51,18 @@ public class CareRecipientProperties {
         String url;
 
         // Giá trị IDENTITY_INTERNAL_SECRET của IdentityService, gửi qua header X-Internal-Secret.
+        @ToString.Exclude
+        String internalSecret = "";
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Booking {
+        // Base URL BookingService cho Feign (caregiver-access — quyền xem hồ sơ của caregiver).
+        @NotBlank
+        String url;
+
+        // Giá trị BOOKING_INTERNAL_SECRET của BookingService, gửi qua header X-Internal-Secret.
         @ToString.Exclude
         String internalSecret = "";
     }
