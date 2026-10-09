@@ -1,0 +1,75 @@
+# Mảnh Compose của IdentityService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ IdentityService/.env (include của Compose đọc .env cạnh file này); env_file cấp cùng .env đó cho app,
+# environment chỉ ghi đè giá trị phải khác khi chạy trong container (host nội bộ, port container, đường dẫn khóa).
+# Chạy riêng hạ tầng của service vẫn dùng docker-compose.yml như cũ — KHÔNG chạy song song với stack tổng
+# (dùng chung volume dữ liệu và port).
+services:
+  identity-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${IDENTITY_DB_NAME:-CARECONNECT_IDENTITY}
+      POSTGRES_USER: ${IDENTITY_DB_USERNAME:?Set IDENTITY_DB_USERNAME in IdentityService/.env}
+      POSTGRES_PASSWORD: ${IDENTITY_DB_PASSWORD:?Set IDENTITY_DB_PASSWORD in IdentityService/.env}
+    ports:
+      - "127.0.0.1:${IDENTITY_DB_PORT:-5441}:5432"
+    volumes:
+      - identity_postgres:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      - ./schema/identity.sql:/docker-entrypoint-initdb.d/01-identity.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  identity-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
+    ports:
+      - "127.0.0.1:${IDENTITY_REDIS_PORT:-6381}:6379"
+    volumes:
+      - identity_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  identity-service:
+    build: .
+    image: careconnect/identity-service:dev
+    env_file: .env
+    environment:
+      IDENTITY_SERVER_PORT: "8081"
+      IDENTITY_DB_URL: jdbc:postgresql://identity-postgres:5432/${IDENTITY_DB_NAME:-CARECONNECT_IDENTITY}
+      IDENTITY_REDIS_HOST: identity-redis
+      IDENTITY_REDIS_PORT: "6379"
+      IDENTITY_JWT_PRIVATE_KEY: file:/app/keys/private.pem
+      IDENTITY_JWT_PUBLIC_KEY: file:/app/keys/public.pem
+    volumes:
+      # Khóa RSA dev (tạo bằng scripts/New-DevKeys.ps1) — mount chỉ đọc, không nằm trong image.
+      - ./keys:/app/keys:ro
+    ports:
+      - "127.0.0.1:${IDENTITY_SERVER_PORT:-8081}:8081"
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+      identity-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu có sẵn của docker-compose.yml riêng (project "identityservice") — tái sử dụng, không tạo bản mới.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  identity_postgres:
+    name: identityservice_identity_postgres
+    external: true
+  identity_redis:
+    name: identityservice_identity_redis
+    external: true

@@ -1,0 +1,52 @@
+# Mảnh Compose của ProviderService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ ProviderService/.env; environment chỉ ghi đè host/port cho mạng Docker (gọi service khác bằng
+# tên service, không dùng localhost). Không chạy song song với docker-compose.yml riêng (chung volume + port).
+services:
+  provider-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${PROVIDER_DB_NAME:-CARECONNECT_PROVIDER}
+      POSTGRES_USER: ${PROVIDER_DB_USERNAME:?Set PROVIDER_DB_USERNAME in ProviderService/.env}
+      POSTGRES_PASSWORD: ${PROVIDER_DB_PASSWORD:?Set PROVIDER_DB_PASSWORD in ProviderService/.env}
+    ports:
+      - "127.0.0.1:${PROVIDER_DB_PORT:-5444}:5432"
+    volumes:
+      - provider_postgres:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      # provider_upgrade_v2.sql chỉ dành cho DB tạo bằng bản cũ — áp tay, không tự chạy.
+      - ./schema/provider.sql:/docker-entrypoint-initdb.d/01-provider.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  provider-service:
+    build: .
+    image: careconnect/provider-service:dev
+    env_file: .env
+    environment:
+      PROVIDER_SERVER_PORT: "8084"
+      PROVIDER_DB_URL: jdbc:postgresql://provider-postgres:5432/${PROVIDER_DB_NAME:-CARECONNECT_PROVIDER}
+      PROVIDER_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      PROVIDER_IDENTITY_URL: http://identity-service:8081
+    ports:
+      - "127.0.0.1:${PROVIDER_SERVER_PORT:-8084}:8084"
+    # Identity (JWKS, /internal/users) chỉ được gọi khi có request — không cần chờ lúc khởi động.
+    depends_on:
+      provider-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu có sẵn của docker-compose.yml riêng (project "providerservice") — tái sử dụng.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  provider_postgres:
+    name: providerservice_provider_postgres
+    external: true

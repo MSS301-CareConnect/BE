@@ -102,6 +102,8 @@ CareConnect/
 ├── docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md — plan + kết quả CareRecipientService / ApiGateway / internal API
 │                                  (plan theo phiên làm việc đặt tên <yyyy-MM-dd>-<TÊN>.md)
 ├── scripts/e2e/                 — Run-E2E.ps1 (dựng hạ tầng e2e riêng + chạy 3 JAR + e2e.py), e2e.py, SeedCustomers.java
+├── compose.yaml, start.bat, stop.bat, DOCKER.md — stack Docker tổng (project "careconnect", 2026-10-09): include
+│                                  <Service>/compose.stack.yaml + <Service>/Dockerfile; dùng lại volume dữ liệu cũ
 ├── ApiGateway/                  — Spring Cloud Gateway Server MVC, port 8080 (xem ApiGateway/AGENTS.md)
 ├── CareRecipientService/        — hồ sơ người bệnh, port 8082, PostgreSQL riêng 5442 (xem CareRecipientService/AGENTS.md)
 ├── CareCatalogService/          — danh mục dịch vụ + giá, port 8083, PostgreSQL riêng 5443
@@ -751,6 +753,10 @@ Get-Content -Raw schema/identity.sql | docker compose exec -T postgres psql -U c
 ```
 
 - Spring Boot **không tự đọc `.env`** — chạy qua `Start-Dev.ps1` hoặc tự cấp env trong IDE.
+- Toàn bộ 6 service + hạ tầng trong Docker: từ `BE/` chạy `start.bat` / `stop.bat` (xem `DOCKER.md`). Mỗi service khai
+  báo phần của mình ở `<Service>/compose.stack.yaml` (biến `${...}` đọc từ `.env` của service đó, `environment` chỉ ghi
+  đè host/port container — gọi nhau bằng tên service, không `localhost`) và `<Service>/Dockerfile`. Service mới: thêm hai
+  file này + một dòng `include` trong `compose.yaml`. Không chạy song song với `docker-compose.yml` riêng (chung volume).
 - E2E toàn hệ thống (Identity + CareRecipient + Gateway, PostgreSQL/Redis thật, compose project riêng, không đụng DB
   dev): từ thư mục `BE/` chạy `.\scripts\e2e\Run-E2E.ps1` (`-SkipBuild`, `-KeepInfra`). Cần JDK 21, Docker, Python 3,
   `.env` của 3 service, port 8080–8082 trống.
