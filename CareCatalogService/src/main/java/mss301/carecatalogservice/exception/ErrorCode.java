@@ -31,6 +31,8 @@ public enum ErrorCode {
     CARE_SERVICE_CATEGORY_REQUIRED(3102, "Danh mục không được để trống", HttpStatus.BAD_REQUEST),
     CARE_SERVICE_STATUS_REQUIRED(3103, "Trạng thái không được để trống", HttpStatus.BAD_REQUEST),
     CARE_SERVICE_ID_REQUIRED(3104, "Mã dịch vụ chăm sóc không được để trống", HttpStatus.BAD_REQUEST),
+    SERVICE_NOT_ACTIVE(3105, "Dịch vụ chăm sóc hiện không hoạt động", HttpStatus.CONFLICT),
+    SERVICES_REQUIRED(3106, "Cần ít nhất một dịch vụ", HttpStatus.BAD_REQUEST),
 
     // CENTER SERVICES (Dịch vụ trung tâm)
     CENTER_SERVICE_NOT_FOUND(3200, "Dịch vụ trung tâm không tồn tại", HttpStatus.NOT_FOUND),

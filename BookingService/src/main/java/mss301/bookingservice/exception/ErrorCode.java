@@ -75,6 +75,11 @@ public enum ErrorCode {
     CENTER_NOT_FOUND(5407, "Trung tâm chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
     CENTER_NOT_ACTIVE(5408, "Trung tâm chăm sóc hiện không nhận đặt lịch", HttpStatus.CONFLICT),
 
+    // TÍCH HỢP CARE CATALOG
+    CARE_CATALOG_UNAVAILABLE(5300, "Dịch vụ danh mục / bảng giá tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
+    PRICE_PLAN_NOT_FOUND(5301, "Bảng giá dịch vụ không tồn tại hoặc không hợp lệ", HttpStatus.NOT_FOUND),
+    CENTER_SERVICE_NOT_SUPPORTED(5302, "Trung tâm không cung cấp dịch vụ chăm sóc đã chọn", HttpStatus.BAD_REQUEST),
+
     // TÍCH HỢP IDENTITY
     IDENTITY_UNAVAILABLE(5500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
 

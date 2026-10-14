@@ -12,6 +12,7 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.ZoneId;
 
@@ -39,6 +40,11 @@ public class BookingProperties {
 
     @Valid
     RemoteService provider = new RemoteService();
+
+    @Valid
+    RemoteService careCatalog = new RemoteService();
+
+    BigDecimal depositRate = new BigDecimal("0.30");
 
     @Valid
     Schedule schedule = new Schedule();
@@ -115,7 +121,7 @@ public class BookingProperties {
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Integration {
-        // TODO(CareCatalog): chưa có adapter thật — bật cờ này app sẽ từ chối khởi động (không âm thầm chạy bản tạm).
+        // Bật tích hợp CareCatalogService (báo giá thật từ catalog; false = trả báo giá tạm không giá).
         boolean catalogEnabled = false;
     }
 }

@@ -44,6 +44,10 @@ spring:
             connect-timeout: ${BOOKING_PROVIDER_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${BOOKING_PROVIDER_READ_TIMEOUT_MS:3000}
             logger-level: none
+          care-catalog:
+            connect-timeout: ${BOOKING_CARE_CATALOG_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_CARE_CATALOG_READ_TIMEOUT_MS:3000}
+            logger-level: none
     circuitbreaker:
       # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
       resilience4j:
@@ -97,6 +101,12 @@ booking:
     url: ${BOOKING_PROVIDER_URL}
     internal-secret: ${BOOKING_PROVIDER_INTERNAL_SECRET:}
 
+  care-catalog:
+    url: ${BOOKING_CARE_CATALOG_URL:${BOOKING_CATALOG_URL:http://localhost:8083}}
+    internal-secret: ${BOOKING_CARE_CATALOG_INTERNAL_SECRET:${BOOKING_CATALOG_INTERNAL_SECRET:}}
+
+  deposit-rate: ${BOOKING_DEPOSIT_RATE:0.30}
+
   # Quy tắc lịch (docs/2026-10-09-PLAN_BOOKING.md §9). Duration dạng 12h, 30m, PT24H…
   schedule:
     timezone: ${BOOKING_TIMEZONE:Asia/Ho_Chi_Minh}
@@ -111,5 +121,5 @@ booking:
     expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:5m}
 
   integration:
-    # TODO(CareCatalog): chưa có adapter thật — để false. Bật = app từ chối khởi động.
+    # Bật tích hợp CareCatalogService (báo giá thật); false = trả báo giá tạm không giá.
     catalog-enabled: ${BOOKING_CATALOG_INTEGRATION_ENABLED:false}
