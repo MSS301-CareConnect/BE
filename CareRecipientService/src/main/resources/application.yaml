@@ -36,6 +36,10 @@ spring:
             connect-timeout: ${CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS:3000}
             logger-level: none
+          booking:
+            connect-timeout: ${CARE_RECIPIENT_BOOKING_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${CARE_RECIPIENT_BOOKING_READ_TIMEOUT_MS:3000}
+            logger-level: none
     circuitbreaker:
       # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
       resilience4j:
@@ -80,3 +84,8 @@ care-recipient:
   identity:
     url: ${CARE_RECIPIENT_IDENTITY_URL}
     internal-secret: ${CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET:}
+
+  # Caregiver xem hồ sơ: hỏi BookingService có đang được phân công không (GET /internal/bookings/caregiver-access).
+  booking:
+    url: ${CARE_RECIPIENT_BOOKING_URL}
+    internal-secret: ${CARE_RECIPIENT_BOOKING_INTERNAL_SECRET:}

@@ -28,6 +28,8 @@ springdoc:
         url: /api-docs/identity
       - name: care-recipient
         url: /api-docs/care-recipient
+      - name: booking
+        url: /api-docs/booking
 
 management:
   endpoints:
@@ -47,6 +49,7 @@ logging:
 gateway:
   identity-url: ${GATEWAY_IDENTITY_URL}
   care-recipient-url: ${GATEWAY_CARE_RECIPIENT_URL}
+  booking-url: ${GATEWAY_BOOKING_URL}
   allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
 
   jwt:

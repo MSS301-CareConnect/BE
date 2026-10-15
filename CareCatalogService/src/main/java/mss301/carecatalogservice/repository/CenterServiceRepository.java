@@ -16,5 +16,7 @@ public interface CenterServiceRepository extends JpaRepository<CenterService, UU
     
     Optional<CenterService> findByIdAndCenterIdAndDeletedAtIsNull(UUID id, UUID centerId);
 
+    Optional<CenterService> findByCenterIdAndCareServiceIdAndDeletedAtIsNull(UUID centerId, UUID careServiceId);
+
     boolean existsByCenterIdAndCareServiceIdAndDeletedAtIsNull(UUID centerId, UUID careServiceId);
 }

@@ -34,6 +34,7 @@ class ApiGatewayUpstreamDownTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("gateway.identity-url", () -> CLOSED_URL);
         registry.add("gateway.care-recipient-url", () -> CLOSED_URL);
+        registry.add("gateway.booking-url", () -> CLOSED_URL);
         registry.add("gateway.allowed-origins", () -> "https://web.test");
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", () -> CLOSED_URL + "/.well-known/jwks.json");

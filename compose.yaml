@@ -1,0 +1,9 @@
+name: careconnect
+
+include:
+  - IdentityService/compose.stack.yaml
+  - CareRecipientService/compose.stack.yaml
+  - CareCatalogService/compose.stack.yaml
+  - ProviderService/compose.stack.yaml
+  - BookingService/compose.stack.yaml
+  - ApiGateway/compose.stack.yaml

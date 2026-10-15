@@ -54,6 +54,7 @@ URL (dev): API `http://localhost:8082` · Swagger `/swagger-ui.html` · OpenAPI 
 | DB | `CARE_RECIPIENT_DB_NAME`, `CARE_RECIPIENT_DB_URL`, `CARE_RECIPIENT_DB_PORT`, `CARE_RECIPIENT_DB_USERNAME`, `CARE_RECIPIENT_DB_PASSWORD` |
 | JWT | `CARE_RECIPIENT_JWT_ISSUER`, `CARE_RECIPIENT_JWT_JWKS_URI` (audience cố định `careconnect-api`) |
 | Feign → Identity | `CARE_RECIPIENT_IDENTITY_URL`, `CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET`, `CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS` |
+| Feign → Booking | `CARE_RECIPIENT_BOOKING_URL`, `CARE_RECIPIENT_BOOKING_INTERNAL_SECRET` (= `BOOKING_INTERNAL_SECRET`), `CARE_RECIPIENT_BOOKING_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_BOOKING_READ_TIMEOUT_MS` |
 | API nội bộ của service này | `CARE_RECIPIENT_INTERNAL_SECRET` (trống = khóa `/internal/**`) |
 
 ## Xác thực
@@ -112,7 +113,14 @@ Header bắt buộc `X-Internal-Secret: <CARE_RECIPIENT_INTERNAL_SECRET>`; thi�
 | `GET /internal/care-recipients/{id}/access?userId=&minLevel=VIEWER` | Luôn 200: `{recipientId,userId,allowed,accessLevel}` |
 | `POST /internal/care-recipients/batch` | `{"recipientIds":[...]}` (1–100); bỏ qua id không có / đã lưu trữ |
 
-Caregiver chưa được xem hồ sơ: chờ BookingService (`service/CaregiverAssignmentService`, TODO).
+### Caregiver (`hasRole('CAREGIVER')`, 2026-10-09)
+
+| Method / path | Hành vi |
+|---|---|
+| `GET /caregiver/care-recipients/{id}` | Snapshot chăm sóc (như `/internal/.../snapshot`, không có người thân) khi BookingService xác nhận caregiver đang được phân công (`GET /internal/bookings/caregiver-access`, booking CONFIRMED / IN_PROGRESS). Không được phân công / hồ sơ đã lưu trữ → 404 `RECIPIENT_NOT_FOUND`; Booking lỗi → 503 `BOOKING_UNAVAILABLE` 2502 (fail-closed). |
+
+`service/CaregiverAssignmentService` gọi `client/BookingClient` (Feign, secret riêng của Booking, ErrorDecoder + fallback
+đều ném 503). Hành vi cũ của mọi API customer / admin / nội bộ giữ nguyên.
 
 ### Tích hợp IdentityService (OpenFeign)
 
@@ -142,9 +150,11 @@ Gồm: JWT sai audience/issuer/refresh, role, header giả mạo, 404 vs 403, OW
 cuối cùng (unit Mockito + MockMvc), version conflict, CSRF cookie, Feign ErrorDecoder + fallback + circuit mở, API nội bộ.
 E2E toàn hệ thống: từ `BE/` chạy `.\scripts\e2e\Run-E2E.ps1`; kết quả lần chạy: `../docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md` §7.
 
+2026-10-09: **59/59** trên H2 (55 test cũ không đổi + 4 test caregiver xem hồ sơ: được phân công / gỡ phân công / hồ sơ
+đã lưu trữ / Booking tắt → 503). Test dùng thêm `support/TestBookingServer` (BookingService giả).
+
 ## TODO
 
 - Đồng bộ `recipient_managers` khi user bị khóa / xóa ở Identity (event qua broker + outbox) — hiện chưa có.
-- Quyền xem hồ sơ cho caregiver được phân công (BookingService).
 - Bảng audit thay đổi người quản lý / hồ sơ (hiện chỉ có `updated_by`).
 - Chuyển Flyway cùng đợt với mọi service.

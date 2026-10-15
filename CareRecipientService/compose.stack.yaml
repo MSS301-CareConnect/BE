@@ -1,0 +1,52 @@
+# Mảnh Compose của CareRecipientService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ CareRecipientService/.env; environment chỉ ghi đè host/port cho mạng Docker (gọi service khác bằng
+# tên service, không dùng localhost). Không chạy song song với docker-compose.yml riêng (chung volume + port).
+services:
+  care-recipient-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${CARE_RECIPIENT_DB_NAME:-CARECONNECT_CARE_RECIPIENT}
+      POSTGRES_USER: ${CARE_RECIPIENT_DB_USERNAME:?Set CARE_RECIPIENT_DB_USERNAME in CareRecipientService/.env}
+      POSTGRES_PASSWORD: ${CARE_RECIPIENT_DB_PASSWORD:?Set CARE_RECIPIENT_DB_PASSWORD in CareRecipientService/.env}
+    ports:
+      - "127.0.0.1:${CARE_RECIPIENT_DB_PORT:-5442}:5432"
+    volumes:
+      - care_recipient_postgres:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      - ./schema/care_recipient.sql:/docker-entrypoint-initdb.d/01-care_recipient.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  care-recipient-service:
+    build: .
+    image: careconnect/care-recipient-service:dev
+    env_file: .env
+    environment:
+      CARE_RECIPIENT_SERVER_PORT: "8082"
+      CARE_RECIPIENT_DB_URL: jdbc:postgresql://care-recipient-postgres:5432/${CARE_RECIPIENT_DB_NAME:-CARECONNECT_CARE_RECIPIENT}
+      CARE_RECIPIENT_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      CARE_RECIPIENT_IDENTITY_URL: http://identity-service:8081
+      CARE_RECIPIENT_BOOKING_URL: http://booking-service:8085
+    ports:
+      - "127.0.0.1:${CARE_RECIPIENT_SERVER_PORT:-8082}:8082"
+    # Identity (JWKS, /internal/users) và Booking chỉ được gọi khi có request — không cần chờ lúc khởi động.
+    depends_on:
+      care-recipient-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu có sẵn của docker-compose.yml riêng (project "carerecipientservice") — tái sử dụng.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  care_recipient_postgres:
+    name: carerecipientservice_care_recipient_postgres
+    external: true

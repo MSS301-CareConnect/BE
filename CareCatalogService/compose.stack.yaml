@@ -1,0 +1,51 @@
+# Mảnh Compose của CareCatalogService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ CareCatalogService/.env; environment chỉ ghi đè host/port cho mạng Docker (gọi service khác bằng
+# tên service, không dùng localhost). Không chạy song song với docker-compose.yml riêng (chung volume + port).
+services:
+  care-catalog-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${CARE_CATALOG_DB_NAME:-CARECONNECT_CATALOG}
+      POSTGRES_USER: ${CARE_CATALOG_DB_USERNAME:?Set CARE_CATALOG_DB_USERNAME in CareCatalogService/.env}
+      POSTGRES_PASSWORD: ${CARE_CATALOG_DB_PASSWORD:?Set CARE_CATALOG_DB_PASSWORD in CareCatalogService/.env}
+    ports:
+      - "127.0.0.1:${CARE_CATALOG_DB_PORT:-5443}:5432"
+    volumes:
+      - care_catalog_postgres:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      - ./schema/catalog.sql:/docker-entrypoint-initdb.d/01-catalog.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  care-catalog-service:
+    build: .
+    image: careconnect/care-catalog-service:dev
+    env_file: .env
+    environment:
+      CARE_CATALOG_SERVER_PORT: "8083"
+      CARE_CATALOG_DB_URL: jdbc:postgresql://care-catalog-postgres:5432/${CARE_CATALOG_DB_NAME:-CARECONNECT_CATALOG}
+      CARE_CATALOG_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      CARE_CATALOG_IDENTITY_URL: http://identity-service:8081
+    ports:
+      - "127.0.0.1:${CARE_CATALOG_SERVER_PORT:-8083}:8083"
+    # Identity (JWKS, /internal/users) chỉ được gọi khi có request — không cần chờ lúc khởi động.
+    depends_on:
+      care-catalog-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu có sẵn của docker-compose.yml riêng (project "carecatalogservice") — tái sử dụng.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  care_catalog_postgres:
+    name: carecatalogservice_care_catalog_postgres
+    external: true

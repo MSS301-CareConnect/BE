@@ -73,6 +73,9 @@ public enum ErrorCode {
     IDENTITY_UNAVAILABLE(2500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     IDENTITY_USER_NOT_FOUND(2501, "Tài khoản không tồn tại", HttpStatus.NOT_FOUND),
 
+    // TÍCH HỢP BOOKING (cùng nhóm 25xx tích hợp)
+    BOOKING_UNAVAILABLE(2502, "Dịch vụ đặt lịch tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
+
     // API NỘI BỘ
     RECIPIENT_IDS_REQUIRED(2600, "Danh sách recipientId không được để trống", HttpStatus.BAD_REQUEST),
     RECIPIENT_BATCH_TOO_LARGE(2601, "Danh sách recipientId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST);

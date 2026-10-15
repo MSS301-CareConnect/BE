@@ -3,6 +3,7 @@ package mss301.carerecipientservice;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import jakarta.servlet.http.Cookie;
 import mss301.carerecipientservice.exception.ErrorCode;
+import mss301.carerecipientservice.support.TestBookingServer;
 import mss301.carerecipientservice.support.TestIdentityServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +57,7 @@ class CareRecipientApiTests {
     static final String PG_USER = "postgres";
     static final String PG_PASSWORD = "care_recipient_test_only";
     static final TestIdentityServer IDENTITY = TestIdentityServer.get();
+    static final TestBookingServer BOOKING = TestBookingServer.get();
 
     static {
         // Như CareRecipientServiceApplication.main: JVM chạy UTC (PostgreSQL 17 từ chối alias múi giờ cũ như Asia/Saigon).
@@ -82,6 +84,8 @@ class CareRecipientApiTests {
         registry.add("care-recipient.identity.url", IDENTITY::baseUrl);
         registry.add("care-recipient.identity.internal-secret", () -> TestIdentityServer.INTERNAL_SECRET);
         registry.add("care-recipient.internal-secret", () -> RECIPIENT_INTERNAL_SECRET);
+        registry.add("care-recipient.booking.url", BOOKING::baseUrl);
+        registry.add("care-recipient.booking.internal-secret", () -> TestBookingServer.INTERNAL_SECRET);
     }
 
     static void createSchema(String schema) {
@@ -116,6 +120,7 @@ class CareRecipientApiTests {
     @AfterEach
     void resetIdentity() {
         IDENTITY.setFailing(false);
+        BOOKING.setFailing(false);
         circuitBreakerFactory.getCircuitBreakerRegistry().getAllCircuitBreakers().forEach(CircuitBreaker::reset);
     }
 
@@ -601,6 +606,66 @@ class CareRecipientApiTests {
                 .map(ErrorCode::getCode)
                 .allMatch(code -> code == 401 || code == 403 || code == 404 || code == 9999 || (code >= 2000 && code <= 2999));
         assertThat(allInRange).isTrue();
+    }
+
+    // ===== Caregiver xem hồ sơ khi BookingService xác nhận phân công =====
+
+    @Test
+    void assignedCaregiverSeesCareSnapshotOnly() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        UUID caregiver = UUID.randomUUID();
+        BOOKING.assign(caregiver, recipientId);
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.recipientId").value(recipientId.toString()))
+                .andExpect(jsonPath("$.result.allergies").value("Hải sản"))
+                .andExpect(jsonPath("$.result.activeMedications[0].medicationName").value("Insulin"))
+                .andExpect(jsonPath("$.result.primaryEmergencyContact.fullName").value("Con gái"))
+                .andExpect(jsonPath("$.result.managers").doesNotExist());
+        // Gỡ phân công (booking hết hiệu lực) → không xem được nữa
+        BOOKING.unassign(caregiver, recipientId);
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
+    }
+
+    @Test
+    void unassignedCaregiverGets404AndOtherRolesAreForbidden() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId)
+                        .header("Authorization", bearer(UUID.randomUUID(), "CAREGIVER")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
+        // Chủ hồ sơ dùng API customer, không dùng API caregiver
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isForbidden());
+        // Caregiver không dùng được API customer dù được phân công
+        UUID caregiver = UUID.randomUUID();
+        BOOKING.assign(caregiver, recipientId);
+        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void archivedRecipientIsNotVisibleEvenWhenAssigned() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        UUID caregiver = UUID.randomUUID();
+        BOOKING.assign(caregiver, recipientId);
+        mockMvc.perform(delete("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void bookingOutageFailsClosedWith503() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        UUID caregiver = UUID.randomUUID();
+        BOOKING.assign(caregiver, recipientId);
+        BOOKING.setFailing(true);
+        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value(ErrorCode.BOOKING_UNAVAILABLE.getCode()));
     }
 
     // ===== Helpers =====

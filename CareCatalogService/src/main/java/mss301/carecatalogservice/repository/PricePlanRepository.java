@@ -13,4 +13,8 @@ public interface PricePlanRepository extends JpaRepository<PricePlan, UUID> {
     Optional<PricePlan> findByIdAndDeletedAtIsNull(UUID id);
     
     List<PricePlan> findByCenterServiceIdAndDeletedAtIsNull(UUID centerServiceId);
+
+    Optional<PricePlan> findByIdAndCenterServiceIdAndDeletedAtIsNull(UUID id, UUID centerServiceId);
+
+    List<PricePlan> findByCenterServiceIdAndIsActiveTrueAndDeletedAtIsNull(UUID centerServiceId);
 }

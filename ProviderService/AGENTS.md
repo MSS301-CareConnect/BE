@@ -20,3 +20,7 @@
 - `care_centers.manager_user_id` ánh xạ tài khoản `CENTER_MANAGER`; manager chỉ thao tác đúng center của mình.
 - `client/` gọi API nội bộ IdentityService trước transaction ghi để xác minh tài khoản `ACTIVE` và đúng role.
 - Duyệt shift registration phải khóa dữ liệu, kiểm tra capacity/trùng lịch và tạo caregiver schedule trong cùng transaction.
+- API nội bộ chỉ đọc cho BookingService (`/internal/caregivers/**`, `/internal/centers/**`, `X-Internal-Secret`):
+  `InternalCaregiverController`, `InternalCenterController`, `InternalProviderService` + `Impl`, `InternalProviderMapper`.
+  `careServiceIds = null` nghĩa là chưa quản lý kỹ năng — không đổi thành `[]` khi chưa có bảng `caregiver_services`.
+  Provider không đánh dấu slot đã đặt (Booking là nguồn sự thật về giờ đã đặt).

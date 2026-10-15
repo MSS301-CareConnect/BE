@@ -1,0 +1,54 @@
+# Mảnh Compose của BookingService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ BookingService/.env; environment chỉ ghi đè host/port cho mạng Docker (gọi service khác bằng
+# tên service, không dùng localhost). Không chạy song song với docker-compose.yml riêng (chung volume + port).
+services:
+  booking-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${BOOKING_DB_NAME:-CARECONNECT_BOOKING}
+      POSTGRES_USER: ${BOOKING_DB_USERNAME:?Set BOOKING_DB_USERNAME in BookingService/.env}
+      POSTGRES_PASSWORD: ${BOOKING_DB_PASSWORD:?Set BOOKING_DB_PASSWORD in BookingService/.env}
+    ports:
+      - "127.0.0.1:${BOOKING_DB_PORT:-5445}:5432"
+    volumes:
+      - booking_postgres:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      - ./schema/booking.sql:/docker-entrypoint-initdb.d/01-booking.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  booking-service:
+    build: .
+    image: careconnect/booking-service:dev
+    env_file: .env
+    environment:
+      BOOKING_SERVER_PORT: "8085"
+      BOOKING_DB_URL: jdbc:postgresql://booking-postgres:5432/${BOOKING_DB_NAME:-CARECONNECT_BOOKING}
+      BOOKING_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      BOOKING_IDENTITY_URL: http://identity-service:8081
+      BOOKING_CARE_RECIPIENT_URL: http://care-recipient-service:8082
+      BOOKING_PROVIDER_URL: http://provider-service:8084
+    ports:
+      - "127.0.0.1:${BOOKING_SERVER_PORT:-8085}:8085"
+    # Identity / CareRecipient / Provider chỉ được gọi khi có request (CareRecipient cũng gọi ngược Booking) —
+    # không đặt depends_on giữa các app để tránh vòng phụ thuộc.
+    depends_on:
+      booking-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu có sẵn của docker-compose.yml riêng (project "bookingservice") — tái sử dụng.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  booking_postgres:
+    name: bookingservice_booking_postgres
+    external: true
