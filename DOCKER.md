@@ -1,6 +1,6 @@
 # Chạy toàn bộ CareConnect bằng Docker
 
-Một Compose project (`careconnect`, file [compose.yaml](compose.yaml)) chạy 6 service Spring Boot và hạ tầng riêng của
+Một Compose project (`careconnect`, file [compose.yaml](compose.yaml)) chạy 7 service Spring Boot và hạ tầng riêng của
 từng service:
 
 | Service (tên trên mạng Docker) | Port host | Ghi chú |
@@ -11,11 +11,13 @@ từng service:
 | `care-catalog-service` | 8083 | gateway chưa route — gọi trực tiếp |
 | `provider-service` | 8084 | gateway chưa route — gọi trực tiếp |
 | `booking-service` | 8085 | |
+| `media-service` | 8086 | gateway chưa route — gọi trực tiếp; upload lên Cloudflare R2 (cần `MEDIA_R2_*` trong `.env`) |
 | `identity-postgres` / `identity-redis` | 5441 / 6381 | |
 | `care-recipient-postgres` | 5442 | |
 | `care-catalog-postgres` | 5443 | |
 | `provider-postgres` | 5444 | |
 | `booking-postgres` | 5445 | |
+| `media-postgres` | 5446 | |
 
 Port host lấy từ `.env` của service (`*_SERVER_PORT`, `*_DB_PORT`, `IDENTITY_REDIS_PORT`), mặc định như bảng, chỉ
 bind `127.0.0.1`. Trong container, service gọi nhau bằng tên service (`http://identity-service:8081`,
@@ -99,7 +101,8 @@ Mở psql: `docker compose exec identity-postgres psql -U <IDENTITY_DB_USERNAME>
 
 - Stack dùng lại đúng volume của các `docker-compose.yml` cũ (`identityservice_identity_postgres`,
   `identityservice_identity_redis`, `carerecipientservice_care_recipient_postgres`,
-  `carecatalogservice_care_catalog_postgres`, `providerservice_provider_postgres`, `bookingservice_booking_postgres`)
+  `carecatalogservice_care_catalog_postgres`, `providerservice_provider_postgres`, `bookingservice_booking_postgres`,
+  `mediaservice_media_postgres_data`)
   — dữ liệu dev hiện có được giữ.
 - Volume khai báo `external: true`: `docker compose down -v` của stack **không** xóa được chúng. Máy mới chưa có
   volume thì `start.bat` tạo volume trống; khi chạy lệnh tay trên máy mới, tạo trước bằng
@@ -113,7 +116,7 @@ Mở psql: `docker compose exec identity-postgres psql -U <IDENTITY_DB_USERNAME>
 
 ## 5. Lưu ý
 
-- Chạy stack Docker thì không chạy cùng lúc các app bằng `Start-Dev.ps1` / IDE trên cùng port (8080–8085), và
+- Chạy stack Docker thì không chạy cùng lúc các app bằng `Start-Dev.ps1` / IDE trên cùng port (8080–8086), và
   không chạy `scripts/e2e/Run-E2E.ps1` (cũng dùng 8080–8085).
 - Port chỉ mở trên `127.0.0.1`. Thiết bị thật trong LAN (app mobile) không gọi được trực tiếp — dùng emulator
   (`10.0.2.2:8080`) hoặc đổi bind trong `compose.stack.yaml` khi cần.

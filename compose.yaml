@@ -6,4 +6,5 @@ include:
   - CareCatalogService/compose.stack.yaml
   - ProviderService/compose.stack.yaml
   - BookingService/compose.stack.yaml
+  - MediaService/compose.stack.yaml
   - ApiGateway/compose.stack.yaml

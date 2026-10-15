@@ -1,0 +1,49 @@
+# Mảnh Compose của MediaService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ MediaService/.env; environment chỉ ghi đè host/port cho mạng Docker (không dùng localhost).
+# Không chạy song song với docker-compose.yml riêng (chung volume + port).
+services:
+  media-postgres:
+    # Cùng image với docker-compose.yml riêng để volume dùng chung không lệch locale/collation.
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${MEDIA_DB_NAME:-CARECONNECT_MEDIA}
+      POSTGRES_USER: ${MEDIA_DB_USERNAME:?Set MEDIA_DB_USERNAME in MediaService/.env}
+      POSTGRES_PASSWORD: ${MEDIA_DB_PASSWORD:?Set MEDIA_DB_PASSWORD in MediaService/.env}
+    ports:
+      - "127.0.0.1:${MEDIA_DB_PORT:-5446}:5432"
+    volumes:
+      - media_postgres_data:/var/lib/postgresql/data
+      # Postgres chỉ chạy script này khi volume còn trống (DB mới); volume đã có dữ liệu thì bỏ qua.
+      - ./schema/media.sql:/docker-entrypoint-initdb.d/01-media.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  media-service:
+    build: .
+    image: careconnect/media-service:dev
+    env_file: .env
+    environment:
+      MEDIA_SERVER_PORT: "8086"
+      MEDIA_DB_URL: jdbc:postgresql://media-postgres:5432/${MEDIA_DB_NAME:-CARECONNECT_MEDIA}
+    ports:
+      - "127.0.0.1:${MEDIA_SERVER_PORT:-8086}:8086"
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+      start_interval: 5s
+
+# Volume dữ liệu của docker-compose.yml riêng (project "mediaservice") — tái sử dụng.
+# external: Compose không bao giờ xóa (kể cả "down -v"); start.bat tạo volume trống nếu máy chưa có.
+volumes:
+  media_postgres_data:
+    name: mediaservice_media_postgres_data
+    external: true

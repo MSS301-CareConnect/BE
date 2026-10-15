@@ -37,6 +37,6 @@ COPY --from=build /workspace/app.jar app.jar
 
 USER careconnect
 
-EXPOSE 8085
+EXPOSE 8086
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
