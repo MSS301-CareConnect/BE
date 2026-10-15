@@ -80,8 +80,12 @@ public enum ErrorCode {
 
     IDENTITY_UNAVAILABLE(4500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     IDENTITY_USER_NOT_FOUND(4501, "Tài khoản không tồn tại", HttpStatus.NOT_FOUND),
-    IDENTITY_USER_INVALID(4502, "Tài khoản không hoạt động hoặc không có đúng vai trò yêu cầu", HttpStatus.CONFLICT);
+    IDENTITY_USER_INVALID(4502, "Tài khoản không hoạt động hoặc không có đúng vai trò yêu cầu", HttpStatus.CONFLICT),
 
+    MEDIA_REQUIRED(4600, "Phải chọn ít nhất một file", HttpStatus.BAD_REQUEST),
+    MEDIA_LIMIT_EXCEEDED(4601, "Mỗi lần chỉ được tải tối đa 10 file", HttpStatus.BAD_REQUEST),
+    MEDIA_NOT_FOUND(4602, "File không tồn tại hoặc không thuộc dữ liệu này", HttpStatus.NOT_FOUND),
+    MEDIA_SERVICE_UNAVAILABLE(4603, "Dịch vụ file tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE);
     private int code;
     private String message;
     private HttpStatusCode statusCode;

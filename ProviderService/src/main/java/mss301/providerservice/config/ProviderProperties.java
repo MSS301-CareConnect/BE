@@ -24,14 +24,15 @@ public class ProviderProperties {
     @Valid
     Identity identity = new Identity();
 
+    @Valid
+    Media media = new Media();
+
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Jwt {
-        // Phải khớp chính xác claim iss do IdentityService phát (IDENTITY_JWT_ISSUER).
         @NotBlank
         String issuer;
 
-        // JWKS của IdentityService, gọi trực tiếp (không qua gateway).
         @NotBlank
         String jwksUri;
     }
@@ -39,11 +40,19 @@ public class ProviderProperties {
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Identity {
-        // Base URL IdentityService cho Feign (không có service discovery).
         @NotBlank
         String url;
 
-        // Giá trị IDENTITY_INTERNAL_SECRET của IdentityService, gửi qua header X-Internal-Secret.
+        @ToString.Exclude
+        String internalSecret = "";
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Media {
+        @NotBlank
+        String url;
+
         @ToString.Exclude
         String internalSecret = "";
     }

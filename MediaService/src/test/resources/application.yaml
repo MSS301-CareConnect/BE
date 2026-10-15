@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:media_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+media:
+  internal-secret: media-test-secret-at-least-32-characters
+  r2:
+    endpoint: https://test.r2.cloudflarestorage.com
+    bucket: careconnect-media-test
+    access-key-id: test-access-key
+    secret-access-key: test-secret-key
+    download-url-ttl-seconds: 300
