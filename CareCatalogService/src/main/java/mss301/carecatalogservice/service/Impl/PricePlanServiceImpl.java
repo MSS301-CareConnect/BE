@@ -7,12 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
-import mss301.carecatalogservice.entity.CenterService;
+import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
 import mss301.carecatalogservice.exception.AppException;
 import mss301.carecatalogservice.exception.ErrorCode;
 import mss301.carecatalogservice.mapper.PricePlanMapper;
-import mss301.carecatalogservice.repository.CenterServiceRepository;
+import mss301.carecatalogservice.repository.CenterOfferingRepository;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.PricePlanService;
 import org.springframework.stereotype.Service;
@@ -29,49 +29,48 @@ import java.util.UUID;
 public class PricePlanServiceImpl implements PricePlanService {
 
     PricePlanRepository pricePlanRepository;
-    CenterServiceRepository centerServiceRepository;
+    CenterOfferingRepository centerOfferingRepository;
     PricePlanMapper pricePlanMapper;
 
     @Override
     @Transactional
-    public APIResponse<PricePlanResponse> createPricePlan(UUID centerId, PricePlanRequest request) {
-        CenterService centerService = findActiveCenterService(request.getCenterServiceId());
-        checkCenterOwnership(centerService, centerId);
+    public APIResponse<PricePlanResponse> create(UUID centerId, PricePlanRequest request) {
+        CenterOffering centerOffering = findActiveCenterOffering(request.getCenterOfferingId());
+        checkCenterOwnership(centerOffering, centerId);
         PricePlan pricePlan = pricePlanMapper.toEntity(request);
-        pricePlan.setCenterService(centerService);
-        // isActive không gửi → giữ mặc định true của entity.
+        pricePlan.setCenterOffering(centerOffering);
         if (request.getIsActive() != null) {
             pricePlan.setIsActive(request.getIsActive());
         }
-        PricePlan savedPricePlan = pricePlanRepository.save(pricePlan);
-        log.info("Created price plan {} for center service {} (center {})", savedPricePlan.getId(), centerService.getId(), centerId);
-        return APIResponse.success("Tạo bảng giá thành công", pricePlanMapper.toResponse(savedPricePlan));
+        PricePlan saved = pricePlanRepository.save(pricePlan);
+        log.info("Created price plan {} for center offering {} (center {})", saved.getId(), centerOffering.getId(), centerId);
+        return APIResponse.success("Tạo bảng giá thành công", pricePlanMapper.toResponse(saved));
     }
 
     @Override
     @Transactional
-    public APIResponse<PricePlanResponse> updatePricePlan(UUID centerId, UUID id, PricePlanRequest request) {
+    public APIResponse<PricePlanResponse> update(UUID centerId, UUID id, PricePlanRequest request) {
         PricePlan pricePlan = findActivePricePlan(id);
-        checkCenterOwnership(pricePlan.getCenterService(), centerId);
+        checkCenterOwnership(pricePlan.getCenterOffering(), centerId);
 
-        if (!pricePlan.getCenterService().getId().equals(request.getCenterServiceId())) {
-            CenterService newCenterService = findActiveCenterService(request.getCenterServiceId());
-            checkCenterOwnership(newCenterService, centerId);
-            pricePlan.setCenterService(newCenterService);
+        if (!pricePlan.getCenterOffering().getId().equals(request.getCenterOfferingId())) {
+            CenterOffering newOffering = findActiveCenterOffering(request.getCenterOfferingId());
+            checkCenterOwnership(newOffering, centerId);
+            pricePlan.setCenterOffering(newOffering);
         }
         pricePlanMapper.updateEntityFromRequest(request, pricePlan);
         if (request.getIsActive() != null) {
             pricePlan.setIsActive(request.getIsActive());
         }
-        PricePlan savedPricePlan = pricePlanRepository.save(pricePlan);
+        PricePlan saved = pricePlanRepository.save(pricePlan);
         log.info("Updated price plan {} for center {}", id, centerId);
-        return APIResponse.success("Cập nhật bảng giá thành công", pricePlanMapper.toResponse(savedPricePlan));
+        return APIResponse.success("Cập nhật bảng giá thành công", pricePlanMapper.toResponse(saved));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<List<PricePlanResponse>> getPricePlansByCenterServiceId(UUID centerServiceId) {
-        List<PricePlanResponse> pricePlans = pricePlanRepository.findByCenterServiceIdAndDeletedAtIsNull(centerServiceId)
+    public APIResponse<List<PricePlanResponse>> listByCenterOffering(UUID centerOfferingId) {
+        List<PricePlanResponse> pricePlans = pricePlanRepository.findByCenterOfferingIdAndDeletedAtIsNull(centerOfferingId)
                 .stream()
                 .map(pricePlanMapper::toResponse)
                 .toList();
@@ -80,24 +79,24 @@ public class PricePlanServiceImpl implements PricePlanService {
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<PricePlanResponse> getPricePlanById(UUID id) {
+    public APIResponse<PricePlanResponse> getById(UUID id) {
         PricePlan pricePlan = findActivePricePlan(id);
         return APIResponse.success("Lấy bảng giá thành công", pricePlanMapper.toResponse(pricePlan));
     }
 
     @Override
     @Transactional
-    public APIResponse<Void> deletePricePlan(UUID centerId, UUID id) {
+    public APIResponse<Void> delete(UUID centerId, UUID id) {
         PricePlan pricePlan = findActivePricePlan(id);
-        checkCenterOwnership(pricePlan.getCenterService(), centerId);
+        checkCenterOwnership(pricePlan.getCenterOffering(), centerId);
         pricePlan.setDeletedAt(Instant.now());
         pricePlanRepository.save(pricePlan);
         log.info("Soft deleted price plan {} for center {}", id, centerId);
         return APIResponse.success("Xóa bảng giá thành công");
     }
 
-    private void checkCenterOwnership(CenterService centerService, UUID centerId) {
-        if (!centerService.getCenterId().equals(centerId)) {
+    private void checkCenterOwnership(CenterOffering centerOffering, UUID centerId) {
+        if (!centerOffering.getCenterId().equals(centerId)) {
             throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
         }
     }
@@ -107,8 +106,8 @@ public class PricePlanServiceImpl implements PricePlanService {
                 .orElseThrow(() -> new AppException(ErrorCode.PRICE_PLAN_NOT_FOUND));
     }
 
-    private CenterService findActiveCenterService(UUID id) {
-        return centerServiceRepository.findByIdAndDeletedAtIsNull(id)
+    private CenterOffering findActiveCenterOffering(UUID id) {
+        return centerOfferingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_SERVICE_NOT_FOUND));
     }
 }

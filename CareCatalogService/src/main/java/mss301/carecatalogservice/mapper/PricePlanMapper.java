@@ -11,13 +11,13 @@ import org.mapstruct.MappingTarget;
 public interface PricePlanMapper {
 
     @IgnoreServerManagedFields
-    @Mapping(target = "centerService", ignore = true)
+    @Mapping(target = "centerOffering", ignore = true)
     PricePlan toEntity(PricePlanRequest request);
 
-    @Mapping(target = "centerServiceId", source = "centerService.id")
+    @Mapping(target = "centerOfferingId", source = "centerOffering.id")
     PricePlanResponse toResponse(PricePlan entity);
 
     @IgnoreServerManagedFields
-    @Mapping(target = "centerService", ignore = true)
+    @Mapping(target = "centerOffering", ignore = true)
     void updateEntityFromRequest(PricePlanRequest request, @MappingTarget PricePlan entity);
 }

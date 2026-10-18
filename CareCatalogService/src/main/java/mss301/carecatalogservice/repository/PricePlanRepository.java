@@ -11,10 +11,10 @@ import java.util.UUID;
 @Repository
 public interface PricePlanRepository extends JpaRepository<PricePlan, UUID> {
     Optional<PricePlan> findByIdAndDeletedAtIsNull(UUID id);
-    
-    List<PricePlan> findByCenterServiceIdAndDeletedAtIsNull(UUID centerServiceId);
 
-    Optional<PricePlan> findByIdAndCenterServiceIdAndDeletedAtIsNull(UUID id, UUID centerServiceId);
+    List<PricePlan> findByCenterOfferingIdAndDeletedAtIsNull(UUID centerOfferingId);
 
-    List<PricePlan> findByCenterServiceIdAndIsActiveTrueAndDeletedAtIsNull(UUID centerServiceId);
+    Optional<PricePlan> findByIdAndCenterOfferingIdAndDeletedAtIsNull(UUID id, UUID centerOfferingId);
+
+    List<PricePlan> findByCenterOfferingIdAndIsActiveTrueAndDeletedAtIsNull(UUID centerOfferingId);
 }

@@ -8,13 +8,13 @@ import java.util.List;
 import java.util.UUID;
 
 public interface PricePlanService {
-    APIResponse<PricePlanResponse> createPricePlan(UUID centerId, PricePlanRequest request);
+    APIResponse<PricePlanResponse> create(UUID centerId, PricePlanRequest request);
 
-    APIResponse<PricePlanResponse> updatePricePlan(UUID centerId, UUID id, PricePlanRequest request);
+    APIResponse<PricePlanResponse> update(UUID centerId, UUID id, PricePlanRequest request);
 
-    APIResponse<List<PricePlanResponse>> getPricePlansByCenterServiceId(UUID centerServiceId);
+    APIResponse<List<PricePlanResponse>> listByCenterOffering(UUID centerOfferingId);
 
-    APIResponse<PricePlanResponse> getPricePlanById(UUID id);
+    APIResponse<PricePlanResponse> getById(UUID id);
 
-    APIResponse<Void> deletePricePlan(UUID centerId, UUID id);
+    APIResponse<Void> delete(UUID centerId, UUID id);
 }

@@ -19,6 +19,9 @@ provider:
   identity:
     url: http://identity.test
     internal-secret: identity-test-internal-secret-at-least-32-chars
+  media:
+    url: http://media.test
+    internal-secret: media-test-internal-secret-at-least-32-chars
 
 springdoc:
   api-docs:

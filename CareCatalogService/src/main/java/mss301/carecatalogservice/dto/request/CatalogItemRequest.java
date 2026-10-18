@@ -11,7 +11,7 @@ import mss301.carecatalogservice.enums.ServiceStatus;
 @AllArgsConstructor
 @NoArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class CareServiceRequest {
+public class CatalogItemRequest {
     @NotBlank(message = "CARE_SERVICE_NAME_REQUIRED")
     String name;
 

@@ -11,7 +11,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class CareServiceResponse {
+public class CatalogItemResponse {
     UUID id;
     String name;
     String description;

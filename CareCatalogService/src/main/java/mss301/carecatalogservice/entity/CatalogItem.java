@@ -6,32 +6,28 @@ import lombok.experimental.FieldDefaults;
 import mss301.carecatalogservice.enums.ServiceStatus;
 import org.hibernate.annotations.SQLRestriction;
 
-import java.util.UUID;
-
 @Entity
-@Table(name = "center_services")
+@Table(name = "care_services")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
-@AttributeOverride(name = "id", column = @Column(name = "center_services_id"))
+@AttributeOverride(name = "id", column = @Column(name = "care_services_id"))
 @SQLRestriction("deleted_at IS NULL")
-public class CenterService extends BaseEntity {
+public class CatalogItem extends BaseEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "care_services_id", nullable = false)
-    CareService careService;
-
-    @Column(name = "center_id", nullable = false)
-    UUID centerId;
+    @Column(name = "name", nullable = false)
+    String name;
 
     @Column(name = "description", length = 1000)
     String description;
 
+    @Column(name = "category", nullable = false)
+    String category;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     ServiceStatus status;
-
 }

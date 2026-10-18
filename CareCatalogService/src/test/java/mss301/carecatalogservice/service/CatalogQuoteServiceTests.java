@@ -2,15 +2,15 @@ package mss301.carecatalogservice.service;
 
 import mss301.carecatalogservice.dto.request.InternalServiceQuoteRequest;
 import mss301.carecatalogservice.dto.response.InternalServiceQuoteResponse;
-import mss301.carecatalogservice.entity.CareService;
-import mss301.carecatalogservice.entity.CenterService;
+import mss301.carecatalogservice.entity.CatalogItem;
+import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
 import mss301.carecatalogservice.enums.PricingUnit;
 import mss301.carecatalogservice.enums.ServiceStatus;
 import mss301.carecatalogservice.exception.AppException;
 import mss301.carecatalogservice.exception.ErrorCode;
-import mss301.carecatalogservice.repository.CareServiceRepository;
-import mss301.carecatalogservice.repository.CenterServiceRepository;
+import mss301.carecatalogservice.repository.CatalogItemRepository;
+import mss301.carecatalogservice.repository.CenterOfferingRepository;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.Impl.CatalogQuoteServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,10 +32,10 @@ import static org.mockito.Mockito.when;
 class CatalogQuoteServiceTests {
 
     @Mock
-    CareServiceRepository careServiceRepository;
+    CatalogItemRepository catalogItemRepository;
 
     @Mock
-    CenterServiceRepository centerServiceRepository;
+    CenterOfferingRepository centerOfferingRepository;
 
     @Mock
     PricePlanRepository pricePlanRepository;
@@ -50,29 +50,29 @@ class CatalogQuoteServiceTests {
     @BeforeEach
     void setUp() {
         catalogQuoteService = new CatalogQuoteServiceImpl(
-                careServiceRepository,
-                centerServiceRepository,
+                catalogItemRepository,
+                centerOfferingRepository,
                 pricePlanRepository
         );
     }
 
     @Test
     void quoteSuccessWithExplicitPricePlan() {
-        CareService careService = CareService.builder()
+        CatalogItem catalogItem = CatalogItem.builder()
                 .name("Chăm sóc người cao tuổi")
                 .status(ServiceStatus.ACTIVE)
                 .build();
-        careService.setId(careServiceId);
+        catalogItem.setId(careServiceId);
 
-        CenterService centerService = CenterService.builder()
-                .careService(careService)
+        CenterOffering centerOffering = CenterOffering.builder()
+                .catalogItem(catalogItem)
                 .centerId(centerId)
                 .status(ServiceStatus.ACTIVE)
                 .build();
-        centerService.setId(centerServiceId);
+        centerOffering.setId(centerServiceId);
 
         PricePlan pricePlan = PricePlan.builder()
-                .centerService(centerService)
+                .centerOffering(centerOffering)
                 .planName("Gói theo giờ")
                 .pricingUnit(PricingUnit.HOUR)
                 .durationMinutes(60)
@@ -81,9 +81,9 @@ class CatalogQuoteServiceTests {
                 .build();
         pricePlan.setId(pricePlanId);
 
-        when(careServiceRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(careService));
-        when(centerServiceRepository.findByIdAndCenterIdAndDeletedAtIsNull(centerServiceId, centerId)).thenReturn(Optional.of(centerService));
-        when(pricePlanRepository.findByIdAndCenterServiceIdAndDeletedAtIsNull(pricePlanId, centerServiceId)).thenReturn(Optional.of(pricePlan));
+        when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(catalogItem));
+        when(centerOfferingRepository.findByIdAndCenterIdAndDeletedAtIsNull(centerServiceId, centerId)).thenReturn(Optional.of(centerOffering));
+        when(pricePlanRepository.findByIdAndCenterOfferingIdAndDeletedAtIsNull(pricePlanId, centerServiceId)).thenReturn(Optional.of(pricePlan));
 
         InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()
                 .centerId(centerId)
@@ -106,7 +106,7 @@ class CatalogQuoteServiceTests {
 
     @Test
     void quoteThrowsWhenCareServiceNotFound() {
-        when(careServiceRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.empty());
+        when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.empty());
 
         InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()
                 .centerId(centerId)
@@ -122,14 +122,14 @@ class CatalogQuoteServiceTests {
 
     @Test
     void quoteThrowsWhenCenterServiceNotFound() {
-        CareService careService = CareService.builder()
+        CatalogItem catalogItem = CatalogItem.builder()
                 .name("Chăm sóc người cao tuổi")
                 .status(ServiceStatus.ACTIVE)
                 .build();
-        careService.setId(careServiceId);
+        catalogItem.setId(careServiceId);
 
-        when(careServiceRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(careService));
-        when(centerServiceRepository.findByCenterIdAndCareServiceIdAndDeletedAtIsNull(centerId, careServiceId))
+        when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(catalogItem));
+        when(centerOfferingRepository.findByCenterIdAndCatalogItemIdAndDeletedAtIsNull(centerId, careServiceId))
                 .thenReturn(Optional.empty());
 
         InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()

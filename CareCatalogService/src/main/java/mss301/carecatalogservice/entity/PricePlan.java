@@ -22,7 +22,7 @@ public class PricePlan extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "center_service_id", nullable = false)
-    CenterService centerService;
+    CenterOffering centerOffering;
 
     @Column(name = "plan_name", nullable = false)
     String planName;
@@ -40,5 +40,4 @@ public class PricePlan extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     Boolean isActive = true;
-
 }

@@ -14,7 +14,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PricePlanResponse {
     UUID id;
-    UUID centerServiceId;
+    UUID centerOfferingId;
     String planName;
     PricingUnit pricingUnit;
     Integer durationMinutes;

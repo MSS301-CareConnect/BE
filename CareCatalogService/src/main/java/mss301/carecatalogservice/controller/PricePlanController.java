@@ -8,8 +8,8 @@ import lombok.experimental.FieldDefaults;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
-import mss301.carecatalogservice.service.PricePlanService;
 import mss301.carecatalogservice.security.CurrentCenterId;
+import mss301.carecatalogservice.service.PricePlanService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,33 +26,33 @@ public class PricePlanController {
 
     @PostMapping
     @PreAuthorize("hasRole('CENTER_MANAGER')")
-    public APIResponse<PricePlanResponse> createPricePlan(@CurrentCenterId UUID centerId,
-                                                          @Valid @RequestBody PricePlanRequest request) {
-        return pricePlanService.createPricePlan(centerId, request);
+    public APIResponse<PricePlanResponse> create(@CurrentCenterId UUID centerId,
+                                                 @Valid @RequestBody PricePlanRequest request) {
+        return pricePlanService.create(centerId, request);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
-    public APIResponse<PricePlanResponse> updatePricePlan(@CurrentCenterId UUID centerId,
-                                                          @PathVariable UUID id,
-                                                          @Valid @RequestBody PricePlanRequest request) {
-        return pricePlanService.updatePricePlan(centerId, id, request);
+    public APIResponse<PricePlanResponse> update(@CurrentCenterId UUID centerId,
+                                                 @PathVariable UUID id,
+                                                 @Valid @RequestBody PricePlanRequest request) {
+        return pricePlanService.update(centerId, id, request);
     }
 
-    @GetMapping("/center-service/{centerServiceId}")
-    public APIResponse<List<PricePlanResponse>> getPricePlansByCenterServiceId(@PathVariable UUID centerServiceId) {
-        return pricePlanService.getPricePlansByCenterServiceId(centerServiceId);
+    @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
+    public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
+        return pricePlanService.listByCenterOffering(centerOfferingId);
     }
 
     @GetMapping("/{id}")
-    public APIResponse<PricePlanResponse> getPricePlanById(@PathVariable UUID id) {
-        return pricePlanService.getPricePlanById(id);
+    public APIResponse<PricePlanResponse> getById(@PathVariable UUID id) {
+        return pricePlanService.getById(id);
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
-    public APIResponse<Void> deletePricePlan(@CurrentCenterId UUID centerId,
-                                             @PathVariable UUID id) {
-        return pricePlanService.deletePricePlan(centerId, id);
+    public APIResponse<Void> delete(@CurrentCenterId UUID centerId,
+                                    @PathVariable UUID id) {
+        return pricePlanService.delete(centerId, id);
     }
 }
