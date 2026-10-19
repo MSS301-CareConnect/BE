@@ -12,6 +12,11 @@ import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.request.EmergencyContactRequest;
 import mss301.carerecipientservice.dto.request.MedicationRequest;
 import mss301.carerecipientservice.dto.request.RecipientBatchRequest;
+import mss301.carerecipientservice.dto.request.ManagerCreateRequest;
+import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
+import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
+import mss301.carerecipientservice.dto.response.MedicationResponse;
+import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
 import mss301.carerecipientservice.dto.response.APIResponse;
 import mss301.carerecipientservice.dto.response.AccessCheckResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
@@ -69,6 +74,9 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     RecipientManagerMapper recipientManagerMapper;
     MedicationMapper medicationMapper;
     EmergencyContactMapper emergencyContactMapper;
+    MedicationServiceImpl medicationServiceImpl;
+    EmergencyContactServiceImpl emergencyContactServiceImpl;
+    RecipientManagerServiceImpl recipientManagerServiceImpl;
 
     @Override
     @Transactional
@@ -281,5 +289,93 @@ public class CareRecipientServiceImpl implements CareRecipientService {
                 throw new AppException(ErrorCode.INVALID_MEDICATION_DATES);
             }
         }
+    }
+
+    // ===== Medication =====
+    @Override
+    public APIResponse<MedicationResponse> createMedication(UUID actorId, UUID recipientId, MedicationRequest request) {
+        return medicationServiceImpl.create(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<List<MedicationResponse>> listMedications(UUID actorId, UUID recipientId, Boolean active) {
+        return medicationServiceImpl.list(actorId, recipientId, active);
+    }
+
+    @Override
+    public APIResponse<MedicationResponse> getMedication(UUID actorId, UUID recipientId, UUID medicationId) {
+        return medicationServiceImpl.get(actorId, recipientId, medicationId);
+    }
+
+    @Override
+    public APIResponse<MedicationResponse> updateMedication(UUID actorId, UUID recipientId, UUID medicationId, MedicationRequest request) {
+        return medicationServiceImpl.update(actorId, recipientId, medicationId, request);
+    }
+
+    @Override
+    public APIResponse<MedicationResponse> updateMedicationActive(UUID actorId, UUID recipientId, UUID medicationId, boolean active) {
+        return medicationServiceImpl.updateActive(actorId, recipientId, medicationId, active);
+    }
+
+    @Override
+    public APIResponse<Void> deleteMedication(UUID actorId, UUID recipientId, UUID medicationId) {
+        return medicationServiceImpl.delete(actorId, recipientId, medicationId);
+    }
+
+    // ===== Emergency Contact =====
+    @Override
+    public APIResponse<EmergencyContactResponse> createEmergencyContact(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
+        return emergencyContactServiceImpl.create(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<List<EmergencyContactResponse>> listEmergencyContacts(UUID actorId, UUID recipientId) {
+        return emergencyContactServiceImpl.list(actorId, recipientId);
+    }
+
+    @Override
+    public APIResponse<EmergencyContactResponse> getEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
+        return emergencyContactServiceImpl.get(actorId, recipientId, contactId);
+    }
+
+    @Override
+    public APIResponse<EmergencyContactResponse> updateEmergencyContact(UUID actorId, UUID recipientId, UUID contactId, EmergencyContactRequest request) {
+        return emergencyContactServiceImpl.update(actorId, recipientId, contactId, request);
+    }
+
+    @Override
+    public APIResponse<EmergencyContactResponse> assignPrimaryEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
+        return emergencyContactServiceImpl.assignPrimary(actorId, recipientId, contactId);
+    }
+
+    @Override
+    public APIResponse<Void> deleteEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
+        return emergencyContactServiceImpl.delete(actorId, recipientId, contactId);
+    }
+
+    // ===== Recipient Manager =====
+    @Override
+    public APIResponse<List<RecipientManagerResponse>> listManagers(UUID actorId, UUID recipientId) {
+        return recipientManagerServiceImpl.list(actorId, recipientId);
+    }
+
+    @Override
+    public APIResponse<RecipientManagerResponse> createManager(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
+        return recipientManagerServiceImpl.create(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<RecipientManagerResponse> updateManager(UUID actorId, UUID recipientId, UUID managerId, ManagerUpdateRequest request) {
+        return recipientManagerServiceImpl.update(actorId, recipientId, managerId, request);
+    }
+
+    @Override
+    public APIResponse<RecipientManagerResponse> assignPrimaryManager(UUID actorId, UUID recipientId, UUID managerId) {
+        return recipientManagerServiceImpl.assignPrimary(actorId, recipientId, managerId);
+    }
+
+    @Override
+    public APIResponse<Void> deleteManager(UUID actorId, UUID recipientId, UUID managerId) {
+        return recipientManagerServiceImpl.delete(actorId, recipientId, managerId);
     }
 }

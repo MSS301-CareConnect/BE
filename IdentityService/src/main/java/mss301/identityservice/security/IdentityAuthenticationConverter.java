@@ -8,6 +8,7 @@ import mss301.identityservice.exception.AppException;
 import mss301.identityservice.service.CurrentIdentityService;
 import mss301.identityservice.service.IdentityStateService;
 import mss301.identityservice.service.JwtService;
+import mss301.identityservice.service.TokenStore;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -32,13 +33,14 @@ import java.util.Set;
 public class IdentityAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
     IdentityStateService identityStateService;
+    TokenStore tokenStore;
     CurrentIdentityService currentIdentityService;
     JwtService jwtService;
 
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         try {
-            if (jwt.getId() == null || identityStateService.isBlacklisted(jwt.getId())) {
+            if (jwt.getId() == null || identityStateService.isBlacklisted(jwt.getId()) || tokenStore.isAccessTokenBlacklisted(jwt.getId())) {
                 throw new BadCredentialsException("Revoked token");
             }
             UserResponse user = currentIdentityService.getActiveUser(jwtService.getUserId(jwt), jwtService.getAuthzVersion(jwt));

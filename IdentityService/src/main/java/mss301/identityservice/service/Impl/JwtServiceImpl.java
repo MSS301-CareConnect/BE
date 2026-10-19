@@ -22,8 +22,14 @@ import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +39,8 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class JwtServiceImpl implements JwtService {
 
+    static SecureRandom SECURE_RANDOM = new SecureRandom();
+
     JwtEncoder jwtEncoder;
     NimbusJwtDecoder identityJwtDecoder;
     RSAKey signingKey;
@@ -40,34 +48,33 @@ public class JwtServiceImpl implements JwtService {
 
     @Override
     public Jwt issue(UserResponse user, long authzVersion, TokenType tokenType) {
-        Instant now = Instant.now();
-        Duration ttl = tokenType == TokenType.ACCESS ? identityProperties.getAccessTtl() : identityProperties.getRefreshTtl();
-        // Refresh token chỉ dùng tại IdentityService → không mang audience chung của các service backend.
-        List<String> audience = tokenType == TokenType.ACCESS
-                ? List.of(identityProperties.getAudience(), TokenClaims.API_AUDIENCE)
-                : List.of(identityProperties.getAudience());
-        // sub = userId (ổn định kể cả khi đổi email); không nhét dữ liệu nhạy cảm vào JWT.
-        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
-                .issuer(identityProperties.getIssuer())
-                .subject(user.getId().toString())
-                .audience(audience)
-                .issuedAt(now)
-                .expiresAt(now.plus(ttl))
-                .id(UUID.randomUUID().toString())
-                .claim(TokenClaims.TOKEN_TYPE, tokenType.getValue())
-                .claim(TokenClaims.AUTHZ_VERSION, authzVersion);
-        // Refresh token không mang quyền: quyền luôn lấy mới từ DB khi refresh.
-        if (tokenType == TokenType.ACCESS) {
-            claims.claim(TokenClaims.ROLES, user.getRoles())
-                    .claim(TokenClaims.PERMISSIONS, user.getPermissions());
-            if (user.getCenterId() != null) {
-                claims.claim(TokenClaims.CENTER_ID, user.getCenterId().toString());
-            }
+        return issueInternal(user, authzVersion, tokenType, null);
+    }
+
+    @Override
+    public Jwt issueAccess(UserResponse user, long authzVersion, String sessionId) {
+        return issueInternal(user, authzVersion, TokenType.ACCESS, sessionId);
+    }
+
+    @Override
+    public String issueOpaqueRefreshToken() {
+        byte[] randomBytes = new byte[32];
+        SECURE_RANDOM.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    @Override
+    public String hashToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
-        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256)
-                .keyId(identityProperties.getKeyId())
-                .build();
-        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build()));
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.trim().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     @Override
@@ -86,14 +93,53 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
+    public String getSessionId(Jwt jwt) {
+        return jwt.getClaimAsString(TokenClaims.SESSION_ID);
+    }
+
+    @Override
     public long getAuthzVersion(Jwt jwt) {
         Number authzVersion = jwt.getClaim(TokenClaims.AUTHZ_VERSION);
-        return authzVersion.longValue();
+        return authzVersion != null ? authzVersion.longValue() : 0L;
     }
 
     @Override
     public Map<String, Object> publicKeys() {
         return new JWKSet(signingKey.toPublicJWK()).toJSONObject();
+    }
+
+    private Jwt issueInternal(UserResponse user, long authzVersion, TokenType tokenType, String sessionId) {
+        Instant now = Instant.now();
+        Duration ttl = tokenType == TokenType.ACCESS ? identityProperties.getAccessTtl() : identityProperties.getRefreshTtl();
+        // Refresh token chỉ dùng tại IdentityService → không mang audience chung của các service backend.
+        List<String> audience = tokenType == TokenType.ACCESS
+                ? List.of(identityProperties.getAudience(), TokenClaims.API_AUDIENCE)
+                : List.of(identityProperties.getAudience());
+        // sub = userId (ổn định kể cả khi đổi email); không nhét dữ liệu nhạy cảm vào JWT.
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
+                .issuer(identityProperties.getIssuer())
+                .subject(user.getId().toString())
+                .audience(audience)
+                .issuedAt(now)
+                .expiresAt(now.plus(ttl))
+                .id(UUID.randomUUID().toString())
+                .claim(TokenClaims.TOKEN_TYPE, tokenType.getValue())
+                .claim(TokenClaims.AUTHZ_VERSION, authzVersion);
+
+        if (tokenType == TokenType.ACCESS) {
+            claims.claim(TokenClaims.ROLES, user.getRoles())
+                    .claim(TokenClaims.PERMISSIONS, user.getPermissions());
+            if (user.getCenterId() != null) {
+                claims.claim(TokenClaims.CENTER_ID, user.getCenterId().toString());
+            }
+            if (sessionId != null) {
+                claims.claim(TokenClaims.SESSION_ID, sessionId);
+            }
+        }
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256)
+                .keyId(identityProperties.getKeyId())
+                .build();
+        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build()));
     }
 
     private Jwt parse(String token, TokenType expectedType) {

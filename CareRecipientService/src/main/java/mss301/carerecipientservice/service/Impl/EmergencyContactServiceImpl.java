@@ -15,7 +15,6 @@ import mss301.carerecipientservice.exception.ErrorCode;
 import mss301.carerecipientservice.mapper.EmergencyContactMapper;
 import mss301.carerecipientservice.repository.CareRecipientRepository;
 import mss301.carerecipientservice.repository.EmergencyContactRepository;
-import mss301.carerecipientservice.service.EmergencyContactService;
 import mss301.carerecipientservice.service.RecipientAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,14 +28,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
-public class EmergencyContactServiceImpl implements EmergencyContactService {
+public class EmergencyContactServiceImpl  {
 
     EmergencyContactRepository emergencyContactRepository;
     CareRecipientRepository careRecipientRepository;
     RecipientAccessService recipientAccessService;
     EmergencyContactMapper emergencyContactMapper;
 
-    @Override
     @Transactional
     public APIResponse<EmergencyContactResponse> create(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
@@ -51,7 +49,6 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Thêm liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<List<EmergencyContactResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
@@ -60,7 +57,6 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Lấy danh sách liên hệ khẩn cấp thành công", emergencyContactResponses);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<EmergencyContactResponse> get(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
@@ -69,7 +65,6 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Lấy liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional
     public APIResponse<EmergencyContactResponse> update(UUID actorId, UUID recipientId, UUID id,
                                                         EmergencyContactRequest request) {
@@ -89,7 +84,6 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Cập nhật liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
@@ -102,7 +96,6 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Xóa liên hệ khẩn cấp thành công");
     }
 
-    @Override
     @Transactional
     public APIResponse<EmergencyContactResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);

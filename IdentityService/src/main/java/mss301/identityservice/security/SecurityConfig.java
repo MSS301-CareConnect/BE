@@ -40,7 +40,7 @@ public class SecurityConfig {
             "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/csrf",
             "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh", "/api/v1/auth/mobile/logout",
             "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
-            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"
+            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"
     };
 
     static String[] PUBLIC_ENDPOINTS = Stream.concat(Stream.of(TOKEN_FLOW_ENDPOINTS), Stream.of(
@@ -55,7 +55,7 @@ public class SecurityConfig {
     // nào (mobile) được miễn CSRF; trình duyệt có cookie vẫn phải gửi CSRF như cũ.
     static Set<String> COOKIELESS_CSRF_EXEMPT_PATHS = Set.of(
             "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
-            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password");
+            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password");
     static Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
     public static final String MOBILE_AUTH_PREFIX = "/api/v1/auth/mobile/";
     public static final String CSRF_HEADER = "X-XSRF-TOKEN";
@@ -115,7 +115,9 @@ public class SecurityConfig {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(identityProperties.getAllowedOrigins());
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, CSRF_HEADER));
+        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, CSRF_HEADER,
+                TokenClaims.CLIENT_TYPE_HEADER, TokenClaims.DEVICE_ID_HEADER));
+        cors.setExposedHeaders(List.of(TokenClaims.DEPRECATION_HEADER));
         cors.setAllowCredentials(true);
         cors.validateAllowCredentials();
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -139,7 +141,7 @@ public class SecurityConfig {
         return handler;
     }
 
-    // Request mang cookie xác thực LUÔN cần CSRF (kể cả có thêm bearer); bearer thuần và /auth/mobile/* được miễn.
+    // Request mang cookie xác thực LUÔN cần CSRF (kể cả có thêm bearer); bearer thuần và /auth/mobile/* hoặc X-Client-Type: mobile được miễn.
     private boolean requiresCsrf(HttpServletRequest request) {
         if (SAFE_METHODS.contains(request.getMethod())) {
             return false;
@@ -147,13 +149,19 @@ public class SecurityConfig {
         if (CookieUtils.read(request, CookieUtils.ACCESS) != null || CookieUtils.read(request, CookieUtils.REFRESH) != null) {
             return true;
         }
+        String clientType = request.getHeader(TokenClaims.CLIENT_TYPE_HEADER);
+        if ("mobile".equalsIgnoreCase(clientType) || request.getRequestURI().startsWith(MOBILE_AUTH_PREFIX)) {
+            return false;
+        }
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.startsWith(TokenClaims.BEARER_PREFIX)) {
+            return false;
+        }
         boolean hasNoCookies = request.getCookies() == null || request.getCookies().length == 0;
         if (hasNoCookies && COOKIELESS_CSRF_EXEMPT_PATHS.contains(request.getRequestURI())) {
             return false;
         }
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-        boolean hasBearer = header != null && header.startsWith(TokenClaims.BEARER_PREFIX);
-        return !request.getRequestURI().startsWith(MOBILE_AUTH_PREFIX) && !hasBearer;
+        return true;
     }
 
     private String resolveToken(HttpServletRequest request) {

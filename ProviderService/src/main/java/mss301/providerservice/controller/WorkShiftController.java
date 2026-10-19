@@ -33,14 +33,7 @@ public class WorkShiftController {
     WorkShiftService shiftService;
     ShiftRegistrationService registrationService;
 
-    @PostMapping("/centers/{centerId}")
-    @Operation(summary = "Tạo ca làm việc cho trung tâm")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<WorkShiftResponse> create(@CurrentUserId UUID actorId,
-                                                 @PathVariable UUID centerId,
-                                                 @Valid @RequestBody WorkShiftRequest request) {
-        return shiftService.create(actorId, centerId, request);
-    }
+    // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
     @GetMapping
     @Operation(summary = "Tìm ca làm việc (lọc theo trung tâm, trạng thái và khoảng ngày)")
@@ -62,34 +55,6 @@ public class WorkShiftController {
         return shiftService.get(id);
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "Cập nhật ca làm việc")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<WorkShiftResponse> update(@CurrentUserId UUID actorId,
-                                                 @PathVariable UUID id,
-                                                 @Valid @RequestBody WorkShiftRequest request) {
-        return shiftService.update(actorId, id, request);
-    }
-
-    @DeleteMapping("/{id}")
-    @Operation(summary = "Hủy và xóa mềm ca làm việc")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
-                                    @PathVariable UUID id,
-                                    @RequestParam Long version) {
-        return shiftService.delete(actorId, id, version);
-    }
-
-    @PostMapping("/{shiftId}/registrations")
-    @Operation(summary = "Caregiver đăng ký ca làm việc")
-    @PreAuthorize("hasRole('CAREGIVER')")
-    public APIResponse<ShiftRegistrationResponse> register(
-            @CurrentUserId UUID actorId,
-            @PathVariable UUID shiftId,
-            @Valid @RequestBody ShiftRegistrationRequest request) {
-        return registrationService.register(actorId, shiftId, request);
-    }
-
     @GetMapping("/registrations/me")
     @Operation(summary = "Danh sách đăng ký ca của tôi (Caregiver)")
     @PreAuthorize("hasRole('CAREGIVER')")
@@ -98,16 +63,6 @@ public class WorkShiftController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return registrationService.myRegistrations(actorId, page, size);
-    }
-
-    @DeleteMapping("/registrations/{id}")
-    @Operation(summary = "Hủy đăng ký ca đang chờ duyệt (Caregiver)")
-    @PreAuthorize("hasRole('CAREGIVER')")
-    public APIResponse<Void> cancelRegistration(
-            @CurrentUserId UUID actorId,
-            @PathVariable UUID id,
-            @RequestParam Long version) {
-        return registrationService.cancelOwn(actorId, id, version);
     }
 
     @GetMapping("/{id}/registrations")
@@ -121,6 +76,40 @@ public class WorkShiftController {
         return registrationService.listForShift(actorId, id, page, size);
     }
 
+    // ─── POST OPERATIONS ──────────────────────────────────────────────────────
+
+    @PostMapping("/centers/{centerId}")
+    @Operation(summary = "Tạo ca làm việc cho trung tâm")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<WorkShiftResponse> create(@CurrentUserId UUID actorId,
+                                                 @PathVariable UUID centerId,
+                                                 @Valid @RequestBody WorkShiftRequest request) {
+        return shiftService.create(actorId, centerId, request);
+    }
+
+    @PostMapping("/{shiftId}/registrations")
+    @Operation(summary = "Caregiver đăng ký ca làm việc")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<ShiftRegistrationResponse> register(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID shiftId,
+            @Valid @RequestBody ShiftRegistrationRequest request) {
+        return registrationService.register(actorId, shiftId, request);
+    }
+
+    // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Cập nhật ca làm việc")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<WorkShiftResponse> update(@CurrentUserId UUID actorId,
+                                                 @PathVariable UUID id,
+                                                 @Valid @RequestBody WorkShiftRequest request) {
+        return shiftService.update(actorId, id, request);
+    }
+
+    // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
+
     @PatchMapping("/registrations/{id}/review")
     @Operation(summary = "Duyệt hoặc từ chối đăng ký ca (Center Manager / Admin)")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
@@ -129,5 +118,26 @@ public class WorkShiftController {
             @PathVariable UUID id,
             @Valid @RequestBody RegistrationReviewRequest request) {
         return registrationService.review(actorId, id, request);
+    }
+
+    // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Hủy và xóa mềm ca làm việc")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
+                                    @PathVariable UUID id,
+                                    @RequestParam Long version) {
+        return shiftService.delete(actorId, id, version);
+    }
+
+    @DeleteMapping("/registrations/{id}")
+    @Operation(summary = "Hủy đăng ký ca đang chờ duyệt (Caregiver)")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<Void> cancelRegistration(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID id,
+            @RequestParam Long version) {
+        return registrationService.cancelOwn(actorId, id, version);
     }
 }

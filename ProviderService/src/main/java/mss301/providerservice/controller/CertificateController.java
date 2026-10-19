@@ -27,14 +27,7 @@ public class CertificateController {
 
     CertificateService certificateService;
 
-    @PostMapping("/caregivers/{caregiverId}")
-    @Operation(summary = "Thêm chứng chỉ cho caregiver")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
-    public APIResponse<CertificateResponse> create(@CurrentUserId UUID actorId,
-                                                   @PathVariable UUID caregiverId,
-                                                   @Valid @RequestBody CertificateRequest request) {
-        return certificateService.create(actorId, caregiverId, request);
-    }
+    // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
     @GetMapping("/caregivers/{caregiverId}")
     @Operation(summary = "Danh sách chứng chỉ của caregiver")
@@ -51,6 +44,19 @@ public class CertificateController {
         return certificateService.verifiedList(caregiverId);
     }
 
+    // ─── POST OPERATIONS ──────────────────────────────────────────────────────
+
+    @PostMapping("/caregivers/{caregiverId}")
+    @Operation(summary = "Thêm chứng chỉ cho caregiver")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    public APIResponse<CertificateResponse> create(@CurrentUserId UUID actorId,
+                                                   @PathVariable UUID caregiverId,
+                                                   @Valid @RequestBody CertificateRequest request) {
+        return certificateService.create(actorId, caregiverId, request);
+    }
+
+    // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
     @PutMapping("/{id}")
     @Operation(summary = "Cập nhật chứng chỉ")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
@@ -60,14 +66,7 @@ public class CertificateController {
         return certificateService.update(actorId, id, request);
     }
 
-    @DeleteMapping("/{id}")
-    @Operation(summary = "Xóa mềm chứng chỉ")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
-    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
-                                    @PathVariable UUID id,
-                                    @RequestParam Long version) {
-        return certificateService.delete(actorId, id, version);
-    }
+    // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
     @PatchMapping("/{id}/verification")
     @Operation(summary = "Duyệt hoặc từ chối chứng chỉ (Admin)")
@@ -76,5 +75,16 @@ public class CertificateController {
                                                    @PathVariable UUID id,
                                                    @Valid @RequestBody VerificationRequest request) {
         return certificateService.verify(actorId, id, request);
+    }
+
+    // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Xóa mềm chứng chỉ")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
+                                    @PathVariable UUID id,
+                                    @RequestParam Long version) {
+        return certificateService.delete(actorId, id, version);
     }
 }

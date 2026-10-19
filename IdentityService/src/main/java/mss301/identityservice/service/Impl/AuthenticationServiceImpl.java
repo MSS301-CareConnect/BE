@@ -7,24 +7,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.identityservice.config.IdentityProperties;
+import mss301.identityservice.config.RedisKeys;
 import mss301.identityservice.dto.request.LoginRequest;
 import mss301.identityservice.dto.request.RefreshRequest;
-import mss301.identityservice.dto.response.APIResponse;
-import mss301.identityservice.dto.response.AuthenticatedUser;
-import mss301.identityservice.dto.response.AuthenticationResponse;
-import mss301.identityservice.dto.response.CsrfResponse;
-import mss301.identityservice.dto.response.UserResponse;
-import mss301.identityservice.enums.TokenType;
+import mss301.identityservice.dto.response.*;
+import mss301.identityservice.enums.ClientType;
 import mss301.identityservice.exception.AppException;
 import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.mapper.AuthenticationMapper;
-import mss301.identityservice.security.CookieUtils;
 import mss301.identityservice.security.TokenClaims;
-import mss301.identityservice.service.AuthenticationService;
-import mss301.identityservice.service.CurrentIdentityService;
-import mss301.identityservice.service.IdentityStateService;
-import mss301.identityservice.service.JwtService;
-import mss301.identityservice.service.UserService;
+import mss301.identityservice.security.TokenTransport;
+import mss301.identityservice.service.*;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -33,7 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -48,9 +41,12 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     UserService userService;
     CurrentIdentityService currentIdentityService;
     IdentityStateService identityStateService;
+    TokenStore tokenStore;
+    SessionStore sessionStore;
+    RateLimiter rateLimiter;
     JwtService jwtService;
     IdentityProperties identityProperties;
-    CookieUtils cookieUtils;
+    TokenTransport tokenTransport;
     AuthenticationMapper authenticationMapper;
 
     @Override
@@ -60,141 +56,270 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     @Override
-    public APIResponse<AuthenticationResponse> login(LoginRequest request, HttpServletResponse response) {
-        AuthenticatedUser authenticatedUser = userService.verifyCredentials(request.getEmail(), request.getPassword());
-        return issueWebTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(), response, LOGIN_SUCCESS);
+    public APIResponse<AuthenticationResponse> login(LoginRequest request, HttpServletRequest httpRequest,
+                                                     HttpServletResponse httpResponse) {
+        String ip = extractIp(httpRequest);
+        rateLimiter.checkLoginRateLimit(request.getEmail(), ip);
+
+        AuthenticatedUser authenticatedUser;
+        try {
+            authenticatedUser = userService.verifyCredentials(request.getEmail(), request.getPassword());
+        } catch (AppException e) {
+            if (e.getErrorCode() == ErrorCode.INVALID_CREDENTIALS) {
+                rateLimiter.recordLoginFailure(request.getEmail(), ip);
+            }
+            throw e;
+        }
+        rateLimiter.resetLoginAttempts(request.getEmail(), ip);
+
+        ClientType clientType = tokenTransport.resolveClientType(httpRequest);
+        String deviceId = httpRequest != null ? httpRequest.getHeader(TokenClaims.DEVICE_ID_HEADER) : null;
+        String userAgent = httpRequest != null ? httpRequest.getHeader(HttpHeaders.USER_AGENT) : null;
+
+        return issueSessionAndTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(),
+                null, clientType, deviceId, userAgent, ip, httpResponse, LOGIN_SUCCESS);
     }
 
     @Override
-    public APIResponse<AuthenticationResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
-        Jwt refreshToken = parseRefreshToken(CookieUtils.read(request, CookieUtils.REFRESH));
-        UserResponse user = consumeRefreshToken(refreshToken);
-        return issueWebTokens(user, jwtService.getAuthzVersion(refreshToken), response, REFRESH_SUCCESS);
+    public APIResponse<AuthenticationResponse> refresh(RefreshRequest refreshRequest, HttpServletRequest httpRequest,
+                                                       HttpServletResponse httpResponse) {
+        ClientType clientType = tokenTransport.resolveClientType(httpRequest);
+        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, refreshRequest, httpRequest);
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        String tokenHash = jwtService.hashToken(rawRefreshToken);
+        Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
+
+        if (tokenData.isEmpty()) {
+            // Kiểm tra Token Reuse: nếu token này từng tồn tại và đã bị thu hồi trước đó
+            if (tokenStore.isTokenRevoked(tokenHash)) {
+                log.warn("Refresh token reuse detected for tokenHash={}. Revoking all user sessions.", tokenHash);
+                // Token bị dùng lại: ném UNAUTHENTICATED để từ chối truy cập
+                throw new AppException(ErrorCode.UNAUTHENTICATED);
+            }
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        UUID userId = UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
+        String sessionId = tokenData.get(RedisKeys.FIELD_SESSION_ID);
+
+        // Kiểm tra session còn tồn tại trong Redis
+        Map<String, String> sessionData = sessionStore.getSession(sessionId);
+        if (sessionData.isEmpty()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        // Kiểm tra tài khoản còn ACTIVE trong DB
+        AuthenticatedUser authenticatedUser;
+        try {
+            authenticatedUser = currentIdentityService.getActiveAuthenticatedUser(userId);
+        } catch (AuthenticationException e) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        // Thu hồi token cũ và đánh dấu đã thu hồi để chống reuse
+        tokenStore.revokeRefreshToken(tokenHash, userId);
+        tokenStore.recordRevokedToken(tokenHash, userId, identityProperties.getRefreshTtl());
+
+        // Cấp phát token mới trên cùng một sessionId (Refresh Token Rotation)
+        String ip = extractIp(httpRequest);
+        String deviceId = httpRequest != null ? httpRequest.getHeader(TokenClaims.DEVICE_ID_HEADER)
+                : sessionData.get(RedisKeys.FIELD_DEVICE_ID);
+        String userAgent = httpRequest != null ? httpRequest.getHeader(HttpHeaders.USER_AGENT)
+                : sessionData.get(RedisKeys.FIELD_USER_AGENT);
+
+        return issueSessionAndTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(),
+                sessionId, clientType, deviceId, userAgent, ip, httpResponse, REFRESH_SUCCESS);
     }
 
     @Override
-    public APIResponse<Void> logout(HttpServletRequest request, HttpServletResponse response) {
-        revokeRefreshToken(CookieUtils.read(request, CookieUtils.REFRESH));
-        blacklistAccessToken(resolveAccessToken(request));
-        cookieUtils.clear(response);
-        return APIResponse.success(LOGOUT_SUCCESS);
-    }
+    public APIResponse<Void> logout(RefreshRequest refreshRequest, HttpServletRequest httpRequest,
+                                    HttpServletResponse httpResponse) {
+        ClientType clientType = tokenTransport.resolveClientType(httpRequest);
+        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, refreshRequest, httpRequest);
 
-    @Override
-    public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request) {
-        AuthenticatedUser authenticatedUser = userService.verifyCredentials(request.getEmail(), request.getPassword());
-        return issueMobileTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(), LOGIN_SUCCESS);
-    }
+        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+            try {
+                try {
+                    Jwt jwtRefresh = jwtService.parseRefresh(rawRefreshToken);
+                    identityStateService.consumeRefresh(jwtRefresh.getId(), jwtService.getUserId(jwtRefresh));
+                } catch (Exception ignored) {
+                }
 
-    @Override
-    public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request) {
-        Jwt refreshToken = parseRefreshToken(request.getRefreshToken());
-        UserResponse user = consumeRefreshToken(refreshToken);
-        return issueMobileTokens(user, jwtService.getAuthzVersion(refreshToken), REFRESH_SUCCESS);
-    }
+                String tokenHash = jwtService.hashToken(rawRefreshToken);
+                Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
+                if (!tokenData.isEmpty()) {
+                    UUID userId = UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
+                    String sessionId = tokenData.get(RedisKeys.FIELD_SESSION_ID);
+                    tokenStore.revokeRefreshToken(tokenHash, userId);
+                    sessionStore.removeSession(userId, sessionId);
+                }
+            } catch (AppException e) {
+                // Token lỗi/không hợp lệ vẫn cho logout thành công (idempotent)
+                rethrowUnlessUnauthenticated(e);
+            }
+        }
 
-    @Override
-    public APIResponse<Void> logoutMobile(RefreshRequest refreshRequest, HttpServletRequest request) {
-        revokeRefreshToken(refreshRequest.getRefreshToken());
-        blacklistAccessToken(resolveAccessToken(request));
+        // Blacklist access token nếu có
+        String rawAccessToken = tokenTransport.resolveAccessToken(httpRequest);
+        if (rawAccessToken != null) {
+            try {
+                Jwt accessToken = jwtService.parseAccess(rawAccessToken);
+                if (accessToken.getExpiresAt() != null) {
+                    Duration remaining = Duration.between(Instant.now(), accessToken.getExpiresAt());
+                    tokenStore.blacklistAccessToken(accessToken.getId(), remaining);
+                    identityStateService.blacklist(accessToken.getId(), remaining);
+                }
+            } catch (AppException e) {
+                rethrowUnlessUnauthenticated(e);
+            }
+        }
+
+        tokenTransport.clearTokens(clientType, httpResponse);
         return APIResponse.success(LOGOUT_SUCCESS);
     }
 
     @Override
     public APIResponse<Void> logoutAll(UUID actorId, HttpServletResponse response) {
+        // Thu hồi toàn bộ session và refresh token trên Redis
+        sessionStore.removeAllUserSessions(actorId);
+
+        // Tăng authzVersion trên DB để vô hiệu hóa toàn bộ access token cũ
         userService.invalidateSessions(actorId);
-        cookieUtils.clear(response);
+
+        // Xóa cookie nếu là client web
+        tokenTransport.clearTokens(ClientType.WEB, response);
         return APIResponse.success("Đã đăng xuất mọi phiên");
     }
 
-    private APIResponse<AuthenticationResponse> issueWebTokens(UserResponse user, long authzVersion,
-                                                               HttpServletResponse response, String message) {
-        Jwt accessToken = jwtService.issue(user, authzVersion, TokenType.ACCESS);
-        Jwt refreshToken = issueRefreshToken(user, authzVersion);
-        String csrfToken = cookieUtils.issue(response, accessToken.getTokenValue(), refreshToken.getTokenValue());
-        AuthenticationResponse authenticationResponse =
-                authenticationMapper.toWebResponse(csrfToken, identityProperties.getAccessTtl().toSeconds());
-        return APIResponse.success(message, authenticationResponse);
+    @Override
+    public APIResponse<UserResponse> me(UUID actorId) {
+        return userService.me(actorId);
     }
 
-    private APIResponse<AuthenticationResponse> issueMobileTokens(UserResponse user, long authzVersion, String message) {
-        Jwt accessToken = jwtService.issue(user, authzVersion, TokenType.ACCESS);
-        Jwt refreshToken = issueRefreshToken(user, authzVersion);
-        AuthenticationResponse authenticationResponse = authenticationMapper.toMobileResponse(
-                accessToken.getTokenValue(), refreshToken.getTokenValue(), identityProperties.getAccessTtl().toSeconds());
-        return APIResponse.success(message, authenticationResponse);
+    @Override
+    public APIResponse<List<SessionResponse>> listSessions(UUID actorId, HttpServletRequest httpRequest) {
+        String currentSid = null;
+        String rawAccessToken = tokenTransport.resolveAccessToken(httpRequest);
+        if (rawAccessToken != null) {
+            try {
+                Jwt jwt = jwtService.parseAccess(rawAccessToken);
+                currentSid = jwtService.getSessionId(jwt);
+            } catch (AppException ignored) {
+            }
+        }
+
+        Set<String> sessionIds = sessionStore.getUserSessionIds(actorId);
+        List<SessionResponse> result = new ArrayList<>();
+
+        for (String sid : sessionIds) {
+            Map<String, String> sData = sessionStore.getSession(sid);
+            if (sData.isEmpty()) {
+                continue;
+            }
+            Instant createdAt = sData.containsKey(RedisKeys.FIELD_CREATED_AT)
+                    ? Instant.parse(sData.get(RedisKeys.FIELD_CREATED_AT))
+                    : Instant.now();
+            Instant lastActiveAt = sData.containsKey(RedisKeys.FIELD_LAST_ACTIVE_AT)
+                    ? Instant.parse(sData.get(RedisKeys.FIELD_LAST_ACTIVE_AT))
+                    : createdAt;
+
+            result.add(SessionResponse.builder()
+                    .sessionId(sid)
+                    .deviceId(sData.get(RedisKeys.FIELD_DEVICE_ID))
+                    .userAgent(sData.get(RedisKeys.FIELD_USER_AGENT))
+                    .ip(sData.get(RedisKeys.FIELD_IP))
+                    .createdAt(createdAt)
+                    .lastActiveAt(lastActiveAt)
+                    .current(sid.equals(currentSid))
+                    .build());
+        }
+
+        result.sort(Comparator.comparing(SessionResponse::getLastActiveAt).reversed());
+        return APIResponse.success("Lấy danh sách phiên đăng nhập thành công", result);
     }
 
-    private Jwt issueRefreshToken(UserResponse user, long authzVersion) {
-        Jwt refreshToken = jwtService.issue(user, authzVersion, TokenType.REFRESH);
-        // Lưu jti trước khi trả token: Redis lỗi → 503, không đăng nhập "nửa vời".
-        identityStateService.storeRefresh(refreshToken.getId(), user.getId(), identityProperties.getRefreshTtl());
-        return refreshToken;
+    @Override
+    public APIResponse<Void> revokeSession(UUID actorId, String sessionId) {
+        Map<String, String> sessionData = sessionStore.getSession(sessionId);
+        if (sessionData.isEmpty()) {
+            throw new AppException(ErrorCode.SESSION_NOT_FOUND);
+        }
+        String sessionUserId = sessionData.get(RedisKeys.FIELD_USER_ID);
+        if (!actorId.toString().equals(sessionUserId)) {
+            throw new AppException(ErrorCode.SESSION_ACCESS_DENIED);
+        }
+
+        String tokenHash = sessionData.get(RedisKeys.FIELD_REFRESH_TOKEN_HASH);
+        if (tokenHash != null) {
+            tokenStore.revokeRefreshToken(tokenHash, actorId);
+        }
+        sessionStore.removeSession(actorId, sessionId);
+        return APIResponse.success("Xóa phiên đăng nhập thành công");
     }
 
-    private Jwt parseRefreshToken(String token) {
-        if (token == null || token.isBlank()) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        return jwtService.parseRefresh(token);
+    // ===== Deprecated methods =====
+
+    @Override
+    @Deprecated
+    public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request) {
+        return login(request, null, null);
     }
 
-    // Kiểm tài khoản còn hợp lệ rồi mới claim jti (nguyên tử): chỉ một request refresh đồng thời thành công.
-    private UserResponse consumeRefreshToken(Jwt refreshToken) {
-        UUID userId = jwtService.getUserId(refreshToken);
-        UserResponse user;
-        try {
-            user = currentIdentityService.getActiveUser(userId, jwtService.getAuthzVersion(refreshToken));
-        } catch (AuthenticationException e) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        if (!identityStateService.consumeRefresh(refreshToken.getId(), userId)) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        return user;
+    @Override
+    @Deprecated
+    public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request) {
+        return refresh(request, null, null);
     }
 
-    // Token sai/hết hạn vẫn cho logout thành công; chỉ lỗi hạ tầng (Redis) mới được ném ra.
-    private void revokeRefreshToken(String token) {
-        if (token == null || token.isBlank()) {
-            return;
-        }
-        try {
-            Jwt refreshToken = jwtService.parseRefresh(token);
-            identityStateService.consumeRefresh(refreshToken.getId(), jwtService.getUserId(refreshToken));
-        } catch (AppException e) {
-            rethrowUnlessUnauthenticated(e);
-        }
+    @Override
+    @Deprecated
+    public APIResponse<Void> logoutMobile(RefreshRequest refreshRequest, HttpServletRequest request) {
+        return logout(refreshRequest, request, null);
     }
 
-    private void blacklistAccessToken(String token) {
-        if (token == null) {
-            return;
+    // ===== Private helpers =====
+
+    private APIResponse<AuthenticationResponse> issueSessionAndTokens(
+            UserResponse user, long authzVersion, String existingSessionId,
+            ClientType clientType, String deviceId, String userAgent, String ip,
+            HttpServletResponse response, String message) {
+
+        String sessionId = existingSessionId != null ? existingSessionId : UUID.randomUUID().toString();
+        String rawRefreshToken = jwtService.issueOpaqueRefreshToken();
+        String tokenHash = jwtService.hashToken(rawRefreshToken);
+        Duration refreshTtl = identityProperties.getRefreshTtl();
+
+        if (existingSessionId == null) {
+            sessionStore.createSession(sessionId, user.getId(), deviceId, userAgent, ip, tokenHash, refreshTtl);
+        } else {
+            sessionStore.updateSessionActivity(sessionId, tokenHash, refreshTtl);
         }
-        try {
-            Jwt accessToken = jwtService.parseAccess(token);
-            identityStateService.blacklist(accessToken.getId(), Duration.between(Instant.now(), accessToken.getExpiresAt()));
-        } catch (AppException e) {
-            rethrowUnlessUnauthenticated(e);
+
+        tokenStore.storeRefreshToken(tokenHash, user.getId(), sessionId, deviceId, userAgent, ip, refreshTtl);
+
+        Jwt accessToken = jwtService.issueAccess(user, authzVersion, sessionId);
+
+        return tokenTransport.deliverTokens(clientType, user, accessToken.getTokenValue(),
+                rawRefreshToken, identityProperties.getAccessTtl().toSeconds(), response, message);
+    }
+
+    private String extractIp(HttpServletRequest request) {
+        if (request == null) {
+            return "unknown";
         }
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "unknown";
     }
 
     private void rethrowUnlessUnauthenticated(AppException exception) {
         if (exception.getErrorCode() != ErrorCode.UNAUTHENTICATED) {
             throw exception;
         }
-    }
-
-    // Ưu tiên cookie (web), sau đó header Authorization (mobile).
-    private String resolveAccessToken(HttpServletRequest request) {
-        String cookieToken = CookieUtils.read(request, CookieUtils.ACCESS);
-        if (cookieToken != null) {
-            return cookieToken;
-        }
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (header != null && header.startsWith(TokenClaims.BEARER_PREFIX)) {
-            return header.substring(TokenClaims.BEARER_PREFIX.length());
-        }
-        return null;
     }
 }

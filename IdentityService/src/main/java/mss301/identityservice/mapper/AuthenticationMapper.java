@@ -12,11 +12,13 @@ public interface AuthenticationMapper {
     @Mapping(target = "authenticated", constant = "true")
     @Mapping(target = "accessToken", ignore = true)
     @Mapping(target = "refreshToken", ignore = true)
+    @Mapping(target = "user", ignore = true)
     AuthenticationResponse toWebResponse(String csrfToken, long expiresInSeconds);
 
     // Mobile: token trả trong body để app lưu vào OS secure storage.
     @Mapping(target = "authenticated", constant = "true")
     @Mapping(target = "csrfToken", ignore = true)
+    @Mapping(target = "user", ignore = true)
     AuthenticationResponse toMobileResponse(String accessToken, String refreshToken, long expiresInSeconds);
 
     CsrfResponse toCsrfResponse(CsrfToken csrfToken);

@@ -80,7 +80,13 @@ public enum ErrorCode {
 
     // API NỘI BỘ (service-to-service)
     USER_IDS_REQUIRED(1112, "Danh sách userId không được để trống", HttpStatus.BAD_REQUEST),
-    USER_BATCH_TOO_LARGE(1113, "Danh sách userId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST);
+    USER_BATCH_TOO_LARGE(1113, "Danh sách userId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST),
+
+    // PHIÊN & BẢO MẬT HỢP NHẤT
+    LOGIN_ATTEMPTS_EXCEEDED(1082, "Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.", HttpStatus.TOO_MANY_REQUESTS),
+    SESSION_NOT_FOUND(1083, "Phiên đăng nhập không tồn tại hoặc đã hết hạn", HttpStatus.NOT_FOUND),
+    SESSION_ACCESS_DENIED(1084, "Bạn không có quyền thao tác trên phiên đăng nhập này", HttpStatus.FORBIDDEN),
+    TOKEN_REUSED(1085, "Phát hiện token đã bị thu hồi được sử dụng lại. Toàn bộ phiên đã bị hủy vì lý do bảo mật.", HttpStatus.UNAUTHORIZED);
 
     private int code;
     private String message;

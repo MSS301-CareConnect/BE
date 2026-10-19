@@ -39,27 +39,31 @@ public class CookieUtils {
         return null;
     }
 
+    public static final String REFRESH_PATH = "/api/v1/auth/refresh";
+    public static final String ROOT_PATH = "/";
+
     // Đặt access + refresh HttpOnly và xoay CSRF token mới; trả CSRF để client cập nhật header.
     public String issue(HttpServletResponse response, String accessToken, String refreshToken) {
-        set(response, ACCESS, accessToken, identityProperties.getAccessTtl());
-        set(response, REFRESH, refreshToken, identityProperties.getRefreshTtl());
+        set(response, ACCESS, accessToken, identityProperties.getAccessTtl(), ROOT_PATH);
+        set(response, REFRESH, refreshToken, identityProperties.getRefreshTtl(), REFRESH_PATH);
         String csrfToken = UUID.randomUUID().toString();
-        set(response, CSRF, csrfToken, SESSION_COOKIE);
+        set(response, CSRF, csrfToken, SESSION_COOKIE, ROOT_PATH);
         return csrfToken;
     }
 
     public void clear(HttpServletResponse response) {
-        set(response, ACCESS, "", Duration.ZERO);
-        set(response, REFRESH, "", Duration.ZERO);
-        set(response, CSRF, "", Duration.ZERO);
+        set(response, ACCESS, "", Duration.ZERO, ROOT_PATH);
+        set(response, REFRESH, "", Duration.ZERO, REFRESH_PATH);
+        set(response, REFRESH, "", Duration.ZERO, ROOT_PATH); // Xóa cả cookie cũ nếu có path=/
+        set(response, CSRF, "", Duration.ZERO, ROOT_PATH);
     }
 
-    private void set(HttpServletResponse response, String name, String value, Duration maxAge) {
+    private void set(HttpServletResponse response, String name, String value, Duration maxAge, String path) {
         ResponseCookie cookie = ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(identityProperties.isCookieSecure())
                 .sameSite(identityProperties.getCookieSameSite())
-                .path("/")
+                .path(path)
                 .maxAge(maxAge)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());

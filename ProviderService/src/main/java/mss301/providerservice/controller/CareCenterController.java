@@ -35,16 +35,7 @@ public class CareCenterController {
     IdentityAccountService identityAccountService;
     CaregiverScheduleService scheduleService;
 
-    @PostMapping
-    @Operation(summary = "Tạo trung tâm chăm sóc mới (Admin)")
-    @PreAuthorize("hasRole('ADMIN')")
-    public APIResponse<CenterResponse> create(@CurrentUserId UUID actorId,
-                                              @RequestBody @Valid CenterCreateRequest request) {
-        if (request.getManagerUserId() != null) {
-            identityAccountService.requireActiveRole(request.getManagerUserId(), "CENTER_MANAGER");
-        }
-        return careCenterService.create(actorId, request);
-    }
+    // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
     @GetMapping
     @Operation(summary = "Danh sách trung tâm chăm sóc")
@@ -65,6 +56,32 @@ public class CareCenterController {
         return careCenterService.get(centerId);
     }
 
+    @GetMapping("/{centerId}/schedules")
+    @Operation(summary = "Danh sách lịch người chăm sóc của trung tâm")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<PageResponse<ScheduleResponse>> listSchedules(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID centerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return scheduleService.centerSchedules(actorId, centerId, page, size);
+    }
+
+    // ─── POST OPERATIONS ──────────────────────────────────────────────────────
+
+    @PostMapping
+    @Operation(summary = "Tạo trung tâm chăm sóc mới (Admin)")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<CenterResponse> create(@CurrentUserId UUID actorId,
+                                              @RequestBody @Valid CenterCreateRequest request) {
+        if (request.getManagerUserId() != null) {
+            identityAccountService.requireActiveRole(request.getManagerUserId(), "CENTER_MANAGER");
+        }
+        return careCenterService.create(actorId, request);
+    }
+
+    // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
     @PutMapping("/{centerId}")
     @Operation(summary = "Cập nhật thông tin trung tâm chăm sóc (Admin)")
     @PreAuthorize("hasRole('ADMIN')")
@@ -77,6 +94,8 @@ public class CareCenterController {
         return careCenterService.update(actorId, centerId, request);
     }
 
+    // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
+
     @PatchMapping("/{centerId}/status")
     @Operation(summary = "Cập nhật trạng thái trung tâm chăm sóc (Admin)")
     @PreAuthorize("hasRole('ADMIN')")
@@ -84,26 +103,6 @@ public class CareCenterController {
                                                     @PathVariable UUID centerId,
                                                     @RequestBody @Valid CenterStatusUpdateRequest request) {
         return careCenterService.updateStatus(actorId, centerId, request);
-    }
-
-    @DeleteMapping("/{centerId}")
-    @Operation(summary = "Xóa mềm trung tâm chăm sóc (Admin)")
-    @PreAuthorize("hasRole('ADMIN')")
-    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
-                                    @PathVariable UUID centerId,
-                                    @RequestParam Long version) {
-        return careCenterService.delete(actorId, centerId, version);
-    }
-
-    @GetMapping("/{centerId}/schedules")
-    @Operation(summary = "Danh sách lịch người chăm sóc của trung tâm")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<PageResponse<ScheduleResponse>> listSchedules(
-            @CurrentUserId UUID actorId,
-            @PathVariable UUID centerId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return scheduleService.centerSchedules(actorId, centerId, page, size);
     }
 
     @PatchMapping("/schedules/{id}/status")
@@ -114,5 +113,16 @@ public class CareCenterController {
             @PathVariable UUID id,
             @Valid @RequestBody ScheduleStatusRequest request) {
         return scheduleService.updateStatus(actorId, id, request);
+    }
+
+    // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
+
+    @DeleteMapping("/{centerId}")
+    @Operation(summary = "Xóa mềm trung tâm chăm sóc (Admin)")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
+                                    @PathVariable UUID centerId,
+                                    @RequestParam Long version) {
+        return careCenterService.delete(actorId, centerId, version);
     }
 }

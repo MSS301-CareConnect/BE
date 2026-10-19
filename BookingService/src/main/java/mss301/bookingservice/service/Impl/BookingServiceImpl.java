@@ -28,6 +28,8 @@ import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingQuote;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
+import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.dto.response.PageResponse;
@@ -113,6 +115,7 @@ public class BookingServiceImpl implements BookingService {
     CareServiceCatalogPort careServiceCatalogPort;
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
+    BookingOccurrenceServiceImpl bookingOccurrenceServiceImpl;
     Clock clock;
 
     // ─── CUSTOMER ────────────────────────────────────────────────────────────
@@ -536,6 +539,25 @@ public class BookingServiceImpl implements BookingService {
     public List<UUID> findExpirableIds() {
         return bookingRepository.findExpirableIds(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, clock.instant(),
                 PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<CaregiverOccurrenceResponse>> listCaregiverOccurrences(UUID actorId, LocalDate from, LocalDate to,
+                                                                                   OccurrenceStatus status) {
+        return bookingOccurrenceServiceImpl.list(actorId, from, to, status);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrence(UUID actorId, UUID id) {
+        return bookingOccurrenceServiceImpl.get(actorId, id);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrenceById(UUID id) {
+        return bookingOccurrenceServiceImpl.getById(id);
     }
 
     @Override

@@ -53,6 +53,8 @@ springdoc:
     enabled: ${CARE_CATALOG_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${CARE_CATALOG_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:

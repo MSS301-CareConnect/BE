@@ -22,6 +22,8 @@ springdoc:
     enabled: ${GATEWAY_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${GATEWAY_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
     urls-primary-name: identity
     urls:
       - name: identity

@@ -204,11 +204,11 @@ class IdentityServiceApplicationTests {
     }
 
     @Test void webLoginUsesCookies() throws Exception {
-        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andExpect(cookie().httpOnly("access_token",true)).andExpect(cookie().secure("refresh_token",true)).andExpect(jsonPath("$.result.accessToken").doesNotExist()).andExpect(jsonPath("$.result.refreshToken").doesNotExist());
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andExpect(cookie().httpOnly("access_token",true)).andExpect(cookie().secure("refresh_token",true)).andExpect(cookie().path("refresh_token", "/api/v1/auth/refresh")).andExpect(jsonPath("$.result.accessToken").doesNotExist()).andExpect(jsonPath("$.result.refreshToken").doesNotExist());
     }
 
     @Test void staleCookieDoesNotBlockLogin() throws Exception {
-        mvc.perform(post("/api/v1/auth/login").cookie(new Cookie("access_token","bad.token")).with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(new Cookie("access_token","bad.token")).with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk());
     }
 
     @Test void mobileRefreshCannotReplay() throws Exception {
@@ -362,7 +362,7 @@ class IdentityServiceApplicationTests {
     @Test void realCsrfTokenAllowsWebLogin() throws Exception {
         var csrfResponse = mvc.perform(get("/api/v1/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
         String csrfToken = json.readTree(csrfResponse.getContentAsString()).path("result").path("token").asString();
-        mvc.perform(post("/api/v1/auth/login").cookie(csrfResponse.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", csrfToken)
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(csrfResponse.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", csrfToken)
                 .contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
                 .andExpect(status().isOk());
     }
@@ -403,18 +403,18 @@ class IdentityServiceApplicationTests {
     @Test void webCsrfSurvivesReadsAndRotatesOnRefresh() throws Exception {
         var initial = mvc.perform(get("/api/v1/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
         String before = json.readTree(initial.getContentAsString()).path("result").path("token").asString();
-        var login = mvc.perform(post("/api/v1/auth/login").cookie(initial.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", before)
+        var login = mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(initial.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", before)
                 .contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
                 .andExpect(status().isOk()).andReturn().getResponse();
         String after = json.readTree(login.getContentAsString()).path("result").path("csrfToken").asString();
         assertThat(after).isNotEqualTo(before);
         var me = mvc.perform(get("/api/v1/users/me").cookie(login.getCookies())).andExpect(status().isOk()).andReturn().getResponse();
         assertThat(me.getCookie("XSRF-TOKEN")).isNull();
-        var refreshed = mvc.perform(post("/api/v1/auth/refresh").cookie(login.getCookies()).header("X-XSRF-TOKEN", after))
+        var refreshed = mvc.perform(post("/api/v1/auth/refresh").header("X-Client-Type", "web").cookie(login.getCookies()).header("X-XSRF-TOKEN", after))
                 .andExpect(status().isOk()).andReturn().getResponse();
         String next = json.readTree(refreshed.getContentAsString()).path("result").path("csrfToken").asString();
         assertThat(next).isNotEqualTo(after);
-        mvc.perform(post("/api/v1/auth/logout").cookie(refreshed.getCookies()).header("X-XSRF-TOKEN", next))
+        mvc.perform(post("/api/v1/auth/logout").header("X-Client-Type", "web").cookie(refreshed.getCookies()).header("X-XSRF-TOKEN", next))
                 .andExpect(status().isOk()).andExpect(cookie().maxAge("XSRF-TOKEN", 0));
     }
 
@@ -613,5 +613,165 @@ class IdentityServiceApplicationTests {
                 .andExpect(jsonPath("$.result.length()").value(1))
                 .andExpect(jsonPath("$.result[0].id").value(customer.getId().toString()));
     }
+
+    @Test void unifiedMobileAuthFlow() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .header("X-Device-Id", "Pixel-8")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessToken").exists())
+                .andExpect(jsonPath("$.result.refreshToken").exists())
+                .andExpect(jsonPath("$.result.user.email").value(customer.getEmail()))
+                .andExpect(cookie().doesNotExist("access_token"))
+                .andReturn();
+
+        String access = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String refresh = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // 1. Check me
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.id").value(customer.getId().toString()));
+
+        // 2. Check sessions
+        mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].deviceId").value("Pixel-8"))
+                .andExpect(jsonPath("$.result[0].isCurrent").value(true));
+
+        // 3. Refresh rotation
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessToken").exists())
+                .andExpect(jsonPath("$.result.refreshToken").exists())
+                .andReturn();
+
+        String newAccess = json.readTree(refreshResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String newRefresh = json.readTree(refreshResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+        assertThat(newRefresh).isNotEqualTo(refresh);
+
+        // 4. Logout
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .header("Authorization", "Bearer " + newAccess)
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(newRefresh).build())))
+                .andExpect(status().isOk());
+
+        // Access token is blacklisted
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + newAccess))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void unifiedRefreshTokenReuseDetection() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String refresh1 = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Rotate once: refresh1 -> refresh2
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh1).build())))
+                .andExpect(status().isOk());
+
+        // Replay old refresh1 -> must be 401
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh1).build())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void unifiedSessionRevocationAndPermission() throws Exception {
+        // Customer session
+        MvcResult custLogin = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String custAccess = json.readTree(custLogin.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+
+        MvcResult sessResult = mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isOk())
+                .andReturn();
+        String sessionId = json.readTree(sessResult.getResponse().getContentAsString()).path("result").get(0).path("sessionId").asString();
+
+        // Admin cannot delete customer's session -> 403 Forbidden
+        mvc.perform(delete("/api/v1/auth/sessions/" + sessionId).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(1084));
+
+        // Customer deletes own session -> 200 OK
+        mvc.perform(delete("/api/v1/auth/sessions/" + sessionId).header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isOk());
+
+        // Session list is now empty
+        mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(0));
+    }
+
+    @Test void unifiedLoginRateLimiting() throws Exception {
+        String testEmail = UUID.randomUUID() + "@example.test";
+        // Create user
+        accounts.createVerified(RegisterRequest.builder().email(testEmail).fullName("Rate User").password(passwords.encode(PASSWORD)).build());
+
+        // 5 failed logins
+        for (int i = 0; i < 5; i++) {
+            mvc.perform(post("/api/v1/auth/login")
+                            .header("X-Client-Type", "mobile")
+                            .contentType("application/json")
+                            .content(body(LoginRequest.builder().email(testEmail).password("WrongPassword9!").build())))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        // 6th attempt -> 429 Too Many Requests
+        mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(testEmail).password("WrongPassword9!").build())))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value(1082));
+    }
+
+    @Test void unifiedLogoutAllTerminatesSessions() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String access = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+
+        // Call logout-all
+        mvc.perform(post("/api/v1/auth/logout-all").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk());
+
+        // Session should be invalid
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void deprecatedMobileEndpointsHaveDeprecationHeader() throws Exception {
+        mvc.perform(post("/api/v1/auth/mobile/login")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("Deprecation"));
+    }
 }
+
 

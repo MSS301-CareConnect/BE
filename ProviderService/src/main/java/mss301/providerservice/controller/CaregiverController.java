@@ -36,14 +36,17 @@ public class CaregiverController {
     IdentityAccountService identityAccountService;
     CaregiverScheduleService scheduleService;
 
-    @PostMapping("/centers/{centerId}")
-    @Operation(summary = "Tạo hồ sơ caregiver thuộc trung tâm")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<CaregiverResponse> create(@CurrentUserId UUID actorId,
-                                                 @PathVariable UUID centerId,
-                                                 @Valid @RequestBody CaregiverCreateRequest request) {
-        identityAccountService.requireActiveRole(request.getUserId(), "CAREGIVER");
-        return caregiverService.create(actorId, centerId, request);
+    // ─── GET OPERATIONS ───────────────────────────────────────────────────────
+
+    @GetMapping
+    @Operation(summary = "Tìm kiếm caregiver đang hoạt động (Catalog)")
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<PageResponse<CaregiverResponse>> catalog(
+            @RequestParam(required = false) UUID centerId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return caregiverService.catalog(centerId, keyword, page, size);
     }
 
     @GetMapping("/centers/{centerId}")
@@ -59,22 +62,21 @@ public class CaregiverController {
         return caregiverService.listManaged(actorId, centerId, verification, status, page, size);
     }
 
-    @GetMapping
-    @Operation(summary = "Tìm kiếm caregiver đang hoạt động (Catalog)")
-    @PreAuthorize("isAuthenticated()")
-    public APIResponse<PageResponse<CaregiverResponse>> catalog(
-            @RequestParam(required = false) UUID centerId,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return caregiverService.catalog(centerId, keyword, page, size);
-    }
-
     @GetMapping("/me")
     @Operation(summary = "Hồ sơ caregiver của tôi")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverResponse> myProfile(@CurrentUserId UUID actorId) {
         return caregiverService.myProfile(actorId);
+    }
+
+    @GetMapping("/me/schedules")
+    @Operation(summary = "Lịch làm việc của tôi (Caregiver)")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<PageResponse<ScheduleResponse>> mySchedules(
+            @CurrentUserId UUID actorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return scheduleService.mySchedules(actorId, page, size);
     }
 
     @GetMapping("/{caregiverId}")
@@ -91,6 +93,20 @@ public class CaregiverController {
         return caregiverService.getByUser(userId);
     }
 
+    // ─── POST OPERATIONS ──────────────────────────────────────────────────────
+
+    @PostMapping("/centers/{centerId}")
+    @Operation(summary = "Tạo hồ sơ caregiver thuộc trung tâm")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<CaregiverResponse> create(@CurrentUserId UUID actorId,
+                                                 @PathVariable UUID centerId,
+                                                 @Valid @RequestBody CaregiverCreateRequest request) {
+        identityAccountService.requireActiveRole(request.getUserId(), "CAREGIVER");
+        return caregiverService.create(actorId, centerId, request);
+    }
+
+    // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
     @PutMapping("/{caregiverId}")
     @Operation(summary = "Cập nhật hồ sơ caregiver")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
@@ -100,14 +116,7 @@ public class CaregiverController {
         return caregiverService.update(actorId, caregiverId, request);
     }
 
-    @DeleteMapping("/{caregiverId}")
-    @Operation(summary = "Lưu trữ hồ sơ caregiver (xóa mềm)")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    public APIResponse<Void> archive(@CurrentUserId UUID actorId,
-                                     @PathVariable UUID caregiverId,
-                                     @RequestParam Long version) {
-        return caregiverService.archive(actorId, caregiverId, version);
-    }
+    // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
     @PatchMapping("/{id}/verification")
     @Operation(summary = "Duyệt hoặc từ chối hồ sơ caregiver (Admin)")
@@ -118,16 +127,6 @@ public class CaregiverController {
         return caregiverService.verify(actorId, id, request);
     }
 
-    @GetMapping("/me/schedules")
-    @Operation(summary = "Lịch làm việc của tôi (Caregiver)")
-    @PreAuthorize("hasRole('CAREGIVER')")
-    public APIResponse<PageResponse<ScheduleResponse>> mySchedules(
-            @CurrentUserId UUID actorId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return scheduleService.mySchedules(actorId, page, size);
-    }
-
     @PatchMapping("/schedules/{id}/status")
     @Operation(summary = "Bắt đầu hoặc hoàn thành lịch làm việc (Caregiver / Manager / Admin)")
     @PreAuthorize("hasAnyRole('CAREGIVER','CENTER_MANAGER','ADMIN')")
@@ -136,5 +135,16 @@ public class CaregiverController {
             @PathVariable UUID id,
             @Valid @RequestBody ScheduleStatusRequest request) {
         return scheduleService.updateStatus(actorId, id, request);
+    }
+
+    // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
+
+    @DeleteMapping("/{caregiverId}")
+    @Operation(summary = "Lưu trữ hồ sơ caregiver (xóa mềm)")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<Void> archive(@CurrentUserId UUID actorId,
+                                     @PathVariable UUID caregiverId,
+                                     @RequestParam Long version) {
+        return caregiverService.archive(actorId, caregiverId, version);
     }
 }

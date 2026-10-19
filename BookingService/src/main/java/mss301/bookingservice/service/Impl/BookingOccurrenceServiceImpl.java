@@ -13,7 +13,6 @@ import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.OccurrenceMapper;
 import mss301.bookingservice.repository.BookingOccurrenceRepository;
-import mss301.bookingservice.service.BookingOccurrenceService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,13 +28,12 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
+public class BookingOccurrenceServiceImpl  {
 
     BookingOccurrenceRepository bookingOccurrenceRepository;
     OccurrenceMapper occurrenceMapper;
     BookingProperties bookingProperties;
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CaregiverOccurrenceResponse>> list(UUID actorId, LocalDate from, LocalDate to,
                                                                OccurrenceStatus status) {
@@ -53,7 +51,6 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Lấy lịch chăm sóc thành công", occurrenceResponses);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverOccurrenceResponse> get(UUID actorId, UUID id) {
         BookingOccurrence occurrence = bookingOccurrenceRepository.findForCaregiver(id, actorId,
@@ -63,7 +60,6 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Lấy chi tiết buổi chăm sóc thành công", occurrenceResponse);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverOccurrenceResponse> getById(UUID id) {
         BookingOccurrence occurrence = bookingOccurrenceRepository.findWithBooking(id)

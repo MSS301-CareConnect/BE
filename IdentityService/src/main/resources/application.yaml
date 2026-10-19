@@ -39,6 +39,8 @@ springdoc:
     enabled: ${IDENTITY_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${IDENTITY_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:

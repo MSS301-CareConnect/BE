@@ -9,6 +9,8 @@ import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
+import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.BookingStatus;
@@ -76,4 +78,12 @@ public interface BookingService {
     List<UUID> findExpirableIds();
 
     void expire(UUID id);
+
+    // ─── CAREGIVER OCCURRENCES ────────────────────────────────────────────────
+    APIResponse<List<CaregiverOccurrenceResponse>> listCaregiverOccurrences(UUID actorId, LocalDate from, LocalDate to,
+                                                                             OccurrenceStatus status);
+
+    APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrence(UUID actorId, UUID id);
+
+    APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrenceById(UUID id);
 }

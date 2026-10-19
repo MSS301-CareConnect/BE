@@ -52,6 +52,8 @@ springdoc:
     enabled: ${PROVIDER_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${PROVIDER_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:

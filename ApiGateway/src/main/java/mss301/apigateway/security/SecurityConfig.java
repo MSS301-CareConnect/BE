@@ -90,8 +90,8 @@ public class SecurityConfig {
         cors.setAllowedOrigins(gatewayProperties.getAllowedOrigins());
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-                TokenClaims.CSRF_HEADER, RequestIdFilter.HEADER));
-        cors.setExposedHeaders(List.of(RequestIdFilter.HEADER));
+                TokenClaims.CSRF_HEADER, RequestIdFilter.HEADER, "X-Client-Type", "X-Device-Id"));
+        cors.setExposedHeaders(List.of(RequestIdFilter.HEADER, "Deprecation"));
         cors.setAllowCredentials(true);
         cors.setMaxAge(CORS_MAX_AGE_SECONDS);
         cors.validateAllowCredentials();

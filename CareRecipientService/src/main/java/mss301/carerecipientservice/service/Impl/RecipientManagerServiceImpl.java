@@ -19,7 +19,6 @@ import mss301.carerecipientservice.repository.CareRecipientRepository;
 import mss301.carerecipientservice.repository.RecipientManagerRepository;
 import mss301.carerecipientservice.service.IdentityUserService;
 import mss301.carerecipientservice.service.RecipientAccessService;
-import mss301.carerecipientservice.service.RecipientManagerService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -44,7 +43,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
-public class RecipientManagerServiceImpl implements RecipientManagerService {
+public class RecipientManagerServiceImpl  {
 
     RecipientManagerRepository recipientManagerRepository;
     CareRecipientRepository careRecipientRepository;
@@ -54,7 +53,6 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
     TransactionTemplate transactionTemplate;
 
     // Không @Transactional: đọc DB (transaction ngắn của repository) rồi mới gọi Identity.
-    @Override
     public APIResponse<List<RecipientManagerResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         List<RecipientManager> managers = recipientManagerRepository.findAllByRecipient(recipientId);
@@ -67,7 +65,6 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Lấy danh sách người quản lý thành công", managerResponses);
     }
 
-    @Override
     public APIResponse<RecipientManagerResponse> create(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
         // Kiểm quyền trước khi gọi Identity: người ngoài không dùng được API này để dò email.
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.OWNER);
@@ -89,7 +86,6 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Thêm người thân quản lý hồ sơ thành công", managerResponse);
     }
 
-    @Override
     public APIResponse<RecipientManagerResponse> update(UUID actorId, UUID recipientId, UUID id,
                                                         ManagerUpdateRequest request) {
         if (request.getAccessLevel() == null && request.getRelationshipType() == null) {
@@ -111,7 +107,6 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Cập nhật người quản lý thành công", managerResponse);
     }
 
-    @Override
     public APIResponse<RecipientManagerResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id) {
         RecipientManager newPrimary = transactionTemplate.execute(status -> {
             recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.OWNER);
@@ -137,7 +132,6 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã chuyển người quản lý chính", managerResponse);
     }
 
-    @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
         RecipientManager actorMembership = recipientAccessService.checkAccess(recipientId, actorId,

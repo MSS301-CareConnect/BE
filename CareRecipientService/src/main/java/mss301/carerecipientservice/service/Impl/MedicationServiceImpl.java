@@ -14,7 +14,6 @@ import mss301.carerecipientservice.exception.AppException;
 import mss301.carerecipientservice.exception.ErrorCode;
 import mss301.carerecipientservice.mapper.MedicationMapper;
 import mss301.carerecipientservice.repository.MedicationRepository;
-import mss301.carerecipientservice.service.MedicationService;
 import mss301.carerecipientservice.service.RecipientAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,13 +27,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
-public class MedicationServiceImpl implements MedicationService {
+public class MedicationServiceImpl  {
 
     MedicationRepository medicationRepository;
     RecipientAccessService recipientAccessService;
     MedicationMapper medicationMapper;
 
-    @Override
     @Transactional
     public APIResponse<MedicationResponse> create(UUID actorId, UUID recipientId, MedicationRequest request) {
         RecipientManager membership = recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
@@ -46,7 +44,6 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Thêm thuốc thành công", medicationResponse);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<List<MedicationResponse>> list(UUID actorId, UUID recipientId, Boolean active) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
@@ -57,7 +54,6 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Lấy danh sách thuốc thành công", medicationResponses);
     }
 
-    @Override
     @Transactional(readOnly = true)
     public APIResponse<MedicationResponse> get(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
@@ -66,7 +62,6 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Lấy thông tin thuốc thành công", medicationResponse);
     }
 
-    @Override
     @Transactional
     public APIResponse<MedicationResponse> update(UUID actorId, UUID recipientId, UUID id, MedicationRequest request) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
@@ -78,7 +73,6 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Cập nhật thuốc thành công", medicationResponse);
     }
 
-    @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
@@ -89,7 +83,6 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Xóa thuốc thành công");
     }
 
-    @Override
     @Transactional
     public APIResponse<MedicationResponse> updateActive(UUID actorId, UUID recipientId, UUID id, boolean active) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);

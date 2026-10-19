@@ -65,6 +65,8 @@ springdoc:
     enabled: ${BOOKING_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${BOOKING_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:

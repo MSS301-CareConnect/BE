@@ -19,6 +19,13 @@ public final class TokenClaims {
     // Tiền tố header Authorization của mobile/Swagger
     public static final String BEARER_PREFIX = "Bearer ";
 
+    public static final String SESSION_ID = "sid";
+
+    // Headers
+    public static final String CLIENT_TYPE_HEADER = "X-Client-Type";
+    public static final String DEVICE_ID_HEADER = "X-Device-Id";
+    public static final String DEPRECATION_HEADER = "Deprecation";
+
     private TokenClaims() {
     }
 }

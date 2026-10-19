@@ -398,6 +398,11 @@ return APIResponse.success("...", userMapper.toResponse(savedUser)); // ❌
 - Endpoint public có `@SecurityRequirements({})` **và** phải nằm trong danh sách permit của `SecurityConfig`.
 - Controller **chỉ** dùng `mss301.<service>.dto.response.APIResponse`; không dùng annotation Swagger
   `io.swagger.v3.oas.annotations.responses.ApiResponse`. Global 400/401/403/500 khai báo trong `OpenApiConfig`.
+- **Sắp xếp method trong Controller & Swagger UI (BẮT BUỘC — 2026-10-19):**
+  - Trong source code controller: gom cụm các method theo HTTP method theo thứ tự: các method `@GetMapping` trước,
+    tiếp theo đến `@PostMapping`, `@PutMapping`, `@PatchMapping`, và cuối cùng là `@DeleteMapping`.
+  - Cấu hình Swagger UI trong `application.yaml`: luôn bật `springdoc.swagger-ui.operationsSorter: method` và
+    `springdoc.swagger-ui.tagsSorter: alpha` để Swagger UI tự động gom nhóm và sắp xếp các endpoint theo HTTP method.
 
 ### Quy tắc MapStruct / tầng mapper (BẮT BUỘC — mọi service, hiện tại và sau này)
 
