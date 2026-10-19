@@ -74,7 +74,6 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 care-recipient:
-  internal-secret: ${CARE_RECIPIENT_INTERNAL_SECRET:}
   open-api-server-url: ${CARE_RECIPIENT_OPENAPI_SERVER_URL:}
 
   jwt:
@@ -83,9 +82,7 @@ care-recipient:
 
   identity:
     url: ${CARE_RECIPIENT_IDENTITY_URL}
-    internal-secret: ${CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET:}
 
-  # Caregiver xem hồ sơ: hỏi BookingService có đang được phân công không (GET /internal/bookings/caregiver-access).
+  # Caregiver xem hồ sơ: hỏi BookingService có đang được phân công không (GET /api/v1/bookings/caregiver-access).
   booking:
     url: ${CARE_RECIPIENT_BOOKING_URL}
-    internal-secret: ${CARE_RECIPIENT_BOOKING_INTERNAL_SECRET:}

@@ -12,16 +12,14 @@ import org.springframework.web.servlet.function.ServerResponse;
 
 import static org.springframework.cloud.gateway.server.mvc.filter.AfterFilterFunctions.removeResponseHeader;
 import static org.springframework.cloud.gateway.server.mvc.filter.BeforeFilterFunctions.setPath;
-import static org.springframework.cloud.gateway.server.mvc.filter.BeforeFilterFunctions.stripPrefix;
 import static org.springframework.cloud.gateway.server.mvc.filter.BeforeFilterFunctions.uri;
 import static org.springframework.cloud.gateway.server.mvc.handler.GatewayRouterFunctions.route;
 import static org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctions.http;
 import static org.springframework.cloud.gateway.server.mvc.predicate.GatewayRequestPredicates.path;
 
 /**
- * Định tuyến /api/v1/** → service phía sau (cắt prefix /api/v1, giữ nguyên phần còn lại). Không có route nào tới
- * /internal/** hay /.well-known/jwks.json (service gọi trực tiếp nhau). Cookie Identity đặt Path=/ nên không cần
- * rewrite cookie path.
+ * Định tuyến /api/v1/** → service phía sau, giữ nguyên path vì mỗi service tự khai báo /api/v1. Gateway là cổng duy
+ * nhất cho FE và cho Feign giữa các service. Cookie Identity đặt Path=/ nên không cần rewrite cookie path.
  */
 @Configuration
 @RequiredArgsConstructor
@@ -34,59 +32,63 @@ public class RouteConfig {
 
     @Bean
     public RouterFunction<ServerResponse> identityRoutes() {
-        return route("identity")
-                .route(path(GatewayPaths.IDENTITY_ROUTES), http())
-                .before(uri(gatewayProperties.getIdentityUrl()))
-                .before(stripPrefix(GatewayPaths.API_PREFIX_SEGMENTS))
+        return forward("identity", GatewayPaths.IDENTITY_ROUTES, gatewayProperties.getIdentityUrl());
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> careRecipientRoutes() {
+        return forward("care-recipient", GatewayPaths.CARE_RECIPIENT_ROUTES, gatewayProperties.getCareRecipientUrl());
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> bookingRoutes() {
+        return forward("booking", GatewayPaths.BOOKING_ROUTES, gatewayProperties.getBookingUrl());
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> providerRoutes() {
+        return forward("provider", GatewayPaths.PROVIDER_ROUTES, gatewayProperties.getProviderUrl());
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> careCatalogRoutes() {
+        return forward("care-catalog", GatewayPaths.CARE_CATALOG_ROUTES, gatewayProperties.getCareCatalogUrl());
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> mediaRoutes() {
+        return forward("media", GatewayPaths.MEDIA_ROUTES, gatewayProperties.getMediaUrl());
+    }
+
+    // Swagger tổng hợp: swagger-ui của gateway đọc OpenAPI của từng service qua các route này.
+    @Bean
+    public RouterFunction<ServerResponse> apiDocsRoutes() {
+        return docs("identity-api-docs", GatewayPaths.IDENTITY_API_DOCS, gatewayProperties.getIdentityUrl())
+                .and(docs("care-recipient-api-docs", GatewayPaths.CARE_RECIPIENT_API_DOCS,
+                        gatewayProperties.getCareRecipientUrl()))
+                .and(docs("booking-api-docs", GatewayPaths.BOOKING_API_DOCS, gatewayProperties.getBookingUrl()))
+                .and(docs("provider-api-docs", GatewayPaths.PROVIDER_API_DOCS, gatewayProperties.getProviderUrl()))
+                .and(docs("care-catalog-api-docs", GatewayPaths.CARE_CATALOG_API_DOCS,
+                        gatewayProperties.getCareCatalogUrl()))
+                .and(docs("media-api-docs", GatewayPaths.MEDIA_API_DOCS, gatewayProperties.getMediaUrl()));
+    }
+
+    private RouterFunction<ServerResponse> forward(String routeId, String[] paths, String targetUrl) {
+        return route(routeId)
+                .route(path(paths), http())
+                .before(uri(targetUrl))
                 .before(GatewayRequestHeaders.sanitize())
                 // Gateway đã đặt X-Request-Id ở response — bỏ bản sao từ service để không trùng header.
                 .after(removeResponseHeader(RequestIdFilter.HEADER))
                 .build();
     }
 
-    @Bean
-    public RouterFunction<ServerResponse> careRecipientRoutes() {
-        return route("care-recipient")
-                .route(path(GatewayPaths.CARE_RECIPIENT_ROUTES), http())
-                .before(uri(gatewayProperties.getCareRecipientUrl()))
-                .before(stripPrefix(GatewayPaths.API_PREFIX_SEGMENTS))
-                .before(GatewayRequestHeaders.sanitize())
-                .after(removeResponseHeader(RequestIdFilter.HEADER))
-                .build();
-    }
-
-    @Bean
-    public RouterFunction<ServerResponse> bookingRoutes() {
-        return route("booking")
-                .route(path(GatewayPaths.BOOKING_ROUTES), http())
-                .before(uri(gatewayProperties.getBookingUrl()))
-                .before(stripPrefix(GatewayPaths.API_PREFIX_SEGMENTS))
-                .before(GatewayRequestHeaders.sanitize())
-                .after(removeResponseHeader(RequestIdFilter.HEADER))
-                .build();
-    }
-
-    // Swagger tổng hợp: swagger-ui của gateway đọc OpenAPI của từng service qua các route này.
-    @Bean
-    public RouterFunction<ServerResponse> apiDocsRoutes() {
-        RouterFunction<ServerResponse> identityDocs = route("identity-api-docs")
-                .route(path(GatewayPaths.IDENTITY_API_DOCS), http())
-                .before(uri(gatewayProperties.getIdentityUrl()))
+    private RouterFunction<ServerResponse> docs(String routeId, String docsPath, String targetUrl) {
+        return route(routeId)
+                .route(path(docsPath), http())
+                .before(uri(targetUrl))
                 .before(setPath(OPENAPI_PATH))
                 .before(GatewayRequestHeaders.sanitize())
                 .build();
-        RouterFunction<ServerResponse> careRecipientDocs = route("care-recipient-api-docs")
-                .route(path(GatewayPaths.CARE_RECIPIENT_API_DOCS), http())
-                .before(uri(gatewayProperties.getCareRecipientUrl()))
-                .before(setPath(OPENAPI_PATH))
-                .before(GatewayRequestHeaders.sanitize())
-                .build();
-        RouterFunction<ServerResponse> bookingDocs = route("booking-api-docs")
-                .route(path(GatewayPaths.BOOKING_API_DOCS), http())
-                .before(uri(gatewayProperties.getBookingUrl()))
-                .before(setPath(OPENAPI_PATH))
-                .before(GatewayRequestHeaders.sanitize())
-                .build();
-        return identityDocs.and(careRecipientDocs).and(bookingDocs);
     }
 }

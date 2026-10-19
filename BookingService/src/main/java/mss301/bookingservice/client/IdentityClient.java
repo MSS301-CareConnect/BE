@@ -10,13 +10,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import java.util.List;
 
 /**
- * API nội bộ của IdentityService — chỉ batch hồ sơ khách hàng để hiển thị (tên, SĐT) cho trung tâm / admin.
+ * API của IdentityService (/api/v1/users/batch) — batch hồ sơ khách hàng để hiển thị (tên, SĐT) cho trung tâm / admin.
  * Dùng qua IdentityUserService, không gọi trực tiếp.
  */
 @FeignClient(name = "identity", url = "${booking.identity.url}",
         configuration = IdentityClientConfig.class, fallbackFactory = IdentityClientFallbackFactory.class)
 public interface IdentityClient {
 
-    @PostMapping("/internal/users/batch")
+    @PostMapping("/api/v1/users/batch")
     RemoteApiResponse<List<IdentityUserResponse>> list(@RequestBody IdentityUserBatchRequest request);
 }

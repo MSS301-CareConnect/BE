@@ -60,10 +60,6 @@ public class IdentityProperties {
     @Pattern(regexp = "Lax|Strict|None")
     String cookieSameSite = "Lax";
 
-    // Secret cho /internal/** (service-to-service). Để trống = khóa toàn bộ API nội bộ (fail-closed).
-    @ToString.Exclude
-    String internalSecret = "";
-
     // URL server cho OpenAPI khi đứng sau gateway (vd /api/v1). Để trống = mặc định của springdoc.
     String openApiServerUrl = "";
 

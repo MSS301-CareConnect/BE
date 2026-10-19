@@ -6,6 +6,7 @@ import mss301.providerservice.enums.*;
 import mss301.providerservice.mapper.ProviderViewMapper;
 import mss301.providerservice.repository.*;
 import mss301.providerservice.security.ProviderAuthorization;
+import mss301.providerservice.service.Impl.ShiftRegistrationServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
@@ -26,7 +27,7 @@ class ShiftRegistrationServiceTests {
     @Mock CaregiverService caregiverService;
     @Mock ProviderAuthorization authorization;
     @Mock ProviderViewMapper mapper;
-    @InjectMocks ShiftRegistrationService service;
+    @InjectMocks ShiftRegistrationServiceImpl service;
 
     @Test
     void approvingRegistrationCreatesScheduleAndClosesFullShift() {

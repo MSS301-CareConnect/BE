@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/care-services")
+@RequestMapping({"/api/v1/catalog-items", "/api/v1/care-services"})
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Catalog item", description = "Danh mục dịch vụ chuẩn của nền tảng. Chỉ ADMIN được tạo/sửa/xóa.")
@@ -37,11 +37,13 @@ public class CatalogItemController {
     }
 
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<List<CatalogItemResponse>> listAll() {
         return catalogItemService.listAll();
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<CatalogItemResponse> getById(@PathVariable UUID id) {
         return catalogItemService.getById(id);
     }

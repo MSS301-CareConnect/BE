@@ -69,7 +69,6 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 provider:
-  internal-secret: ${PROVIDER_INTERNAL_SECRET:}
   open-api-server-url: ${PROVIDER_OPENAPI_SERVER_URL:}
 
   jwt:
@@ -78,8 +77,6 @@ provider:
 
   identity:
     url: ${PROVIDER_IDENTITY_URL}
-    internal-secret: ${PROVIDER_IDENTITY_INTERNAL_SECRET:}
 
   media:
     url: ${PROVIDER_MEDIA_URL:http://localhost:8085}
-    internal-secret: ${PROVIDER_MEDIA_INTERNAL_SECRET:}

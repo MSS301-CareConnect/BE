@@ -3,10 +3,12 @@ package mss301.bookingservice.service;
 import mss301.bookingservice.dto.request.AcceptRequest;
 import mss301.bookingservice.dto.request.BookingCreateRequest;
 import mss301.bookingservice.dto.request.CaregiverAssignRequest;
+import mss301.bookingservice.dto.request.DepositPaidRequest;
 import mss301.bookingservice.dto.request.ReasonRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
+import mss301.bookingservice.dto.response.CaregiverAccessResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.BookingStatus;
@@ -62,4 +64,16 @@ public interface BookingService {
                                                              int page, int size);
 
     APIResponse<BookingDetailResponse> getAny(UUID id);
+
+    // ─── INTER-SERVICE / SHARED ───────────────────────────────────────────────
+
+    APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId);
+
+    APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request);
+
+    // ─── SCHEDULER ───────────────────────────────────────────────────────────
+
+    List<UUID> findExpirableIds();
+
+    void expire(UUID id);
 }

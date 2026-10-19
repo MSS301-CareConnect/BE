@@ -30,6 +30,12 @@ springdoc:
         url: /api-docs/care-recipient
       - name: booking
         url: /api-docs/booking
+      - name: provider
+        url: /api-docs/provider
+      - name: care-catalog
+        url: /api-docs/care-catalog
+      - name: media
+        url: /api-docs/media
 
 management:
   endpoints:
@@ -50,6 +56,9 @@ gateway:
   identity-url: ${GATEWAY_IDENTITY_URL}
   care-recipient-url: ${GATEWAY_CARE_RECIPIENT_URL}
   booking-url: ${GATEWAY_BOOKING_URL}
+  provider-url: ${GATEWAY_PROVIDER_URL}
+  care-catalog-url: ${GATEWAY_CARE_CATALOG_URL}
+  media-url: ${GATEWAY_MEDIA_URL}
   allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
 
   jwt:

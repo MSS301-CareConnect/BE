@@ -29,10 +29,10 @@ services:
       PROVIDER_SERVER_PORT: "8084"
       PROVIDER_DB_URL: jdbc:postgresql://provider-postgres:5432/${PROVIDER_DB_NAME:-CARECONNECT_PROVIDER}
       PROVIDER_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
-      PROVIDER_IDENTITY_URL: http://identity-service:8081
+      PROVIDER_IDENTITY_URL: http://api-gateway:8080
     ports:
       - "127.0.0.1:${PROVIDER_SERVER_PORT:-8084}:8084"
-    # Identity (JWKS, /internal/users) chỉ được gọi khi có request — không cần chờ lúc khởi động.
+    # Identity (JWKS) chỉ được gọi khi có request — không cần chờ lúc khởi động.
     depends_on:
       provider-postgres:
         condition: service_healthy

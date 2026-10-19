@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/care-recipients/{recipientId}/managers")
+@RequestMapping("/api/v1/care-recipients/{recipientId}/managers")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Recipient manager", description = "Người thân cùng quản lý hồ sơ. Xem: VIEWER; thêm/sửa/gỡ người khác, chuyển quản lý chính: OWNER; ai cũng tự rời được (trừ quản lý chính / OWNER cuối cùng).")

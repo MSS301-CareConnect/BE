@@ -43,7 +43,9 @@ management:
       show-details: never
 
 media:
-  internal-secret: ${MEDIA_INTERNAL_SECRET:}
+  jwt:
+    issuer: ${MEDIA_JWT_ISSUER}
+    jwks-uri: ${MEDIA_JWT_JWKS_URI}
   r2:
     endpoint: ${MEDIA_R2_ENDPOINT}
     bucket: ${MEDIA_R2_BUCKET}

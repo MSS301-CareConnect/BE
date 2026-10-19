@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/care-recipients/{recipientId}/emergency-contacts")
+@RequestMapping("/api/v1/care-recipients/{recipientId}/emergency-contacts")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Emergency contact", description = "Liên hệ khẩn cấp của người bệnh (tối đa một liên hệ chính). Xem: VIEWER; ghi: EDITOR trở lên.")

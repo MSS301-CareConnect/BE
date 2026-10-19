@@ -8,7 +8,7 @@ import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.repository.BookingRepository;
 import mss301.bookingservice.repository.BookingStatusHistoryRepository;
-import mss301.bookingservice.service.BookingExpiryService;
+import mss301.bookingservice.service.BookingService;
 import mss301.bookingservice.support.TestPlatformServer;
 import mss301.bookingservice.support.TestPlatformServer.CaregiverIds;
 import org.junit.jupiter.api.AfterEach;
@@ -58,7 +58,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class BookingApiTests {
 
-    static final String BOOKING_INTERNAL_SECRET = "booking-internal-test-secret";
     static final String PG_URL = System.getProperty("booking.testing.postgres-url", "jdbc:postgresql://localhost:55496/postgres");
     static final String PG_USER = "postgres";
     static final String PG_PASSWORD = "booking_test_only";
@@ -90,13 +89,9 @@ class BookingApiTests {
         registry.add("booking.jwt.issuer", () -> TestPlatformServer.ISSUER);
         registry.add("booking.jwt.jwks-uri", PLATFORM::jwksUri);
         registry.add("booking.identity.url", PLATFORM::baseUrl);
-        registry.add("booking.identity.internal-secret", () -> TestPlatformServer.IDENTITY_SECRET);
         registry.add("booking.care-recipient.url", PLATFORM::baseUrl);
-        registry.add("booking.care-recipient.internal-secret", () -> TestPlatformServer.CARE_RECIPIENT_SECRET);
         registry.add("booking.provider.url", PLATFORM::baseUrl);
-        registry.add("booking.provider.internal-secret", () -> TestPlatformServer.PROVIDER_SECRET);
-        registry.add("booking.internal-secret", () -> BOOKING_INTERNAL_SECRET);
-        // Scheduler không chạy trong lúc test; test gọi BookingExpiryService trực tiếp.
+        // Scheduler không chạy trong lúc test; test gọi BookingService trực tiếp.
         registry.add("booking.schedule.expiry-scan-interval", () -> "1h");
     }
 
@@ -125,7 +120,7 @@ class BookingApiTests {
     BookingStatusHistoryRepository bookingStatusHistoryRepository;
 
     @Autowired
-    BookingExpiryService bookingExpiryService;
+    BookingService bookingExpiryService;
 
     @AfterEach
     void resetPlatform() {
@@ -139,33 +134,33 @@ class BookingApiTests {
 
     @Test
     void missingOrInvalidTokenIs401() throws Exception {
-        mockMvc.perform(get("/bookings"))
+        mockMvc.perform(get("/api/v1/bookings"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401))
                 .andExpect(header().exists("X-Request-Id"));
         UUID userId = UUID.randomUUID();
         String refreshToken = PLATFORM.token(userId, null, List.of("careconnect-identity", "careconnect-api"), "refresh",
                 List.of("CUSTOMER"));
-        mockMvc.perform(get("/bookings").header("Authorization", "Bearer " + refreshToken))
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", "Bearer " + refreshToken))
                 .andExpect(status().isUnauthorized());
         String identityOnlyToken = PLATFORM.token(userId, null, List.of("careconnect-identity"), "access", List.of("CUSTOMER"));
-        mockMvc.perform(get("/bookings").header("Authorization", "Bearer " + identityOnlyToken))
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", "Bearer " + identityOnlyToken))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void rolesAreEnforcedPerApi() throws Exception {
         Scenario scenario = newScenario();
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .header("Authorization", bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(weeklyBody(scenario, null, 0))))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/center/bookings").header("Authorization", bearer(scenario.customerId(), null, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/bookings/center").header("Authorization", bearer(scenario.customerId(), null, "CUSTOMER")))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/admin/bookings").header("Authorization", managerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings/admin").header("Authorization", managerBearer(scenario)))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/caregiver/occurrences").param("from", "2026-01-01").param("to", "2026-01-02")
+        mockMvc.perform(get("/api/v1/booking-occurrences").param("from", "2026-01-01").param("to", "2026-01-02")
                         .header("Authorization", bearer(scenario.customerId(), null, "CUSTOMER")))
                 .andExpect(status().isForbidden());
     }
@@ -176,7 +171,7 @@ class BookingApiTests {
     void createWeeklyBookingGeneratesOccurrencesInUtcAndStoresSnapshot() throws Exception {
         Scenario scenario = newScenario();
         String requestId = "req-" + UUID.randomUUID();
-        MvcResult result = mockMvc.perform(post("/bookings")
+        MvcResult result = mockMvc.perform(post("/api/v1/bookings")
                         .header("Authorization", customerBearer(scenario))
                         .header("X-Request-Id", requestId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -219,10 +214,10 @@ class BookingApiTests {
         assertThat(history.getFirst().getToStatus()).isEqualTo(BookingStatus.PENDING);
         assertThat(history.getFirst().getChangedBy()).isEqualTo(scenario.customerId());
 
-        mockMvc.perform(get("/bookings/" + bookingId + "/occurrences").header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/occurrences").header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(6));
-        mockMvc.perform(get("/bookings").header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].recipientName").value("Bà Lan"))
@@ -247,7 +242,7 @@ class BookingApiTests {
         createBooking(scenario, body, "bad key with spaces")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_IDEMPOTENCY_KEY.getCode()));
-        mockMvc.perform(get("/bookings").header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", customerBearer(scenario)))
                 .andExpect(jsonPath("$.result.totalElements").value(1));
     }
 
@@ -255,7 +250,7 @@ class BookingApiTests {
     void recipientAccessAndStatusAreChecked() throws Exception {
         Scenario scenario = newScenario();
         UUID stranger = PLATFORM.addUser("Người lạ", "0900000000");
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .header("Authorization", bearer(stranger, null, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(weeklyBody(scenario, null, 0))))
@@ -264,14 +259,14 @@ class BookingApiTests {
         // VIEWER không đủ quyền đặt lịch (tối thiểu EDITOR) → vẫn 404, không lộ hồ sơ
         UUID viewer = PLATFORM.addUser("Người xem", "0900000001");
         PLATFORM.addRecipientManager(scenario.recipientId(), viewer, "VIEWER");
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .header("Authorization", bearer(viewer, null, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(weeklyBody(scenario, null, 0))))
                 .andExpect(status().isNotFound());
         UUID editor = PLATFORM.addUser("Người sửa", "0900000002");
         PLATFORM.addRecipientManager(scenario.recipientId(), editor, "EDITOR");
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .header("Authorization", bearer(editor, null, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(weeklyBody(scenario, null, 0))))
@@ -293,7 +288,7 @@ class BookingApiTests {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CARE_RECIPIENT_UNAVAILABLE.getCode()));
         PLATFORM.setCareRecipientFailing(false);
-        mockMvc.perform(get("/bookings").header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", customerBearer(scenario)))
                 .andExpect(jsonPath("$.result.totalElements").value(0));
     }
 
@@ -402,13 +397,13 @@ class BookingApiTests {
 
         // PENDING: caregiver chưa được giao → không thấy gì; truy cập hồ sơ bị từ chối
         assertCaregiverAccess(scenario.caregiver().userId(), scenario.recipientId(), false);
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/accept")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/accept")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_REQUIRED.getCode()));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/accept")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/accept")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", scenario.caregiver().caregiverId().toString()))))
@@ -420,31 +415,31 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.customer.phoneNumber").value("0987654321"))
                 .andExpect(jsonPath("$.result.occurrences[0].caregiverId").value(scenario.caregiver().caregiverId().toString()));
         // Chưa đặt cọc: caregiver vẫn chưa thấy lịch / hồ sơ
-        mockMvc.perform(get("/caregiver/occurrences").param("from", from.toString()).param("to", to.toString())
+        mockMvc.perform(get("/api/v1/booking-occurrences").param("from", from.toString()).param("to", to.toString())
                         .header("Authorization", caregiverBearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(0));
         assertCaregiverAccess(scenario.caregiver().userId(), scenario.recipientId(), false);
 
-        mockMvc.perform(post("/internal/bookings/" + bookingId + "/deposit-paid")
-                        .header("X-Internal-Secret", BOOKING_INTERNAL_SECRET)
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/deposit-paid")
+                        .header("Authorization", customerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("paymentReference", "PAY-123"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.result.confirmedAt").exists());
         // Gọi lại: idempotent
-        mockMvc.perform(post("/internal/bookings/" + bookingId + "/deposit-paid")
-                        .header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/deposit-paid")
+                        .header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("CONFIRMED"));
 
-        mockMvc.perform(get("/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.result.occurrences.length()").value(6));
 
-        MvcResult schedule = mockMvc.perform(get("/caregiver/occurrences").param("from", from.toString())
+        MvcResult schedule = mockMvc.perform(get("/api/v1/booking-occurrences").param("from", from.toString())
                         .param("to", to.toString())
                         .header("Authorization", caregiverBearer))
                 .andExpect(status().isOk())
@@ -454,12 +449,12 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result[0].recipientSnapshot").doesNotExist())
                 .andReturn();
         String occurrenceId = readResult(schedule).get(0).get("id").asString();
-        mockMvc.perform(get("/caregiver/occurrences/" + occurrenceId).header("Authorization", caregiverBearer))
+        mockMvc.perform(get("/api/v1/booking-occurrences/" + occurrenceId).header("Authorization", caregiverBearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.recipientSnapshot.allergies").value("Penicillin"))
                 .andExpect(jsonPath("$.result.serviceAddress").exists());
         CaregiverIds otherCaregiver = PLATFORM.addActiveCaregiver(scenario.centerId());
-        mockMvc.perform(get("/caregiver/occurrences/" + occurrenceId)
+        mockMvc.perform(get("/api/v1/booking-occurrences/" + occurrenceId)
                         .header("Authorization", bearer(otherCaregiver.userId(), scenario.centerId(), "CAREGIVER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.OCCURRENCE_NOT_FOUND.getCode()));
@@ -480,31 +475,31 @@ class BookingApiTests {
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
         UUID otherCenter = PLATFORM.addCenter("ACTIVE");
         String otherManager = bearer(UUID.randomUUID(), otherCenter, "CENTER_MANAGER");
-        mockMvc.perform(get("/center/bookings/" + bookingId).header("Authorization", otherManager))
+        mockMvc.perform(get("/api/v1/bookings/center/" + bookingId).header("Authorization", otherManager))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.BOOKING_NOT_FOUND.getCode()));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/reject")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/reject")
                         .header("Authorization", otherManager)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Không phải của tôi"))))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/center/bookings").header("Authorization", otherManager))
+        mockMvc.perform(get("/api/v1/bookings/center").header("Authorization", otherManager))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(0));
-        mockMvc.perform(get("/center/bookings")
+        mockMvc.perform(get("/api/v1/bookings/center")
                         .header("Authorization", bearer(UUID.randomUUID(), null, "CENTER_MANAGER")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CENTER_SCOPE_REQUIRED.getCode()));
-        mockMvc.perform(get("/center/bookings").header("Authorization", managerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings/center").header("Authorization", managerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].customer.fullName").value("Khách Hàng"))
                 .andExpect(jsonPath("$.result.items[0].recipientName").value("Bà Lan"));
         // Customer khác không thấy booking → 404
         UUID otherCustomer = PLATFORM.addUser("Khách khác", "0911111111");
-        mockMvc.perform(get("/bookings/" + bookingId).header("Authorization", bearer(otherCustomer, null, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", bearer(otherCustomer, null, "CUSTOMER")))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(post("/bookings/" + bookingId + "/cancel")
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/cancel")
                         .header("Authorization", bearer(otherCustomer, null, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Thử hủy"))))
@@ -515,13 +510,13 @@ class BookingApiTests {
     void rejectReleasesCaregiverAndCancelsOccurrences() throws Exception {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/reject")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/reject")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.REASON_REQUIRED.getCode()));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/reject")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/reject")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Không đủ nhân sự"))))
@@ -532,7 +527,7 @@ class BookingApiTests {
         // Caregiver được giải phóng: đặt lại đúng khung giờ đó thành công
         createBooking(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0), null)
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/accept")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/accept")
                         .header("Authorization", managerBearer(scenario)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_BOOKING_TRANSITION.getCode()));
@@ -542,11 +537,11 @@ class BookingApiTests {
     void customerCancelAndInvalidTransitions() throws Exception {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
-        mockMvc.perform(post("/internal/bookings/" + bookingId + "/deposit-paid")
-                        .header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/deposit-paid")
+                        .header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_BOOKING_TRANSITION.getCode()));
-        mockMvc.perform(post("/bookings/" + bookingId + "/cancel")
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/cancel")
                         .header("Authorization", customerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Đổi kế hoạch"))))
@@ -555,13 +550,13 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.cancelReason").value("Đổi kế hoạch"))
                 .andExpect(jsonPath("$.result.cancelledBy").value(scenario.customerId().toString()))
                 .andExpect(jsonPath("$.result.occurrences[5].status").value("CANCELLED"));
-        mockMvc.perform(post("/bookings/" + bookingId + "/cancel")
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/cancel")
                         .header("Authorization", customerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Hủy lần hai"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_BOOKING_TRANSITION.getCode()));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/cancel")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/cancel")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Đã hủy rồi"))))
@@ -574,7 +569,7 @@ class BookingApiTests {
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0));
         acceptAndConfirm(scenario, bookingId, null);
         CaregiverIds replacement = PLATFORM.addActiveCaregiver(scenario.centerId());
-        mockMvc.perform(patch("/center/bookings/" + bookingId + "/caregiver")
+        mockMvc.perform(patch("/api/v1/bookings/center/" + bookingId + "/caregiver")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", replacement.caregiverId().toString()))))
@@ -588,21 +583,21 @@ class BookingApiTests {
         // Đổi riêng một buổi sang caregiver đang bận cùng giờ → trùng lịch
         Scenario busy = newScenarioInCenter(scenario.centerId());
         String busyBookingId = createAndGetId(busy, weeklyBody(busy, busy.caregiver().caregiverId(), 0));
-        String occurrenceId = readResult(mockMvc.perform(get("/bookings/" + bookingId + "/occurrences")
+        String occurrenceId = readResult(mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/occurrences")
                         .header("Authorization", customerBearer(scenario)))
                 .andReturn()).get(0).get("id").asString();
-        mockMvc.perform(patch("/center/bookings/occurrences/" + occurrenceId + "/caregiver")
+        mockMvc.perform(patch("/api/v1/bookings/center/occurrences/" + occurrenceId + "/caregiver")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", busy.caregiver().caregiverId().toString()))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_SCHEDULE_CONFLICT.getCode()));
-        mockMvc.perform(post("/center/bookings/" + busyBookingId + "/reject")
+        mockMvc.perform(post("/api/v1/bookings/center/" + busyBookingId + "/reject")
                         .header("Authorization", managerBearer(busy))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Giải phóng lịch"))))
                 .andExpect(status().isOk());
-        mockMvc.perform(patch("/center/bookings/occurrences/" + occurrenceId + "/caregiver")
+        mockMvc.perform(patch("/api/v1/bookings/center/occurrences/" + occurrenceId + "/caregiver")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", busy.caregiver().caregiverId().toString()))))
@@ -610,7 +605,7 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.caregiverId").value(busy.caregiver().caregiverId().toString()));
         // Caregiver của một buổi riêng cũng được xem hồ sơ người bệnh
         assertCaregiverAccess(busy.caregiver().userId(), scenario.recipientId(), true);
-        mockMvc.perform(patch("/center/bookings/occurrences/" + occurrenceId + "/caregiver")
+        mockMvc.perform(patch("/api/v1/bookings/center/occurrences/" + occurrenceId + "/caregiver")
                         .header("Authorization", bearer(UUID.randomUUID(), PLATFORM.addCenter("ACTIVE"), "CENTER_MANAGER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", replacement.caregiverId().toString()))))
@@ -622,7 +617,7 @@ class BookingApiTests {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0));
         acceptAndConfirm(scenario, bookingId, null);
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/cancel")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/cancel")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("reason", "Caregiver ốm đột xuất"))))
@@ -642,14 +637,14 @@ class BookingApiTests {
         bookingRepository.save(booking);
         assertThat(bookingExpiryService.findExpirableIds()).contains(booking.getId());
         bookingExpiryService.expire(booking.getId());
-        mockMvc.perform(get("/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
                 .andExpect(jsonPath("$.result.status").value("EXPIRED"))
                 .andExpect(jsonPath("$.result.occurrences[0].status").value("CANCELLED"));
         // Gọi lại không đổi gì; khung giờ đã được giải phóng
         bookingExpiryService.expire(booking.getId());
         createBooking(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0), null)
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/accept")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/accept")
                         .header("Authorization", managerBearer(scenario)))
                 .andExpect(status().isConflict());
     }
@@ -661,55 +656,62 @@ class BookingApiTests {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
         String adminBearer = bearer(UUID.randomUUID(), null, "ADMIN");
-        mockMvc.perform(get("/admin/bookings").param("centerId", scenario.centerId().toString())
+        mockMvc.perform(get("/api/v1/bookings/admin").param("centerId", scenario.centerId().toString())
                         .header("Authorization", adminBearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].customer.fullName").value("Khách Hàng"));
         PLATFORM.setIdentityFailing(true);
-        mockMvc.perform(get("/admin/bookings/" + bookingId).header("Authorization", adminBearer))
+        mockMvc.perform(get("/api/v1/bookings/admin/" + bookingId).header("Authorization", adminBearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.id").value(bookingId))
                 .andExpect(jsonPath("$.result.customer").doesNotExist());
-        mockMvc.perform(get("/admin/bookings").param("page", "-1").header("Authorization", adminBearer))
+        mockMvc.perform(get("/api/v1/bookings/admin").param("page", "-1").header("Authorization", adminBearer))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_PAGE.getCode()));
     }
 
     @Test
-    void internalApiRequiresInternalSecret() throws Exception {
+    void interServiceEndpointsRequireAuthentication() throws Exception {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
-        mockMvc.perform(get("/internal/bookings/" + bookingId))
+        mockMvc.perform(get("/api/v1/bookings/caregiver-access")
+                .param("caregiverUserId", scenario.caregiver().userId().toString())
+                .param("recipientId", scenario.recipientId().toString()))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/internal/bookings/" + bookingId).header("X-Internal-Secret", "wrong"))
+
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/deposit-paid")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/internal/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/internal/bookings/" + bookingId).header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+
+        mockMvc.perform(get("/api/v1/bookings/caregiver-access")
+                .param("caregiverUserId", scenario.caregiver().userId().toString())
+                .param("recipientId", scenario.recipientId().toString())
+                .header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.id").value(bookingId));
-        String occurrenceId = readResult(mockMvc.perform(get("/bookings/" + bookingId + "/occurrences")
+                .andExpect(jsonPath("$.result.allowed").isBoolean());
+
+        String occurrenceId = readResult(mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/occurrences")
                 .header("Authorization", customerBearer(scenario))).andReturn()).get(0).get("id").asString();
-        mockMvc.perform(get("/internal/bookings/occurrences/" + occurrenceId).header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+        mockMvc.perform(get("/api/v1/booking-occurrences/" + occurrenceId)
+                .header("Authorization", adminBearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.bookingId").value(bookingId))
                 .andExpect(jsonPath("$.result.recipientSnapshot.fullName").value("Bà Lan"));
-        mockMvc.perform(get("/internal/bookings/" + UUID.randomUUID()).header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
-                .andExpect(status().isNotFound());
     }
 
     @Test
     void cookieWriteRequiresCsrf() throws Exception {
         Scenario scenario = newScenario();
         String token = PLATFORM.accessToken(scenario.customerId(), null, "CUSTOMER");
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .cookie(new Cookie("access_token", token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(weeklyBody(scenario, null, 0))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CSRF_INVALID.getCode()));
-        mockMvc.perform(post("/bookings")
+        mockMvc.perform(post("/api/v1/bookings")
                         .cookie(new Cookie("access_token", token), new Cookie("XSRF-TOKEN", "csrf-value"))
                         .header("X-XSRF-TOKEN", "csrf-value")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -754,7 +756,7 @@ class BookingApiTests {
     }
 
     ResultActions createBooking(Scenario scenario, Map<String, Object> body, String idempotencyKey) throws Exception {
-        var request = post("/bookings")
+        var request = post("/api/v1/bookings")
                 .header("Authorization", customerBearer(scenario))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(body));
@@ -771,24 +773,28 @@ class BookingApiTests {
 
     void acceptAndConfirm(Scenario scenario, String bookingId, UUID caregiverId) throws Exception {
         String acceptBody = caregiverId == null ? "{}" : json(Map.of("caregiverId", caregiverId.toString()));
-        mockMvc.perform(post("/center/bookings/" + bookingId + "/accept")
+        mockMvc.perform(post("/api/v1/bookings/center/" + bookingId + "/accept")
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(acceptBody))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/internal/bookings/" + bookingId + "/deposit-paid")
-                        .header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/deposit-paid")
+                        .header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("CONFIRMED"));
     }
 
     void assertCaregiverAccess(UUID caregiverUserId, UUID recipientId, boolean expected) throws Exception {
-        mockMvc.perform(get("/internal/bookings/caregiver-access")
+        mockMvc.perform(get("/api/v1/bookings/caregiver-access")
                         .param("caregiverUserId", caregiverUserId.toString())
                         .param("recipientId", recipientId.toString())
-                        .header("X-Internal-Secret", BOOKING_INTERNAL_SECRET))
+                        .header("Authorization", adminBearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(expected));
+    }
+
+    String adminBearer() {
+        return bearer(UUID.randomUUID(), null, "ADMIN");
     }
 
     String customerBearer(Scenario scenario) {

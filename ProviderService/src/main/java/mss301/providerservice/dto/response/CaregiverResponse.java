@@ -15,6 +15,7 @@ public class CaregiverResponse {
     UUID userId;
     UUID centerId;
     String centerName;
+    CenterStatus centerStatus;
     String fullName;
     Gender gender;
     LocalDate dateOfBirth;
@@ -32,4 +33,8 @@ public class CaregiverResponse {
     Long version;
     Instant createdAt;
     Instant updatedAt;
+
+    public UUID getCaregiverId() {
+        return id;
+    }
 }

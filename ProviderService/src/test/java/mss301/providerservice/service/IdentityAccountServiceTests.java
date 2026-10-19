@@ -4,6 +4,7 @@ import mss301.providerservice.client.IdentityClient;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.exception.*;
+import mss301.providerservice.service.Impl.IdentityAccountServiceImpl;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -13,7 +14,7 @@ import static org.mockito.Mockito.*;
 
 class IdentityAccountServiceTests {
     IdentityClient client = mock(IdentityClient.class);
-    IdentityAccountService service = new IdentityAccountService(client);
+    IdentityAccountService service = new IdentityAccountServiceImpl(client);
 
     @Test
     void requiresActiveAccountWithExpectedRole() {

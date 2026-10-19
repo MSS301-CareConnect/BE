@@ -1,8 +1,10 @@
 package mss301.carecatalogservice.service;
 
 import mss301.carecatalogservice.dto.request.CenterOfferingRequest;
+import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.CenterOfferingResponse;
+import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,4 +20,6 @@ public interface CenterOfferingService {
     APIResponse<CenterOfferingResponse> getById(UUID id);
 
     APIResponse<Void> delete(UUID centerId, UUID id);
+
+    List<ServiceQuoteResponse> quote(ServiceQuoteRequest request);
 }

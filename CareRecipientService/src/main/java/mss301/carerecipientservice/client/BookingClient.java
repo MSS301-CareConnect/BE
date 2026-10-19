@@ -17,7 +17,7 @@ import java.util.UUID;
         configuration = BookingClientConfig.class, fallbackFactory = BookingClientFallbackFactory.class)
 public interface BookingClient {
 
-    @GetMapping("/internal/bookings/caregiver-access")
+    @GetMapping("/api/v1/bookings/caregiver-access")
     BookingApiResponse<CaregiverAccessResponse> checkCaregiverAccess(@RequestParam("caregiverUserId") UUID caregiverUserId,
                                                                      @RequestParam("recipientId") UUID recipientId);
 }

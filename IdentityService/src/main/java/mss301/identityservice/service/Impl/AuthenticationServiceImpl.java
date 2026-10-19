@@ -20,11 +20,11 @@ import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.mapper.AuthenticationMapper;
 import mss301.identityservice.security.CookieUtils;
 import mss301.identityservice.security.TokenClaims;
-import mss301.identityservice.service.AccountService;
 import mss301.identityservice.service.AuthenticationService;
 import mss301.identityservice.service.CurrentIdentityService;
 import mss301.identityservice.service.IdentityStateService;
 import mss301.identityservice.service.JwtService;
+import mss301.identityservice.service.UserService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -45,7 +45,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     static String REFRESH_SUCCESS = "Làm mới phiên đăng nhập thành công";
     static String LOGOUT_SUCCESS = "Đăng xuất thành công";
 
-    AccountService accountService;
+    UserService userService;
     CurrentIdentityService currentIdentityService;
     IdentityStateService identityStateService;
     JwtService jwtService;
@@ -61,7 +61,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Override
     public APIResponse<AuthenticationResponse> login(LoginRequest request, HttpServletResponse response) {
-        AuthenticatedUser authenticatedUser = accountService.verifyCredentials(request.getEmail(), request.getPassword());
+        AuthenticatedUser authenticatedUser = userService.verifyCredentials(request.getEmail(), request.getPassword());
         return issueWebTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(), response, LOGIN_SUCCESS);
     }
 
@@ -82,7 +82,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Override
     public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request) {
-        AuthenticatedUser authenticatedUser = accountService.verifyCredentials(request.getEmail(), request.getPassword());
+        AuthenticatedUser authenticatedUser = userService.verifyCredentials(request.getEmail(), request.getPassword());
         return issueMobileTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(), LOGIN_SUCCESS);
     }
 
@@ -102,7 +102,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Override
     public APIResponse<Void> logoutAll(UUID actorId, HttpServletResponse response) {
-        accountService.invalidateSessions(actorId);
+        userService.invalidateSessions(actorId);
         cookieUtils.clear(response);
         return APIResponse.success("Đã đăng xuất mọi phiên");
     }

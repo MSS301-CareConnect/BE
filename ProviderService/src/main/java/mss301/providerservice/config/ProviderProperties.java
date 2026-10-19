@@ -4,7 +4,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AccessLevel;
 import lombok.Data;
-import lombok.ToString;
 import lombok.experimental.FieldDefaults;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -14,8 +13,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("provider")
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ProviderProperties {
-    @ToString.Exclude
-    String internalSecret = "";
     String openApiServerUrl = "";
 
     @Valid
@@ -42,9 +39,6 @@ public class ProviderProperties {
     public static class Identity {
         @NotBlank
         String url;
-
-        @ToString.Exclude
-        String internalSecret = "";
     }
 
     @Data
@@ -52,8 +46,5 @@ public class ProviderProperties {
     public static class Media {
         @NotBlank
         String url;
-
-        @ToString.Exclude
-        String internalSecret = "";
     }
 }

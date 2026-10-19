@@ -78,10 +78,10 @@ public final class TestPlatformServer {
             throw new ExceptionInInitializerError(e);
         }
         server.createContext("/.well-known/jwks.json", this::handleJwks);
-        server.createContext("/internal/users", this::handleUsers);
-        server.createContext("/internal/care-recipients", this::handleCareRecipients);
-        server.createContext("/internal/centers", this::handleCenters);
-        server.createContext("/internal/caregivers", this::handleCaregivers);
+        server.createContext("/api/v1/users", this::handleUsers);
+        server.createContext("/api/v1/care-recipients", this::handleCareRecipients);
+        server.createContext("/api/v1/care-centers", this::handleCenters);
+        server.createContext("/api/v1/caregivers", this::handleCaregivers);
         server.start();
     }
 
@@ -241,7 +241,7 @@ public final class TestPlatformServer {
     }
 
     private void handleUsers(HttpExchange exchange) throws IOException {
-        if (rejected(exchange, IDENTITY_SECRET, identityFailing)) {
+        if (rejected(exchange, identityFailing)) {
             return;
         }
         JsonNode body = objectMapper.readTree(exchange.getRequestBody());
@@ -257,12 +257,12 @@ public final class TestPlatformServer {
 
     private void handleCareRecipients(HttpExchange exchange) throws IOException {
         lastCareRecipientRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-Id"));
-        if (rejected(exchange, CARE_RECIPIENT_SECRET, careRecipientFailing)) {
+        if (rejected(exchange, careRecipientFailing)) {
             return;
         }
         String[] segments = exchange.getRequestURI().getPath().split("/");
-        UUID recipientId = UUID.fromString(segments[3]);
-        String action = segments[4];
+        UUID recipientId = UUID.fromString(segments[4]);
+        String action = segments[5];
         if (action.equals("access")) {
             Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
             UUID userId = UUID.fromString(query.get("userId"));
@@ -285,23 +285,24 @@ public final class TestPlatformServer {
     }
 
     private void handleCenters(HttpExchange exchange) throws IOException {
-        if (rejected(exchange, PROVIDER_SECRET, providerFailing)) {
+        if (rejected(exchange, providerFailing)) {
             return;
         }
-        UUID centerId = UUID.fromString(exchange.getRequestURI().getPath().substring("/internal/centers/".length()));
+        UUID centerId = UUID.fromString(exchange.getRequestURI().getPath().substring("/api/v1/care-centers/".length()));
         writeOrNotFound(exchange, centers.get(centerId), "{\"code\":4100,\"message\":\"Trung tâm chăm sóc không tồn tại\"}");
     }
 
     private void handleCaregivers(HttpExchange exchange) throws IOException {
-        if (rejected(exchange, PROVIDER_SECRET, providerFailing)) {
+        if (rejected(exchange, providerFailing)) {
             return;
         }
-        UUID caregiverId = UUID.fromString(exchange.getRequestURI().getPath().substring("/internal/caregivers/".length()));
+        UUID caregiverId = UUID.fromString(exchange.getRequestURI().getPath().substring("/api/v1/caregivers/".length()));
         writeOrNotFound(exchange, caregivers.get(caregiverId), "{\"code\":4200,\"message\":\"Hồ sơ người chăm sóc không tồn tại\"}");
     }
 
-    private boolean rejected(HttpExchange exchange, String expectedSecret, AtomicBoolean failing) throws IOException {
-        if (!expectedSecret.equals(exchange.getRequestHeaders().getFirst("X-Internal-Secret"))) {
+    private boolean rejected(HttpExchange exchange, AtomicBoolean failing) throws IOException {
+        String auth = exchange.getRequestHeaders().getFirst("Authorization");
+        if (auth == null || !auth.startsWith("Bearer ")) {
             write(exchange, 401, "{\"code\":401,\"message\":\"Bạn chưa được xác thực\"}");
             return true;
         }

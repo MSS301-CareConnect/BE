@@ -22,12 +22,12 @@ import java.util.UUID;
         configuration = IdentityClientConfig.class, fallbackFactory = IdentityClientFallbackFactory.class)
 public interface IdentityClient {
 
-    @GetMapping("/internal/users/{userId}")
+    @GetMapping("/api/v1/users/{userId}")
     IdentityApiResponse<IdentityUserResponse> get(@PathVariable("userId") UUID userId);
 
-    @GetMapping("/internal/users/by-email")
+    @GetMapping("/api/v1/users/by-email")
     IdentityApiResponse<IdentityUserResponse> getByEmail(@RequestParam("email") String email);
 
-    @PostMapping("/internal/users/batch")
+    @PostMapping("/api/v1/users/batch")
     IdentityApiResponse<List<IdentityUserResponse>> list(@RequestBody IdentityUserBatchRequest request);
 }

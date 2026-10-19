@@ -12,7 +12,6 @@ import io.swagger.v3.oas.models.servers.Server;
 import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.security.CurrentCenterId;
 import mss301.bookingservice.security.CurrentUserId;
-import mss301.bookingservice.security.InternalSecretFilter;
 import mss301.bookingservice.security.ReadOnlyCookieCsrfTokenRepository;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
@@ -27,8 +26,6 @@ public class OpenApiConfig {
 
     private static final String BEARER_SCHEME = "bearerAuth";
     private static final String CSRF_SCHEME = "csrf";
-    private static final String INTERNAL_SCHEME = "internalSecret";
-    private static final String INTERNAL_PREFIX = "/internal/";
     private static final String CSRF_DESCRIPTION = "Chỉ cần khi gọi bằng cookie access_token (web qua gateway): "
             + "dán token lấy từ GET /auth/csrf của IdentityService. Gọi bằng Bearer thuần không cần.";
     private static final Set<PathItem.HttpMethod> WRITE_METHODS = Set.of(
@@ -52,12 +49,7 @@ public class OpenApiConfig {
                         .type(SecurityScheme.Type.APIKEY)
                         .in(SecurityScheme.In.HEADER)
                         .name(ReadOnlyCookieCsrfTokenRepository.CSRF_HEADER)
-                        .description(CSRF_DESCRIPTION))
-                .addSecuritySchemes(INTERNAL_SCHEME, new SecurityScheme()
-                        .type(SecurityScheme.Type.APIKEY)
-                        .in(SecurityScheme.In.HEADER)
-                        .name(InternalSecretFilter.HEADER)
-                        .description("Chỉ cho /internal/** (service-to-service): giá trị BOOKING_INTERNAL_SECRET."));
+                        .description(CSRF_DESCRIPTION));
         for (String code : DOCUMENTED_RESPONSES) {
             components.addResponses(code, new ApiResponse().description("HTTP " + code + "; business endpoints return APIResponse"));
         }
@@ -84,15 +76,10 @@ public class OpenApiConfig {
         }));
     }
 
-    // /internal/** chỉ dùng internal secret; request ghi còn lại: bearer + csrf (csrf chỉ bắt buộc khi dùng cookie).
+    // Request ghi: bearer + csrf (csrf chỉ bắt buộc khi dùng cookie).
     @Bean
     public OpenApiCustomizer securityRequirements() {
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
-            if (path.startsWith(INTERNAL_PREFIX)) {
-                pathItem.readOperations().forEach(operation -> operation.setSecurity(
-                        List.of(new SecurityRequirement().addList(INTERNAL_SCHEME))));
-                return;
-            }
             pathItem.readOperationsMap().forEach((method, operation) -> {
                 if (WRITE_METHODS.contains(method)) {
                     addCsrfRequirement(operation);

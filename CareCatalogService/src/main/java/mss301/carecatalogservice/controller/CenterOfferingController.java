@@ -1,13 +1,16 @@
 package mss301.carecatalogservice.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.carecatalogservice.dto.request.CenterOfferingRequest;
+import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.CenterOfferingResponse;
+import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 import mss301.carecatalogservice.security.CurrentCenterId;
 import mss301.carecatalogservice.service.CenterOfferingService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,7 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/center-services")
+@RequestMapping("/api/v1/center-services")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Center offering", description = "Dịch vụ mà trung tâm cung cấp (dựa trên danh mục chuẩn).")
@@ -40,11 +43,13 @@ public class CenterOfferingController {
     }
 
     @GetMapping("/center/{centerId}")
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<List<CenterOfferingResponse>> listByCenter(@PathVariable UUID centerId) {
         return centerOfferingService.listByCenter(centerId);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<CenterOfferingResponse> getById(@PathVariable UUID id) {
         return centerOfferingService.getById(id);
     }
@@ -53,5 +58,12 @@ public class CenterOfferingController {
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<Void> delete(@CurrentCenterId UUID centerId, @PathVariable UUID id) {
         return centerOfferingService.delete(centerId, id);
+    }
+
+    @PostMapping("/quote")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Báo giá dịch vụ trung tâm cho BookingService hoặc khách hàng đặt lịch")
+    public APIResponse<List<ServiceQuoteResponse>> quote(@Valid @RequestBody ServiceQuoteRequest request) {
+        return APIResponse.success("Báo giá dịch vụ thành công", centerOfferingService.quote(request));
     }
 }

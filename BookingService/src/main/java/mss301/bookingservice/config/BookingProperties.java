@@ -22,10 +22,6 @@ import java.time.ZoneId;
 @ConfigurationProperties("booking")
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class BookingProperties {
-    // Secret cho /internal/** của service này (CareRecipient, Payment… gọi vào). Để trống = khóa toàn bộ (fail-closed).
-    @ToString.Exclude
-    String internalSecret = "";
-
     // URL server cho OpenAPI khi đứng sau gateway (vd /api/v1). Để trống = mặc định của springdoc.
     String openApiServerUrl = "";
 
@@ -70,10 +66,6 @@ public class BookingProperties {
         // Base URL service được gọi qua Feign (không có service discovery).
         @NotBlank
         String url;
-
-        // Giá trị <SERVICE>_INTERNAL_SECRET của service được gọi, gửi qua header X-Internal-Secret.
-        @ToString.Exclude
-        String internalSecret = "";
     }
 
     // Quy tắc lịch đã chốt (docs/2026-10-09-PLAN_BOOKING.md §9) — đổi qua env, không hardcode trong code.

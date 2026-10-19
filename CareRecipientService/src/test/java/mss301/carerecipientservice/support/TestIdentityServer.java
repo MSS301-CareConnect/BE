@@ -1,6 +1,5 @@
 package mss301.carerecipientservice.support;
 
-import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -39,13 +38,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * IdentityService giả cho test: JWKS (khóa RSA sinh lúc chạy) + API nội bộ /internal/users/** kiểm X-Internal-Secret.
+ * IdentityService giả cho test: JWKS (khóa RSA sinh lúc chạy) + API /api/v1/users/** chuyển tiếp Bearer token.
  * Cho phép tắt (trả 500) để kiểm fallback, và ghi lại header nhận được.
  */
 public final class TestIdentityServer {
 
     public static final String ISSUER = "https://identity.test";
-    public static final String INTERNAL_SECRET = "identity-internal-test-secret";
     public static final String KEY_ID = "test-key";
 
     private static final TestIdentityServer INSTANCE = new TestIdentityServer();
@@ -72,7 +70,7 @@ public final class TestIdentityServer {
             throw new ExceptionInInitializerError(e);
         }
         server.createContext("/.well-known/jwks.json", this::handleJwks);
-        server.createContext("/internal/users", this::handleInternalUsers);
+        server.createContext("/api/v1/users", this::handleApiUsers);
         server.start();
     }
 
@@ -102,11 +100,22 @@ public final class TestIdentityServer {
         return id;
     }
 
-    public void setFailing(boolean value) {
-        failing.set(value);
+    public void clear() {
+        usersById.clear();
+        failing.set(false);
+        batchCalls.set(0);
+        lastRequestId.set(null);
+    }
+
+    public void setFailing(boolean fail) {
+        this.failing.set(fail);
     }
 
     public int batchCalls() {
+        return batchCalls.get();
+    }
+
+    public int getBatchCalls() {
         return batchCalls.get();
     }
 
@@ -114,7 +123,10 @@ public final class TestIdentityServer {
         return lastRequestId.get();
     }
 
-    // Access token hợp lệ cho service backend: aud chứa careconnect-api, token_type=access.
+    public String getLastRequestId() {
+        return lastRequestId.get();
+    }
+
     public String accessToken(UUID userId, String... roles) {
         return token(userId, List.of("careconnect-identity", "careconnect-api"), "access", ISSUER, List.of(roles));
     }
@@ -126,17 +138,48 @@ public final class TestIdentityServer {
                 .subject(userId.toString())
                 .audience(audience)
                 .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plusSeconds(600)))
+                .expirationTime(Date.from(now.plusSeconds(900)))
                 .jwtID(UUID.randomUUID().toString())
                 .claim("token_type", tokenType)
                 .claim("authz_version", 0)
                 .claim("roles", roles)
                 .claim("permissions", List.of())
                 .build();
-        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY_ID).build(), claims);
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .keyID(KEY_ID)
+                .build();
+        SignedJWT jwt = new SignedJWT(header, claims);
         try {
             jwt.sign(new RSASSASigner(signingKey));
-        } catch (JOSEException e) {
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+        return jwt.serialize();
+    }
+
+    public String issueToken(UUID userId, Set<String> roles) {
+        return issueToken(userId, roles, Instant.now().plusSeconds(900));
+    }
+
+    public String issueToken(UUID userId, Set<String> roles, Instant expiresAt) {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(ISSUER)
+                .subject(userId.toString())
+                .audience(List.of("careconnect-api", "careconnect-identity"))
+                .issueTime(new Date())
+                .expirationTime(Date.from(expiresAt))
+                .jwtID(UUID.randomUUID().toString())
+                .claim("token_type", "access")
+                .claim("roles", roles)
+                .claim("permissions", List.of())
+                .build();
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .keyID(KEY_ID)
+                .build();
+        SignedJWT jwt = new SignedJWT(header, claims);
+        try {
+            jwt.sign(new RSASSASigner(signingKey));
+        } catch (Exception e) {
             throw new IllegalStateException(e);
         }
         return jwt.serialize();
@@ -146,9 +189,10 @@ public final class TestIdentityServer {
         write(exchange, 200, new JWKSet(signingKey.toPublicJWK()).toString());
     }
 
-    private void handleInternalUsers(HttpExchange exchange) throws IOException {
+    private void handleApiUsers(HttpExchange exchange) throws IOException {
         lastRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-Id"));
-        if (!INTERNAL_SECRET.equals(exchange.getRequestHeaders().getFirst("X-Internal-Secret"))) {
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             write(exchange, 401, "{\"code\":401,\"message\":\"Bạn chưa được xác thực\"}");
             return;
         }
@@ -157,7 +201,7 @@ public final class TestIdentityServer {
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        if (path.equals("/internal/users/batch")) {
+        if (path.equals("/api/v1/users/batch")) {
             batchCalls.incrementAndGet();
             JsonNode body = objectMapper.readTree(exchange.getRequestBody());
             List<Object> found = new ArrayList<>();
@@ -170,7 +214,7 @@ public final class TestIdentityServer {
             writeSuccess(exchange, found);
             return;
         }
-        if (path.equals("/internal/users/by-email")) {
+        if (path.equals("/api/v1/users/by-email")) {
             String query = exchange.getRequestURI().getRawQuery();
             String email = URLDecoder.decode(query.substring("email=".length()), StandardCharsets.UTF_8)
                     .strip().toLowerCase(Locale.ROOT);
@@ -181,7 +225,7 @@ public final class TestIdentityServer {
             writeUserOrNotFound(exchange, user);
             return;
         }
-        UUID id = UUID.fromString(path.substring("/internal/users/".length()));
+        UUID id = UUID.fromString(path.substring("/api/v1/users/".length()));
         writeUserOrNotFound(exchange, usersById.get(id));
     }
 

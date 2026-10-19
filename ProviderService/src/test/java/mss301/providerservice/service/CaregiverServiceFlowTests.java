@@ -6,6 +6,7 @@ import mss301.providerservice.enums.*;
 import mss301.providerservice.mapper.ProviderViewMapper;
 import mss301.providerservice.repository.*;
 import mss301.providerservice.security.ProviderAuthorization;
+import mss301.providerservice.service.Impl.CaregiverServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
@@ -22,7 +23,7 @@ class CaregiverServiceFlowTests {
     @Mock CaregiverProfileRepository caregiverRepository;
     @Mock ProviderAuthorization authorization;
     @Mock ProviderViewMapper mapper;
-    @InjectMocks CaregiverService service;
+    @InjectMocks CaregiverServiceImpl service;
 
     @Test
     void createStartsPendingAndInactive() {

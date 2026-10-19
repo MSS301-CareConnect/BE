@@ -4,15 +4,21 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.carerecipientservice.client.BookingClient;
+import mss301.carerecipientservice.client.dto.BookingApiResponse;
+import mss301.carerecipientservice.client.dto.CaregiverAccessResponse;
 import mss301.carerecipientservice.dto.request.CareRecipientCreateRequest;
 import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.request.EmergencyContactRequest;
 import mss301.carerecipientservice.dto.request.MedicationRequest;
+import mss301.carerecipientservice.dto.request.RecipientBatchRequest;
 import mss301.carerecipientservice.dto.response.APIResponse;
+import mss301.carerecipientservice.dto.response.AccessCheckResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.PageResponse;
+import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
 import mss301.carerecipientservice.entity.CareRecipient;
 import mss301.carerecipientservice.entity.EmergencyContact;
 import mss301.carerecipientservice.entity.Medication;
@@ -40,7 +46,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -56,6 +64,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     MedicationRepository medicationRepository;
     EmergencyContactRepository emergencyContactRepository;
     RecipientAccessService recipientAccessService;
+    BookingClient bookingClient;
     CareRecipientMapper careRecipientMapper;
     RecipientManagerMapper recipientManagerMapper;
     MedicationMapper medicationMapper;
@@ -71,7 +80,6 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         recipient.setStatus(RecipientStatus.ACTIVE);
         CareRecipient savedRecipient = careRecipientRepository.save(recipient);
 
-        // Người tạo luôn là OWNER + quản lý chính.
         RecipientManager owner = recipientManagerMapper.toRecipientManager(savedRecipient, actorId,
                 request.getRelationshipType(), RecipientAccessLevel.OWNER, true, actorId);
         recipientManagerRepository.save(owner);
@@ -80,7 +88,6 @@ public class CareRecipientServiceImpl implements CareRecipientService {
                 emergencyContactMapper.toEmergencyContactList(request.getEmergencyContacts(), savedRecipient));
         List<Medication> medications = medicationRepository.saveAll(
                 medicationMapper.toMedicationList(request.getMedications(), savedRecipient, actorId));
-        // Flush để createdAt/version của mọi bản ghi có trong response.
         careRecipientRepository.flush();
         log.info("Care recipient {} created by user {}", savedRecipient.getId(), actorId);
         CareRecipientDetailResponse detailResponse = careRecipientMapper.toDetailResponse(savedRecipient,
@@ -115,13 +122,11 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     public APIResponse<CareRecipientResponse> update(UUID actorId, UUID id, CareRecipientUpdateRequest request) {
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.EDITOR);
         CareRecipient recipient = lockRecipient(id);
-        // Client sửa trên bản cũ → không ghi đè thay đổi của người khác.
         if (recipient.getVersion() != request.getVersion()) {
             throw new AppException(ErrorCode.RECIPIENT_VERSION_CONFLICT);
         }
         checkCoordinates(request.getLatitude(), request.getLongitude());
         careRecipientMapper.update(request, actorId, recipient);
-        // Flush để response có version mới.
         careRecipientRepository.flush();
         log.info("Care recipient {} updated by user {}", id, actorId);
         CareRecipientResponse careRecipientResponse = careRecipientMapper.toResponse(recipient);
@@ -131,7 +136,6 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     @Override
     @Transactional
     public APIResponse<CareRecipientResponse> updateStatus(UUID actorId, UUID id, RecipientStatus status) {
-        // ARCHIVED chỉ qua DELETE (kèm deleted_at).
         if (status != RecipientStatus.ACTIVE && status != RecipientStatus.INACTIVE) {
             throw new AppException(ErrorCode.INVALID_STATUS);
         }
@@ -150,7 +154,6 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     public APIResponse<Void> delete(UUID actorId, UUID id) {
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.OWNER);
         CareRecipient recipient = lockRecipient(id);
-        // Lưu trữ thay vì xóa vật lý: booking/khiếu nại cũ vẫn tham chiếu được, admin vẫn xem được.
         recipient.setStatus(RecipientStatus.ARCHIVED);
         recipient.setDeletedAt(Instant.now());
         recipient.setUpdatedBy(actorId);
@@ -174,12 +177,64 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CareRecipientDetailResponse> getForAdmin(UUID id) {
-        // Admin xem cả hồ sơ đã lưu trữ (xử lý khiếu nại).
         CareRecipient recipient = careRecipientRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
         CareRecipientDetailResponse detailResponse = toDetailResponse(recipient, null);
         return APIResponse.success("Lấy hồ sơ người bệnh thành công", detailResponse);
     }
+
+    // ===== Merged Caregiver Logic =====
+
+    @Override
+    public APIResponse<RecipientSnapshotResponse> getSnapshotForCaregiver(UUID actorId, UUID id) {
+        if (!isAssigned(id, actorId)) {
+            throw new AppException(ErrorCode.RECIPIENT_NOT_FOUND);
+        }
+        return getSnapshot(id);
+    }
+
+    private boolean isAssigned(UUID recipientId, UUID caregiverUserId) {
+        BookingApiResponse<CaregiverAccessResponse> response = bookingClient.checkCaregiverAccess(caregiverUserId, recipientId);
+        if (response == null || response.getResult() == null) {
+            throw new AppException(ErrorCode.BOOKING_UNAVAILABLE);
+        }
+        return response.getResult().isAllowed();
+    }
+
+    // ===== Merged Inter-Service Logic =====
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<RecipientSnapshotResponse> getSnapshot(UUID id) {
+        CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
+        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(id, true);
+        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(id).orElse(null);
+        RecipientSnapshotResponse snapshotResponse = careRecipientMapper.toSnapshotResponse(recipient, activeMedications,
+                primaryContact, Instant.now());
+        return APIResponse.success("Lấy snapshot hồ sơ thành công", snapshotResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<AccessCheckResponse> checkAccess(UUID id, UUID userId, RecipientAccessLevel minLevel) {
+        Optional<RecipientAccessLevel> accessLevel = recipientAccessService.findAccessLevel(id, userId);
+        boolean allowed = accessLevel.map(level -> level.covers(minLevel)).orElse(false);
+        AccessCheckResponse accessCheckResponse = recipientManagerMapper.toAccessCheckResponse(id, userId, allowed,
+                accessLevel.orElse(null));
+        return APIResponse.success("Kiểm tra quyền thành công", accessCheckResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<CareRecipientSummaryResponse>> listBatch(RecipientBatchRequest request) {
+        List<CareRecipient> recipients = careRecipientRepository.findAllByIdInAndDeletedAtIsNull(
+                new LinkedHashSet<>(request.getRecipientIds()));
+        List<CareRecipientSummaryResponse> summaryResponses = careRecipientMapper.toSummaryResponseList(recipients);
+        return APIResponse.success("Lấy danh sách hồ sơ thành công", summaryResponses);
+    }
+
+    // ===== Helpers =====
 
     private CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel) {
         List<Medication> medications = medicationRepository.findAllByRecipient(recipient.getId());
@@ -199,7 +254,6 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, sortProperty));
     }
 
-    // Tọa độ đi theo cặp (DB cũng có CHECK care_recipients_coordinates_pair).
     private void checkCoordinates(BigDecimal latitude, BigDecimal longitude) {
         if ((latitude == null) != (longitude == null)) {
             throw new AppException(ErrorCode.INVALID_COORDINATES);

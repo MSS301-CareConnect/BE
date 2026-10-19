@@ -3,12 +3,20 @@ package mss301.providerservice.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
-import mss301.providerservice.dto.request.*;
-import mss301.providerservice.dto.response.*;
+import lombok.experimental.FieldDefaults;
+import mss301.providerservice.dto.request.RegistrationReviewRequest;
+import mss301.providerservice.dto.request.ShiftRegistrationRequest;
+import mss301.providerservice.dto.request.WorkShiftRequest;
+import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.PageResponse;
+import mss301.providerservice.dto.response.ShiftRegistrationResponse;
+import mss301.providerservice.dto.response.WorkShiftResponse;
 import mss301.providerservice.enums.ShiftStatus;
 import mss301.providerservice.security.CurrentUserId;
-import mss301.providerservice.service.*;
+import mss301.providerservice.service.ShiftRegistrationService;
+import mss301.providerservice.service.WorkShiftService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,65 +24,109 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
+@RequestMapping("/api/v1/work-shifts")
+@Tag(name = "Work Shifts", description = "Quản lý ca làm việc và đăng ký ca")
 @RequiredArgsConstructor
-@Tag(name = "Work Shifts", description = "Trung tâm công bố và quản lý ca làm việc")
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class WorkShiftController {
-    private final WorkShiftService shiftService;
-    private final ShiftRegistrationService registrationService;
 
-    @PostMapping("/centers/{centerId}/shifts")
+    WorkShiftService shiftService;
+    ShiftRegistrationService registrationService;
+
+    @PostMapping("/centers/{centerId}")
+    @Operation(summary = "Tạo ca làm việc cho trung tâm")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    @Operation(summary = "Tạo ca làm việc")
-    public APIResponse<WorkShiftResponse> create(@CurrentUserId UUID actorId, @PathVariable UUID centerId,
+    public APIResponse<WorkShiftResponse> create(@CurrentUserId UUID actorId,
+                                                 @PathVariable UUID centerId,
                                                  @Valid @RequestBody WorkShiftRequest request) {
         return shiftService.create(actorId, centerId, request);
     }
 
-    @GetMapping("/shifts")
+    @GetMapping
+    @Operation(summary = "Tìm ca làm việc (lọc theo trung tâm, trạng thái và khoảng ngày)")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','CUSTOMER')")
-    @Operation(summary = "Tìm ca làm việc", description = "Lọc theo trung tâm, trạng thái và khoảng ngày.")
     public APIResponse<PageResponse<WorkShiftResponse>> list(
-            @RequestParam(required = false) UUID centerId, @RequestParam(required = false) ShiftStatus status,
-            @RequestParam(required = false) LocalDate fromDate, @RequestParam(required = false) LocalDate toDate,
-            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(required = false) UUID centerId,
+            @RequestParam(required = false) ShiftStatus status,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         return shiftService.list(centerId, status, fromDate, toDate, page, size);
     }
 
-    @GetMapping("/shifts/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}")
     @Operation(summary = "Chi tiết ca làm việc")
-    public APIResponse<WorkShiftResponse> get(@PathVariable UUID id) { return shiftService.get(id); }
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<WorkShiftResponse> get(@PathVariable UUID id) {
+        return shiftService.get(id);
+    }
 
-    @PutMapping("/shifts/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    @PutMapping("/{id}")
     @Operation(summary = "Cập nhật ca làm việc")
-    public APIResponse<WorkShiftResponse> update(@CurrentUserId UUID actorId, @PathVariable UUID id,
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<WorkShiftResponse> update(@CurrentUserId UUID actorId,
+                                                 @PathVariable UUID id,
                                                  @Valid @RequestBody WorkShiftRequest request) {
         return shiftService.update(actorId, id, request);
     }
 
-    @DeleteMapping("/shifts/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    @DeleteMapping("/{id}")
     @Operation(summary = "Hủy và xóa mềm ca làm việc")
-    public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id,
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId,
+                                    @PathVariable UUID id,
                                     @RequestParam Long version) {
         return shiftService.delete(actorId, id, version);
     }
 
-    @GetMapping("/shifts/{id}/registrations")
+    @PostMapping("/{shiftId}/registrations")
+    @Operation(summary = "Caregiver đăng ký ca làm việc")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<ShiftRegistrationResponse> register(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID shiftId,
+            @Valid @RequestBody ShiftRegistrationRequest request) {
+        return registrationService.register(actorId, shiftId, request);
+    }
+
+    @GetMapping("/registrations/me")
+    @Operation(summary = "Danh sách đăng ký ca của tôi (Caregiver)")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<PageResponse<ShiftRegistrationResponse>> myRegistrations(
+            @CurrentUserId UUID actorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return registrationService.myRegistrations(actorId, page, size);
+    }
+
+    @DeleteMapping("/registrations/{id}")
+    @Operation(summary = "Hủy đăng ký ca đang chờ duyệt (Caregiver)")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<Void> cancelRegistration(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID id,
+            @RequestParam Long version) {
+        return registrationService.cancelOwn(actorId, id, version);
+    }
+
+    @GetMapping("/{id}/registrations")
+    @Operation(summary = "Danh sách caregiver đăng ký ca (Center Manager / Admin)")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    @Operation(summary = "Danh sách caregiver đăng ký ca")
-    public APIResponse<PageResponse<ShiftRegistrationResponse>> registrations(
-            @CurrentUserId UUID actorId, @PathVariable UUID id,
-            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+    public APIResponse<PageResponse<ShiftRegistrationResponse>> listRegistrationsForShift(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         return registrationService.listForShift(actorId, id, page, size);
     }
 
     @PatchMapping("/registrations/{id}/review")
+    @Operation(summary = "Duyệt hoặc từ chối đăng ký ca (Center Manager / Admin)")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
-    @Operation(summary = "Duyệt đăng ký", description = "Khi APPROVED, hệ thống tự tạo caregiver schedule.")
-    public APIResponse<ShiftRegistrationResponse> review(
-            @CurrentUserId UUID actorId, @PathVariable UUID id,
+    public APIResponse<ShiftRegistrationResponse> reviewRegistration(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID id,
             @Valid @RequestBody RegistrationReviewRequest request) {
         return registrationService.review(actorId, id, request);
     }

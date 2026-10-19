@@ -13,6 +13,6 @@ import java.util.List;
         configuration = CareCatalogClientConfig.class, fallbackFactory = CareCatalogClientFallbackFactory.class)
 public interface CareCatalogClient {
 
-    @PostMapping("/internal/center-services/quote")
+    @PostMapping("/api/v1/center-services/quote")
     RemoteApiResponse<List<CareCatalogQuoteResponse>> quote(@RequestBody CareCatalogQuoteRequest request);
 }

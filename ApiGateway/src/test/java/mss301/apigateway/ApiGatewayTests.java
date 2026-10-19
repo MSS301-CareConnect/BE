@@ -39,6 +39,9 @@ class ApiGatewayTests {
         registry.add("gateway.identity-url", UPSTREAMS::identityUrl);
         registry.add("gateway.care-recipient-url", UPSTREAMS::careRecipientUrl);
         registry.add("gateway.booking-url", UPSTREAMS::bookingUrl);
+        registry.add("gateway.provider-url", UPSTREAMS::providerUrl);
+        registry.add("gateway.care-catalog-url", UPSTREAMS::careCatalogUrl);
+        registry.add("gateway.media-url", UPSTREAMS::mediaUrl);
         registry.add("gateway.allowed-origins", () -> FRONTEND_ORIGIN);
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", UPSTREAMS::jwksUri);
@@ -48,58 +51,44 @@ class ApiGatewayTests {
     @Autowired
     MockMvc mockMvc;
 
-    // ===== Định tuyến + cắt prefix =====
+    // ===== Định tuyến giữ nguyên /api/v1 =====
 
     @Test
-    void routesStripApiPrefixToEachService() throws Exception {
+    void routesForwardApiPathToEachService() throws Exception {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        UUID id = UUID.randomUUID();
         mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.service").value("identity"))
-                .andExpect(jsonPath("$.result.path").value("/users/me"));
+                .andExpect(jsonPath("$.result.path").value("/api/v1/users/me"));
         mockMvc.perform(get("/api/v1/care-recipients").param("keyword", "bố").header("Authorization", "Bearer " + token))
                 .andExpect(jsonPath("$.result.service").value("care-recipient"))
-                .andExpect(jsonPath("$.result.path").value("/care-recipients"))
+                .andExpect(jsonPath("$.result.path").value("/api/v1/care-recipients"))
                 .andExpect(jsonPath("$.result.query").exists());
-        mockMvc.perform(get("/api/v1/admin/care-recipients/" + UUID.randomUUID()).header("Authorization", "Bearer " + token))
-                .andExpect(jsonPath("$.result.service").value("care-recipient"));
-    }
-
-    @Test
-    void bookingRoutesReachBookingService() throws Exception {
-        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
-        UUID id = UUID.randomUUID();
-        for (String path : List.of("/bookings", "/bookings/" + id + "/occurrences", "/center/bookings/" + id,
-                "/admin/bookings", "/caregiver/occurrences/" + id)) {
+        for (String path : List.of("/bookings", "/bookings/" + id + "/occurrences", "/booking-occurrences/" + id)) {
             mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.result.service").value("booking"))
-                    .andExpect(jsonPath("$.result.path").value(path));
+                    .andExpect(jsonPath("$.result.path").value("/api/v1" + path));
         }
+        for (String path : List.of("/care-centers", "/caregivers/me", "/work-shifts/" + id, "/certificates/caregivers/" + id,
+                "/provider-media/CAREGIVER/" + id)) {
+            mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
+                    .andExpect(jsonPath("$.result.service").value("provider"))
+                    .andExpect(jsonPath("$.result.path").value("/api/v1" + path));
+        }
+        for (String path : List.of("/catalog-items", "/center-services/center/" + id, "/price-plans/" + id)) {
+            mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
+                    .andExpect(jsonPath("$.result.service").value("care-catalog"))
+                    .andExpect(jsonPath("$.result.path").value("/api/v1" + path));
+        }
+        mockMvc.perform(get("/api/v1/media/" + id).header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.result.service").value("media"))
+                .andExpect(jsonPath("$.result.path").value("/api/v1/media/" + id));
         mockMvc.perform(post("/api/v1/bookings/" + id + "/cancel").header("Authorization", "Bearer " + token)
                         .header("Idempotency-Key", "k-1").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(jsonPath("$.result.service").value("booking"))
                 .andExpect(jsonPath("$.result.headers['idempotency-key']").value("k-1"));
-        // Caregiver xem hồ sơ người bệnh thuộc CareRecipientService
-        mockMvc.perform(get("/api/v1/caregiver/care-recipients/" + id).header("Authorization", "Bearer " + token))
-                .andExpect(jsonPath("$.result.service").value("care-recipient"))
-                .andExpect(jsonPath("$.result.path").value("/caregiver/care-recipients/" + id));
-        // Không route prefix chung /caregiver/** (Provider cũng có /caregiver/...)
-        mockMvc.perform(get("/api/v1/caregiver/schedules").header("Authorization", "Bearer " + token))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void internalBookingPathsAreBlocked() throws Exception {
-        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "ADMIN");
-        int before = UPSTREAMS.receivedPaths().size();
-        for (String path : List.of("/internal/bookings/caregiver-access", "/api/v1/internal/bookings/x/deposit-paid",
-                "/api/v1/bookings/internal/x", "/api/v1/center/bookings/Internal/x")) {
-            mockMvc.perform(post(URI.create(path)).header("Authorization", "Bearer " + token))
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.code").value(404));
-        }
-        assertThat(UPSTREAMS.receivedPaths().size()).isEqualTo(before);
     }
 
     @Test
@@ -142,9 +131,9 @@ class ApiGatewayTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"a@example.test\",\"password\":\"x\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/v1/users/register").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        mockMvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.path").value("/users/register"));
+                .andExpect(jsonPath("$.result.path").value("/api/v1/auth/register"));
     }
 
     // ===== Cookie web đi qua gateway (Identity đặt Path=/ nên không cần rewrite) =====
@@ -179,7 +168,7 @@ class ApiGatewayTests {
                         .cookie(new Cookie("refresh_token", "r"), new Cookie("XSRF-TOKEN", "csrf-1"))
                         .header("X-XSRF-TOKEN", "csrf-1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.path").value("/auth/refresh"))
+                .andExpect(jsonPath("$.result.path").value("/api/v1/auth/refresh"))
                 .andExpect(jsonPath("$.result.headers.cookie").value(org.hamcrest.Matchers.containsString("refresh_token=r")));
     }
 
@@ -202,7 +191,7 @@ class ApiGatewayTests {
                 .andExpect(jsonPath("$.result.headers['x-internal-secret']").doesNotExist())
                 .andExpect(jsonPath("$.result.headers.authorization").value("Bearer " + token));
         // Endpoint public: không có user → không có X-User-*, kể cả header client tự gửi.
-        mockMvc.perform(post("/api/v1/users/register").header("X-User-Id", "forged")
+        mockMvc.perform(post("/api/v1/auth/register").header("X-User-Id", "forged")
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(jsonPath("$.result.headers['x-user-id']").doesNotExist());
     }
@@ -223,23 +212,16 @@ class ApiGatewayTests {
                 .andExpect(header().string("X-Request-Id", org.hamcrest.Matchers.matchesPattern("[0-9a-f-]{36}")));
     }
 
-    // ===== Chặn /internal/** =====
+    // ===== Không còn /internal =====
 
     @Test
-    void internalPathsAreBlocked() throws Exception {
+    void internalPathsAreNotRoutedToAnyService() throws Exception {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "ADMIN");
         int before = UPSTREAMS.receivedPaths().size();
-        for (String path : List.of("/internal/users/batch", "/api/v1/internal/users/x", "/api/v1/users/internal/x",
-                "/api/v1/care-recipients/INTERNAL/x", "/api/v1/users/%69nternal/x")) {
+        for (String path : List.of("/internal/users/batch", "/api/v1/internal/users/x")) {
             mockMvc.perform(get(URI.create(path)).header("Authorization", "Bearer " + token))
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.code").value(404));
+                    .andExpect(status().isNotFound());
         }
-        mockMvc.perform(post("/internal/users/batch").contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isNotFound());
-        // URL bị firewall từ chối (".." / ký tự mã hóa lạ) → 400 envelope, cũng không tới service.
-        mockMvc.perform(get(URI.create("/api/v1/users/%2e%2e/internal/users")).header("Authorization", "Bearer " + token))
-                .andExpect(status().is4xxClientError());
         assertThat(UPSTREAMS.receivedPaths().size()).isEqualTo(before);
     }
 

@@ -4,8 +4,8 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import mss301.carecatalogservice.dto.request.InternalServiceQuoteRequest;
-import mss301.carecatalogservice.dto.response.InternalServiceQuoteResponse;
+import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
+import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -35,11 +35,11 @@ public class CatalogQuoteServiceImpl implements CatalogQuoteService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<InternalServiceQuoteResponse> quote(InternalServiceQuoteRequest request) {
+    public List<ServiceQuoteResponse> quote(ServiceQuoteRequest request) {
         UUID centerId = request.getCenterId();
-        List<InternalServiceQuoteResponse> quotes = new ArrayList<>();
+        List<ServiceQuoteResponse> quotes = new ArrayList<>();
 
-        for (InternalServiceQuoteRequest.Item item : request.getItems()) {
+        for (ServiceQuoteRequest.Item item : request.getItems()) {
             CatalogItem catalogItem = catalogItemRepository.findByIdAndDeletedAtIsNull(item.getCareServiceId())
                     .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));
 
@@ -78,7 +78,7 @@ public class CatalogQuoteServiceImpl implements CatalogQuoteService {
                 pricePlan = activePlans.getFirst();
             }
 
-            quotes.add(InternalServiceQuoteResponse.builder()
+            quotes.add(ServiceQuoteResponse.builder()
                     .careServiceId(catalogItem.getId())
                     .centerServiceId(centerOffering.getId())
                     .pricePlanId(pricePlan.getId())

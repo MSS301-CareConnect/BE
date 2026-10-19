@@ -1,7 +1,7 @@
 package mss301.carecatalogservice.service;
 
-import mss301.carecatalogservice.dto.request.InternalServiceQuoteRequest;
-import mss301.carecatalogservice.dto.response.InternalServiceQuoteResponse;
+import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
+import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -85,19 +85,19 @@ class CatalogQuoteServiceTests {
         when(centerOfferingRepository.findByIdAndCenterIdAndDeletedAtIsNull(centerServiceId, centerId)).thenReturn(Optional.of(centerOffering));
         when(pricePlanRepository.findByIdAndCenterOfferingIdAndDeletedAtIsNull(pricePlanId, centerServiceId)).thenReturn(Optional.of(pricePlan));
 
-        InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()
+        ServiceQuoteRequest request = ServiceQuoteRequest.builder()
                 .centerId(centerId)
-                .items(List.of(InternalServiceQuoteRequest.Item.builder()
+                .items(List.of(ServiceQuoteRequest.Item.builder()
                         .careServiceId(careServiceId)
                         .centerServiceId(centerServiceId)
                         .pricePlanId(pricePlanId)
                         .build()))
                 .build();
 
-        List<InternalServiceQuoteResponse> result = catalogQuoteService.quote(request);
+        List<ServiceQuoteResponse> result = catalogQuoteService.quote(request);
 
         assertThat(result).hasSize(1);
-        InternalServiceQuoteResponse quote = result.getFirst();
+        ServiceQuoteResponse quote = result.getFirst();
         assertThat(quote.getCareServiceId()).isEqualTo(careServiceId);
         assertThat(quote.getServiceName()).isEqualTo("Chăm sóc người cao tuổi");
         assertThat(quote.getPricingUnit()).isEqualTo(PricingUnit.HOUR);
@@ -108,9 +108,9 @@ class CatalogQuoteServiceTests {
     void quoteThrowsWhenCareServiceNotFound() {
         when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.empty());
 
-        InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()
+        ServiceQuoteRequest request = ServiceQuoteRequest.builder()
                 .centerId(centerId)
-                .items(List.of(InternalServiceQuoteRequest.Item.builder()
+                .items(List.of(ServiceQuoteRequest.Item.builder()
                         .careServiceId(careServiceId)
                         .build()))
                 .build();
@@ -132,9 +132,9 @@ class CatalogQuoteServiceTests {
         when(centerOfferingRepository.findByCenterIdAndCatalogItemIdAndDeletedAtIsNull(centerId, careServiceId))
                 .thenReturn(Optional.empty());
 
-        InternalServiceQuoteRequest request = InternalServiceQuoteRequest.builder()
+        ServiceQuoteRequest request = ServiceQuoteRequest.builder()
                 .centerId(centerId)
-                .items(List.of(InternalServiceQuoteRequest.Item.builder()
+                .items(List.of(ServiceQuoteRequest.Item.builder()
                         .careServiceId(careServiceId)
                         .build()))
                 .build();

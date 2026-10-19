@@ -10,16 +10,16 @@ import org.springframework.web.bind.annotation.PathVariable;
 import java.util.UUID;
 
 /**
- * API nội bộ chỉ đọc của ProviderService: trung tâm (đang hoạt động?) và caregiver (thuộc trung tâm, trạng thái,
+ * API của ProviderService: trung tâm (đang hoạt động?) và caregiver (thuộc trung tâm, trạng thái,
  * kỹ năng, user_id Identity). Dùng qua CenterPort / CaregiverPort, không gọi trực tiếp.
  */
 @FeignClient(name = "provider", url = "${booking.provider.url}",
         configuration = ProviderClientConfig.class, fallbackFactory = ProviderClientFallbackFactory.class)
 public interface ProviderClient {
 
-    @GetMapping("/internal/centers/{centerId}")
+    @GetMapping("/api/v1/care-centers/{centerId}")
     RemoteApiResponse<ProviderCenterResponse> getCenter(@PathVariable("centerId") UUID centerId);
 
-    @GetMapping("/internal/caregivers/{caregiverId}")
+    @GetMapping("/api/v1/caregivers/{caregiverId}")
     RemoteApiResponse<ProviderCaregiverResponse> getCaregiver(@PathVariable("caregiverId") UUID caregiverId);
 }

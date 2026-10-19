@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/price-plans")
+@RequestMapping("/api/v1/price-plans")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Tag(name = "Price plan", description = "Bảng giá theo giờ / ngày / ca của dịch vụ trung tâm.")
@@ -40,11 +40,13 @@ public class PricePlanController {
     }
 
     @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
         return pricePlanService.listByCenterOffering(centerOfferingId);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public APIResponse<PricePlanResponse> getById(@PathVariable UUID id) {
         return pricePlanService.getById(id);
     }

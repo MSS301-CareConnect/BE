@@ -70,7 +70,6 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 care-catalog:
-  internal-secret: ${CARE_CATALOG_INTERNAL_SECRET:}
   open-api-server-url: ${CARE_CATALOG_OPENAPI_SERVER_URL:}
 
   jwt:
@@ -79,4 +78,3 @@ care-catalog:
 
   identity:
     url: ${CARE_CATALOG_IDENTITY_URL}
-    internal-secret: ${CARE_CATALOG_IDENTITY_INTERNAL_SECRET:}

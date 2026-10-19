@@ -19,10 +19,10 @@ import mss301.identityservice.exception.AppException;
 import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.mapper.RegistrationMapper;
 import mss301.identityservice.repository.UserRepository;
-import mss301.identityservice.service.AccountService;
 import mss301.identityservice.service.EmailService;
 import mss301.identityservice.service.IdentityStateService;
 import mss301.identityservice.service.RegistrationService;
+import mss301.identityservice.service.UserService;
 import mss301.identityservice.util.EmailNormalizer;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -58,7 +58,7 @@ public class RegistrationServiceImpl implements RegistrationService {
     IdentityProperties identityProperties;
     PasswordEncoder passwordEncoder;
     EmailService emailService;
-    AccountService accountService;
+    UserService userService;
     RegistrationMapper registrationMapper;
     UserRepository userRepository;
 
@@ -98,7 +98,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         Map<String, String> pendingData = consumeOtp(REGISTER_PURPOSE, email, request.getOtpCode());
         RegisterRequest verifiedRequest = registrationMapper.toRequest(pendingData);
 
-        UserResponse userResponse = accountService.createVerified(verifiedRequest);
+        UserResponse userResponse = userService.createVerified(verifiedRequest);
         return APIResponse.success("Đăng ký thành công, vui lòng đăng nhập", userResponse);
     }
 
@@ -124,7 +124,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         String email = EmailNormalizer.normalize(request.getEmail());
         consumeOtp(RESET_PURPOSE, email, request.getOtpCode());
         // OTP đã consume trước khi ghi DB (không có transaction chung DB–Redis): DB lỗi thì người dùng xin OTP mới.
-        accountService.resetPassword(email, passwordEncoder.encode(request.getNewPassword()));
+        userService.resetPassword(email, passwordEncoder.encode(request.getNewPassword()));
         return APIResponse.success("Đặt mật khẩu thành công, vui lòng đăng nhập");
     }
 

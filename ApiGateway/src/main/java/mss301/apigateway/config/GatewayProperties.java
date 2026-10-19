@@ -27,6 +27,15 @@ public class GatewayProperties {
     @NotBlank
     String bookingUrl;
 
+    @NotBlank
+    String providerUrl;
+
+    @NotBlank
+    String careCatalogUrl;
+
+    @NotBlank
+    String mediaUrl;
+
     // Origin của FE được gọi kèm credentials (cookie). Không dùng wildcard.
     @NotEmpty
     List<String> allowedOrigins;

@@ -50,6 +50,9 @@ public final class TestUpstreams {
     private final HttpServer identityServer;
     private final HttpServer careRecipientServer;
     private final HttpServer bookingServer;
+    private final HttpServer providerServer;
+    private final HttpServer careCatalogServer;
+    private final HttpServer mediaServer;
 
     private TestUpstreams() {
         try {
@@ -63,23 +66,35 @@ public final class TestUpstreams {
             identityServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             careRecipientServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             bookingServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            providerServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            careCatalogServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            mediaServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
         identityServer.createContext("/.well-known/jwks.json",
                 exchange -> write(exchange, 200, new JWKSet(signingKey.toPublicJWK()).toString(), Map.of()));
-        identityServer.createContext("/auth/login", this::handleLogin);
-        identityServer.createContext("/users/slow", this::handleSlow);
+        identityServer.createContext("/api/v1/auth/login", this::handleLogin);
+        identityServer.createContext("/api/v1/users/slow", this::handleSlow);
         identityServer.createContext("/v3/api-docs", exchange -> write(exchange, 200,
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"CareConnect IdentityService\"}}", Map.of()));
         identityServer.createContext("/", exchange -> echo(exchange, "identity"));
         careRecipientServer.createContext("/", exchange -> echo(exchange, "care-recipient"));
         bookingServer.createContext("/", exchange -> echo(exchange, "booking"));
+        providerServer.createContext("/", exchange -> echo(exchange, "provider"));
+        careCatalogServer.createContext("/", exchange -> echo(exchange, "care-catalog"));
+        mediaServer.createContext("/", exchange -> echo(exchange, "media"));
         // Nhiều thread: /users/slow không được chặn các request khác (JWKS…).
         identityServer.setExecutor(Executors.newCachedThreadPool());
         careRecipientServer.setExecutor(Executors.newCachedThreadPool());
         bookingServer.setExecutor(Executors.newCachedThreadPool());
+        providerServer.setExecutor(Executors.newCachedThreadPool());
+        careCatalogServer.setExecutor(Executors.newCachedThreadPool());
+        mediaServer.setExecutor(Executors.newCachedThreadPool());
         bookingServer.start();
+        providerServer.start();
+        careCatalogServer.start();
+        mediaServer.start();
         identityServer.start();
         careRecipientServer.start();
     }
@@ -98,6 +113,18 @@ public final class TestUpstreams {
 
     public String bookingUrl() {
         return "http://127.0.0.1:" + bookingServer.getAddress().getPort();
+    }
+
+    public String providerUrl() {
+        return "http://127.0.0.1:" + providerServer.getAddress().getPort();
+    }
+
+    public String careCatalogUrl() {
+        return "http://127.0.0.1:" + careCatalogServer.getAddress().getPort();
+    }
+
+    public String mediaUrl() {
+        return "http://127.0.0.1:" + mediaServer.getAddress().getPort();
     }
 
     public String jwksUri() {

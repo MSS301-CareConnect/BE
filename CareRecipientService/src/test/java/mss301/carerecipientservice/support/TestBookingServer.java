@@ -15,12 +15,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * BookingService giả cho test: GET /internal/bookings/caregiver-access kiểm X-Internal-Secret, trả allowed theo các cặp
+ * BookingService giả cho test: GET /api/v1/bookings/caregiver-access kiểm Bearer token, trả allowed theo các cặp
  * (caregiverUserId, recipientId) đã đăng ký. Có thể tắt (500) để kiểm fail-closed.
  */
 public final class TestBookingServer {
-
-    public static final String INTERNAL_SECRET = "booking-internal-test-secret";
 
     private static final TestBookingServer INSTANCE = new TestBookingServer();
 
@@ -34,7 +32,7 @@ public final class TestBookingServer {
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);
         }
-        server.createContext("/internal/bookings/caregiver-access", this::handleCaregiverAccess);
+        server.createContext("/api/v1/bookings/caregiver-access", this::handleCaregiverAccess);
         server.start();
     }
 
@@ -59,7 +57,8 @@ public final class TestBookingServer {
     }
 
     private void handleCaregiverAccess(HttpExchange exchange) throws IOException {
-        if (!INTERNAL_SECRET.equals(exchange.getRequestHeaders().getFirst("X-Internal-Secret"))) {
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             write(exchange, 401, "{\"code\":401,\"message\":\"Bạn chưa được xác thực\"}");
             return;
         }

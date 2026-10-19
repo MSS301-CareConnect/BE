@@ -82,7 +82,6 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 booking:
-  internal-secret: ${BOOKING_INTERNAL_SECRET:}
   open-api-server-url: ${BOOKING_OPENAPI_SERVER_URL:}
 
   jwt:
@@ -91,19 +90,15 @@ booking:
 
   identity:
     url: ${BOOKING_IDENTITY_URL}
-    internal-secret: ${BOOKING_IDENTITY_INTERNAL_SECRET:}
 
   care-recipient:
     url: ${BOOKING_CARE_RECIPIENT_URL}
-    internal-secret: ${BOOKING_CARE_RECIPIENT_INTERNAL_SECRET:}
 
   provider:
     url: ${BOOKING_PROVIDER_URL}
-    internal-secret: ${BOOKING_PROVIDER_INTERNAL_SECRET:}
 
   care-catalog:
     url: ${BOOKING_CARE_CATALOG_URL:${BOOKING_CATALOG_URL:http://localhost:8083}}
-    internal-secret: ${BOOKING_CARE_CATALOG_INTERNAL_SECRET:${BOOKING_CATALOG_INTERNAL_SECRET:}}
 
   deposit-rate: ${BOOKING_DEPOSIT_RATE:0.30}
 

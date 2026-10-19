@@ -52,7 +52,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class CareRecipientApiTests {
 
-    static final String RECIPIENT_INTERNAL_SECRET = "care-recipient-internal-test-secret";
     static final String PG_URL = "jdbc:postgresql://localhost:55495/postgres";
     static final String PG_USER = "postgres";
     static final String PG_PASSWORD = "care_recipient_test_only";
@@ -82,10 +81,7 @@ class CareRecipientApiTests {
         registry.add("care-recipient.jwt.issuer", () -> TestIdentityServer.ISSUER);
         registry.add("care-recipient.jwt.jwks-uri", IDENTITY::jwksUri);
         registry.add("care-recipient.identity.url", IDENTITY::baseUrl);
-        registry.add("care-recipient.identity.internal-secret", () -> TestIdentityServer.INTERNAL_SECRET);
-        registry.add("care-recipient.internal-secret", () -> RECIPIENT_INTERNAL_SECRET);
         registry.add("care-recipient.booking.url", BOOKING::baseUrl);
-        registry.add("care-recipient.booking.internal-secret", () -> TestBookingServer.INTERNAL_SECRET);
     }
 
     static void createSchema(String schema) {
@@ -128,7 +124,7 @@ class CareRecipientApiTests {
 
     @Test
     void missingTokenIs401WithEnvelope() throws Exception {
-        mockMvc.perform(get("/care-recipients"))
+        mockMvc.perform(get("/api/v1/care-recipients"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401))
                 .andExpect(header().exists("X-Request-Id"));
@@ -138,7 +134,7 @@ class CareRecipientApiTests {
     void tokenWithoutApiAudienceIsRejected() throws Exception {
         String identityOnlyToken = IDENTITY.token(owner, List.of("careconnect-identity"), "access",
                 TestIdentityServer.ISSUER, List.of("CUSTOMER"));
-        mockMvc.perform(get("/care-recipients").header("Authorization", "Bearer " + identityOnlyToken))
+        mockMvc.perform(get("/api/v1/care-recipients").header("Authorization", "Bearer " + identityOnlyToken))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -146,17 +142,17 @@ class CareRecipientApiTests {
     void refreshTokenAndWrongIssuerAreRejected() throws Exception {
         String refreshToken = IDENTITY.token(owner, List.of("careconnect-identity", "careconnect-api"), "refresh",
                 TestIdentityServer.ISSUER, List.of("CUSTOMER"));
-        mockMvc.perform(get("/care-recipients").header("Authorization", "Bearer " + refreshToken))
+        mockMvc.perform(get("/api/v1/care-recipients").header("Authorization", "Bearer " + refreshToken))
                 .andExpect(status().isUnauthorized());
         String wrongIssuer = IDENTITY.token(owner, List.of("careconnect-api"), "access", "https://evil.test",
                 List.of("CUSTOMER"));
-        mockMvc.perform(get("/care-recipients").header("Authorization", "Bearer " + wrongIssuer))
+        mockMvc.perform(get("/api/v1/care-recipients").header("Authorization", "Bearer " + wrongIssuer))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void caregiverCannotUseCustomerApi() throws Exception {
-        mockMvc.perform(get("/care-recipients").header("Authorization", bearer(UUID.randomUUID(), "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients").header("Authorization", bearer(UUID.randomUUID(), "CAREGIVER")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
     }
@@ -166,7 +162,7 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         UUID stranger = UUID.randomUUID();
         // X-User-Id do client tự gửi không được tin — danh tính lấy từ JWT.
-        mockMvc.perform(get("/care-recipients/" + recipientId)
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId)
                         .header("Authorization", bearer(stranger, "CUSTOMER"))
                         .header("X-User-Id", owner.toString()))
                 .andExpect(status().isNotFound());
@@ -177,7 +173,7 @@ class CareRecipientApiTests {
     @Test
     void creatorBecomesPrimaryOwnerAndSeesProfile() throws Exception {
         UUID recipientId = createRecipient(owner);
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.myAccessLevel").value("OWNER"))
                 .andExpect(jsonPath("$.result.profile.bloodType").value("O+"))
@@ -186,7 +182,7 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.result.medications.length()").value(1))
                 .andExpect(jsonPath("$.result.medications[0].timeOfDay[1]").value("20:00"))
                 .andExpect(jsonPath("$.result.emergencyContacts[0].primary").value(true));
-        mockMvc.perform(get("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].myAccessLevel").value("OWNER"))
@@ -197,10 +193,10 @@ class CareRecipientApiTests {
     void strangerGets404NotForbidden() throws Exception {
         UUID recipientId = createRecipient(owner);
         UUID stranger = UUID.randomUUID();
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(stranger, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(stranger, "CUSTOMER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/medications")
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/medications")
                         .header("Authorization", bearer(stranger, "CUSTOMER")))
                 .andExpect(status().isNotFound());
     }
@@ -209,16 +205,16 @@ class CareRecipientApiTests {
     void listFiltersByKeywordAndStatus() throws Exception {
         createRecipient(owner, "Nguyễn Văn Bố");
         UUID second = createRecipient(owner, "Trần Thị Mẹ");
-        mockMvc.perform(patch("/care-recipients/" + second + "/status").param("status", "INACTIVE")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + second + "/status").param("status", "INACTIVE")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/care-recipients").param("keyword", "mẹ").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients").param("keyword", "mẹ").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].fullName").value("Trần Thị Mẹ"));
-        mockMvc.perform(get("/care-recipients").param("status", "ACTIVE").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients").param("status", "ACTIVE").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].fullName").value("Nguyễn Văn Bố"));
-        mockMvc.perform(get("/care-recipients").param("size", "101").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients").param("size", "101").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_PAGE.getCode()));
     }
@@ -229,18 +225,18 @@ class CareRecipientApiTests {
         String update = """
                 {"fullName":"Tên mới","version":0,"allergies":"Penicillin"}
                 """;
-        mockMvc.perform(put("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(put("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content(update))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.fullName").value("Tên mới"))
                 .andExpect(jsonPath("$.result.version").value(1))
                 .andExpect(jsonPath("$.result.updatedBy").value(owner.toString()));
         // Gửi lại version cũ → xung đột.
-        mockMvc.perform(put("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(put("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content(update))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_VERSION_CONFLICT.getCode()));
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/status").param("status", "ARCHIVED")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/status").param("status", "ARCHIVED")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_STATUS.getCode()));
@@ -248,21 +244,21 @@ class CareRecipientApiTests {
 
     @Test
     void createValidatesInputAndRejectsServerManagedFields() throws Exception {
-        mockMvc.perform(post("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fullName\":\"A\",\"relationshipType\":\"CHILD\",\"latitude\":10.5}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_COORDINATES.getCode()));
-        mockMvc.perform(post("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fullName\":\"A\",\"relationshipType\":\"CHILD\",\"status\":\"ARCHIVED\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_REQUEST.getCode()));
-        mockMvc.perform(post("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fullName\":\"A\",\"relationshipType\":\"CHILD\",\"bloodType\":\"Z+\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"relationshipType\":\"CHILD\"}"))
                 .andExpect(status().isBadRequest())
@@ -272,19 +268,19 @@ class CareRecipientApiTests {
     @Test
     void archiveHidesFromCustomerButAdminCanStillRead() throws Exception {
         UUID recipientId = createRecipient(owner);
-        mockMvc.perform(delete("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isNotFound());
         UUID admin = UUID.randomUUID();
-        mockMvc.perform(get("/admin/care-recipients/" + recipientId).header("Authorization", bearer(admin, "ADMIN")))
+        mockMvc.perform(get("/api/v1/care-recipients/admin/" + recipientId).header("Authorization", bearer(admin, "ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.profile.status").value("ARCHIVED"))
                 .andExpect(jsonPath("$.result.myAccessLevel").doesNotExist());
-        mockMvc.perform(get("/admin/care-recipients").param("includeDeleted", "true").param("createdBy", owner.toString())
+        mockMvc.perform(get("/api/v1/care-recipients/admin").param("includeDeleted", "true").param("createdBy", owner.toString())
                         .header("Authorization", bearer(admin, "ADMIN")))
                 .andExpect(jsonPath("$.result.totalElements").value(1));
-        mockMvc.perform(get("/admin/care-recipients").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/admin").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isForbidden());
     }
 
@@ -297,36 +293,36 @@ class CareRecipientApiTests {
                 {"medicationName":"Metformin","dosage":"500mg","frequency":"2 lần/ngày","timeOfDay":["07:00","19:00"],
                  "route":"ORAL","startDate":"2026-01-01"}
                 """;
-        JsonNode created = readResult(mockMvc.perform(post("/care-recipients/" + recipientId + "/medications")
+        JsonNode created = readResult(mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/medications")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content(medication))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.active").value(true))
                 .andReturn());
         String medicationId = created.get("id").asString();
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/medications/" + medicationId + "/active")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/medications/" + medicationId + "/active")
                         .param("active", "false").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.active").value(false));
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/medications").param("active", "true")
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/medications").param("active", "true")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(jsonPath("$.result.length()").value(1));
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/medications")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/medications")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"medicationName\":\"X\",\"startDate\":\"2026-02-01\",\"endDate\":\"2026-01-01\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_MEDICATION_DATES.getCode()));
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/medications")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/medications")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"medicationName\":\"X\",\"startDate\":\"2026-02-01\",\"timeOfDay\":[\"25:00\"]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_TIME_OF_DAY.getCode()));
-        mockMvc.perform(delete("/care-recipients/" + recipientId + "/medications/" + medicationId)
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/medications/" + medicationId)
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/medications/" + medicationId)
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/medications/" + medicationId)
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.MEDICATION_NOT_FOUND.getCode()));
@@ -335,24 +331,24 @@ class CareRecipientApiTests {
     @Test
     void onlyOnePrimaryEmergencyContact() throws Exception {
         UUID recipientId = createRecipient(owner);
-        JsonNode second = readResult(mockMvc.perform(post("/care-recipients/" + recipientId + "/emergency-contacts")
+        JsonNode second = readResult(mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/emergency-contacts")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fullName\":\"Hàng xóm\",\"relationship\":\"Hàng xóm\",\"phoneNumber\":\"0911111111\",\"priority\":2}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.primary").value(false))
                 .andReturn());
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/emergency-contacts/" + second.get("id").asString() + "/primary")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/emergency-contacts/" + second.get("id").asString() + "/primary")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.primary").value(true));
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/emergency-contacts")
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/emergency-contacts")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(jsonPath("$.result.length()").value(2))
                 .andExpect(jsonPath("$.result[0].fullName").value("Hàng xóm"))
                 .andExpect(jsonPath("$.result[0].primary").value(true))
                 .andExpect(jsonPath("$.result[1].primary").value(false));
-        mockMvc.perform(post("/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"fullName":"A","relationshipType":"CHILD","emergencyContacts":[
@@ -369,31 +365,31 @@ class CareRecipientApiTests {
     void viewerCanReadButNotWriteAndEditorCanEdit() throws Exception {
         UUID recipientId = createRecipient(owner);
         UUID managerId = addManager(recipientId, relativeEmail, "VIEWER");
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.myAccessLevel").value("VIEWER"));
-        mockMvc.perform(put("/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER"))
+        mockMvc.perform(put("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"fullName\":\"X\",\"version\":0}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_ACCESS_DENIED.getCode()));
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/medications")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/medications")
                         .header("Authorization", bearer(relative, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"medicationName\":\"X\",\"startDate\":\"2026-02-01\"}"))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/managers/" + managerId)
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/managers/" + managerId)
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"accessLevel\":\"EDITOR\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.accessLevel").value("EDITOR"));
-        mockMvc.perform(put("/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER"))
+        mockMvc.perform(put("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"fullName\":\"Sửa bởi editor\",\"version\":0}"))
                 .andExpect(status().isOk());
         // EDITOR không quản lý danh sách người thân và không lưu trữ hồ sơ.
-        mockMvc.perform(delete("/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/managers")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(relative, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + uniqueEmail() + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -405,7 +401,7 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         addManager(recipientId, relativeEmail, "EDITOR");
         int batchCallsBefore = IDENTITY.batchCalls();
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/managers")
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .header("X-Request-Id", "req-managers-12345"))
                 .andExpect(status().isOk())
@@ -425,7 +421,7 @@ class CareRecipientApiTests {
         IDENTITY.setFailing(true);
         // Đủ lỗi để mở circuit — lời gọi sau không tới Identity nữa nhưng API vẫn trả danh sách.
         for (int i = 0; i < 6; i++) {
-            mockMvc.perform(get("/care-recipients/" + recipientId + "/managers")
+            mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/managers")
                             .header("Authorization", bearer(owner, "CUSTOMER")))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.result.length()").value(2))
@@ -437,7 +433,7 @@ class CareRecipientApiTests {
                 .anyMatch(circuitBreaker -> circuitBreaker.getState() == CircuitBreaker.State.OPEN);
         assertThat(anyOpen).isTrue();
         // Thêm người thân cần XÁC MINH qua Identity → không đoán, trả 503.
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/managers")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + uniqueEmail() + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -453,7 +449,7 @@ class CareRecipientApiTests {
         String caregiverEmail = uniqueEmail();
         IDENTITY.addUser(caregiverEmail, "Caregiver", "ACTIVE", Set.of("CAREGIVER"));
         for (String email : List.of(lockedEmail, caregiverEmail, uniqueEmail())) {
-            mockMvc.perform(post("/care-recipients/" + recipientId + "/managers")
+            mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
                             .header("Authorization", bearer(owner, "CUSTOMER"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"" + email + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -461,7 +457,7 @@ class CareRecipientApiTests {
                     .andExpect(jsonPath("$.code").value(ErrorCode.MANAGER_USER_INVALID.getCode()));
         }
         addManager(recipientId, relativeEmail, "VIEWER");
-        mockMvc.perform(post("/care-recipients/" + recipientId + "/managers")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + relativeEmail.toUpperCase(Locale.ROOT) + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -476,34 +472,34 @@ class CareRecipientApiTests {
         UUID relativeManagerId = addManager(recipientId, relativeEmail, "EDITOR");
 
         // Quản lý chính (cũng là OWNER cuối cùng) không tự rời / hạ quyền được.
-        mockMvc.perform(delete("/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PRIMARY_TRANSFER_REQUIRED.getCode()));
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"accessLevel\":\"VIEWER\"}"))
                 .andExpect(status().isConflict());
         // Chỉ chuyển quản lý chính cho OWNER.
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/managers/" + relativeManagerId + "/primary")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/managers/" + relativeManagerId + "/primary")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PRIMARY_MUST_BE_OWNER.getCode()));
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/managers/" + relativeManagerId)
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/managers/" + relativeManagerId)
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"accessLevel\":\"OWNER\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(patch("/care-recipients/" + recipientId + "/managers/" + relativeManagerId + "/primary")
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/managers/" + relativeManagerId + "/primary")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.primary").value(true));
-        mockMvc.perform(get("/care-recipients/" + recipientId + "/managers").header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/managers").header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(jsonPath("$.result[?(@.primary == true)].userId").value(relative.toString()));
         // Người cũ giờ không còn là quản lý chính → tự rời được (vẫn còn OWNER khác).
-        mockMvc.perform(delete("/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
                         .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isNotFound());
     }
 
@@ -512,14 +508,14 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         UUID ownerManagerId = findManagerId(recipientId, owner);
         UUID relativeManagerId = addManager(recipientId, relativeEmail, "VIEWER");
-        mockMvc.perform(delete("/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + ownerManagerId)
                         .header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(delete("/care-recipients/" + recipientId + "/managers/" + relativeManagerId)
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + relativeManagerId)
                         .header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Bạn đã rời khỏi hồ sơ"));
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isNotFound());
     }
 
@@ -529,16 +525,16 @@ class CareRecipientApiTests {
     void cookieAuthenticatedWriteNeedsCsrfButBearerDoesNot() throws Exception {
         String accessToken = IDENTITY.accessToken(owner, "CUSTOMER");
         String body = "{\"fullName\":\"Qua cookie\",\"relationshipType\":\"CHILD\"}";
-        mockMvc.perform(post("/care-recipients").cookie(new Cookie("access_token", accessToken))
+        mockMvc.perform(post("/api/v1/care-recipients").cookie(new Cookie("access_token", accessToken))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CSRF_INVALID.getCode()));
-        mockMvc.perform(post("/care-recipients")
+        mockMvc.perform(post("/api/v1/care-recipients")
                         .cookie(new Cookie("access_token", accessToken), new Cookie("XSRF-TOKEN", "csrf-value"))
                         .header("X-XSRF-TOKEN", "other-value")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
-        MvcResult accepted = mockMvc.perform(post("/care-recipients")
+        MvcResult accepted = mockMvc.perform(post("/api/v1/care-recipients")
                         .cookie(new Cookie("access_token", accessToken), new Cookie("XSRF-TOKEN", "csrf-value"))
                         .header("X-XSRF-TOKEN", "csrf-value")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -546,22 +542,20 @@ class CareRecipientApiTests {
                 .andReturn();
         // Service không bao giờ ghi cookie (CSRF/token do IdentityService quản lý).
         assertThat(accepted.getResponse().getHeaders("Set-Cookie")).isEmpty();
-        mockMvc.perform(post("/care-recipients").header("Authorization", "Bearer " + accessToken)
+        mockMvc.perform(post("/api/v1/care-recipients").header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk());
     }
 
-    // ===== API nội bộ =====
+    // ===== API liên service =====
 
     @Test
-    void internalApiRequiresSecretAndReturnsSnapshot() throws Exception {
+    void interServiceEndpointsRequireAuthAndReturnData() throws Exception {
         UUID recipientId = createRecipient(owner);
-        mockMvc.perform(get("/internal/care-recipients/" + recipientId + "/snapshot"))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot"))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/internal/care-recipients/" + recipientId + "/snapshot")
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(internal(get("/internal/care-recipients/" + recipientId + "/snapshot")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.recipientId").value(recipientId.toString()))
                 .andExpect(jsonPath("$.result.age").isNumber())
@@ -569,19 +563,24 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.result.activeMedications.length()").value(1))
                 .andExpect(jsonPath("$.result.primaryEmergencyContact.fullName").value("Con gái"))
                 .andExpect(jsonPath("$.result.medicalHistory").doesNotExist());
-        mockMvc.perform(internal(get("/internal/care-recipients/" + recipientId + "/access")
-                        .param("userId", owner.toString()).param("minLevel", "OWNER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
+                        .param("userId", owner.toString()).param("minLevel", "OWNER")
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(true));
-        mockMvc.perform(internal(get("/internal/care-recipients/" + recipientId + "/access")
-                        .param("userId", UUID.randomUUID().toString())))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
+                        .param("userId", UUID.randomUUID().toString())
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(false));
-        mockMvc.perform(internal(post("/internal/care-recipients/batch"))
+        mockMvc.perform(post("/api/v1/care-recipients/batch")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"recipientIds\":[\"" + recipientId + "\",\"" + UUID.randomUUID() + "\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.length()").value(1));
-        mockMvc.perform(internal(post("/internal/care-recipients/batch"))
+        mockMvc.perform(post("/api/v1/care-recipients/batch")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"recipientIds\":[]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_IDS_REQUIRED.getCode()));
@@ -591,9 +590,9 @@ class CareRecipientApiTests {
     void openApiDocumentsSecuritySchemes() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paths['/internal/care-recipients/batch'].post.security[0].internalSecret").exists())
-                .andExpect(jsonPath("$.paths['/care-recipients'].post.security[0].csrf").exists())
-                .andExpect(jsonPath("$.paths['/care-recipients'].get.parameters[?(@.name == 'actorId')]").isEmpty());
+                .andExpect(jsonPath("$.paths['/api/v1/care-recipients/batch'].post.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/care-recipients'].post.security[0].csrf").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/care-recipients'].get.parameters[?(@.name == 'actorId')]").isEmpty());
     }
 
     @Test
@@ -615,7 +614,7 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         UUID caregiver = UUID.randomUUID();
         BOOKING.assign(caregiver, recipientId);
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.recipientId").value(recipientId.toString()))
                 .andExpect(jsonPath("$.result.allergies").value("Hải sản"))
@@ -624,7 +623,7 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.result.managers").doesNotExist());
         // Gỡ phân công (booking hết hiệu lực) → không xem được nữa
         BOOKING.unassign(caregiver, recipientId);
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
     }
@@ -632,17 +631,17 @@ class CareRecipientApiTests {
     @Test
     void unassignedCaregiverGets404AndOtherRolesAreForbidden() throws Exception {
         UUID recipientId = createRecipient(owner);
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId)
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId)
                         .header("Authorization", bearer(UUID.randomUUID(), "CAREGIVER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
         // Chủ hồ sơ dùng API customer, không dùng API caregiver
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isForbidden());
         // Caregiver không dùng được API customer dù được phân công
         UUID caregiver = UUID.randomUUID();
         BOOKING.assign(caregiver, recipientId);
-        mockMvc.perform(get("/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isForbidden());
     }
 
@@ -651,9 +650,9 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         UUID caregiver = UUID.randomUUID();
         BOOKING.assign(caregiver, recipientId);
-        mockMvc.perform(delete("/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isNotFound());
     }
 
@@ -663,7 +662,7 @@ class CareRecipientApiTests {
         UUID caregiver = UUID.randomUUID();
         BOOKING.assign(caregiver, recipientId);
         BOOKING.setFailing(true);
-        mockMvc.perform(get("/caregiver/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
+        mockMvc.perform(get("/api/v1/care-recipients/caregiver/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(ErrorCode.BOOKING_UNAVAILABLE.getCode()));
     }
@@ -683,7 +682,7 @@ class CareRecipientApiTests {
                  "emergencyContacts":[{"fullName":"Con gái","relationship":"Con","phoneNumber":"0909999999","primary":true}],
                  "medications":[{"medicationName":"Insulin","route":"INJECTION","startDate":"2026-01-01","timeOfDay":["07:00","20:00"]}]}
                 """.formatted(fullName);
-        JsonNode result = readResult(mockMvc.perform(post("/care-recipients")
+        JsonNode result = readResult(mockMvc.perform(post("/api/v1/care-recipients")
                         .header("Authorization", bearer(userId, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
@@ -692,7 +691,7 @@ class CareRecipientApiTests {
     }
 
     UUID addManager(UUID recipientId, String email, String accessLevel) throws Exception {
-        JsonNode result = readResult(mockMvc.perform(post("/care-recipients/" + recipientId + "/managers")
+        JsonNode result = readResult(mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -705,7 +704,7 @@ class CareRecipientApiTests {
     }
 
     UUID findManagerId(UUID recipientId, UUID userId) throws Exception {
-        JsonNode managers = readResult(mockMvc.perform(get("/care-recipients/" + recipientId + "/managers")
+        JsonNode managers = readResult(mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/managers")
                         .header("Authorization", bearer(userId, "CUSTOMER")))
                 .andReturn());
         for (JsonNode manager : managers) {
@@ -720,9 +719,6 @@ class CareRecipientApiTests {
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("result");
     }
 
-    MockHttpServletRequestBuilder internal(MockHttpServletRequestBuilder builder) {
-        return builder.header("X-Internal-Secret", RECIPIENT_INTERNAL_SECRET);
-    }
 
     String bearer(UUID userId, String... roles) {
         return "Bearer " + IDENTITY.accessToken(userId, roles);

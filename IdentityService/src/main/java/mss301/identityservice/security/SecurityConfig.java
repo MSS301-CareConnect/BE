@@ -37,10 +37,10 @@ public class SecurityConfig {
 
     // Luồng tự xử lý token của chính nó — cookie cũ/hỏng không được chặn login/refresh/logout/đăng ký.
     static String[] TOKEN_FLOW_ENDPOINTS = {
-            "/auth/login", "/auth/refresh", "/auth/logout", "/auth/csrf",
-            "/auth/mobile/login", "/auth/mobile/refresh", "/auth/mobile/logout",
-            "/users/register", "/users/register/verify", "/users/register/resend-otp",
-            "/users/forgot-password", "/users/reset-password"
+            "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/csrf",
+            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh", "/api/v1/auth/mobile/logout",
+            "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
+            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"
     };
 
     static String[] PUBLIC_ENDPOINTS = Stream.concat(Stream.of(TOKEN_FLOW_ENDPOINTS), Stream.of(
@@ -54,10 +54,10 @@ public class SecurityConfig {
     // Đăng ký / OTP / quên-đặt lại mật khẩu: không dựa vào phiên đăng nhập, không đặt cookie → request KHÔNG mang cookie
     // nào (mobile) được miễn CSRF; trình duyệt có cookie vẫn phải gửi CSRF như cũ.
     static Set<String> COOKIELESS_CSRF_EXEMPT_PATHS = Set.of(
-            "/users/register", "/users/register/verify", "/users/register/resend-otp",
-            "/users/forgot-password", "/users/reset-password");
+            "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
+            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password");
     static Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
-    public static final String MOBILE_AUTH_PREFIX = "/auth/mobile/";
+    public static final String MOBILE_AUTH_PREFIX = "/api/v1/auth/mobile/";
     public static final String CSRF_HEADER = "X-XSRF-TOKEN";
 
     IdentityProperties identityProperties;

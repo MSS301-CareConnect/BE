@@ -15,10 +15,22 @@ import org.springframework.validation.annotation.Validated;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MediaProperties {
 
-    String internalSecret;
+    @Valid
+    Jwt jwt = new Jwt();
 
     @Valid
     R2 r2 = new R2();
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Jwt {
+
+        @NotBlank
+        String issuer;
+
+        @NotBlank
+        String jwksUri;
+    }
 
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)

@@ -33,4 +33,8 @@ public class CenterResponse {
     Instant createdAt;
     Instant updatedAt;
     Instant deletedAt;
+
+    public UUID getCenterId() {
+        return id;
+    }
 }

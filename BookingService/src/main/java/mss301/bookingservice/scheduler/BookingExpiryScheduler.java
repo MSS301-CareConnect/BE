@@ -4,7 +4,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import mss301.bookingservice.service.BookingExpiryService;
+import mss301.bookingservice.service.BookingService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,16 +22,16 @@ import java.util.UUID;
 @Slf4j
 public class BookingExpiryScheduler {
 
-    BookingExpiryService bookingExpiryService;
+    BookingService bookingService;
 
     @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:5m}",
             initialDelayString = "${booking.schedule.expiry-scan-interval:5m}")
     public void expireOverdueBookings() {
-        List<UUID> bookingIds = bookingExpiryService.findExpirableIds();
+        List<UUID> bookingIds = bookingService.findExpirableIds();
         int expired = 0;
         for (UUID bookingId : bookingIds) {
             try {
-                bookingExpiryService.expire(bookingId);
+                bookingService.expire(bookingId);
                 expired++;
             } catch (RuntimeException e) {
                 log.error("Failed to expire booking {} ({})", bookingId, e.getClass().getSimpleName(), e);

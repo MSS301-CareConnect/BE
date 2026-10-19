@@ -5,8 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.carecatalogservice.dto.request.CenterOfferingRequest;
+import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.CenterOfferingResponse;
+import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.exception.AppException;
@@ -14,6 +16,7 @@ import mss301.carecatalogservice.exception.ErrorCode;
 import mss301.carecatalogservice.mapper.CenterOfferingMapper;
 import mss301.carecatalogservice.repository.CatalogItemRepository;
 import mss301.carecatalogservice.repository.CenterOfferingRepository;
+import mss301.carecatalogservice.service.CatalogQuoteService;
 import mss301.carecatalogservice.service.CenterOfferingService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +34,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     CenterOfferingRepository centerOfferingRepository;
     CatalogItemRepository catalogItemRepository;
     CenterOfferingMapper centerOfferingMapper;
+    CatalogQuoteService catalogQuoteService;
 
     @Override
     @Transactional
@@ -112,5 +116,11 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     private CatalogItem findActiveCatalogItem(UUID id) {
         return catalogItemRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ServiceQuoteResponse> quote(ServiceQuoteRequest request) {
+        return catalogQuoteService.quote(request);
     }
 }

@@ -12,16 +12,13 @@ spring:
       mode: never
 
 provider:
-  internal-secret: provider-test-internal-secret-at-least-32-chars
   jwt:
     issuer: http://identity.test
     jwks-uri: http://identity.test/.well-known/jwks.json
   identity:
     url: http://identity.test
-    internal-secret: identity-test-internal-secret-at-least-32-chars
   media:
     url: http://media.test
-    internal-secret: media-test-internal-secret-at-least-32-chars
 
 springdoc:
   api-docs:

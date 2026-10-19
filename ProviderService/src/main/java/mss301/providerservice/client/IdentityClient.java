@@ -10,6 +10,6 @@ import java.util.UUID;
 @FeignClient(name = "identity", url = "${provider.identity.url}",
         configuration = IdentityClientConfig.class, fallbackFactory = IdentityClientFallbackFactory.class)
 public interface IdentityClient {
-    @GetMapping("/internal/users/{userId}")
+    @GetMapping("/api/v1/users/{userId}")
     APIResponse<IdentityUserResponse> get(@PathVariable("userId") UUID userId);
 }

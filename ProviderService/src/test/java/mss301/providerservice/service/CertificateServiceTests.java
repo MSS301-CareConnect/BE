@@ -6,6 +6,7 @@ import mss301.providerservice.exception.*;
 import mss301.providerservice.mapper.ProviderViewMapper;
 import mss301.providerservice.repository.CertificateRepository;
 import mss301.providerservice.security.ProviderAuthorization;
+import mss301.providerservice.service.Impl.CertificateServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
@@ -23,7 +24,7 @@ class CertificateServiceTests {
     @Mock CaregiverService caregiverService;
     @Mock ProviderAuthorization authorization;
     @Mock ProviderViewMapper mapper;
-    @InjectMocks CertificateService service;
+    @InjectMocks CertificateServiceImpl service;
 
     @Test
     void expiryDateCannotBeBeforeIssuedDate() {
