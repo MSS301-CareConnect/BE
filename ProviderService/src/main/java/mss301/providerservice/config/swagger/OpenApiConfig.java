@@ -56,7 +56,7 @@ public class OpenApiConfig {
                 .info(new Info().title("CareConnect ProviderService").version("0.0.1"))
                 .components(components)
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME));
-        // Đứng sau gateway (cắt prefix /api/v1): "Try it out" phải gọi qua prefix của gateway; vẫn giữ "/" để gọi trực tiếp.
+        // Đứng sau gateway (giữ nguyên path /api/v1): server = origin gateway, KHÔNG kèm /api/v1 kẻo Swagger ghép trùng; vẫn giữ "/" để gọi trực tiếp.
         String gatewayServerUrl = providerProperties.getOpenApiServerUrl();
         if (gatewayServerUrl != null && !gatewayServerUrl.isBlank()) {
             openApi.servers(List.of(

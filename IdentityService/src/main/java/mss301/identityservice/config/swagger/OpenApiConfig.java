@@ -16,6 +16,7 @@ import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.web.csrf.CsrfToken;
 
 import java.util.List;
 import java.util.Set;
@@ -37,6 +38,8 @@ public class OpenApiConfig {
     static {
         // userId của người gọi lấy từ token, không phải tham số client gửi → ẩn khỏi Swagger.
         SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class);
+        // CsrfToken do Spring Security inject vào /auth/csrf, không phải query param → không để springdoc sinh tham số.
+        SpringDocUtils.getConfig().addRequestWrapperToIgnore(CsrfToken.class);
     }
 
     @Bean
@@ -58,7 +61,7 @@ public class OpenApiConfig {
                 .info(new Info().title("CareConnect IdentityService").version("0.0.1"))
                 .components(components)
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME));
-        // Đứng sau gateway (cắt prefix /api/v1): "Try it out" phải gọi qua prefix của gateway; vẫn giữ "/" để gọi trực tiếp.
+        // Đứng sau gateway (giữ nguyên path /api/v1): server = origin gateway, KHÔNG kèm /api/v1 kẻo Swagger ghép trùng; vẫn giữ "/" để gọi trực tiếp.
         String gatewayServerUrl = identityProperties.getOpenApiServerUrl();
         if (gatewayServerUrl != null && !gatewayServerUrl.isBlank()) {
             openApi.servers(List.of(
