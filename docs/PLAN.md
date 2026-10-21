@@ -39,3 +39,136 @@ Tracker riêng của CareConnect. Chỉ đánh hoàn thành khi hạng mục đ�
 - [ ] Tích hợp contract CenterService để xác minh UUID trung tâm và đồng bộ vòng đời membership/trung tâm.
 - [ ] Chốt audience và cơ chế kiểm trạng thái/version hiện hành tại các domain service trước khi cam kết thu hồi ngay toàn hệ thống.
 - [ ] Bổ sung key ring/overlap nếu cần rotation RSA không gián đoạn production.
+
+---
+
+## Kế hoạch triển khai 2026-10-21 (`docs/WORK_PLAN.md`)
+
+Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì đánh `[x]` và ghi ngày hoàn thành, ví dụ: `— hoàn thành 2026-10-28`. Chi tiết từng task nằm trong file của người phụ trách. Lỗi bảo mật SEC-xx: `docs/GAP_ANALYSIS.md` §7.
+
+### [Người A] — Payment & tài chính (91 SP · `docs/WORK_PLAN_A_PAYMENT.md`)
+
+**Sprint 1**
+
+- [ ] **PAY-01** — Dựng PaymentService · P0 · 5 SP
+- [ ] **PAY-02** — PlatformPolicy có hiệu lực theo thời gian · P0 · 5 SP
+- [ ] **PAY-08 (bước 1)** — Hotfix `deposit-paid` chỉ cho ADMIN, sửa test (SEC-01) · P0 · tính trong 5 SP của PAY-08
+
+**Sprint 2**
+
+- [ ] **PAY-03** — Chính sách hiệu lực + snapshot vào booking · P0 · 3 SP
+- [ ] **PAY-04** — Phân bổ cọc theo buổi · P0 · 3 SP
+- [ ] **PAY-05** — Tạo phiên thanh toán cọc VNPay (15 phút) · P0 · 8 SP
+
+**Sprint 3**
+
+- [ ] **PAY-06** — IPN + return URL, idempotency, đối chiếu tiền · P0 · 8 SP
+- [ ] **PAY-07** — Job hết hạn phiên + đối soát querydr · P1 · 3 SP
+- [ ] **PAY-08** — Thay stub `deposit-paid` bằng `deposit-confirmations` + `payment-context` (role SERVICE) · P0 · 5 SP
+
+**Sprint 4**
+
+- [ ] **PAY-09** — Preview-cancel: bộ tính phí / hoàn theo bảng 2.2 · P0 · 8 SP
+- [ ] **PAY-10** — Thực hiện hoàn tiền + API refund VNPay · P0 · 8 SP
+
+**Sprint 5**
+
+- [ ] **PAY-11** — Thanh toán REMAINING, hạn 48h, nợ · P1 · 8 SP
+- [ ] **PAY-12** — Phí CUSTOMER_NO_SHOW + hoàn tiền theo khiếu nại · P1 · 3 SP
+- [ ] **PAY-13** — Hoa hồng & sổ cái (ledger) · P1 · 5 SP
+
+**Sprint 6**
+
+- [ ] **PAY-14** — Đối soát (Settlement) theo kỳ · P2 · 8 SP
+- [ ] **PAY-15** — Thống kê doanh thu nền tảng / trung tâm · P2 · 5 SP
+- [ ] **PAY-16** — Lịch sử giao dịch · P1 · 3 SP
+- [ ] **PAY-17** — Kiểm thử end-to-end Payment + tài liệu sandbox · P1 · 3 SP
+
+### [Người B] — Luồng booking end-to-end, catalog & tìm kiếm (104 SP · `docs/WORK_PLAN_B_BOOKING.md`)
+
+**Sprint 1**
+
+- [ ] **IAM-01** — Token service (client-credentials, role SERVICE) · P0 · 5 SP
+- [ ] **GW-01** — Gateway: route Payment, IPN public, CORS, SSE · P0 · 3 SP
+- [ ] **BK-07** — Sửa phạm vi occurrence + `caregiver-access` (SEC-03, SEC-09) · P0 · 3 SP
+- [ ] **BK-08** — Tách `BookingOccurrenceController`, chuẩn hóa layer · P1 · 2 SP
+- [ ] **CAT-01** — Sửa lỗi Catalog + quote xác định · P0 · 3 SP
+
+**Sprint 2**
+
+- [ ] **CAT-02** — Duyệt danh mục / dịch vụ trung tâm cho khách, vô hiệu hóa an toàn · P1 · 3 SP
+- [ ] **PRV-01** — Kỹ năng caregiver (`caregiver_services`) · P0 · 5 SP
+- [ ] **BK-01** — Giá từng buổi + API báo giá tạm tính + `payment-context` · P0 · 5 SP
+- [ ] **OPS-01** — Caregiver xác nhận nhận ca + chi tiết ca · P1 · 3 SP
+
+**Sprint 3**
+
+- [ ] **OPS-02** — Bắt đầu ca (check-in), sinh checklist · P0 · 8 SP
+- [ ] **OPS-04** — Kết thúc ca, hoàn tất booking (FINALIZE), tạo hóa đơn REMAINING · P0 · 5 SP
+- [ ] **PRV-03** — Sửa lỗi ca làm việc (capacity, múi giờ, đăng ký lại) · P1 · 5 SP
+
+**Sprint 4**
+
+- [ ] **PRV-02** — Lịch rảnh + ngày nghỉ caregiver, API kiểm tra lịch · P0 · 8 SP
+- [ ] **BK-02** — Kiểm tra khi tạo / duyệt booking: lịch rảnh, kỹ năng, nợ, giới hạn PENDING · P0 · 5 SP
+- [ ] **OPS-06** — Job MISSED + báo khách vắng mặt (CUSTOMER_NO_SHOW) · P0 · 5 SP
+
+**Sprint 5**
+
+- [ ] **SRCH-01** — Tìm caregiver (giao tập dịch vụ, lọc, sắp xếp, lịch trống) + chi tiết công khai · P0 · 8 SP
+- [ ] **BK-03** — Khách hủy booking / từng buổi + preview-cancel · P0 · 8 SP
+- [ ] **SRCH-02** — Danh sách trung tâm ACTIVE cho khách (lọc khu vực, dịch vụ, giá) · P1 · 3 SP
+
+**Sprint 6**
+
+- [ ] **BK-04** — Trung tâm từ chối / hủy, hủy hệ thống (khóa trung tâm) + hoàn tiền · P0 · 5 SP
+- [ ] **BK-05** — Audit đổi caregiver + lịch sử trạng thái booking · P1 · 3 SP
+- [ ] **BK-06** — Lịch sử booking: lọc, sắp xếp, phân trang · P1 · 3 SP
+- [ ] **BK-09** — Chống trùng lịch tầng DB + scheduler nhiều instance · P2 · 3 SP
+- [ ] **INF-01** — Tài liệu chung, e2e, Docker cập nhật theo kiến trúc mới · P1 · 3 SP
+
+### [Người C] — Hậu mãi, chất lượng & bảo mật (74 SP · `docs/WORK_PLAN_C_AFTERCARE.md`)
+
+**Sprint 1**
+
+- [ ] **CR-01** — CareRecipient: chặn IDOR snapshot/access/batch (SEC-02) + INACTIVE · P0 · 5 SP
+- [ ] **IAM-02** — Refresh an toàn: kiểm `authz_version`, nguyên tử, thu hồi khi reuse / đổi mật khẩu / khóa (SEC-05) · P0 · 5 SP
+- [ ] **IAM-03** — Hủy phiên vô hiệu access, IP tin cậy, thu hồi role tăng version (SEC-06) · P0 · 3 SP
+- [ ] **IAM-04** — Phân quyền endpoint tra cứu user (SEC-04) · P0 · 3 SP
+
+**Sprint 2**
+
+- [ ] **PRV-06** — Provider: sửa phạm vi + lách xác minh + quy ước (SEC-08) · P0 · 3 SP
+- [ ] **MED-01** — Media: quyền sở hữu qua service, đổi dải lỗi 7xxx (SEC-07) · P0 · 5 SP
+- [ ] **NTF-01** — Module thông báo: bảng, API, SSE, API cho service · P0 · 5 SP
+
+**Sprint 3**
+
+- [ ] **OPS-03** — Cập nhật task, ghi chú tình trạng, theo dõi realtime · P0 · 3 SP
+- [ ] **NTF-02** — Gắn thông báo vào các sự kiện nghiệp vụ + nhắc ca · P1 · 3 SP
+- [ ] **PRV-05** — Xác minh chứng chỉ 2 bước + audit hồ sơ caregiver · P1 · 5 SP
+
+**Sprint 4**
+
+- [ ] **OPS-05** — Care report: nháp, ảnh, gửi, khách xem · P0 · 5 SP
+- [ ] **FB-01** — Đánh giá caregiver + phản hồi của trung tâm + cập nhật rating · P1 · 5 SP
+
+**Sprint 5**
+
+- [ ] **FB-02** — Khiếu nại cấp 1 / escalate / Admin quyết định hoàn tiền · P1 · 8 SP
+- [ ] **IAM-05** — Quản lý user cho Admin: lọc, tổng số, lý do khóa · P1 · 3 SP
+
+**Sprint 6**
+
+- [ ] **PRV-04** — Vòng đời trung tâm + khóa dây chuyền + manager sửa trung tâm · P1 · 5 SP
+- [ ] **IAM-06** — Khóa / mở tài khoản theo trung tâm · P1 · 3 SP
+- [ ] **STAT-01** — Thống kê vận hành trung tâm / hệ thống · P2 · 5 SP
+
+### Mốc demo chung cuối mỗi sprint
+
+- [ ] **S1** — Hết lỗ hổng SEC-01…08; có token SERVICE; PaymentService chạy trong Docker; stub contract §7 đã publish.
+- [ ] **S2** — Báo giá có giá từng buổi; khách nhận URL VNPay; caregiver xác nhận nhận ca; thông báo in-app + SSE.
+- [ ] **S3** — Luồng chính end-to-end: đặt → duyệt → cọc VNPay sandbox → CONFIRMED → check-in → task → check-out → COMPLETED; xác minh chứng chỉ 2 bước.
+- [ ] **S4** — Kiểm lịch rảnh / kỹ năng / nợ khi đặt; MISSED + khách vắng tự hoàn tiền; care report có ảnh; đánh giá caregiver; preview hoàn tiền đúng bảng 2.2.
+- [ ] **S5** — Tìm caregiver đủ dịch vụ / lịch trống; hủy từng buổi / cả booking có hoàn tiền; REMAINING + chặn nợ; khiếu nại có escalate.
+- [ ] **S6** — Khóa trung tâm dây chuyền; lịch sử booking; đối soát; dashboard doanh thu / vận hành; e2e toàn hệ thống PASSED.
