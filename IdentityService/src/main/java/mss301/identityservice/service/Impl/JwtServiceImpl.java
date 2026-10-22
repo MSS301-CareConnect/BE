@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.identityservice.config.IdentityProperties;
 import mss301.identityservice.dto.response.UserResponse;
+import mss301.identityservice.enums.RoleCode;
 import mss301.identityservice.enums.TokenType;
 import mss301.identityservice.exception.AppException;
 import mss301.identityservice.exception.ErrorCode;
@@ -54,6 +55,29 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public Jwt issueAccess(UserResponse user, long authzVersion, String sessionId) {
         return issueInternal(user, authzVersion, TokenType.ACCESS, sessionId);
+    }
+
+    @Override
+    public Jwt issueServiceAccess(UUID clientUuid, String clientId) {
+        Instant now = Instant.now();
+        // authz_version = 0 để qua validator chung; token SERVICE không gắn với bảng users.
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(identityProperties.getIssuer())
+                .subject(clientUuid.toString())
+                .audience(List.of(identityProperties.getAudience(), TokenClaims.API_AUDIENCE))
+                .issuedAt(now)
+                .expiresAt(now.plus(identityProperties.getServiceTokenTtl()))
+                .id(UUID.randomUUID().toString())
+                .claim(TokenClaims.TOKEN_TYPE, TokenType.ACCESS.getValue())
+                .claim(TokenClaims.AUTHZ_VERSION, 0L)
+                .claim(TokenClaims.ROLES, List.of(RoleCode.SERVICE.name()))
+                .claim(TokenClaims.PERMISSIONS, List.of())
+                .claim(TokenClaims.CLIENT_ID, clientId)
+                .build();
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256)
+                .keyId(identityProperties.getKeyId())
+                .build();
+        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims));
     }
 
     @Override

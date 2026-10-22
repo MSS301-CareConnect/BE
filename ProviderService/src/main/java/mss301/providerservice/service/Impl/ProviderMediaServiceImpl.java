@@ -3,6 +3,7 @@ package mss301.providerservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import mss301.providerservice.client.MediaClient;
 import mss301.providerservice.client.dto.DownloadUrlClientResponse;
 import mss301.providerservice.client.dto.MediaClientResponse;
@@ -12,9 +13,11 @@ import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.entity.CaregiverProfile;
 import mss301.providerservice.entity.Certificate;
 import mss301.providerservice.entity.ProviderMedia;
+import mss301.providerservice.enums.MediaFileType;
 import mss301.providerservice.enums.MediaOwnerType;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
+import mss301.providerservice.mapper.ProviderMediaMapper;
 import mss301.providerservice.repository.CareCenterRepository;
 import mss301.providerservice.repository.CaregiverProfileRepository;
 import mss301.providerservice.repository.CertificateRepository;
@@ -25,23 +28,29 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
+@Slf4j
 public class ProviderMediaServiceImpl implements ProviderMediaService {
-    private static final int MAX_FILES_PER_REQUEST = 10;
-    private static final String SOURCE_SERVICE = "PROVIDER_SERVICE";
+
+    static int MAX_FILES_PER_REQUEST = 10;
+    static String SOURCE_SERVICE = "PROVIDER_SERVICE";
 
     ProviderMediaRepository providerMediaRepository;
     CareCenterRepository careCenterRepository;
     CaregiverProfileRepository caregiverProfileRepository;
     CertificateRepository certificateRepository;
-    ProviderAuthorization authorization;
+    ProviderAuthorization providerAuthorization;
     MediaClient mediaClient;
+    ProviderMediaMapper providerMediaMapper;
 
     @Override
     public APIResponse<List<ProviderMediaResponse>> upload(UUID actorId, MediaOwnerType ownerType, UUID ownerId, List<MultipartFile> files) {
@@ -54,24 +63,19 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
 
         try {
             for (MultipartFile file : validFiles) {
-                APIResponse<MediaClientResponse> uploadResult = mediaClient.upload(file, purposeOf(ownerType), actorId,
+                APIResponse<MediaClientResponse> uploadResult = mediaClient.upload(file, resolvePurpose(ownerType), actorId,
                         SOURCE_SERVICE, ownerType.name(), ownerId);
 
                 MediaClientResponse uploaded = requireMediaResult(uploadResult);
                 uploadedMediaIds.add(uploaded.getMediaFileId());
 
-                ProviderMedia providerMedia = ProviderMedia.builder()
-                        .ownerType(ownerType)
-                        .ownerId(ownerId)
-                        .mediaFileId(uploaded.getMediaFileId())
-                        .mediaFileType(uploaded.getFileType())
-                        .displayOrder(displayOrder++)
-                        .createdBy(actorId)
-                        .build();
+                ProviderMedia providerMedia = providerMediaMapper.toProviderMedia(ownerType, ownerId, uploaded,
+                        displayOrder, actorId);
+                displayOrder++;
 
                 ProviderMedia savedMedia = providerMediaRepository.save(providerMedia);
                 DownloadUrlClientResponse download = getDownloadUrl(uploaded.getMediaFileId());
-                responses.add(toResponse(savedMedia, uploaded, download));
+                responses.add(providerMediaMapper.toResponse(savedMedia, uploaded, download));
             }
         } catch (RuntimeException exception) {
             deleteUploadedFilesQuietly(uploadedMediaIds);
@@ -91,7 +95,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
                 .map(providerMedia -> {
                     MediaClientResponse metadata = requireMediaResult(mediaClient.get(providerMedia.getMediaFileId()));
                     DownloadUrlClientResponse download = getDownloadUrl(providerMedia.getMediaFileId());
-                    return toResponse(providerMedia, metadata, download);
+                    return providerMediaMapper.toResponse(providerMedia, metadata, download);
                 })
                 .toList();
 
@@ -111,6 +115,38 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return APIResponse.success("Xóa file thành công");
     }
 
+    @Override
+    public Map<UUID, List<String>> findImageUrls(MediaOwnerType ownerType, Collection<UUID> ownerIds,
+                                                 int limitPerOwner) {
+        Map<UUID, List<String>> imageUrls = new HashMap<>();
+        if (ownerIds.isEmpty()) {
+            return imageUrls;
+        }
+        List<ProviderMedia> images = providerMediaRepository.findByOwnerTypeAndOwnerIdInAndMediaFileTypeOrderByDisplayOrderAsc(
+                ownerType, ownerIds, MediaFileType.IMAGE);
+        for (ProviderMedia image : images) {
+            List<String> ownerUrls = imageUrls.computeIfAbsent(image.getOwnerId(), ownerId -> new ArrayList<>());
+            if (ownerUrls.size() >= limitPerOwner) {
+                continue;
+            }
+            String downloadUrl = findDownloadUrlQuietly(image.getMediaFileId());
+            if (downloadUrl != null) {
+                ownerUrls.add(downloadUrl);
+            }
+        }
+        return imageUrls;
+    }
+
+    private String findDownloadUrlQuietly(UUID mediaFileId) {
+        try {
+            return getDownloadUrl(mediaFileId).getDownloadUrl();
+        } catch (RuntimeException exception) {
+            // Fallback có chủ đích: thiếu ảnh không được làm hỏng danh sách công khai.
+            log.warn("Cannot create download URL for media file {}: {}", mediaFileId, exception.getMessage());
+            return null;
+        }
+    }
+
     private void requireOwnerAccess(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
         switch (ownerType) {
             case CARE_CENTER -> requireCenterAccess(actorId, ownerId);
@@ -122,19 +158,19 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
     private void requireCenterAccess(UUID actorId, UUID centerId) {
         CareCenter center = careCenterRepository.findByIdAndDeletedAtIsNull(centerId)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
-        authorization.requireCenterManagement(center, actorId);
+        providerAuthorization.requireCenterManagement(center, actorId);
     }
 
     private void requireCaregiverAccess(UUID actorId, UUID caregiverId) {
         CaregiverProfile caregiver = caregiverProfileRepository.findByIdAndDeletedAtIsNull(caregiverId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
-        authorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
     }
 
     private void requireCertificateAccess(UUID actorId, UUID certificateId) {
         Certificate certificate = certificateRepository.findByIdAndDeletedAtIsNull(certificateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
-        authorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
     }
 
     private List<MultipartFile> validateFiles(List<MultipartFile> files) {
@@ -156,7 +192,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return validFiles;
     }
 
-    private String purposeOf(MediaOwnerType ownerType) {
+    private String resolvePurpose(MediaOwnerType ownerType) {
         return switch (ownerType) {
             case CARE_CENTER -> "CARE_CENTER_IMAGE";
             case CAREGIVER_PROFILE -> "CAREGIVER_PROFILE_IMAGE";
@@ -179,25 +215,13 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return response.getResult();
     }
 
-    private ProviderMediaResponse toResponse(ProviderMedia providerMedia, MediaClientResponse metadata, DownloadUrlClientResponse download) {
-        return ProviderMediaResponse.builder()
-                .mediaFileId(providerMedia.getMediaFileId())
-                .mediaFileType(providerMedia.getMediaFileType())
-                .originalFileName(metadata.getOriginalFileName())
-                .contentType(metadata.getContentType())
-                .fileSize(metadata.getFileSize())
-                .displayOrder(providerMedia.getDisplayOrder())
-                .downloadUrl(download.getDownloadUrl())
-                .downloadUrlExpiresAt(download.getExpiresAt())
-                .build();
-    }
-
     private void deleteUploadedFilesQuietly(List<UUID> uploadedMediaIds) {
         for (UUID mediaFileId : uploadedMediaIds) {
             try {
                 mediaClient.delete(mediaFileId);
-            } catch (RuntimeException ignored) {
-
+            } catch (RuntimeException exception) {
+                // Dọn dẹp best-effort: không che lỗi gốc của lần upload, chỉ ghi lại file có thể bị mồ côi.
+                log.warn("Failed to clean up uploaded media file {}: {}", mediaFileId, exception.getMessage());
             }
         }
     }

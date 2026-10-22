@@ -56,6 +56,8 @@ class CareRecipientInterServiceEndpointsTests {
         registry.add("care-recipient.jwt.jwks-uri", IDENTITY::jwksUri);
         registry.add("care-recipient.identity.url", IDENTITY::baseUrl);
         registry.add("care-recipient.booking.url", BOOKING::baseUrl);
+        registry.add("care-recipient.service-client.client-id", () -> TestIdentityServer.SERVICE_CLIENT_ID);
+        registry.add("care-recipient.service-client.client-secret", () -> TestIdentityServer.SERVICE_CLIENT_SECRET);
     }
 
     @Autowired
@@ -70,12 +72,14 @@ class CareRecipientInterServiceEndpointsTests {
     UUID ownerId;
     UUID viewerId;
     String callerToken;
+    String serviceToken;
 
     @BeforeEach
     void setUp() {
         ownerId = IDENTITY.addUser("owner-" + UUID.randomUUID() + "@example.test", "Owner User", "ACTIVE", Set.of("CUSTOMER"));
         viewerId = IDENTITY.addUser("viewer-" + UUID.randomUUID() + "@example.test", "Viewer User", "ACTIVE", Set.of("CUSTOMER"));
         callerToken = "Bearer " + IDENTITY.accessToken(ownerId, "CUSTOMER");
+        serviceToken = "Bearer " + IDENTITY.accessToken(UUID.randomUUID(), "SERVICE");
     }
 
     @AfterEach
@@ -98,7 +102,7 @@ class CareRecipientInterServiceEndpointsTests {
     void snapshot_nonExistentRecipient_returns404() throws Exception {
         UUID nonExistent = UUID.randomUUID();
         mockMvc.perform(get("/api/v1/care-recipients/" + nonExistent + "/snapshot")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
     }
@@ -113,7 +117,7 @@ class CareRecipientInterServiceEndpointsTests {
 
         // Snapshot should return 404 for deleted recipient
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_NOT_FOUND.getCode()));
     }
@@ -123,7 +127,7 @@ class CareRecipientInterServiceEndpointsTests {
         UUID recipientId = createRecipient(ownerId, "Cụ Nguyễn Văn An");
 
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.recipientId").value(recipientId.toString()))
                 .andExpect(jsonPath("$.result.fullName").value("Cụ Nguyễn Văn An"))
@@ -152,7 +156,7 @@ class CareRecipientInterServiceEndpointsTests {
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", ownerId.toString())
                         .param("minLevel", "OWNER")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(true))
                 .andExpect(jsonPath("$.result.accessLevel").value("OWNER"));
@@ -161,7 +165,7 @@ class CareRecipientInterServiceEndpointsTests {
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", ownerId.toString())
                         .param("minLevel", "VIEWER")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(true));
     }
@@ -175,7 +179,7 @@ class CareRecipientInterServiceEndpointsTests {
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", actualViewerUserId.toString())
                         .param("minLevel", "OWNER")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(false))
                 .andExpect(jsonPath("$.result.accessLevel").value("VIEWER"));
@@ -184,7 +188,7 @@ class CareRecipientInterServiceEndpointsTests {
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", actualViewerUserId.toString())
                         .param("minLevel", "VIEWER")
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(true))
                 .andExpect(jsonPath("$.result.accessLevel").value("VIEWER"));
@@ -197,7 +201,7 @@ class CareRecipientInterServiceEndpointsTests {
 
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", stranger.toString())
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(false))
                 .andExpect(jsonPath("$.result.accessLevel").doesNotExist());
@@ -209,7 +213,7 @@ class CareRecipientInterServiceEndpointsTests {
 
         mockMvc.perform(get("/api/v1/care-recipients/" + randomRecipient + "/access")
                         .param("userId", ownerId.toString())
-                        .header("Authorization", callerToken))
+                        .header("Authorization", serviceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(false));
     }

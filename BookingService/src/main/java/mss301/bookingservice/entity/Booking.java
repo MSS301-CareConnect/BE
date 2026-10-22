@@ -113,6 +113,14 @@ public class Booking extends BaseEntity {
     @Column(name = "deposit_due_at")
     Instant depositDueAt;
 
+    // Buổi đầu tiên check-in (OPS-02).
+    @Column(name = "started_at")
+    Instant startedAt;
+
+    // Mọi buổi đã kết thúc, có ít nhất một buổi được phục vụ (OPS-04).
+    @Column(name = "completed_at")
+    Instant completedAt;
+
     @Column(name = "confirmed_at")
     Instant confirmedAt;
 

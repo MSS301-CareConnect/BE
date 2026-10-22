@@ -5,7 +5,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import mss301.identityservice.dto.request.RefreshRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.AuthenticationResponse;
 import mss301.identityservice.dto.response.UserResponse;
@@ -59,15 +58,15 @@ public class TokenTransportImpl implements TokenTransport {
     }
 
     @Override
-    public String extractRefreshToken(ClientType clientType, RefreshRequest body, HttpServletRequest request) {
+    public String extractRefreshToken(ClientType clientType, String bodyRefreshToken, HttpServletRequest request) {
         if (clientType == ClientType.WEB) {
             String cookieToken = CookieUtils.read(request, CookieUtils.REFRESH);
             if (cookieToken != null && !cookieToken.isBlank()) {
                 return cookieToken.trim();
             }
         }
-        if (body != null && body.getRefreshToken() != null && !body.getRefreshToken().isBlank()) {
-            return body.getRefreshToken().trim();
+        if (bodyRefreshToken != null && !bodyRefreshToken.isBlank()) {
+            return bodyRefreshToken.trim();
         }
         String header = request.getHeader("X-Refresh-Token");
         if (header != null && !header.isBlank()) {

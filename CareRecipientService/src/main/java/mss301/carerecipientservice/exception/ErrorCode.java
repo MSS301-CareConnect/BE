@@ -78,7 +78,10 @@ public enum ErrorCode {
 
     // API NỘI BỘ
     RECIPIENT_IDS_REQUIRED(2600, "Danh sách recipientId không được để trống", HttpStatus.BAD_REQUEST),
-    RECIPIENT_BATCH_TOO_LARGE(2601, "Danh sách recipientId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST);
+    RECIPIENT_BATCH_TOO_LARGE(2601, "Danh sách recipientId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST),
+
+    // TOKEN SERVICE (client-credentials) — thiếu cấu hình / sai secret / Identity sập đều là lỗi hạ tầng với người dùng
+    SERVICE_TOKEN_UNAVAILABLE(2700, "Không xác thực được với dịch vụ liên quan, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE);
 
     private int code;
     private String message;

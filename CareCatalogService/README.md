@@ -27,7 +27,7 @@ Trong thư mục `CareConnect/CareCatalogService`, yêu cầu Java 21, Docker:
 ```powershell
 # 1. Tạo file cấu hình từ template
 Copy-Item .env.example .env
-# Sửa .env nếu cần (DB password, CARE_CATALOG_INTERNAL_SECRET...)
+# Sửa .env nếu cần (DB password, issuer / JWKS của IdentityService)
 
 # 2. Khởi động PostgreSQL riêng của service (Port 5443)
 docker compose up -d
@@ -40,7 +40,8 @@ Get-Content -Raw schema/catalog.sql | docker compose exec -T care-catalog-db psq
 ```
 
 - PostgreSQL riêng `127.0.0.1:5443` (DB `CARECONNECT_CATALOG`). Không Redis, không Flyway; `ddl-auto: validate`.
-- Schema cập nhật trực tiếp tại `schema/catalog.sql`.
+- Schema khởi tạo tại `schema/catalog.sql`; DB đã có dữ liệu áp change script trong `schema/changes/` (vd
+  `2026-10-22_price_plan_hour_duration.sql` — CAT-01).
 - JVM chạy múi giờ UTC, thời gian lưu kiểu `TIMESTAMPTZ`.
 
 ## API Endpoints
@@ -59,12 +60,29 @@ Get-Content -Raw schema/catalog.sql | docker compose exec -T care-catalog-db psq
 - `GET /center-services/{id}`: Lấy chi tiết dịch vụ trung tâm
 - `DELETE /center-services/{id}`: Xóa mềm dịch vụ trung tâm (*Role: CENTER_MANAGER*)
 
+- `POST /api/v1/center-services/quote` (authenticated): báo giá **xác định** — body `{centerId, items[{careServiceId,
+  centerServiceId?, pricePlanId}]}`, **`pricePlanId` bắt buộc** (thiếu → 400 `3305`, Catalog không tự chọn gói). Gói phải
+  active (`3306`), thuộc đúng dịch vụ trung tâm; dịch vụ trung tâm và danh mục chuẩn phải ACTIVE (`3105`). Trả
+  `[{careServiceId, centerServiceId, pricePlanId, serviceName, pricingUnit, durationMinutes, basePrice, active}]`.
+- Tạo / sửa dịch vụ trung tâm (ACTIVE) yêu cầu danh mục chuẩn ACTIVE (409 `3105`); vẫn tắt được dịch vụ có danh mục đã bị
+  vô hiệu hóa. Hai request song song cùng đăng ký một dịch vụ → 409 `3205` (unique index `uk_center_services_center_care`).
+
+- CAT-02 (2026-10-22): `GET /api/v1/catalog-items?status=&category=&keyword=&page=&size=` và
+  `GET /api/v1/center-services/center/{centerId}?status=&page=&size=` trả **trang** (`PageResponse`, `size ≤ 100`).
+  Khách / caregiver chỉ thấy dịch vụ chuẩn ACTIVE và dịch vụ trung tâm đang bán được (offering + danh mục ACTIVE, có gói
+  active, kèm `pricePlans[]` active); ADMIN và manager của chính trung tâm thấy mọi trạng thái. `PATCH /catalog-items/{id}/status`
+  (ADMIN), `PATCH /center-services/{id}/status` (manager). Xóa chỉ khi không còn dùng (409 `3110` / `3206`, dùng PATCH
+  status); xóa dịch vụ trung tâm xóa mềm luôn gói con. `GET /api/v1/center-services/price-summary?careServiceId=&minPrice=&maxPrice=`
+  (SERVICE, C9.2): `[{centerId, minPrice}]` của gói đang bán trong khoảng giá.
+
 ### 3. Bảng giá (`/price-plans`)
 - `POST /price-plans`: Tạo bảng giá mới cho dịch vụ trung tâm (*Role: CENTER_MANAGER*)
 - `PUT /price-plans/{id}`: Cập nhật bảng giá (*Role: CENTER_MANAGER*)
 - `GET /price-plans/center-service/{centerServiceId}`: Lấy các bảng giá của một dịch vụ trung tâm
 - `GET /price-plans/{id}`: Lấy chi tiết bảng giá
 - `DELETE /price-plans/{id}`: Xóa mềm bảng giá (*Role: CENTER_MANAGER*)
+- `isActive` không gửi → `true` khi tạo, giữ nguyên khi sửa. `pricingUnit = HOUR` bắt buộc `durationMinutes = 60`
+  (đơn giá theo giờ; 400 `3303`, CHECK `ck_price_plans_hour_duration`); DAY / SHIFT là thời lượng chuẩn của đơn vị.
 
 ## Bảng mã lỗi (ErrorCode: 3000–3999)
 

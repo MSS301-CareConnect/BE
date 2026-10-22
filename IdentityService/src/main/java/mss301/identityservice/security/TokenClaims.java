@@ -9,6 +9,8 @@ public final class TokenClaims {
     public static final String ROLES = "roles";
     public static final String PERMISSIONS = "permissions";
     public static final String CENTER_ID = "center_id";
+    // Chỉ có trong token SERVICE (client-credentials) — phân biệt với token người dùng.
+    public static final String CLIENT_ID = "client_id";
 
     // Audience chung của mọi service backend (CareRecipient, service sau, gateway) — chỉ có trong access token.
     // IdentityService vẫn kiểm audience riêng (identity.audience) nên token phát trước khi thêm giá trị này vẫn hợp lệ ở đây.

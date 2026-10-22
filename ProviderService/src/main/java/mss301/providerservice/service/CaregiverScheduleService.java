@@ -9,9 +9,9 @@ import java.util.UUID;
 
 public interface CaregiverScheduleService {
 
-    APIResponse<PageResponse<ScheduleResponse>> mySchedules(UUID actorId, int page, int size);
+    APIResponse<PageResponse<ScheduleResponse>> listMine(UUID actorId, int page, int size);
 
-    APIResponse<PageResponse<ScheduleResponse>> centerSchedules(UUID actorId, UUID centerId, int page, int size);
+    APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, int page, int size);
 
     APIResponse<ScheduleResponse> updateStatus(UUID actorId, UUID id, ScheduleStatusRequest request);
 }

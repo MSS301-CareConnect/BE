@@ -6,6 +6,8 @@ import mss301.carecatalogservice.entity.CatalogItem;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingTarget;
 
+import java.util.List;
+
 @Mapper(config = MapStructConfig.class)
 public interface CatalogItemMapper {
 
@@ -13,6 +15,8 @@ public interface CatalogItemMapper {
     CatalogItem toEntity(CatalogItemRequest request);
 
     CatalogItemResponse toResponse(CatalogItem entity);
+
+    List<CatalogItemResponse> toResponseList(List<CatalogItem> entities);
 
     @IgnoreServerManagedFields
     void updateEntityFromRequest(CatalogItemRequest request, @MappingTarget CatalogItem entity);

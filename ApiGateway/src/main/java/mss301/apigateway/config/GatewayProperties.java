@@ -3,12 +3,14 @@ package mss301.apigateway.config;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.experimental.FieldDefaults;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Duration;
 import java.util.List;
 
 // gateway.* trong application.yaml — URL service phía sau, JWT, CORS bắt buộc cấu hình qua env (fail khi khởi động nếu thiếu).
@@ -35,6 +37,13 @@ public class GatewayProperties {
 
     @NotBlank
     String mediaUrl;
+
+    @NotBlank
+    String paymentUrl;
+
+    // Thời gian tối đa một kết nối SSE được giữ qua gateway; hết hạn thì đóng, EventSource tự nối lại.
+    @NotNull
+    Duration sseMaxDuration = Duration.ofMinutes(30);
 
     // Origin của FE được gọi kèm credentials (cookie). Không dùng wildcard.
     @NotEmpty

@@ -22,16 +22,16 @@ Quy ước chung: `../AGENTS.md`; phần riêng của service: `AGENTS.md`.
   circuit mở → vẫn trả danh sách, `profileAvailable=false`, chỉ thiếu profile.
 - Optimistic locking (`version`) khi sửa hồ sơ; `updated_by` trên hồ sơ và thuốc. Soft delete hồ sơ / thuốc / liên hệ.
 - ADMIN xem hồ sơ toàn hệ thống (kể cả đã lưu trữ) để xử lý khiếu nại.
-- API nội bộ cho Booking/Caregiver (snapshot, kiểm quyền, batch) — không mở qua gateway.
+- API cho service khác (snapshot, kiểm quyền: chỉ token SERVICE; batch) — đi qua gateway như mọi API, phân quyền bằng `@PreAuthorize`.
 
 ## Chạy local
 
-Trong `CareConnect/CareRecipientService`, Java 21, Docker, IdentityService đang chạy (JWKS + API nội bộ):
+Trong `CareConnect/CareRecipientService`, Java 21, Docker, IdentityService (JWKS + token SERVICE) và ApiGateway đang chạy:
 
 ```powershell
 Copy-Item .env.example .env
-# Sửa .env: DB password, CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET (= IDENTITY_INTERNAL_SECRET của Identity),
-# CARE_RECIPIENT_INTERNAL_SECRET (chuỗi ngẫu nhiên), CARE_RECIPIENT_JWT_ISSUER (= IDENTITY_JWT_ISSUER).
+# Sửa .env: DB password, CARE_RECIPIENT_JWT_ISSUER (= IDENTITY_JWT_ISSUER), URL gateway, và client token SERVICE
+# CARE_RECIPIENT_SERVICE_CLIENT_ID / _SECRET (đăng ký ở IDENTITY_SERVICE_CLIENTS của Identity — xem bảng biến môi trường).
 docker compose up -d
 Get-Content -Raw schema/care_recipient.sql | docker compose exec -T postgres psql -U careconnect_care_recipient -d CARECONNECT_CARE_RECIPIENT -v ON_ERROR_STOP=1   # chỉ DB mới
 .\scripts\Start-Dev.ps1
@@ -53,9 +53,9 @@ URL (dev): API `http://localhost:8082` · Swagger `/swagger-ui.html` · OpenAPI 
 | App | `CARE_RECIPIENT_SERVER_PORT`, `CARE_RECIPIENT_SWAGGER_ENABLED`, `CARE_RECIPIENT_OPENAPI_SERVER_URL` (= `/api/v1` khi sau gateway) |
 | DB | `CARE_RECIPIENT_DB_NAME`, `CARE_RECIPIENT_DB_URL`, `CARE_RECIPIENT_DB_PORT`, `CARE_RECIPIENT_DB_USERNAME`, `CARE_RECIPIENT_DB_PASSWORD` |
 | JWT | `CARE_RECIPIENT_JWT_ISSUER`, `CARE_RECIPIENT_JWT_JWKS_URI` (audience cố định `careconnect-api`) |
-| Feign → Identity | `CARE_RECIPIENT_IDENTITY_URL`, `CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET`, `CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS` |
-| Feign → Booking | `CARE_RECIPIENT_BOOKING_URL`, `CARE_RECIPIENT_BOOKING_INTERNAL_SECRET` (= `BOOKING_INTERNAL_SECRET`), `CARE_RECIPIENT_BOOKING_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_BOOKING_READ_TIMEOUT_MS` |
-| API nội bộ của service này | `CARE_RECIPIENT_INTERNAL_SECRET` (trống = khóa `/internal/**`) |
+| Feign → Identity (qua gateway) | `CARE_RECIPIENT_IDENTITY_URL`, `CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS` |
+| Feign → Booking (qua gateway) | `CARE_RECIPIENT_BOOKING_URL`, `CARE_RECIPIENT_BOOKING_CONNECT_TIMEOUT_MS`, `CARE_RECIPIENT_BOOKING_READ_TIMEOUT_MS` |
+| Token SERVICE (client-credentials) | `CARE_RECIPIENT_SERVICE_CLIENT_ID`, `CARE_RECIPIENT_SERVICE_CLIENT_SECRET`, `CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT` (mặc định `2s`), `CARE_RECIPIENT_SERVICE_TOKEN_READ_TIMEOUT` (mặc định `3s`). Xin ở `POST /api/v1/auth/service-token` qua `CARE_RECIPIENT_IDENTITY_URL`; trống → lời gọi Booking trả 503 `2700` |
 
 ## Xác thực
 
@@ -74,13 +74,22 @@ URL (dev): API `http://localhost:8082` · Swagger `/swagger-ui.html` · OpenAPI 
 Mọi response là `APIResponse` `{code,message,result}`. Danh sách phân trang trả
 `{items,page,size,totalElements,totalPages}` (`size` 1–100, lỗi `2003`).
 
-### Customer (`hasRole('CUSTOMER')`)
+### Hồ sơ — một API cho mọi role (2026-10-22)
+
+Không còn path theo role (`/care-recipients/admin`, `/admin/{id}`, `/caregiver/{id}` đã **xóa**, không alias). Controller
+nhận `@CurrentRoles Set<RoleCode>` (từ claim `roles[]`), service chọn phạm vi dữ liệu. Token có nhiều role: ưu tiên
+ADMIN → CUSTOMER → CAREGIVER.
+
+| Method / path | Role | Hành vi |
+|---|---|---|
+| `GET /care-recipients?status=&keyword=&createdBy=&includeDeleted=&page=&size=` | CUSTOMER, ADMIN | CUSTOMER: hồ sơ mình quản lý, kèm `myAccessLevel`, `primaryManager`. ADMIN: toàn hệ thống (cả `createdBy`, `includeDeleted`). CUSTOMER gửi `createdBy` / `includeDeleted` → **bị bỏ qua** (không lỗi). |
+| `GET /care-recipients/{id}` | CUSTOMER (VIEWER), ADMIN, CAREGIVER | `CareRecipientDetailResponse`. CUSTOMER: `profile` + thuốc + liên hệ + `myAccessLevel`, không quan hệ → 404. ADMIN: như trên, không có `myAccessLevel`, đọc được cả hồ sơ đã lưu trữ. CAREGIVER: **chỉ** `careSnapshot` (dữ liệu như `/{id}/snapshot`: không tiền sử bệnh đầy đủ, chỉ thuốc active + liên hệ chính) khi BookingService xác nhận đang được phân công (`GET /api/v1/bookings/caregiver-access`, gọi bằng token SERVICE); không phân công / hồ sơ đã lưu trữ → 404 `2100`; Booking lỗi → 503 `2502`; không xin được token SERVICE → 503 `2700` (fail-closed). |
+
+### Customer (`hasRole('CUSTOMER')`) — thao tác trên hồ sơ mình quản lý
 
 | Method / path | Quyền tối thiểu | Ghi chú |
 |---|---|---|
 | `POST /care-recipients` | — | Body hồ sơ + `relationshipType` (bắt buộc) + `emergencyContacts[]` (≤10, tối đa 1 primary) + `medications[]` (≤50) |
-| `GET /care-recipients?status=&keyword=&page=&size=` | — | Hồ sơ mình quản lý, kèm `myAccessLevel`, `primaryManager` |
-| `GET /care-recipients/{id}` | VIEWER | Hồ sơ + thuốc + liên hệ khẩn cấp + `myAccessLevel` |
 | `PUT /care-recipients/{id}` | EDITOR | Thay toàn bộ thông tin (null = xóa giá trị), bắt buộc `version`; lệch → 409 `2102` |
 | `PATCH /care-recipients/{id}/status?status=ACTIVE\|INACTIVE` | OWNER | `ARCHIVED` không đặt được ở đây (`2103`) |
 | `DELETE /care-recipients/{id}` | OWNER | Lưu trữ: `status=ARCHIVED` + `deleted_at`; sau đó customer nhận 404 |
@@ -96,36 +105,26 @@ Mọi response là `APIResponse` `{code,message,result}`. Danh sách phân trang
 | `PATCH .../managers/{managerId}/primary` | OWNER | Người nhận phải là OWNER (`2404`) |
 | `DELETE .../managers/{managerId}` | OWNER (người khác) / chính mình | Tự rời: message "Bạn đã rời khỏi hồ sơ" |
 
-### Admin (`hasRole('ADMIN')`, chỉ đọc)
-
-| Method / path | Ghi chú |
-|---|---|
-| `GET /admin/care-recipients?status=&keyword=&createdBy=&includeDeleted=&page=&size=` | Toàn hệ thống |
-| `GET /admin/care-recipients/{id}` | Cả hồ sơ đã lưu trữ |
-
-### API nội bộ (service-to-service — gateway chặn `/internal/**`)
-
-Header bắt buộc `X-Internal-Secret: <CARE_RECIPIENT_INTERNAL_SECRET>`; thiếu/sai → 401. Không nhận JWT người dùng.
+### Phục vụ service khác (`/snapshot`, `/access`: chỉ `SERVICE` từ 2026-10-22 — token người dùng → 403; `/batch` vẫn `isAuthenticated()`, siết ở CR-01)
 
 | Method / path | Hành vi |
 |---|---|
-| `GET /internal/care-recipients/{id}/snapshot` | Tên, ngày sinh/tuổi, giới tính, SĐT, địa chỉ + tọa độ, nhóm máu, mobility/independence, dị ứng, bệnh mạn tính, ghi chú ăn uống/hành vi, yêu cầu chăm sóc, trạng thái, **thuốc đang active**, **liên hệ khẩn cấp chính**, `snapshotAt`. Hồ sơ đã lưu trữ → 404. Booking lưu nguyên snapshot lúc đặt lịch. |
-| `GET /internal/care-recipients/{id}/access?userId=&minLevel=VIEWER` | Luôn 200: `{recipientId,userId,allowed,accessLevel}` |
-| `POST /internal/care-recipients/batch` | `{"recipientIds":[...]}` (1–100); bỏ qua id không có / đã lưu trữ |
+| `GET /care-recipients/{id}/snapshot` | Tên, ngày sinh/tuổi, giới tính, SĐT, địa chỉ + tọa độ, nhóm máu, mobility/independence, dị ứng, bệnh mạn tính, ghi chú ăn uống/hành vi, yêu cầu chăm sóc, trạng thái, **thuốc đang active**, **liên hệ khẩn cấp chính**, `snapshotAt`. Hồ sơ đã lưu trữ → 404. Booking lưu nguyên snapshot lúc đặt lịch. |
+| `GET /care-recipients/{id}/access?userId=&minLevel=VIEWER` | Luôn 200: `{recipientId,userId,allowed,accessLevel}` |
+| `POST /care-recipients/batch` | `{"recipientIds":[...]}` (1–100); bỏ qua id không có / đã lưu trữ |
 
-### Caregiver (`hasRole('CAREGIVER')`, 2026-10-09)
+### Tích hợp BookingService (OpenFeign + token SERVICE)
 
-| Method / path | Hành vi |
-|---|---|
-| `GET /caregiver/care-recipients/{id}` | Snapshot chăm sóc (như `/internal/.../snapshot`, không có người thân) khi BookingService xác nhận caregiver đang được phân công (`GET /internal/bookings/caregiver-access`, booking CONFIRMED / IN_PROGRESS). Không được phân công / hồ sơ đã lưu trữ → 404 `RECIPIENT_NOT_FOUND`; Booking lỗi → 503 `BOOKING_UNAVAILABLE` 2502 (fail-closed). |
-
-`service/CaregiverAssignmentService` gọi `client/BookingClient` (Feign, secret riêng của Booking, ErrorDecoder + fallback
-đều ném 503). Hành vi cũ của mọi API customer / admin / nội bộ giữ nguyên.
+`client/BookingClient` → `GET /api/v1/bookings/caregiver-access` (BookingService yêu cầu `hasRole('SERVICE')`).
+`BookingClientConfig` gắn `ServiceTokenInterceptor` (token SERVICE của CareRecipientService, **không** chuyển tiếp token
+caregiver). `client/ServiceTokenProvider` xin token ở `POST /api/v1/auth/service-token` qua gateway bằng RestClient riêng
+(`CareRecipientConfig.serviceTokenRestClient`), cache tới 60s trước khi hết hạn, thread-safe. `BookingErrorDecoder` +
+fallback đều ném 503 (`2502`); lỗi xin token → 503 `2700`. Gọi Booking ngoài transaction DB.
 
 ### Tích hợp IdentityService (OpenFeign)
 
-`client/IdentityClient` → `/internal/users/{id}`, `/internal/users/by-email`, `/internal/users/batch` (URL env, không
-discovery). Interceptor gắn `X-Internal-Secret` + `X-Request-Id`. `IdentityErrorDecoder`: 404 → `IDENTITY_USER_NOT_FOUND`
+`client/IdentityClient` → `/api/v1/users/{id}`, `/api/v1/users/by-email`, `/api/v1/users/batch` qua gateway (URL env,
+không discovery). `FeignAuthForwardingInterceptor` chuyển tiếp token người dùng + `X-Request-Id`. `IdentityErrorDecoder`: 404 → `IDENTITY_USER_NOT_FOUND`
 (lỗi nghiệp vụ, không tính vào circuit breaker); 401/403/5xx/khác → `IDENTITY_UNAVAILABLE` 503. Circuit breaker
 Resilience4j (cấu hình Java `config/ResilienceConfig`: cửa sổ 10, tối thiểu 5 lời gọi, ngưỡng 50%, mở 10s), chạy trên
 thread request (không time limiter; timeout do connect/read timeout của Feign). Fallback: batch → rỗng; get/by-email →
@@ -134,7 +133,7 @@ ném lại lỗi (không đoán khi cần xác minh trước khi ghi). Không g�
 ## Kiểm thử
 
 ```powershell
-.\mvnw.cmd test        # H2 + IdentityService giả (JWKS + /internal/users) qua HTTP thật, không cần env
+.\mvnw.cmd test        # H2 + IdentityService giả (JWKS + /api/v1/users + service-token) + BookingService giả, không cần env
 ```
 
 Kiểm schema thật (PostgreSQL 17, container riêng, không trỏ vào DB dev):
@@ -152,6 +151,11 @@ E2E toàn hệ thống: từ `BE/` chạy `.\scripts\e2e\Run-E2E.ps1`; kết qu�
 
 2026-10-09: **59/59** trên H2 (55 test cũ không đổi + 4 test caregiver xem hồ sơ: được phân công / gỡ phân công / hồ sơ
 đã lưu trữ / Booking tắt → 503). Test dùng thêm `support/TestBookingServer` (BookingService giả).
+
+2026-10-22: **87/87** trên H2 — gộp `list`/`get` theo role (ADMIN thấy tất cả, CUSTOMER chỉ của mình, CUSTOMER xem hồ sơ
+người khác → 404, path cũ `/admin`, `/admin/{id}`, `/caregiver/{id}` không còn), caregiver chỉ nhận `careSnapshot`,
+`TestBookingServer` chỉ nhận token SERVICE (từ chối token người dùng), `ServiceTokenProviderTests` (cache / đồng thời /
+sai secret → 503 / interceptor thay token người dùng).
 
 ## TODO
 

@@ -4,10 +4,15 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.providerservice.enums.ShiftStatus;
 
-import java.time.*;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class WorkShiftResponse {
     UUID id;

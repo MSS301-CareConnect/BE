@@ -63,7 +63,7 @@
      - snapshot vẫn trả cho booking đã có.
 
      Sửa / thêm thuốc, liên hệ khi INACTIVE → 409 `RECIPIENT_INACTIVE`.
-  4. Center manager xem hồ sơ người bệnh qua `recipientSnapshot` trong `GET /bookings/center/{id}` (đã lưu trên booking). Kiểm mapper Booking có trả snapshot cho manager; nếu thiếu thì thêm (sửa `BK/mapper/BookingMapper.java`, [Người B] review). **Không** mở API CareRecipient cho manager.
+  4. Center manager xem hồ sơ người bệnh qua `recipientSnapshot` trong `GET /bookings/{id}` (manager cùng trung tâm) (đã lưu trên booking). Kiểm mapper Booking có trả snapshot cho manager; nếu thiếu thì thêm (sửa `BK/mapper/BookingMapper.java`, [Người B] review). **Không** mở API CareRecipient cho manager.
   5. Theo quy ước: tạo interface `MedicationService`, `EmergencyContactService`, `RecipientManagerService` cho 3 class đang không có interface (`CareRecipientServiceImpl.java:77-79`). Cập nhật README / AGENTS bỏ `/internal`.
 - **Lỗi:** `RECIPIENT_NOT_FOUND` (mã hiện có, 404), `RECIPIENT_INACTIVE (2700, 409)`.
 - **AC:**
@@ -429,7 +429,7 @@
   | SUSPENDED | ACTIVE | — | mở khóa tài khoản bị khóa bởi trung tâm (IAM-06); booking đã hủy **không** khôi phục |
   | ACTIVE | INACTIVE | lý do | ngừng nhận booking mới; booking hiện có tiếp tục |
   | INACTIVE | ACTIVE | — | — |
-  | PENDING / ACTIVE / INACTIVE / SUSPENDED / REJECTED | ARCHIVED | không còn booking PENDING / AWAITING_DEPOSIT / CONFIRMED / IN_PROGRESS (Booking `GET /bookings/admin?centerId=&status=` bằng token ADMIN) | `deleted_at` |
+  | PENDING / ACTIVE / INACTIVE / SUSPENDED / REJECTED | ARCHIVED | không còn booking PENDING / AWAITING_DEPOSIT / CONFIRMED / IN_PROGRESS (Booking `GET /bookings?centerId=&status=` bằng token ADMIN) | `deleted_at` |
 
   1. Side effect gọi mạng **sau commit** qua `provider_outbox` (retry, idempotent theo `(centerId, event, version)`).
   2. Manager sửa trung tâm chỉ khi trung tâm không ARCHIVED / REJECTED.

@@ -4,7 +4,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.config.BookingProperties;
-import mss301.bookingservice.dto.request.BookingCreateRequest;
+import mss301.bookingservice.dto.request.BookingScheduleRequest;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.enums.ScheduleType;
 import mss301.bookingservice.exception.AppException;
@@ -38,7 +38,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     Clock clock;
 
     @Override
-    public List<OccurrenceSlot> generate(BookingCreateRequest request) {
+    public List<OccurrenceSlot> generate(BookingScheduleRequest request) {
         BookingProperties.Schedule schedule = bookingProperties.getSchedule();
         ZoneId zone = schedule.getTimezone();
         LocalDate startDate = request.getStartDate();
@@ -81,7 +81,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     }
 
     // ONE_TIME: endDate trống hoặc cùng ngày; DAILY / WEEKLY: bắt buộc có endDate.
-    private LocalDate resolveEndDate(BookingCreateRequest request) {
+    private LocalDate resolveEndDate(BookingScheduleRequest request) {
         LocalDate endDate = request.getEndDate();
         if (request.getScheduleType() == ScheduleType.ONE_TIME) {
             if (endDate != null && !endDate.equals(request.getStartDate())) {
@@ -96,7 +96,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     }
 
     // Thứ được sinh buổi: WEEKLY theo daysOfWeek (ISO 1..7, không trùng); ONE_TIME / DAILY mọi ngày, không nhận daysOfWeek.
-    private Set<DayOfWeek> resolveDaysOfWeek(BookingCreateRequest request) {
+    private Set<DayOfWeek> resolveDaysOfWeek(BookingScheduleRequest request) {
         List<Integer> requestedDays = request.getDaysOfWeek();
         boolean hasDays = requestedDays != null && !requestedDays.isEmpty();
         if (request.getScheduleType() != ScheduleType.WEEKLY) {

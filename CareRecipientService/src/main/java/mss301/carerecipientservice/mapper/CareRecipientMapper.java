@@ -11,6 +11,7 @@ import mss301.carerecipientservice.entity.EmergencyContact;
 import mss301.carerecipientservice.entity.Medication;
 import mss301.carerecipientservice.entity.RecipientManager;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -28,16 +29,22 @@ public interface CareRecipientMapper {
 
     // myAccessLevel / medications / emergencyContacts: tham số trùng tên thuộc tính đích → MapStruct tự map.
     @Mapping(target = "profile", source = "recipient")
+    @Mapping(target = "careSnapshot", ignore = true)
     CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel,
                                                  List<Medication> medications, List<EmergencyContact> emergencyContacts);
 
-    // Admin / API nội bộ batch: không có quyền của người gọi.
+    // CAREGIVER xem hồ sơ: whitelist chỉ careSnapshot — không bao giờ kèm profile / thuốc / liên hệ đầy đủ.
+    @BeanMapping(ignoreByDefault = true)
+    @Mapping(target = "careSnapshot", source = "careSnapshot")
+    CareRecipientDetailResponse toCaregiverDetailResponse(RecipientSnapshotResponse careSnapshot);
+
+    // Admin / batch: không có quyền của người gọi.
     @Mapping(target = "age", expression = "java(calculateAge(recipient.getDateOfBirth()))")
     @Mapping(target = "myAccessLevel", ignore = true)
     @Mapping(target = "primaryManager", ignore = true)
     CareRecipientSummaryResponse toSummaryResponse(CareRecipient recipient);
 
-    // Admin + API nội bộ /internal/care-recipients/batch.
+    // Admin (GET /care-recipients) + POST /care-recipients/batch.
     List<CareRecipientSummaryResponse> toSummaryResponseList(List<CareRecipient> recipients);
 
     // Danh sách của customer. id/createdAt có ở cả hai nguồn → chỉ rõ lấy từ hồ sơ.
@@ -48,7 +55,7 @@ public interface CareRecipientMapper {
     @Mapping(target = "primaryManager", source = "membership.primary")
     CareRecipientSummaryResponse toSummaryResponse(CareRecipient recipient, RecipientManager membership);
 
-    // API nội bộ /internal/care-recipients/{id}/snapshot. fullName/phoneNumber có ở cả hồ sơ lẫn liên hệ khẩn cấp
+    // GET /care-recipients/{id}/snapshot và nhánh CAREGIVER của GET /care-recipients/{id}. fullName/phoneNumber có ở cả hồ sơ lẫn liên hệ khẩn cấp
     // → chỉ rõ lấy từ hồ sơ; activeMedications/primaryEmergencyContact/snapshotAt: tham số trùng tên → tự map.
     @Mapping(target = "recipientId", source = "recipient.id")
     @Mapping(target = "fullName", source = "recipient.fullName")

@@ -9,9 +9,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.util.UUID;
 
 /**
- * API nội bộ của BookingService: caregiver có đang được phân công booking còn hiệu lực cho người bệnh không. URL qua env
- * CARE_RECIPIENT_BOOKING_URL; header X-Internal-Secret ở {@link BookingClientConfig}; fallback fail-closed ở
- * {@link BookingClientFallbackFactory}. Dùng qua CaregiverAssignmentService, không gọi trực tiếp.
+ * BookingService (qua ApiGateway): caregiver có đang được phân công booking còn hiệu lực cho người bệnh không. URL qua env
+ * CARE_RECIPIENT_BOOKING_URL; endpoint yêu cầu hasRole('SERVICE') nên {@link BookingClientConfig} gắn token SERVICE
+ * ({@link ServiceTokenInterceptor}); fallback fail-closed ở {@link BookingClientFallbackFactory}. Chỉ dùng trong
+ * CareRecipientServiceImpl.get (nhánh CAREGIVER).
  */
 @FeignClient(name = "booking", url = "${care-recipient.booking.url}",
         configuration = BookingClientConfig.class, fallbackFactory = BookingClientFallbackFactory.class)

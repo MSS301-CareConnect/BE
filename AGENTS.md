@@ -40,23 +40,36 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Đăng ký, đăng nhập, cập nhật thông tin cá nhân, đổi mật khẩu; khóa/mở khóa tài khoản khách hàng, trung tâm; xem danh sách người dùng toàn hệ thống; tạo tài khoản manager/caregiver; role & permission | **Identity** (`IdentityService`) |
 | Hồ sơ người bệnh / người cần chăm sóc (tạo, sửa, nhiều hồ sơ), ghi chú đặc biệt, thuốc, liên hệ khẩn cấp, người thân cùng quản lý (OWNER/EDITOR/VIEWER) | **Care recipient** (`CareRecipientService`) |
 | Trung tâm: đăng ký, duyệt/onboard, trạng thái hoạt động | **Provider** (`ProviderService`, `care_centers`) |
-| Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | **Provider** (`ProviderService`; kỹ năng chưa có bảng — TODO `caregiver_services`) |
+| Hồ sơ chuyên môn caregiver: kỹ năng, kinh nghiệm, bằng cấp, chứng chỉ; xác minh (manager) + audit/duyệt lại (admin); trạng thái hoạt động, lịch làm việc | **Provider** (`ProviderService`; kỹ năng = `caregiver_services`, PRV-01) |
 | Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | **Care catalog** (`CareCatalogService`) |
 | Tìm kiếm / lọc caregiver (kỹ năng, kinh nghiệm, giới tính, giá, đánh giá) | Đọc tổng hợp từ caregiver profile + catalog + review (chưa chốt cách làm) |
-| Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá chờ nối Catalog) |
+| Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá từng buổi lấy từ Catalog, BK-01) |
 | Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; start/end, checklist, care report: giai đoạn sau) |
-| Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | Review & complaint (chưa có service) |
-| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | Payment / policy (chưa có service) |
-| Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | Notification (chưa có service) |
+| Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | **Booking** (`BookingService` — review / complaint gắn với booking; route `/api/v1/feedbacks/**`, `/complaints/**`) |
+| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — **dự kiến**, chủ module khác, chưa có trong repo; gateway đã route, GW-01) |
+| Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | **Booking** (`BookingService` — thông báo in-app + SSE `/api/v1/notifications/stream`) |
+| File / ảnh (chứng chỉ, ảnh care report…): upload, metadata, URL tải có hạn | **Media** (`MediaService`, Cloudflare R2) |
 | Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
 
 > ⚠️ **Phạm vi hiện tại: IdentityService, CareRecipientService, ApiGateway, CareCatalogService, ProviderService,
-> BookingService** (BookingService 2026-10-09 — `docs/2026-10-09-PLAN_BOOKING.md`). Không tạo service hay bảng của các
-> domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
+> BookingService, MediaService** (BookingService 2026-10-09 — `docs/2026-10-09-PLAN_BOOKING.md`). **PaymentService** đã
+> chốt tên / port / dải lỗi nhưng do chủ module khác làm, **chưa có trong repo** — không tạo thay. Không tạo service hay
+> bảng của các domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
 >
 > **Chưa chốt — hỏi trước khi code phần liên quan:** tỷ lệ đặt cọc / mốc & % hoàn tiền; ai được sửa giá dịch vụ
 > trung tâm (mô tả có chồng lấn admin ↔ manager); permission catalog của các domain sau; TTL token production;
 > tên + ranh giới các service còn lại; rate limiting tại gateway.
+
+| Service | Port | PostgreSQL (dev) | Dải mã lỗi `ErrorCode` | Ghi chú |
+|---|---|---|---|---|
+| ApiGateway | 8080 | — | `9000–9099` | + `401`, `403`, `404`, `9999` dùng chung ý nghĩa |
+| IdentityService | 8081 | 5441 (+ Redis 6381) | `1000–1999` | phát access / refresh / token SERVICE, JWKS |
+| CareRecipientService | 8082 | 5442 | `2000–2999` | |
+| CareCatalogService | 8083 | 5443 | `3000–3999` | |
+| ProviderService | 8084 | 5444 | `4000–4999` | |
+| BookingService | 8085 | 5445 | `5000–5999` | gồm ca chăm sóc, review / complaint, notification, thống kê |
+| MediaService | 8086 | 5446 | `7000–7999` | ⚠️ code hiện dùng `5xxx` (trùng Booking) — chủ module đổi sang `7xxx` |
+| PaymentService | 8087 | (dự kiến) | `6000–6999` | **dự kiến**, chưa có trong repo |
 
 ### IdentityService — thông số
 
@@ -101,7 +114,8 @@ CareConnect/
 ├── docs/PLAN.md                 — checklist tiến độ của CareConnect (độc lập với ../docs/PLAN.md của AIMA)
 ├── docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md — plan + kết quả CareRecipientService / ApiGateway / internal API
 │                                  (plan theo phiên làm việc đặt tên <yyyy-MM-dd>-<TÊN>.md)
-├── scripts/e2e/                 — Run-E2E.ps1 (dựng hạ tầng e2e riêng + chạy 3 JAR + e2e.py), e2e.py, SeedCustomers.java
+├── scripts/e2e/                 — Run-E2E.ps1 (dựng hạ tầng e2e riêng + chạy 7 JAR + e2e.py), e2e.py, SeedCustomers.java,
+│                                  payment_stub.py (PaymentService giả cho e2e tới khi có service thật)
 ├── compose.yaml, start.bat, stop.bat, DOCKER.md — stack Docker tổng (project "careconnect", 2026-10-09): include
 │                                  <Service>/compose.stack.yaml + <Service>/Dockerfile; dùng lại volume dữ liệu cũ
 ├── ApiGateway/                  — Spring Cloud Gateway Server MVC, port 8080 (xem ApiGateway/AGENTS.md)
@@ -109,6 +123,8 @@ CareConnect/
 ├── CareCatalogService/          — danh mục dịch vụ + giá, port 8083, PostgreSQL riêng 5443
 ├── ProviderService/             — trung tâm, caregiver, ca làm việc, port 8084, PostgreSQL riêng 5444
 ├── BookingService/              — booking + buổi chăm sóc, port 8085, PostgreSQL riêng 5445 (xem BookingService/AGENTS.md)
+├── MediaService/                — file / ảnh trên Cloudflare R2, port 8086, PostgreSQL riêng 5446
+├── (PaymentService/)            — DỰ KIẾN, chưa có: đặt cọc / hoàn tiền / đối soát, port 8087
 └── IdentityService/             — mỗi service là một Maven project độc lập
     ├── pom.xml, mvnw, mvnw.cmd
     ├── docker-compose.yml       — PostgreSQL + Redis RIÊNG của service (loopback)
@@ -132,16 +148,34 @@ CareConnect/
 - Mỗi service tự xác minh JWT và tự phân quyền (kể cả khi đã có gateway). Không tin header `X-User-Id` /
   `X-Roles` do client gửi.
 - **API gateway: `ApiGateway/`** — Gateway Server MVC, route `/api/v1/**` tới **cả 6 service** (Identity, CareRecipient,
-  Booking, Provider, CareCatalog, Media), **không cắt prefix** (mỗi service tự khai báo `/api/v1`), kiểm token sớm,
-  **chuyển nguyên** `Authorization`, cookie (`access_token`, `refresh_token`, `XSRF-TOKEN`) và `X-XSRF-TOKEN`; service
-  vẫn tự xác minh. Cookie Identity `Path=/` nên không rewrite path. CORS tập trung ở gateway, gateway xóa `Origin` khi
+  Booking, Provider, CareCatalog, Media) **và PaymentService** (route sẵn, GW-01), **không cắt prefix** (mỗi service
+  tự khai báo `/api/v1`), kiểm token sớm, **chuyển nguyên** `Authorization`, cookie (`access_token`, `refresh_token`,
+  `XSRF-TOKEN`) và `X-XSRF-TOKEN`; service vẫn tự xác minh. Cookie Identity `Path=/` nên không rewrite path. CORS tập trung ở gateway, gateway xóa `Origin` khi
   chuyển tiếp. Gateway xóa `X-User-*` của client và gắn lại `X-User-Id`/`X-User-Roles` từ JWT **chỉ để log**. JWKS của
   Identity gọi trực tiếp (không qua gateway). Service không hardcode host/port. **FE chỉ gọi qua gateway**, không gọi
   trực tiếp service.
-- **Service-to-service**: **không còn `/internal/**`, `X-Internal-Secret`, `InternalSecurityConfig`,
-  `InternalSecretFilter`**. Service gọi service khác bằng OpenFeign trong `client/` với URL trỏ về **ApiGateway**
-  (`<SERVICE>_..._URL` = gateway), gọi các endpoint public `/api/v1/**` như một client bình thường; `RequestInterceptor`
-  (`FeignAuthForwardingInterceptor`) chuyển tiếp `Authorization: Bearer <token>` của request đang xử lý. Endpoint
+- **Service-to-service (mọi lời gọi đi qua ApiGateway)**: service gọi service khác bằng OpenFeign trong `client/`, URL
+  `<SERVICE>_<ĐÍCH>_URL` = **gateway** (Docker: `http://api-gateway:8080`), chỉ tới endpoint public `/api/v1/**` như một
+  client bình thường; JWKS là ngoại lệ duy nhất gọi thẳng Identity. Có đúng **hai** cách mang danh tính:
+  1. **Thay mặt người dùng** — `FeignAuthForwardingInterceptor` chuyển tiếp `Authorization: Bearer <token>` của request
+     đang xử lý; service đích phân quyền theo role / phạm vi của chính người dùng đó (vd Booking hỏi CareRecipient
+     `/{id}/access`, gọi Catalog báo giá, Identity `/users/batch`).
+  2. **Danh tính máy — token SERVICE (IAM-01, 2026-10-22)** — cho lời gọi không có người dùng (scheduler, outbox) hoặc cần
+     quyền người dùng không có (vd CareRecipient hỏi Booking `GET /api/v1/bookings/caregiver-access`, Booking hỏi Provider
+     `POST /api/v1/caregivers/availability-checks`, Payment xác nhận cọc). Service gọi xin token client-credentials ở
+     `POST /api/v1/auth/service-token` (body `clientId`, `clientSecret`; trả `accessToken`, `tokenType`,
+     `expiresInSeconds`; `roles=["SERVICE"]`, `sub` = `client_uuid`, claim `client_id`, không refresh, audience
+     `careconnect-api`), cache tới `exp − 60s` (`client/ServiceTokenProvider` + `client/ServiceTokenInterceptor`, mẫu ở
+     BookingService) và **chỉ** gắn interceptor này vào Feign client cần quyền service (tách client riêng, vd
+     `ProviderServiceClient` cạnh `ProviderClient`). Endpoint chỉ dành cho service dùng
+     `@PreAuthorize("hasRole('SERVICE')")`; token SERVICE không gọi được API người dùng (`hasRole('CUSTOMER')`…).
+     Env ở service gọi: `<SERVICE>_SERVICE_CLIENT_ID` / `<SERVICE>_SERVICE_CLIENT_SECRET` (+ `_SERVICE_TOKEN_*_TIMEOUT`);
+     IdentityService chỉ giữ BCrypt hash trong `IDENTITY_SERVICE_CLIENTS` = `<clientId>:<bcrypt>,...` (sinh bằng
+     `IdentityService/scripts/New-ServiceClient.ps1 <clientId>`; Docker Compose viết `$` thành `$$`). `SERVICE` không phải
+     role gán được cho user; không dùng tài khoản ADMIN làm machine credential (rule #27).
+
+  **Đã bỏ hẳn** `/internal/**`, `X-Internal-Secret`, `*_INTERNAL_SECRET`, `InternalSecurityConfig`, `InternalSecretFilter`
+  và API tách theo role (`/api/v1/center/**`, `/admin/**`, `/caregiver/**`) — gateway trả 404, không tạo lại. Endpoint
   phục vụ service khác vẫn phân quyền bằng `@PreAuthorize` như mọi endpoint. DTO client thêm
   `@JsonIgnoreProperties(ignoreUnknown = true)` (vì `fail-on-unknown-properties: true`). Timeout từ env, circuit
   breaker Resilience4j cho lời gọi chỉ đọc, ErrorDecoder map sang `ErrorCode` của service gọi.
@@ -607,11 +641,13 @@ Tài khoản chỉ được tạo **sau khi** xác thực email. State trên Red
 4. Kiểm user còn `ACTIVE`, chưa xóa, `authz_version` khớp; lấy role/permission **hiện hành** từ DB.
 5. Phát cặp token mới, lưu jti mới; web set lại cookie + trả `csrfToken` mới.
 
-### Logout — `POST /auth/logout` · `POST /auth/mobile/logout` · `POST /auth/logout-all`
+### Logout — `POST /auth/logout` (web + mobile + mọi phiên, gộp 2026-10-22)
 
 - Logout: thu hồi refresh jti, blacklist access hiện tại tới `exp`, xóa cookie (cả CSRF) — token đã hết hạn vẫn
-  logout được.
-- Logout-all (authenticated): tăng `users.authz_version` → mọi token cũ mất hiệu lực tại IdentityService.
+  logout được. Mobile gửi `refreshToken` trong body; `/auth/mobile/logout` đã bỏ (2026-10-22).
+- Body `allSessions: true` (thay `/auth/logout-all`, đã bỏ 2026-10-22): xóa mọi session Redis + tăng
+  `users.authz_version` → mọi token cũ mất hiệu lực tại IdentityService. Chủ tài khoản lấy từ refresh còn trên Redis
+  hoặc access hợp lệ đầy đủ (chưa blacklist, `ACTIVE`, version khớp); không có → 401.
 - Đổi mật khẩu, reset mật khẩu, khóa tài khoản, xóa mềm cũng tăng `authz_version`.
 
 ### Web cookies, CSRF, CORS
@@ -707,7 +743,7 @@ Service mới dùng DB riêng và prefix Redis `careconnect:<service>:`. Không 
 | `phone_number` | VARCHAR | nullable |
 | `user_status` | VARCHAR | `UserStatus` (`@Enumerated(STRING)`): `ACTIVE`, `LOCKED` — CHECK constraint |
 | `center_id` | UUID | nullable; tham chiếu **ngoài** tới trung tâm (không FK). Manager/caregiver thuộc đúng một trung tâm |
-| `authz_version` | BIGINT | not null, mặc định 0; tăng khi logout-all / đổi-reset mật khẩu / khóa / xóa mềm |
+| `authz_version` | BIGINT | not null, mặc định 0; tăng khi logout mọi phiên / đổi-reset mật khẩu / khóa / xóa mềm |
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | từ `BaseEntity` (soft delete) |
 
 ### `roles` — `Role.java` (extends `BaseEntity`)
@@ -784,13 +820,16 @@ Get-Content -Raw schema/identity.sql | docker compose exec -T postgres psql -U c
 ```
 
 - Spring Boot **không tự đọc `.env`** — chạy qua `Start-Dev.ps1` hoặc tự cấp env trong IDE.
-- Toàn bộ 6 service + hạ tầng trong Docker: từ `BE/` chạy `start.bat` / `stop.bat` (xem `DOCKER.md`). Mỗi service khai
-  báo phần của mình ở `<Service>/compose.stack.yaml` (biến `${...}` đọc từ `.env` của service đó, `environment` chỉ ghi
-  đè host/port container — gọi nhau bằng tên service, không `localhost`) và `<Service>/Dockerfile`. Service mới: thêm hai
-  file này + một dòng `include` trong `compose.yaml`. Không chạy song song với `docker-compose.yml` riêng (chung volume).
-- E2E toàn hệ thống (Identity + CareRecipient + Gateway, PostgreSQL/Redis thật, compose project riêng, không đụng DB
-  dev): từ thư mục `BE/` chạy `.\scripts\e2e\Run-E2E.ps1` (`-SkipBuild`, `-KeepInfra`). Cần JDK 21, Docker, Python 3,
-  `.env` của 3 service, port 8080–8082 trống.
+- Toàn bộ 7 app (6 service + gateway) + hạ tầng trong Docker: từ `BE/` chạy `start.bat` / `stop.bat` (xem `DOCKER.md`;
+  PaymentService chưa có — dòng `include` để sẵn dạng comment). Mỗi service khai báo phần của mình ở
+  `<Service>/compose.stack.yaml` (biến `${...}` đọc từ `.env` của service đó, `environment` chỉ ghi đè host/port
+  container — mọi `*_URL` Feign trỏ `http://api-gateway:8080`, JWKS trỏ `http://identity-service:8081`, không
+  `localhost`) và `<Service>/Dockerfile`. Service mới: thêm hai file này + một dòng `include` trong `compose.yaml`.
+  Không chạy song song với `docker-compose.yml` riêng (chung volume).
+- E2E toàn hệ thống (Identity, CareRecipient, CareCatalog, Provider, Booking, Media + Gateway; PaymentService thay bằng
+  `scripts/e2e/payment_stub.py`; PostgreSQL/Redis thật, compose project riêng, không đụng DB dev; client token SERVICE
+  sinh mỗi lần chạy): từ thư mục `BE/` chạy `.\scripts\e2e\Run-E2E.ps1` (`-SkipBuild`, `-KeepInfra`). Cần JDK 21,
+  Docker, Python 3, `.env` của Identity / CareRecipient / CareCatalog / Provider / Media / ApiGateway, port 8080–8087 trống.
 - Kiểm PostgreSQL/Redis thật: dùng container test riêng (xem `IdentityService/README.md`), cờ
   `-Didentity.testing.postgres=true -Didentity.testing.real-state=true`. Không trỏ test vào DB thật.
 - Không dùng `-DskipTests` làm bằng chứng đã kiểm chứng.
@@ -833,12 +872,17 @@ Health:   /actuator/health
 2. **Key `ErrorCode` chính là key message validation.** Mọi `@NotBlank(message = "KEY")` ánh xạ `ErrorCode.KEY`;
    validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
    riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, CareCatalogService
-   `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, ApiGateway `9000–9099`
+   `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, PaymentService `6000–6999` (dự kiến),
+   MediaService `7000–7999`, ApiGateway `9000–9099`
    (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
 
 3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.
-   *Ngoại lệ duy nhất đã ghi nhận:* `JwksController.get` trả JWK Set nguyên dạng (giao thức JWKS yêu cầu
-   `{"keys":[...]}` ở top-level). `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
+   *Ngoại lệ đã ghi nhận:* `JwksController.get` trả JWK Set nguyên dạng (giao thức JWKS yêu cầu
+   `{"keys":[...]}` ở top-level). *Ngoại lệ thứ hai (PaymentService, dự kiến — INF-01):* IPN VNPay
+   `GET /api/v1/payments/vnpay/ipn` trả **JSON thô theo chuẩn VNPay** `{"RspCode":"00","Message":"Confirm Success"}`
+   (mã `00/01/02/04/97/99`, không dùng `ErrorCode`), vì VNPay chỉ đọc đúng định dạng này để biết merchant đã nhận kết
+   quả; endpoint public (chữ ký HMAC VNPay thay cho JWT). Return URL `GET /api/v1/payments/vnpay/return` vẫn trả
+   `APIResponse<T>`. `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
    response để đặt HTTP status. Không thêm ngoại lệ khác nếu chưa ghi vào đây kèm lý do.
 
 4. **`@JsonInclude(NON_NULL)` trên `APIResponse` là cố ý** — không bỏ.

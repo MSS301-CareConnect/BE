@@ -38,6 +38,8 @@ springdoc:
         url: /api-docs/care-catalog
       - name: media
         url: /api-docs/media
+      - name: payment
+        url: /api-docs/payment
 
 management:
   endpoints:
@@ -61,6 +63,8 @@ gateway:
   provider-url: ${GATEWAY_PROVIDER_URL}
   care-catalog-url: ${GATEWAY_CARE_CATALOG_URL}
   media-url: ${GATEWAY_MEDIA_URL}
+  payment-url: ${GATEWAY_PAYMENT_URL}
+  sse-max-duration: ${GATEWAY_SSE_MAX_DURATION:30m}
   allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
 
   jwt:

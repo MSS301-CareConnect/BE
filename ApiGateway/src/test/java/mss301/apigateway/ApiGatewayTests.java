@@ -42,6 +42,7 @@ class ApiGatewayTests {
         registry.add("gateway.provider-url", UPSTREAMS::providerUrl);
         registry.add("gateway.care-catalog-url", UPSTREAMS::careCatalogUrl);
         registry.add("gateway.media-url", UPSTREAMS::mediaUrl);
+        registry.add("gateway.payment-url", UPSTREAMS::paymentUrl);
         registry.add("gateway.allowed-origins", () -> FRONTEND_ORIGIN);
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", UPSTREAMS::jwksUri);
@@ -89,6 +90,77 @@ class ApiGatewayTests {
                         .header("Idempotency-Key", "k-1").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(jsonPath("$.result.service").value("booking"))
                 .andExpect(jsonPath("$.result.headers['idempotency-key']").value("k-1"));
+    }
+
+    @Test
+    void paymentAndBookingOperationRoutesForwardToOwners() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        for (String path : List.of("/payments", "/payment-policies/effective", "/refunds", "/refund-quotes",
+                "/remaining-invoices", "/settlements", "/revenue/centers")) {
+            mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.service").value("payment"))
+                    .andExpect(jsonPath("$.result.path").value("/api/v1" + path));
+        }
+        for (String path : List.of("/notifications", "/care-sessions", "/care-reports", "/feedbacks", "/complaints",
+                "/statistics/centers")) {
+            mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.service").value("booking"));
+        }
+    }
+
+    @Test
+    void vnpayCallbacksArePublicOnlyForGet() throws Exception {
+        mockMvc.perform(get("/api/v1/payments/vnpay/ipn").param("vnp_TxnRef", "BK1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.service").value("payment"))
+                .andExpect(jsonPath("$.result.query").value("vnp_TxnRef=BK1"));
+        mockMvc.perform(get("/api/v1/payments/vnpay/return"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/payments/vnpay/ipn"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/payments"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void serviceTokenEndpointIsPublicAndIgnoresStaleCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/service-token")
+                        .cookie(new Cookie("access_token", "expired.or.broken"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"clientId\":\"booking\",\"clientSecret\":\"s\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.service").value("identity"))
+                .andExpect(jsonPath("$.result.path").value("/api/v1/auth/service-token"));
+    }
+
+    @Test
+    void clientServiceHeadersAreRemoved() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", "Bearer " + token)
+                        .header("X-Service-Client", "booking")
+                        .header("x-service-token", "forged"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.headers['x-service-client']").doesNotExist())
+                .andExpect(jsonPath("$.result.headers['x-service-token']").doesNotExist());
+    }
+
+    @Test
+    void notificationStreamIsNotCutByReadTimeout() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        MvcResult result = mockMvc.perform(get("/api/v1/notifications/stream")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Last-Event-ID", "41"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).contains("data: last=41").contains("event: notification").contains("data: auth=true");
+        assertThat(result.getResponse().getContentType()).startsWith("text/event-stream");
+        assertThat(result.getResponse().getHeaders("X-Request-Id")).hasSize(1);
+        assertThat(result.getResponse().getHeader("X-Request-Id")).isNotEqualTo("upstream-id-should-be-removed");
+        mockMvc.perform(get("/api/v1/notifications/stream"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -251,6 +323,19 @@ class ApiGatewayTests {
     }
 
     // ===== Swagger tổng hợp + timeout =====
+
+    @Test
+    void preflightAllowsIdempotencyAndSseHeaders() throws Exception {
+        mockMvc.perform(options("/api/v1/bookings")
+                        .header("Origin", FRONTEND_ORIGIN)
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "idempotency-key,x-refresh-token,last-event-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsStringIgnoringCase("Idempotency-Key")))
+                .andExpect(header().string("Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsStringIgnoringCase("Last-Event-ID")));
+    }
 
     @Test
     void aggregatedApiDocsArePublic() throws Exception {

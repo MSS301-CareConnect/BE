@@ -5,11 +5,18 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 // Dùng (Run-E2E.ps1 tự gọi): java -cp "<spring-security-crypto.jar>;<commons-logging.jar>" SeedCustomers.java <password> <account>...
 //   account = email:fullName                      → CUSTOMER, user_id ngẫu nhiên
 //           = email:fullName:ROLE:userId:centerId → role tùy chọn, user_id cố định ('-' = ngẫu nhiên), center_id ('-' = NULL)
+// Hoặc: ... SeedCustomers.java --bcrypt <secret>   → in BCrypt hash (cho IDENTITY_SERVICE_CLIENTS của token SERVICE).
 // Chỉ dùng cho DB e2e riêng — KHÔNG chạy vào DB dev/production.
 public class SeedCustomers {
     private static final String NONE = "-";
 
+    private static final String BCRYPT_MODE = "--bcrypt";
+
     public static void main(String[] args) {
+        if (args.length == 2 && BCRYPT_MODE.equals(args[0])) {
+            System.out.print(new BCryptPasswordEncoder().encode(args[1]));
+            return;
+        }
         String hash = new BCryptPasswordEncoder().encode(args[0]);
         StringBuilder sql = new StringBuilder("BEGIN;\n");
         for (int i = 1; i < args.length; i++) {

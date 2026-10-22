@@ -1,6 +1,5 @@
 package mss301.providerservice.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -30,7 +29,6 @@ public class CertificateController {
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
     @GetMapping("/caregivers/{caregiverId}")
-    @Operation(summary = "Danh sách chứng chỉ của caregiver")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<CertificateResponse>> list(@CurrentUserId UUID actorId,
                                                        @PathVariable UUID caregiverId) {
@@ -38,16 +36,14 @@ public class CertificateController {
     }
 
     @GetMapping("/caregivers/{caregiverId}/verified")
-    @Operation(summary = "Xem danh sách chứng chỉ đã xác minh của caregiver (Catalog public)")
     @PreAuthorize("isAuthenticated()")
-    public APIResponse<List<CertificateResponse>> verifiedList(@PathVariable UUID caregiverId) {
-        return certificateService.verifiedList(caregiverId);
+    public APIResponse<List<CertificateResponse>> listVerified(@PathVariable UUID caregiverId) {
+        return certificateService.listVerified(caregiverId);
     }
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
     @PostMapping("/caregivers/{caregiverId}")
-    @Operation(summary = "Thêm chứng chỉ cho caregiver")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<CertificateResponse> create(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID caregiverId,
@@ -58,7 +54,6 @@ public class CertificateController {
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
     @PutMapping("/{id}")
-    @Operation(summary = "Cập nhật chứng chỉ")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<CertificateResponse> update(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID id,
@@ -69,7 +64,6 @@ public class CertificateController {
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
     @PatchMapping("/{id}/verification")
-    @Operation(summary = "Duyệt hoặc từ chối chứng chỉ (Admin)")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CertificateResponse> verify(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID id,
@@ -80,7 +74,6 @@ public class CertificateController {
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Xóa mềm chứng chỉ")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,
                                     @PathVariable UUID id,

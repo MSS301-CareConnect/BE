@@ -52,7 +52,9 @@ CREATE TABLE price_plans (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    -- Đơn giá theo giờ luôn trên 60 phút (CAT-01); DAY / SHIFT là thời lượng chuẩn của đơn vị.
+    CONSTRAINT ck_price_plans_hour_duration CHECK (pricing_unit <> 'HOUR' OR duration_minutes = 60)
 );
 
 CREATE INDEX idx_price_plans_center_service ON price_plans (center_service_id) WHERE deleted_at IS NULL;

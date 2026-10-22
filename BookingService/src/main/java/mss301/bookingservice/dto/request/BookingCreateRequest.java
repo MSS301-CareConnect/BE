@@ -19,7 +19,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class BookingCreateRequest {
+public class BookingCreateRequest implements BookingScheduleRequest {
     @NotNull(message = "RECIPIENT_ID_REQUIRED")
     UUID recipientId;
 

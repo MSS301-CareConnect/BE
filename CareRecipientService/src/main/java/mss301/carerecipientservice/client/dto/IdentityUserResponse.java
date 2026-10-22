@@ -7,7 +7,7 @@ import lombok.experimental.FieldDefaults;
 import java.util.Set;
 import java.util.UUID;
 
-// Bản sao InternalUserResponse của IdentityService (GET/POST /internal/users/**). status/roles giữ dạng String
+// Bản sao InternalUserResponse của IdentityService (GET/POST /api/v1/users/**). status/roles giữ dạng String
 // để Identity thêm giá trị enum mới không làm hỏng service này.
 @Data
 @Builder

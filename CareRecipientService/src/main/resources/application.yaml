@@ -88,3 +88,10 @@ care-recipient:
   # Caregiver xem hồ sơ: hỏi BookingService có đang được phân công không (GET /api/v1/bookings/caregiver-access).
   booking:
     url: ${CARE_RECIPIENT_BOOKING_URL}
+
+  # Token SERVICE (client-credentials) xin ở IdentityService qua gateway (identity.url) — dùng cho Booking caregiver-access.
+  service-client:
+    client-id: ${CARE_RECIPIENT_SERVICE_CLIENT_ID:}
+    client-secret: ${CARE_RECIPIENT_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CARE_RECIPIENT_SERVICE_TOKEN_READ_TIMEOUT:3s}

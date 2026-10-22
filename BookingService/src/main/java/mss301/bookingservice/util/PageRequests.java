@@ -14,6 +14,21 @@ public final class PageRequests {
     private PageRequests() {
     }
 
+    public static PageRequest sorted(int page, int size, Sort sort) {
+        if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new AppException(ErrorCode.INVALID_PAGE);
+        }
+        return PageRequest.of(page, size, sort);
+    }
+
+    // Trang không kèm sort (dữ liệu đã sắp ở tầng service, vd lịch sử gộp hai bảng).
+    public static PageRequest unsorted(int page, int size) {
+        if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new AppException(ErrorCode.INVALID_PAGE);
+        }
+        return PageRequest.of(page, size);
+    }
+
     public static PageRequest newestFirst(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);

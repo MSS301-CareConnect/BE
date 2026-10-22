@@ -1,6 +1,10 @@
 package mss301.providerservice.mapper;
 
-import org.mapstruct.*;
+import org.mapstruct.Builder;
+import org.mapstruct.InjectionStrategy;
+import org.mapstruct.MapperConfig;
+import org.mapstruct.MappingConstants;
+import org.mapstruct.ReportingPolicy;
 
 /**
  * Cấu hình MapStruct dùng chung — MỌI mapper của service khai báo {@code @Mapper(config = MapStructConfig.class)}.

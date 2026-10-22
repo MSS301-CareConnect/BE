@@ -14,7 +14,7 @@ import mss301.providerservice.enums.CaregiverStatus;
 import mss301.providerservice.enums.VerificationStatus;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
-import mss301.providerservice.mapper.ProviderViewMapper;
+import mss301.providerservice.mapper.CertificateMapper;
 import mss301.providerservice.repository.CertificateRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.CaregiverService;
@@ -34,74 +34,73 @@ public class CertificateServiceImpl implements CertificateService {
 
     CertificateRepository certificateRepository;
     CaregiverService caregiverService;
-    ProviderAuthorization authorization;
-    ProviderViewMapper mapper;
+    ProviderAuthorization providerAuthorization;
+    CertificateMapper certificateMapper;
 
     @Override
     @Transactional
     public APIResponse<CertificateResponse> create(UUID actorId, UUID caregiverId, CertificateRequest request) {
-        CaregiverProfile caregiver = caregiverService.find(caregiverId);
-        authorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiver(caregiverId);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
         validateDates(request);
-        Certificate certificate = Certificate.builder()
-                .caregiver(caregiver)
-                .certificateName(request.getCertificateName().trim())
-                .issuedBy(request.getIssuedBy().trim())
-                .credentialNumber(normalize(request.getCredentialNumber()))
-                .issuedDate(request.getIssuedDate())
-                .expiryDate(request.getExpiryDate())
-                .verificationStatus(VerificationStatus.PENDING)
-                .build();
-        return APIResponse.success("Tạo chứng chỉ thành công", mapper.certificate(certificateRepository.save(certificate)));
+        Certificate certificate = certificateMapper.toCertificate(request, caregiver);
+        normalizeFields(certificate);
+        // Chứng chỉ mới luôn chờ admin xác minh.
+        certificate.setVerificationStatus(VerificationStatus.PENDING);
+        Certificate savedCertificate = certificateRepository.save(certificate);
+        CertificateResponse certificateResponse = certificateMapper.toResponse(savedCertificate);
+        return APIResponse.success("Tạo chứng chỉ thành công", certificateResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CertificateResponse>> list(UUID actorId, UUID caregiverId) {
-        CaregiverProfile caregiver = caregiverService.find(caregiverId);
-        authorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
-        return APIResponse.success("Lấy danh sách chứng chỉ thành công",
-                certificateRepository.findByCaregiverIdAndDeletedAtIsNullOrderByIssuedDateDesc(caregiverId)
-                        .stream().map(mapper::certificate).toList());
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiver(caregiverId);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
+        List<Certificate> certificates =
+                certificateRepository.findByCaregiverIdAndDeletedAtIsNullOrderByIssuedDateDesc(caregiverId);
+        List<CertificateResponse> certificateResponses = certificateMapper.toResponseList(certificates);
+        return APIResponse.success("Lấy danh sách chứng chỉ thành công", certificateResponses);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<List<CertificateResponse>> verifiedList(UUID caregiverId) {
-        CaregiverProfile caregiver = caregiverService.find(caregiverId);
+    public APIResponse<List<CertificateResponse>> listVerified(UUID caregiverId) {
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiver(caregiverId);
         if (caregiver.getVerificationStatus() != VerificationStatus.VERIFIED
                 || caregiver.getCaregiverStatus() != CaregiverStatus.ACTIVE) {
             throw new AppException(ErrorCode.CAREGIVER_NOT_FOUND);
         }
-        return APIResponse.success("Lấy chứng chỉ đã xác minh thành công",
+        List<Certificate> certificates =
                 certificateRepository.findByCaregiverIdAndVerificationStatusAndDeletedAtIsNullOrderByIssuedDateDesc(
-                        caregiverId, VerificationStatus.VERIFIED).stream().map(mapper::certificate).toList());
+                        caregiverId, VerificationStatus.VERIFIED);
+        List<CertificateResponse> certificateResponses = certificateMapper.toResponseList(certificates);
+        return APIResponse.success("Lấy chứng chỉ đã xác minh thành công", certificateResponses);
     }
 
     @Override
     @Transactional
     public APIResponse<CertificateResponse> update(UUID actorId, UUID id, CertificateRequest request) {
-        Certificate certificate = find(id);
-        authorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        Certificate certificate = findActiveCertificate(id);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
         checkVersion(certificate, request.getVersion());
         validateDates(request);
-        certificate.setCertificateName(request.getCertificateName().trim());
-        certificate.setIssuedBy(request.getIssuedBy().trim());
-        certificate.setCredentialNumber(normalize(request.getCredentialNumber()));
-        certificate.setIssuedDate(request.getIssuedDate());
-        certificate.setExpiryDate(request.getExpiryDate());
+        certificateMapper.update(request, certificate);
+        normalizeFields(certificate);
+        // Nội dung chứng chỉ đổi → kết quả xác minh cũ không còn giá trị, quay về chờ xác minh.
         certificate.setVerificationStatus(VerificationStatus.PENDING);
         certificate.setVerificationReason(null);
         certificate.setVerifiedAt(null);
         certificate.setVerifiedBy(null);
-        return APIResponse.success("Cập nhật chứng chỉ thành công",
-                mapper.certificate(certificateRepository.save(certificate)));
+        Certificate savedCertificate = certificateRepository.save(certificate);
+        CertificateResponse certificateResponse = certificateMapper.toResponse(savedCertificate);
+        return APIResponse.success("Cập nhật chứng chỉ thành công", certificateResponse);
     }
 
     @Override
     @Transactional
     public APIResponse<CertificateResponse> verify(UUID actorId, UUID id, VerificationRequest request) {
-        Certificate certificate = find(id);
+        Certificate certificate = findActiveCertificate(id);
         checkVersion(certificate, request.getVersion());
         if (request.getStatus() == VerificationStatus.PENDING) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -113,24 +112,31 @@ public class CertificateServiceImpl implements CertificateService {
         certificate.setVerificationReason(normalize(request.getReason()));
         certificate.setVerifiedBy(actorId);
         certificate.setVerifiedAt(Instant.now());
-        return APIResponse.success("Xác minh chứng chỉ thành công",
-                mapper.certificate(certificateRepository.save(certificate)));
+        Certificate savedCertificate = certificateRepository.save(certificate);
+        CertificateResponse certificateResponse = certificateMapper.toResponse(savedCertificate);
+        return APIResponse.success("Xác minh chứng chỉ thành công", certificateResponse);
     }
 
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
-        Certificate certificate = find(id);
-        authorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        Certificate certificate = findActiveCertificate(id);
+        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
         checkVersion(certificate, version);
         certificate.setDeletedAt(Instant.now());
         certificateRepository.save(certificate);
         return APIResponse.success("Xóa chứng chỉ thành công");
     }
 
-    private Certificate find(UUID id) {
+    private Certificate findActiveCertificate(UUID id) {
         return certificateRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
+    }
+
+    private void normalizeFields(Certificate certificate) {
+        certificate.setCertificateName(certificate.getCertificateName().trim());
+        certificate.setIssuedBy(certificate.getIssuedBy().trim());
+        certificate.setCredentialNumber(normalize(certificate.getCredentialNumber()));
     }
 
     private void validateDates(CertificateRequest request) {
@@ -140,8 +146,8 @@ public class CertificateServiceImpl implements CertificateService {
         }
     }
 
-    private void checkVersion(Certificate value, Long version) {
-        if (version == null || !version.equals(value.getVersion())) {
+    private void checkVersion(Certificate certificate, Long version) {
+        if (version == null || !version.equals(certificate.getVersion())) {
             throw new AppException(ErrorCode.CERTIFICATE_VERSION_CONFLICT);
         }
     }

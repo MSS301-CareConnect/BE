@@ -26,8 +26,8 @@ public class ProviderErrorDecoder implements ErrorDecoder {
             return new AppException(notFound);
         }
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            // Sai/thiếu BOOKING_PROVIDER_INTERNAL_SECRET — lỗi cấu hình.
-            log.error("ProviderService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            // Token bị từ chối: token SERVICE sai cấu hình / thiếu quyền, hoặc token người dùng không đủ phạm vi.
+            log.error("ProviderService rejected credentials (HTTP {}) for {}", status, methodKey);
         } else {
             log.warn("ProviderService error (HTTP {}) for {}", status, methodKey);
         }

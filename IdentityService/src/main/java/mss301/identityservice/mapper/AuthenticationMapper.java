@@ -2,6 +2,7 @@ package mss301.identityservice.mapper;
 
 import mss301.identityservice.dto.response.AuthenticationResponse;
 import mss301.identityservice.dto.response.CsrfResponse;
+import mss301.identityservice.dto.response.ServiceTokenResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -22,4 +23,8 @@ public interface AuthenticationMapper {
     AuthenticationResponse toMobileResponse(String accessToken, String refreshToken, long expiresInSeconds);
 
     CsrfResponse toCsrfResponse(CsrfToken csrfToken);
+
+    // Token SERVICE trả trong body theo thiết kế (client-credentials), không có refresh token.
+    @Mapping(target = "tokenType", constant = "Bearer")
+    ServiceTokenResponse toServiceTokenResponse(String accessToken, long expiresInSeconds);
 }

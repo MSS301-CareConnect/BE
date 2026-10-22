@@ -20,30 +20,32 @@ public class MediaClientFallbackFactory implements FallbackFactory<MediaClient> 
             public APIResponse<MediaClientResponse> upload(MultipartFile file, String purpose, UUID uploadedBy,
                                                            String sourceService, String referenceType,
                                                            UUID referenceId) {
-                throw failure(cause);
+                throw resolveFailure(cause);
             }
 
             @Override
             public APIResponse<MediaClientResponse> get(UUID mediaFileId) {
-                throw failure(cause);
+                throw resolveFailure(cause);
             }
 
             @Override
             public APIResponse<DownloadUrlClientResponse> createDownloadUrl(UUID mediaFileId) {
-                throw failure(cause);
+                throw resolveFailure(cause);
             }
 
             @Override
             public APIResponse<Void> delete(UUID mediaFileId) {
-                throw failure(cause);
+                throw resolveFailure(cause);
             }
         };
     }
 
-    private RuntimeException failure(Throwable cause) {
+    private RuntimeException resolveFailure(Throwable cause) {
         Throwable current = cause;
         while (current != null) {
-            if (current instanceof AppException appException) return appException;
+            if (current instanceof AppException appException) {
+                return appException;
+            }
             current = current.getCause();
         }
         return new AppException(ErrorCode.MEDIA_SERVICE_UNAVAILABLE);

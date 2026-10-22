@@ -12,6 +12,9 @@ public interface JwtService {
 
     Jwt issueAccess(UserResponse user, long authzVersion, String sessionId);
 
+    // Token client-credentials: sub = client_uuid, roles=[SERVICE], không có refresh token.
+    Jwt issueServiceAccess(UUID clientUuid, String clientId);
+
     String issueOpaqueRefreshToken();
 
     String hashToken(String token);

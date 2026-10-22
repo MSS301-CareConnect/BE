@@ -1,6 +1,6 @@
 package mss301.bookingservice.service;
 
-import mss301.bookingservice.dto.request.BookingCreateRequest;
+import mss301.bookingservice.dto.request.BookingScheduleRequest;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 
 import java.util.List;
@@ -10,5 +10,5 @@ import java.util.List;
  * thời điểm UTC. Thuần tính toán (không DB, không mạng) — vi phạm quy tắc lịch → AppException với ErrorCode 52xx.
  */
 public interface OccurrenceGenerator {
-    List<OccurrenceSlot> generate(BookingCreateRequest request);
+    List<OccurrenceSlot> generate(BookingScheduleRequest request);
 }

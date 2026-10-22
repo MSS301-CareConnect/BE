@@ -44,6 +44,7 @@ public enum ErrorCode {
     CENTER_NOT_ACTIVE(4116, "Trung tâm chưa hoạt động", HttpStatus.CONFLICT),
     CENTER_ACCESS_DENIED(4117, "Bạn không quản lý trung tâm này", HttpStatus.FORBIDDEN),
     CENTER_MANAGER_EXISTED(4118, "Tài khoản quản lý đã được gán cho trung tâm khác", HttpStatus.CONFLICT),
+    PRICE_RANGE_INVALID(4119, "Giá tối thiểu không được lớn hơn giá tối đa", HttpStatus.BAD_REQUEST),
 
     CAREGIVER_NOT_FOUND(4200, "Hồ sơ người chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
     CAREGIVER_USER_EXISTED(4201, "Tài khoản đã có hồ sơ người chăm sóc", HttpStatus.CONFLICT),
@@ -52,6 +53,16 @@ public enum ErrorCode {
     CAREGIVER_VERSION_CONFLICT(4204, "Hồ sơ người chăm sóc đã được cập nhật, vui lòng tải lại", HttpStatus.CONFLICT),
     VERIFICATION_REASON_REQUIRED(4205, "Phải nhập lý do khi từ chối xác minh", HttpStatus.BAD_REQUEST),
     CAREGIVER_ACCESS_DENIED(4206, "Bạn không có quyền thao tác hồ sơ người chăm sóc này", HttpStatus.FORBIDDEN),
+    CAREGIVER_SERVICE_NOT_IN_CENTER(4207, "Dịch vụ không thuộc trung tâm của người chăm sóc", HttpStatus.BAD_REQUEST),
+    CAREGIVER_SERVICE_NOT_ACTIVE(4208, "Dịch vụ của trung tâm không tồn tại hoặc đang ngừng cung cấp", HttpStatus.CONFLICT),
+    TOO_MANY_CAREGIVER_SERVICES(4209, "Mỗi người chăm sóc được gán tối đa 50 dịch vụ", HttpStatus.BAD_REQUEST),
+    CAREGIVER_SERVICES_REQUIRED(4210, "Danh sách dịch vụ không được để trống (gửi [] để bỏ hết)", HttpStatus.BAD_REQUEST),
+    SEARCH_TOO_BROAD(4211, "Có quá nhiều người chăm sóc phù hợp, vui lòng thu hẹp điều kiện tìm kiếm", HttpStatus.BAD_REQUEST),
+    // Spec ghi 4210 nhưng 4210 đã thuộc CAREGIVER_SERVICES_REQUIRED (PRV-01) → dùng 4212.
+    CARE_SERVICE_IDS_REQUIRED(4212, "Phải chọn từ 1 đến 10 dịch vụ cần tìm", HttpStatus.BAD_REQUEST),
+    SEARCH_CENTER_REQUIRED(4213, "Phải chọn trung tâm khi tìm người chăm sóc", HttpStatus.BAD_REQUEST),
+    MIN_RATING_INVALID(4214, "Điểm đánh giá tối thiểu phải từ 0 đến 5", HttpStatus.BAD_REQUEST),
+    MIN_EXPERIENCE_INVALID(4215, "Số năm kinh nghiệm tối thiểu không được âm", HttpStatus.BAD_REQUEST),
 
     CERTIFICATE_NOT_FOUND(4250, "Chứng chỉ không tồn tại", HttpStatus.NOT_FOUND),
     CERTIFICATE_VERSION_CONFLICT(4251, "Chứng chỉ đã được cập nhật, vui lòng tải lại", HttpStatus.CONFLICT),
@@ -65,6 +76,7 @@ public enum ErrorCode {
     WORK_SHIFT_FULL(4305, "Ca làm việc đã đủ người", HttpStatus.CONFLICT),
     WORK_SHIFT_HAS_APPROVED_REGISTRATIONS(4306, "Không thể sửa hoặc hủy ca đã có đăng ký được duyệt", HttpStatus.CONFLICT),
     WORK_SHIFT_STATUS_INVALID(4307, "Không thể chuyển ca làm việc sang trạng thái yêu cầu", HttpStatus.CONFLICT),
+    WORK_SHIFT_ALREADY_STARTED(4308, "Ca làm việc đã bắt đầu", HttpStatus.CONFLICT),
 
     REGISTRATION_NOT_FOUND(4350, "Đăng ký ca làm việc không tồn tại", HttpStatus.NOT_FOUND),
     REGISTRATION_EXISTED(4351, "Bạn đã đăng ký ca làm việc này", HttpStatus.CONFLICT),
@@ -77,6 +89,17 @@ public enum ErrorCode {
     SCHEDULE_STATUS_INVALID(4402, "Không thể chuyển lịch sang trạng thái yêu cầu", HttpStatus.CONFLICT),
     SCHEDULE_CANCELLATION_REASON_REQUIRED(4403, "Phải nhập lý do khi hủy lịch", HttpStatus.BAD_REQUEST),
     SCHEDULE_VERSION_CONFLICT(4404, "Lịch đã được cập nhật, vui lòng tải lại", HttpStatus.CONFLICT),
+    TIME_OFF_NOT_FOUND(4405, "Ngày nghỉ không tồn tại", HttpStatus.NOT_FOUND),
+    TIME_OFF_OVERLAP(4406, "Ngày nghỉ bị trùng với ngày nghỉ khác của người chăm sóc", HttpStatus.CONFLICT),
+    TIME_OFF_RANGE_INVALID(4407, "Thời gian nghỉ không hợp lệ (kết thúc phải sau bắt đầu, tối đa 30 ngày)", HttpStatus.BAD_REQUEST),
+    TIME_OFF_HAS_BOOKINGS(4408, "Khoảng nghỉ trùng buổi chăm sóc đã được giao, hãy nhờ quản lý đổi người trước", HttpStatus.CONFLICT),
+    AVAILABILITY_RANGE_TOO_LONG(4409, "Khoảng thời gian tra cứu không hợp lệ hoặc vượt quá 31 ngày", HttpStatus.BAD_REQUEST),
+    TIME_OFF_TIME_REQUIRED(4410, "Phải nhập thời điểm bắt đầu và kết thúc nghỉ", HttpStatus.BAD_REQUEST),
+    TIME_OFF_REASON_TOO_LONG(4411, "Lý do nghỉ không được vượt quá 500 ký tự", HttpStatus.BAD_REQUEST),
+    SLOTS_INVALID(4412, "Danh sách khung giờ phải có từ 1 đến 60 khung", HttpStatus.BAD_REQUEST),
+    SLOT_RANGE_INVALID(4413, "Khung giờ không hợp lệ (thiếu thời điểm hoặc kết thúc không sau bắt đầu)", HttpStatus.BAD_REQUEST),
+    CAREGIVER_ID_REQUIRED(4414, "Thiếu mã người chăm sóc", HttpStatus.BAD_REQUEST),
+    SCHEDULE_HAS_BOOKINGS(4415, "Lịch đã có buổi chăm sóc được giao, không thể hủy", HttpStatus.CONFLICT),
 
     IDENTITY_UNAVAILABLE(4500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     IDENTITY_USER_NOT_FOUND(4501, "Tài khoản không tồn tại", HttpStatus.NOT_FOUND),
@@ -85,7 +108,12 @@ public enum ErrorCode {
     MEDIA_REQUIRED(4600, "Phải chọn ít nhất một file", HttpStatus.BAD_REQUEST),
     MEDIA_LIMIT_EXCEEDED(4601, "Mỗi lần chỉ được tải tối đa 10 file", HttpStatus.BAD_REQUEST),
     MEDIA_NOT_FOUND(4602, "File không tồn tại hoặc không thuộc dữ liệu này", HttpStatus.NOT_FOUND),
-    MEDIA_SERVICE_UNAVAILABLE(4603, "Dịch vụ file tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE);
+    MEDIA_SERVICE_UNAVAILABLE(4603, "Dịch vụ file tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+
+    SERVICE_TOKEN_UNAVAILABLE(4700, "Không xác thực được với dịch vụ liên quan, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),
+    CATALOG_UNAVAILABLE(4701, "Dịch vụ danh mục tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
+    // Spec ghi 4700 nhưng 4700 đã là SERVICE_TOKEN_UNAVAILABLE (PRV-01) → dùng 4702.
+    BOOKING_SERVICE_UNAVAILABLE(4702, "Dịch vụ đặt lịch tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE);
     private int code;
     private String message;
     private HttpStatusCode statusCode;

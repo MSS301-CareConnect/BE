@@ -3,6 +3,7 @@ package mss301.providerservice.security;
 import lombok.RequiredArgsConstructor;
 import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.entity.CaregiverProfile;
+import mss301.providerservice.enums.RoleCode;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import org.springframework.security.core.Authentication;
@@ -16,9 +17,15 @@ import java.util.UUID;
 public class ProviderAuthorization {
 
     public boolean isAdmin() {
+        return hasRole(RoleCode.ADMIN);
+    }
+
+    // Role trong access token hiện tại (ROLE_<code>) — dùng khi phạm vi dữ liệu khác nhau theo role trong cùng endpoint.
+    public boolean hasRole(RoleCode roleCode) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String authority = TokenClaims.ROLE_AUTHORITY_PREFIX + roleCode.name();
         return authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                .anyMatch(grantedAuthority -> authority.equals(grantedAuthority.getAuthority()));
     }
 
     public void requireCenterManagement(CareCenter center, UUID actorId) {

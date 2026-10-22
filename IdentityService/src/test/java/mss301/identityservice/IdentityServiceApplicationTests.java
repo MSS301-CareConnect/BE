@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -39,6 +40,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @Import(TestIdentityState.class)
 class IdentityServiceApplicationTests {
     static final String PASSWORD="CareConnect9!";
+    static final String SERVICE_SECRET="booking-test-secret";
+    // Compose escape ($$) để kiểm luôn bước chuẩn hóa của ServiceClientInitializer.
+    static final String SERVICE_CLIENTS="booking:"+new BCryptPasswordEncoder(4).encode(SERVICE_SECRET).replace("$","$$")
+            +",payment:"+new BCryptPasswordEncoder(4).encode("payment-test-secret");
     static final Path KEY_DIRECTORY;
     static String pgSchema;
     static {
@@ -69,6 +74,7 @@ class IdentityServiceApplicationTests {
         p.add("identity.issuer",()->"https://identity.test"); p.add("identity.audience",()->"careconnect-identity"); p.add("identity.key-id",()->"test-key");
         p.add("identity.private-key",()->KEY_DIRECTORY.resolve("private.pem").toUri().toString()); p.add("identity.public-key",()->KEY_DIRECTORY.resolve("public.pem").toUri().toString());
         p.add("identity.access-ttl",()->"15m"); p.add("identity.refresh-ttl",()->"7d"); p.add("identity.otp-ttl",()->"5m"); p.add("identity.otp-cooldown",()->"60s");
+        p.add("identity.service-clients",()->SERVICE_CLIENTS); p.add("identity.service-token-ttl",()->"10m");
         p.add("identity.otp-max-attempts",()->5); p.add("identity.allowed-origins",()->"https://web.test"); p.add("identity.cookie-secure",()->true);
     }
     @Autowired MockMvc mvc;
@@ -81,6 +87,7 @@ class IdentityServiceApplicationTests {
     @Autowired RoleRepository roles;
     @Autowired UserRoleRepository assignments;
     @Autowired PasswordEncoder passwords;
+    @Autowired ServiceClientRepository serviceClients;
     @Autowired TransactionTemplate tx;
     @Autowired IdentityProperties properties;
     @Autowired mss301.identityservice.security.IdentityAuthenticationConverter authenticationConverter;
@@ -114,6 +121,72 @@ class IdentityServiceApplicationTests {
         if (pgSchema != null) {
             try (var connection=java.sql.DriverManager.getConnection("jdbc:postgresql://localhost:55494/postgres","postgres","identity_test_only"); var statement=connection.createStatement()) { statement.execute("DROP SCHEMA " + pgSchema + " CASCADE"); }
         }
+    }
+
+    String serviceToken(String clientId,String secret) throws Exception {
+        String response=mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId",clientId,"clientSecret",secret))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return json.readTree(response).path("result").path("accessToken").asText();
+    }
+
+    @Test void serviceTokenCarriesServiceRoleAndNoRefresh() throws Exception {
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.result.expiresInSeconds").value(600)).andExpect(jsonPath("$.result.refreshToken").doesNotExist())
+                .andExpect(cookie().doesNotExist("access_token")).andExpect(cookie().doesNotExist("refresh_token"));
+        Jwt jwt=tokens.parseAccess(serviceToken("booking",SERVICE_SECRET));
+        ServiceClient client=serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow();
+        assertThat(jwt.getSubject()).isEqualTo(client.getId().toString());
+        assertThat(jwt.getClaimAsStringList("roles")).containsExactly("SERVICE");
+        assertThat(jwt.getClaimAsStringList("permissions")).isEmpty();
+        assertThat(jwt.getClaimAsString("client_id")).isEqualTo("booking");
+        assertThat(jwt.getAudience()).contains("careconnect-identity","careconnect-api");
+        assertThat(client.getSecretHash()).startsWith("$2a$").doesNotContain("$$");
+    }
+
+    @Test void serviceTokenRejectsWrongSecretAndUnknownClientWithSameError() throws Exception {
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","wrong"))))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1114));
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","ghost","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1114));
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","","clientSecret",""))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test void serviceTokenIsRateLimitedPerClient() throws Exception {
+        for (int i=0;i<5;i++) {
+            mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","payment","clientSecret","wrong"))))
+                    .andExpect(status().isUnauthorized());
+        }
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","payment","clientSecret","payment-test-secret"))))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test void serviceTokenIsNotAUser() throws Exception {
+        String token=serviceToken("booking",SERVICE_SECRET);
+        int status=mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+token)).andReturn().getResponse().getStatus();
+        assertThat(status).isIn(403,404);
+        mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token)).andExpect(status().isForbidden());
+    }
+
+    @Test void disabledServiceClientCannotGetOrUseTokens() throws Exception {
+        String token=serviceToken("booking",SERVICE_SECRET);
+        tx.executeWithoutResult(s->serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow().setActive(false));
+        try {
+            mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token)).andExpect(status().isUnauthorized());
+            mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1117));
+        } finally {
+            tx.executeWithoutResult(s->serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow().setActive(true));
+        }
+    }
+
+    @Test void serviceRoleCannotBeProvisionedOrCreated() throws Exception {
+        mvc.perform(post("/api/v1/users").header("Authorization","Bearer "+token(admin)).contentType("application/json")
+                .content(body(Map.of("email",UUID.randomUUID()+"@example.test","fullName","Robot","roleCode","SERVICE")))).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/roles").header("Authorization","Bearer "+token(admin)).contentType("application/json")
+                .content(body(Map.of("roleCode","SERVICE","roleName","Fake service")))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1101));
+        assertThat(roles.findByRoleCodeAndDeletedAtIsNull("SERVICE")).isEmpty();
     }
 
     @Test void missingTokenIs401() throws Exception {
@@ -305,7 +378,7 @@ class IdentityServiceApplicationTests {
 
     @Test void logoutRevokesAccessAndRefresh() throws Exception {
         Jwt refresh=tokens.issue(customer,0,TokenType.REFRESH); state.storeRefresh(refresh.getId(),customer.getId(),Duration.ofHours(1)); String access=token(customer);
-        mvc.perform(post("/api/v1/auth/mobile/logout").header("Authorization","Bearer "+access).contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization","Bearer "+access).contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isOk());
         mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized()); assertThat(state.consumeRefresh(refresh.getId(),customer.getId())).isFalse();
     }
 
@@ -756,12 +829,43 @@ class IdentityServiceApplicationTests {
                 .andReturn();
         String access = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
 
-        // Call logout-all
-        mvc.perform(post("/api/v1/auth/logout-all").header("Authorization", "Bearer " + access))
+        String refresh = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Phiên thứ hai trên thiết bị khác
+        MvcResult otherLogin = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String otherAccess = json.readTree(otherLogin.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String otherRefresh = json.readTree(otherLogin.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Logout với allSessions = true (thay cho /logout-all cũ)
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .header("Authorization", "Bearer " + access)
+                        .contentType("application/json")
+                        .content(body(LogoutRequest.builder().refreshToken(refresh).allSessions(true).build())))
                 .andExpect(status().isOk());
 
-        // Session should be invalid
+        // Mọi phiên đều mất hiệu lực
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + otherAccess))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(otherRefresh).build())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void logoutAllSessionsWithoutValidTokenIsRejected() throws Exception {
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LogoutRequest.builder().refreshToken("bogus").allSessions(true).build())))
                 .andExpect(status().isUnauthorized());
     }
 

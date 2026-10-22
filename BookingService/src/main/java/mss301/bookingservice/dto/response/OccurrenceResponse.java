@@ -2,8 +2,10 @@ package mss301.bookingservice.dto.response;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.OccurrenceStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -23,6 +25,8 @@ public class OccurrenceResponse {
 
     Integer durationMinutes;
 
+    BigDecimal priceAmount;
+
     Instant actualStartAt;
 
     Instant actualEndAt;
@@ -32,6 +36,13 @@ public class OccurrenceResponse {
     OccurrenceStatus status;
 
     String cancelReason;
+
+    Instant cancelledAt;
+
+    CancelledBy cancelledByParty;
+
+    // Caregiver của buổi đã bị khóa — manager cần đổi người (BK-04).
+    Boolean needsReassignment;
 
     String note;
 }

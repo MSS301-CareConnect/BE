@@ -15,8 +15,19 @@ public final class GatewayPaths {
             "/api/v1/care-recipients/**"
     };
 
+    // BookingService sở hữu cả vận hành ca (care session / report), đánh giá, khiếu nại, thông báo và thống kê.
     public static final String[] BOOKING_ROUTES = {
-            "/api/v1/bookings/**", "/api/v1/booking-occurrences/**"
+            "/api/v1/bookings/**", "/api/v1/booking-occurrences/**",
+            "/api/v1/notifications/**", "/api/v1/care-sessions/**", "/api/v1/care-reports/**",
+            "/api/v1/feedbacks/**", "/api/v1/complaints/**", "/api/v1/statistics/**"
+    };
+
+    // SSE thông báo: route riêng không read timeout, không buffer (SseProxyHandler), xếp TRƯỚC route booking chung.
+    public static final String NOTIFICATION_STREAM = "/api/v1/notifications/stream";
+
+    public static final String[] PAYMENT_ROUTES = {
+            "/api/v1/payments/**", "/api/v1/payment-policies/**", "/api/v1/refunds/**", "/api/v1/refund-quotes/**",
+            "/api/v1/remaining-invoices/**", "/api/v1/settlements/**", "/api/v1/revenue/**"
     };
 
     public static final String[] PROVIDER_ROUTES = {
@@ -37,9 +48,15 @@ public final class GatewayPaths {
     // token ở đây để cookie cũ/hỏng không chặn được login/refresh/logout (giống SecurityConfig của Identity).
     public static final String[] IDENTITY_TOKEN_FLOW_ENDPOINTS = {
             "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/csrf",
-            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh", "/api/v1/auth/mobile/logout",
+            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh",
             "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
-            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"
+            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+            "/api/v1/auth/service-token"
+    };
+
+    // Public CHỈ với GET: VNPay gọi IPN / trình duyệt quay về return URL không mang JWT; PaymentService tự kiểm chữ ký.
+    public static final String[] PUBLIC_GET_ENDPOINTS = {
+            "/api/v1/payments/vnpay/ipn", "/api/v1/payments/vnpay/return"
     };
 
     // Swagger tổng hợp + health của chính gateway.
@@ -49,6 +66,7 @@ public final class GatewayPaths {
     public static final String PROVIDER_API_DOCS = "/api-docs/provider";
     public static final String CARE_CATALOG_API_DOCS = "/api-docs/care-catalog";
     public static final String MEDIA_API_DOCS = "/api-docs/media";
+    public static final String PAYMENT_API_DOCS = "/api-docs/payment";
     public static final String[] DOCUMENTATION_ENDPOINTS = {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };

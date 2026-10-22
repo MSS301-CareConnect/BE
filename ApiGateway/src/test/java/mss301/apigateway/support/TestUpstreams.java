@@ -53,6 +53,7 @@ public final class TestUpstreams {
     private final HttpServer providerServer;
     private final HttpServer careCatalogServer;
     private final HttpServer mediaServer;
+    private final HttpServer paymentServer;
 
     private TestUpstreams() {
         try {
@@ -69,6 +70,7 @@ public final class TestUpstreams {
             providerServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             careCatalogServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             mediaServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            paymentServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -80,10 +82,12 @@ public final class TestUpstreams {
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"CareConnect IdentityService\"}}", Map.of()));
         identityServer.createContext("/", exchange -> echo(exchange, "identity"));
         careRecipientServer.createContext("/", exchange -> echo(exchange, "care-recipient"));
+        bookingServer.createContext("/api/v1/notifications/stream", this::handleStream);
         bookingServer.createContext("/", exchange -> echo(exchange, "booking"));
         providerServer.createContext("/", exchange -> echo(exchange, "provider"));
         careCatalogServer.createContext("/", exchange -> echo(exchange, "care-catalog"));
         mediaServer.createContext("/", exchange -> echo(exchange, "media"));
+        paymentServer.createContext("/", exchange -> echo(exchange, "payment"));
         // Nhiều thread: /users/slow không được chặn các request khác (JWKS…).
         identityServer.setExecutor(Executors.newCachedThreadPool());
         careRecipientServer.setExecutor(Executors.newCachedThreadPool());
@@ -91,10 +95,12 @@ public final class TestUpstreams {
         providerServer.setExecutor(Executors.newCachedThreadPool());
         careCatalogServer.setExecutor(Executors.newCachedThreadPool());
         mediaServer.setExecutor(Executors.newCachedThreadPool());
+        paymentServer.setExecutor(Executors.newCachedThreadPool());
         bookingServer.start();
         providerServer.start();
         careCatalogServer.start();
         mediaServer.start();
+        paymentServer.start();
         identityServer.start();
         careRecipientServer.start();
     }
@@ -125,6 +131,10 @@ public final class TestUpstreams {
 
     public String mediaUrl() {
         return "http://127.0.0.1:" + mediaServer.getAddress().getPort();
+    }
+
+    public String paymentUrl() {
+        return "http://127.0.0.1:" + paymentServer.getAddress().getPort();
     }
 
     public String jwksUri() {
@@ -168,6 +178,24 @@ public final class TestUpstreams {
         exchange.getResponseHeaders().add("Set-Cookie", "refresh_token=new-refresh; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax");
         exchange.getResponseHeaders().add("Set-Cookie", "XSRF-TOKEN=new-csrf; Path=/; HttpOnly; SameSite=Lax");
         write(exchange, 200, "{\"code\":200,\"message\":\"Đăng nhập thành công\",\"result\":{\"csrfToken\":\"new-csrf\"}}", Map.of());
+    }
+
+    // SSE giả: hai sự kiện cách nhau lâu hơn read timeout của test (1s), echo lại Last-Event-ID và Authorization.
+    private void handleStream(HttpExchange exchange) throws IOException {
+        receivedPaths.add(exchange.getRequestURI().getPath());
+        exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+        exchange.getResponseHeaders().add("X-Request-Id", "upstream-id-should-be-removed");
+        exchange.sendResponseHeaders(200, 0);
+        String lastEventId = exchange.getRequestHeaders().getFirst("Last-Event-ID");
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(("id: 1\nevent: heartbeat\ndata: last=" + lastEventId + "\n\n").getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            Thread.sleep(1500);
+            output.write(("id: 2\nevent: notification\ndata: auth=" + (authorization != null) + "\n\n").getBytes(StandardCharsets.UTF_8));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void handleSlow(HttpExchange exchange) throws IOException {

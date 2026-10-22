@@ -31,9 +31,13 @@ services:
       BOOKING_IDENTITY_URL: http://api-gateway:8080
       BOOKING_CARE_RECIPIENT_URL: http://api-gateway:8080
       BOOKING_PROVIDER_URL: http://api-gateway:8080
+      # BOOKING_CARE_CATALOG_URL được ưu tiên, BOOKING_CATALOG_URL là tên cũ (fallback) — ghi đè cả hai.
+      BOOKING_CARE_CATALOG_URL: http://api-gateway:8080
+      BOOKING_CATALOG_URL: http://api-gateway:8080
+      BOOKING_PAYMENT_URL: http://api-gateway:8080
     ports:
       - "127.0.0.1:${BOOKING_SERVER_PORT:-8085}:8085"
-    # Identity / CareRecipient / Provider chỉ được gọi khi có request (CareRecipient cũng gọi ngược Booking) —
+    # Mọi service khác (qua gateway) chỉ được gọi khi có request (CareRecipient / Provider cũng gọi ngược Booking) —
     # không đặt depends_on giữa các app để tránh vòng phụ thuộc.
     depends_on:
       booking-postgres:

@@ -5,6 +5,7 @@ import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.enums.CenterStatus;
+import mss301.providerservice.enums.RoleCode;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CareCenterMapper;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -22,7 +25,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,6 +38,12 @@ class CareCenterServiceTests {
 
     @Mock
     CareCenterMapper careCenterMapper;
+
+    @Mock
+    IdentityAccountService identityAccountService;
+
+    @Mock
+    TransactionTemplate transactionTemplate;
 
     @InjectMocks
     CareCenterServiceImpl careCenterService;
@@ -51,6 +62,8 @@ class CareCenterServiceTests {
         entity.setAddress(request.getAddress());
         CenterResponse response = new CenterResponse();
 
+        when(transactionTemplate.execute(any())).thenAnswer(invocation ->
+                invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
         when(careCenterMapper.toCareCenter(request)).thenReturn(entity);
         when(careCenterRepository.save(entity)).thenReturn(entity);
         when(careCenterMapper.toResponse(entity)).thenReturn(response);
@@ -62,6 +75,27 @@ class CareCenterServiceTests {
         assertEquals(CenterStatus.PENDING, entity.getCenterStatus());
         assertEquals(actorId, entity.getCreatedBy());
         verify(careCenterRepository).existsByEmailAndDeletedAtIsNull("contact@antam.vn");
+        // Không có managerUserId thì không gọi IdentityService.
+        verifyNoInteractions(identityAccountService);
+    }
+
+    @Test
+    void createWithManagerChecksIdentityBeforeTransaction() {
+        UUID managerUserId = UUID.randomUUID();
+        CenterCreateRequest request = CenterCreateRequest.builder()
+                .centerName("Trung tâm An Tâm")
+                .email("contact@antam.vn")
+                .address("Thành phố Hồ Chí Minh")
+                .managerUserId(managerUserId)
+                .build();
+        doThrow(new AppException(ErrorCode.IDENTITY_USER_INVALID))
+                .when(identityAccountService).requireActiveRole(managerUserId, RoleCode.CENTER_MANAGER);
+
+        AppException exception = assertThrows(AppException.class,
+                () -> careCenterService.create(UUID.randomUUID(), request));
+
+        assertEquals(ErrorCode.IDENTITY_USER_INVALID, exception.getErrorCode());
+        verifyNoInteractions(transactionTemplate, careCenterRepository);
     }
 
     @Test

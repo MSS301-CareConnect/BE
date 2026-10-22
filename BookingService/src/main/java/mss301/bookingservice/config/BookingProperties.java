@@ -40,13 +40,43 @@ public class BookingProperties {
     @Valid
     RemoteService careCatalog = new RemoteService();
 
-    BigDecimal depositRate = new BigDecimal("0.30");
+    // PaymentService qua gateway — chính sách hiệu lực để hiển thị cọc dự kiến (C2.1).
+    @Valid
+    RemoteService payment = new RemoteService();
+
+    // Danh tính máy của BookingService để xin token SERVICE (IAM-01). Bỏ trống được khi chưa gọi endpoint SERVICE nào —
+    // lời gọi cần token sẽ trả 503 SERVICE_TOKEN_UNAVAILABLE.
+    @Valid
+    ServiceClient serviceClient = new ServiceClient();
+
+    // BK-02 (SEC-12): số booking PENDING / AWAITING_DEPOSIT tối đa một khách được giữ cùng lúc.
+    @Min(1)
+    @Max(100)
+    int maxPendingPerCustomer = 3;
 
     @Valid
     Schedule schedule = new Schedule();
 
     @Valid
-    Integration integration = new Integration();
+    Session session = new Session();
+
+    @Valid
+    Outbox outbox = new Outbox();
+
+    @Valid
+    Cancellation cancellation = new Cancellation();
+
+    // BK-03: previewToken hủy booking. Khóa trống = khóa ngẫu nhiên theo tiến trình (chỉ dev, một instance).
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Cancellation {
+        @NotNull
+        String previewSecret = "";
+
+        @NotNull
+        Duration previewTtl = Duration.ofMinutes(10);
+    }
+
 
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -66,6 +96,82 @@ public class BookingProperties {
         // Base URL service được gọi qua Feign (không có service discovery).
         @NotBlank
         String url;
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class ServiceClient {
+        String clientId = "";
+
+        @ToString.Exclude
+        String clientSecret = "";
+
+        @NotNull
+        Duration connectTimeout = Duration.ofSeconds(2);
+
+        @NotNull
+        Duration readTimeout = Duration.ofSeconds(3);
+
+        public boolean isConfigured() {
+            return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
+        }
+    }
+
+    // Ca chăm sóc (OPS-02 / OPS-04).
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Session {
+        // Caregiver được check-in sớm nhất bao lâu trước giờ bắt đầu buổi.
+        @NotNull
+        Duration startWindow = Duration.ofMinutes(30);
+
+        // Session còn IN_PROGRESS quá giờ kết thúc buổi bao lâu thì nhắc (một lần).
+        @NotNull
+        Duration overdueReminderAfter = Duration.ofMinutes(60);
+
+        @NotNull
+        Duration overdueScanInterval = Duration.ofMinutes(5);
+
+        // OPS-06: buổi chưa check-in sau giờ bắt đầu + missedGrace (và không có báo vắng) → MISSED, hoàn tiền khách.
+        @NotNull
+        Duration missedGrace = Duration.ofMinutes(30);
+
+        @NotNull
+        Duration missedScanInterval = Duration.ofMinutes(5);
+
+        // Caregiver báo khách vắng được tới giờ kết thúc buổi + noShowReportWindow.
+        @NotNull
+        Duration noShowReportWindow = Duration.ofMinutes(60);
+
+        // Báo vắng chưa được quyết định sau giờ kết thúc + noShowDecisionReminderAfter → nhắc manager (không tự quyết).
+        @NotNull
+        Duration noShowDecisionReminderAfter = Duration.ofHours(24);
+    }
+
+    // booking_outbox: retry có giới hạn, backoff tăng dần (rule #25).
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Outbox {
+        @NotNull
+        Duration scanInterval = Duration.ofSeconds(30);
+
+        @Min(1)
+        @Max(1000)
+        int batchSize = 50;
+
+        @Min(1)
+        @Max(100)
+        int maxAttempts = 10;
+
+        @NotNull
+        Duration baseBackoff = Duration.ofSeconds(30);
+
+        @NotNull
+        Duration maxBackoff = Duration.ofHours(1);
+
+        // Thời gian "giữ" một dòng đang gửi — lượt khác bỏ qua dòng này trong khoảng đó.
+        @NotNull
+        Duration claimLease = Duration.ofMinutes(2);
     }
 
     // Quy tắc lịch đã chốt (docs/2026-10-09-PLAN_BOOKING.md §9) — đổi qua env, không hardcode trong code.
@@ -95,10 +201,9 @@ public class BookingProperties {
         @NotNull
         Duration depositTimeout = Duration.ofHours(24);
 
-        // Khoảng ngày tối đa một lần xem lịch của caregiver.
-        @Min(1)
-        @Max(366)
-        int maxCaregiverRangeDays = 62;
+        // Caregiver còn được xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (D5, SEC-09).
+        @NotNull
+        Duration caregiverAccessGrace = Duration.ofHours(24);
 
         // Số booking tối đa xử lý mỗi lượt quét hết hạn.
         @Min(1)
@@ -108,12 +213,5 @@ public class BookingProperties {
         // Chu kỳ quét hết hạn — BookingExpiryScheduler đọc thẳng placeholder; khai báo ở đây để kiểm khi khởi động.
         @NotNull
         Duration expiryScanInterval = Duration.ofMinutes(5);
-    }
-
-    @Data
-    @FieldDefaults(level = AccessLevel.PRIVATE)
-    public static class Integration {
-        // Bật tích hợp CareCatalogService (báo giá thật từ catalog; false = trả báo giá tạm không giá).
-        boolean catalogEnabled = false;
     }
 }

@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * API của CareRecipientService (/api/v1/care-recipients/**): kiểm quyền khách trên hồ sơ và lấy snapshot
- * lúc đặt lịch. Dùng qua CareRecipientDirectoryService, không gọi trực tiếp.
+ * lúc đặt lịch, bằng token SERVICE của Booking (hai endpoint này chỉ cho SERVICE). Dùng qua CareRecipientDirectoryService.
  */
 @FeignClient(name = "care-recipient", url = "${booking.care-recipient.url}",
         configuration = CareRecipientClientConfig.class, fallbackFactory = CareRecipientClientFallbackFactory.class)

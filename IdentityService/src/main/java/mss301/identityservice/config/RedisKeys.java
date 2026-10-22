@@ -12,6 +12,7 @@ public final class RedisKeys {
     public static final String SESSION = PREFIX + "session:";         // session:{sessionId} → hash metadata phiên
     public static final String USER_SESSIONS = PREFIX + "user_sessions:"; // user_sessions:{userId} → Set các sessionId
     public static final String RATE_LIMIT_LOGIN = PREFIX + "rate_limit:login:"; // rate_limit:login:{hash(email:ip)} → count
+    public static final String RATE_LIMIT_SERVICE_TOKEN = PREFIX + "rate_limit:service_token:"; // rate_limit:service_token:{hash(clientId)} → count
     public static final String BLACKLIST = PREFIX + "blacklist:";     // blacklist:{jti} → "1", TTL = thời gian sống còn lại
     public static final String OTP = PREFIX + "otp:";                 // otp:{purpose}:{email} → hash dữ liệu OTP
     public static final String COOLDOWN_SUFFIX = ":cooldown";         // otp:{purpose}:{email}:cooldown → chặn gửi lại

@@ -1,6 +1,5 @@
 package mss301.providerservice.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -20,16 +19,23 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/provider-media")
-@RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
 @Tag(name = "Provider Media", description = "File của center, caregiver profile và certificate")
+@RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ProviderMediaController {
 
     ProviderMediaService providerMediaService;
 
+    @GetMapping("/{ownerType}/{ownerId}")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    public APIResponse<List<ProviderMediaResponse>> list(@CurrentUserId UUID actorId,
+                                                         @PathVariable MediaOwnerType ownerType,
+                                                         @PathVariable UUID ownerId) {
+        return providerMediaService.list(actorId, ownerType, ownerId);
+    }
+
     @PostMapping(value = "/{ownerType}/{ownerId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Upload nhiều file cho một owner")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<ProviderMediaResponse>> upload(@CurrentUserId UUID actorId,
                                                            @PathVariable MediaOwnerType ownerType,
                                                            @PathVariable UUID ownerId,
@@ -37,16 +43,8 @@ public class ProviderMediaController {
         return providerMediaService.upload(actorId, ownerType, ownerId, files);
     }
 
-    @GetMapping("/{ownerType}/{ownerId}")
-    @Operation(summary = "Xem các file và URL tải tạm thời")
-    public APIResponse<List<ProviderMediaResponse>> list(@CurrentUserId UUID actorId,
-                                                         @PathVariable MediaOwnerType ownerType,
-                                                         @PathVariable UUID ownerId) {
-        return providerMediaService.list(actorId, ownerType, ownerId);
-    }
-
     @DeleteMapping("/{ownerType}/{ownerId}/{mediaFileId}")
-    @Operation(summary = "Xóa một file khỏi owner và khỏi R2")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,
                                     @PathVariable MediaOwnerType ownerType,
                                     @PathVariable UUID ownerId,

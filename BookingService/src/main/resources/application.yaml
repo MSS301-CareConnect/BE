@@ -48,6 +48,10 @@ spring:
             connect-timeout: ${BOOKING_CARE_CATALOG_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${BOOKING_CARE_CATALOG_READ_TIMEOUT_MS:3000}
             logger-level: none
+          payment:
+            connect-timeout: ${BOOKING_PAYMENT_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_PAYMENT_READ_TIMEOUT_MS:3000}
+            logger-level: none
     circuitbreaker:
       # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
       resilience4j:
@@ -100,9 +104,20 @@ booking:
     url: ${BOOKING_PROVIDER_URL}
 
   care-catalog:
-    url: ${BOOKING_CARE_CATALOG_URL:${BOOKING_CATALOG_URL:http://localhost:8083}}
+    url: ${BOOKING_CARE_CATALOG_URL:${BOOKING_CATALOG_URL}}
 
-  deposit-rate: ${BOOKING_DEPOSIT_RATE:0.30}
+  payment:
+    url: ${BOOKING_PAYMENT_URL}
+
+  # Token SERVICE (client-credentials) xin ở Identity qua gateway (booking.identity.url).
+  service-client:
+    client-id: ${BOOKING_SERVICE_CLIENT_ID:}
+    client-secret: ${BOOKING_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${BOOKING_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${BOOKING_SERVICE_TOKEN_READ_TIMEOUT:3s}
+
+  # Số booking PENDING / AWAITING_DEPOSIT tối đa một khách giữ cùng lúc (BK-02).
+  max-pending-per-customer: ${BOOKING_MAX_PENDING_PER_CUSTOMER:3}
 
   # Quy tắc lịch (docs/2026-10-09-PLAN_BOOKING.md §9). Duration dạng 12h, 30m, PT24H…
   schedule:
@@ -112,11 +127,33 @@ booking:
     min-lead-time: ${BOOKING_MIN_LEAD_TIME:12h}
     acceptance-timeout: ${BOOKING_ACCEPTANCE_TIMEOUT:24h}
     deposit-timeout: ${BOOKING_DEPOSIT_TIMEOUT:24h}
-    max-caregiver-range-days: ${BOOKING_MAX_CAREGIVER_RANGE_DAYS:62}
+    # Caregiver còn xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (BK-07).
+    caregiver-access-grace: ${BOOKING_CAREGIVER_ACCESS_GRACE:24h}
     expiry-batch-size: ${BOOKING_EXPIRY_BATCH_SIZE:100}
     # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler).
     expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:5m}
 
-  integration:
-    # Bật tích hợp CareCatalogService (báo giá thật); false = trả báo giá tạm không giá.
-    catalog-enabled: ${BOOKING_CATALOG_INTEGRATION_ENABLED:false}
+  # Ca chăm sóc (OPS-02 / OPS-04): check-in sớm tối đa 30 phút; nhắc session quên kết thúc sau giờ kết thúc + 60 phút.
+  session:
+    start-window: ${BOOKING_SESSION_START_WINDOW:30m}
+    overdue-reminder-after: ${BOOKING_SESSION_OVERDUE_REMINDER_AFTER:60m}
+    overdue-scan-interval: ${BOOKING_SESSION_OVERDUE_SCAN_INTERVAL:5m}
+    # OPS-06: chưa check-in sau giờ bắt đầu + 30 phút → MISSED (hoàn tiền); báo vắng tới giờ kết thúc + 60 phút.
+    missed-grace: ${BOOKING_MISSED_GRACE:30m}
+    missed-scan-interval: ${BOOKING_MISSED_SCAN_INTERVAL:5m}
+    no-show-report-window: ${BOOKING_NO_SHOW_REPORT_WINDOW:60m}
+    no-show-decision-reminder-after: ${BOOKING_NO_SHOW_DECISION_REMINDER_AFTER:24h}
+
+  # BK-03: previewToken hủy booking ký HMAC, hạn 10 phút. Production phải đặt khóa chung cho mọi instance.
+  cancellation:
+    preview-secret: ${BOOKING_CANCELLATION_PREVIEW_SECRET:}
+    preview-ttl: ${BOOKING_CANCELLATION_PREVIEW_TTL:10m}
+
+  # booking_outbox: gửi lại việc sang service khác (hóa đơn REMAINING…) khi bên nhận lỗi.
+  outbox:
+    scan-interval: ${BOOKING_OUTBOX_SCAN_INTERVAL:30s}
+    batch-size: ${BOOKING_OUTBOX_BATCH_SIZE:50}
+    max-attempts: ${BOOKING_OUTBOX_MAX_ATTEMPTS:10}
+    base-backoff: ${BOOKING_OUTBOX_BASE_BACKOFF:30s}
+    max-backoff: ${BOOKING_OUTBOX_MAX_BACKOFF:1h}
+    claim-lease: ${BOOKING_OUTBOX_CLAIM_LEASE:2m}

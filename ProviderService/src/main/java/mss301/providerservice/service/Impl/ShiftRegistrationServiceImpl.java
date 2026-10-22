@@ -14,27 +14,32 @@ import mss301.providerservice.entity.CaregiverSchedule;
 import mss301.providerservice.entity.ShiftRegistration;
 import mss301.providerservice.entity.WorkShift;
 import mss301.providerservice.enums.CaregiverStatus;
+import mss301.providerservice.enums.CenterStatus;
 import mss301.providerservice.enums.RegistrationStatus;
 import mss301.providerservice.enums.ScheduleStatus;
 import mss301.providerservice.enums.ShiftStatus;
 import mss301.providerservice.enums.VerificationStatus;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
-import mss301.providerservice.mapper.ProviderViewMapper;
+import mss301.providerservice.mapper.CaregiverScheduleMapper;
+import mss301.providerservice.mapper.ShiftRegistrationMapper;
 import mss301.providerservice.repository.CaregiverScheduleRepository;
 import mss301.providerservice.repository.ShiftRegistrationRepository;
 import mss301.providerservice.repository.WorkShiftRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.CaregiverService;
 import mss301.providerservice.service.ShiftRegistrationService;
+import mss301.providerservice.util.ProviderTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -45,87 +50,97 @@ import java.util.UUID;
 public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
 
     static int MAX_PAGE_SIZE = 100;
-    static Set<ScheduleStatus> ACTIVE_SCHEDULES = EnumSet.of(ScheduleStatus.SCHEDULED, ScheduleStatus.IN_PROGRESS);
+    static Set<ScheduleStatus> ACTIVE_SCHEDULES = EnumSet.of(ScheduleStatus.SCHEDULED);
+    // Khớp unique một phần uk_shift_registrations_shift_caregiver_active (schema/provider.sql).
+    static Set<RegistrationStatus> ACTIVE_REGISTRATIONS = EnumSet.of(RegistrationStatus.PENDING, RegistrationStatus.APPROVED);
 
-    WorkShiftRepository shiftRepository;
-    ShiftRegistrationRepository registrationRepository;
-    CaregiverScheduleRepository scheduleRepository;
+    WorkShiftRepository workShiftRepository;
+    ShiftRegistrationRepository shiftRegistrationRepository;
+    CaregiverScheduleRepository caregiverScheduleRepository;
     CaregiverService caregiverService;
-    ProviderAuthorization authorization;
-    ProviderViewMapper mapper;
+    ProviderAuthorization providerAuthorization;
+    ShiftRegistrationMapper shiftRegistrationMapper;
+    CaregiverScheduleMapper caregiverScheduleMapper;
+    Clock clock;
 
     @Override
     @Transactional
     public APIResponse<ShiftRegistrationResponse> register(UUID actorId, UUID shiftId,
                                                             ShiftRegistrationRequest request) {
-        CaregiverProfile caregiver = caregiverService.findByUser(actorId);
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiverByUser(actorId);
         if (caregiver.getVerificationStatus() != VerificationStatus.VERIFIED) {
             throw new AppException(ErrorCode.CAREGIVER_NOT_VERIFIED);
         }
         if (caregiver.getCaregiverStatus() != CaregiverStatus.ACTIVE) {
             throw new AppException(ErrorCode.CAREGIVER_NOT_ACTIVE);
         }
-        WorkShift shift = shiftRepository.findByIdForUpdate(shiftId)
+        WorkShift shift = workShiftRepository.findByIdForUpdate(shiftId)
                 .orElseThrow(() -> new AppException(ErrorCode.WORK_SHIFT_NOT_FOUND));
         if (!caregiver.getCenter().getId().equals(shift.getCenter().getId())) {
             throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
         }
+        checkCenterActive(shift);
         if (shift.getShiftStatus() != ShiftStatus.OPEN) {
             throw new AppException(ErrorCode.WORK_SHIFT_NOT_OPEN);
         }
-        if (shift.getRegistrationDeadline() != null && !Instant.now().isBefore(shift.getRegistrationDeadline())) {
+        Instant now = clock.instant();
+        // Ca không đặt hạn đăng ký vẫn phải chặn khi đã tới giờ bắt đầu.
+        checkShiftNotStarted(shift, now);
+        if (shift.getRegistrationDeadline() != null && !now.isBefore(shift.getRegistrationDeadline())) {
             throw new AppException(ErrorCode.REGISTRATION_DEADLINE_PASSED);
         }
-        if (registrationRepository.existsByWorkShiftIdAndCaregiverId(shiftId, caregiver.getId())) {
+        if (shiftRegistrationRepository.existsByWorkShiftIdAndCaregiverIdAndRegistrationStatusIn(
+                shiftId, caregiver.getId(), ACTIVE_REGISTRATIONS)) {
             throw new AppException(ErrorCode.REGISTRATION_EXISTED);
         }
-        if (approvedCount(shiftId) >= shift.getCapacity()) {
+        if (countApproved(shiftId) >= shift.getCapacity()) {
             throw new AppException(ErrorCode.WORK_SHIFT_FULL);
         }
-        ShiftRegistration registration = ShiftRegistration.builder()
-                .workShift(shift)
-                .caregiver(caregiver)
-                .registrationStatus(RegistrationStatus.PENDING)
-                .caregiverNote(normalize(request.getCaregiverNote()))
-                .build();
-        return APIResponse.success("Đăng ký ca làm việc thành công",
-                mapper.registration(registrationRepository.save(registration)));
+        ShiftRegistration registration = shiftRegistrationMapper.toShiftRegistration(request, shift, caregiver);
+        registration.setCaregiverNote(normalize(registration.getCaregiverNote()));
+        // Đăng ký mới luôn chờ manager duyệt.
+        registration.setRegistrationStatus(RegistrationStatus.PENDING);
+        ShiftRegistration savedRegistration = shiftRegistrationRepository.save(registration);
+        ShiftRegistrationResponse shiftRegistrationResponse = shiftRegistrationMapper.toResponse(savedRegistration);
+        return APIResponse.success("Đăng ký ca làm việc thành công", shiftRegistrationResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<PageResponse<ShiftRegistrationResponse>> listForShift(UUID actorId, UUID shiftId,
+    public APIResponse<PageResponse<ShiftRegistrationResponse>> listByShift(UUID actorId, UUID shiftId,
                                                                               int page, int size) {
         validatePage(page, size);
-        WorkShift shift = shiftRepository.findByIdAndDeletedAtIsNull(shiftId)
+        WorkShift shift = workShiftRepository.findByIdAndDeletedAtIsNull(shiftId)
                 .orElseThrow(() -> new AppException(ErrorCode.WORK_SHIFT_NOT_FOUND));
-        authorization.requireCenterManagement(shift.getCenter(), actorId);
-        Page<ShiftRegistration> result = registrationRepository.findByWorkShiftIdAndDeletedAtIsNull(
+        providerAuthorization.requireCenterManagement(shift.getCenter(), actorId);
+        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findByWorkShiftIdAndDeletedAtIsNull(
                 shiftId, PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt")));
-        return APIResponse.success("Lấy danh sách đăng ký ca thành công",
-                PageResponse.of(result, result.stream().map(mapper::registration).toList()));
+        List<ShiftRegistrationResponse> items = shiftRegistrationMapper.toResponseList(registrationPage.getContent());
+        PageResponse<ShiftRegistrationResponse> pageResponse = PageResponse.of(registrationPage, items);
+        return APIResponse.success("Lấy danh sách đăng ký ca thành công", pageResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<PageResponse<ShiftRegistrationResponse>> myRegistrations(UUID actorId, int page, int size) {
+    public APIResponse<PageResponse<ShiftRegistrationResponse>> listMine(UUID actorId, int page, int size) {
         validatePage(page, size);
-        CaregiverProfile caregiver = caregiverService.findByUser(actorId);
-        Page<ShiftRegistration> result = registrationRepository.findByCaregiverIdAndDeletedAtIsNull(
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiverByUser(actorId);
+        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findByCaregiverIdAndDeletedAtIsNull(
                 caregiver.getId(), PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-        return APIResponse.success("Lấy đăng ký ca của tôi thành công",
-                PageResponse.of(result, result.stream().map(mapper::registration).toList()));
+        List<ShiftRegistrationResponse> items = shiftRegistrationMapper.toResponseList(registrationPage.getContent());
+        PageResponse<ShiftRegistrationResponse> pageResponse = PageResponse.of(registrationPage, items);
+        return APIResponse.success("Lấy đăng ký ca của tôi thành công", pageResponse);
     }
 
     @Override
     @Transactional
     public APIResponse<ShiftRegistrationResponse> review(UUID actorId, UUID registrationId,
                                                           RegistrationReviewRequest request) {
-        ShiftRegistration registration = registrationRepository.findByIdForUpdate(registrationId)
+        ShiftRegistration registration = shiftRegistrationRepository.findByIdForUpdate(registrationId)
                 .orElseThrow(() -> new AppException(ErrorCode.REGISTRATION_NOT_FOUND));
-        WorkShift shift = shiftRepository.findByIdForUpdate(registration.getWorkShift().getId())
+        WorkShift shift = workShiftRepository.findByIdForUpdate(registration.getWorkShift().getId())
                 .orElseThrow(() -> new AppException(ErrorCode.WORK_SHIFT_NOT_FOUND));
-        authorization.requireCenterManagement(shift.getCenter(), actorId);
+        providerAuthorization.requireCenterManagement(shift.getCenter(), actorId);
         checkVersion(registration, request.getVersion());
         if (registration.getRegistrationStatus() != RegistrationStatus.PENDING) {
             throw new AppException(ErrorCode.REGISTRATION_NOT_PENDING);
@@ -144,16 +159,17 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
             registration.setRejectionReason(request.getReason().trim());
         }
         registration.setReviewedBy(actorId);
-        registration.setReviewedAt(Instant.now());
-        return APIResponse.success("Xử lý đăng ký ca thành công",
-                mapper.registration(registrationRepository.save(registration)));
+        registration.setReviewedAt(clock.instant());
+        ShiftRegistration savedRegistration = shiftRegistrationRepository.save(registration);
+        ShiftRegistrationResponse shiftRegistrationResponse = shiftRegistrationMapper.toResponse(savedRegistration);
+        return APIResponse.success("Xử lý đăng ký ca thành công", shiftRegistrationResponse);
     }
 
     @Override
     @Transactional
-    public APIResponse<Void> cancelOwn(UUID actorId, UUID registrationId, Long version) {
-        CaregiverProfile caregiver = caregiverService.findByUser(actorId);
-        ShiftRegistration registration = registrationRepository.findByIdForUpdate(registrationId)
+    public APIResponse<Void> cancel(UUID actorId, UUID registrationId, Long version) {
+        CaregiverProfile caregiver = caregiverService.findActiveCaregiverByUser(actorId);
+        ShiftRegistration registration = shiftRegistrationRepository.findByIdForUpdate(registrationId)
                 .orElseThrow(() -> new AppException(ErrorCode.REGISTRATION_NOT_FOUND));
         if (!caregiver.getId().equals(registration.getCaregiver().getId())) {
             throw new AppException(ErrorCode.CAREGIVER_ACCESS_DENIED);
@@ -163,42 +179,54 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
             throw new AppException(ErrorCode.REGISTRATION_NOT_PENDING);
         }
         registration.setRegistrationStatus(RegistrationStatus.CANCELLED);
-        registrationRepository.save(registration);
+        shiftRegistrationRepository.save(registration);
         return APIResponse.success("Hủy đăng ký ca thành công");
     }
 
     private void approve(UUID actorId, ShiftRegistration registration, WorkShift shift, String note) {
+        checkCenterActive(shift);
         if (shift.getShiftStatus() != ShiftStatus.OPEN && shift.getShiftStatus() != ShiftStatus.CLOSED) {
             throw new AppException(ErrorCode.WORK_SHIFT_NOT_OPEN);
         }
-        if (approvedCount(shift.getId()) >= shift.getCapacity()) {
+        checkShiftNotStarted(shift, clock.instant());
+        // Đếm TRƯỚC khi đổi trạng thái: count sau đó sẽ auto-flush chính đăng ký này → cộng thêm 1 là đếm trùng.
+        long approvedBefore = countApproved(shift.getId());
+        if (approvedBefore >= shift.getCapacity()) {
             throw new AppException(ErrorCode.WORK_SHIFT_FULL);
         }
         CaregiverProfile caregiver = registration.getCaregiver();
-        boolean overlap = scheduleRepository.hasOverlap(caregiver.getId(), shift.getWorkDate(),
+        boolean overlap = caregiverScheduleRepository.hasOverlap(caregiver.getId(), shift.getWorkDate(),
                 shift.getStartTime(), shift.getEndTime(), ACTIVE_SCHEDULES);
         if (overlap) {
             throw new AppException(ErrorCode.SCHEDULE_CONFLICT);
         }
         registration.setRegistrationStatus(RegistrationStatus.APPROVED);
-        CaregiverSchedule schedule = CaregiverSchedule.builder()
-                .registration(registration)
-                .caregiver(caregiver)
-                .workShift(shift)
-                .scheduleStatus(ScheduleStatus.SCHEDULED)
-                .assignedBy(actorId)
-                .assignedAt(Instant.now())
-                .note(normalize(note))
-                .build();
-        scheduleRepository.save(schedule);
-        if (approvedCount(shift.getId()) + 1 >= shift.getCapacity()) {
+        CaregiverSchedule schedule = caregiverScheduleMapper.toCaregiverSchedule(registration, shift, actorId,
+                normalize(note));
+        schedule.setScheduleStatus(ScheduleStatus.SCHEDULED);
+        schedule.setAssignedAt(clock.instant());
+        caregiverScheduleRepository.save(schedule);
+        if (approvedBefore + 1 >= shift.getCapacity()) {
             shift.setShiftStatus(ShiftStatus.CLOSED);
-            shiftRepository.save(shift);
+            workShiftRepository.save(shift);
         }
     }
 
-    private long approvedCount(UUID shiftId) {
-        return registrationRepository.countByWorkShiftIdAndRegistrationStatus(shiftId, RegistrationStatus.APPROVED);
+    private void checkCenterActive(WorkShift shift) {
+        if (shift.getCenter().getCenterStatus() != CenterStatus.ACTIVE) {
+            throw new AppException(ErrorCode.CENTER_NOT_ACTIVE);
+        }
+    }
+
+    private void checkShiftNotStarted(WorkShift shift, Instant now) {
+        Instant shiftStart = ProviderTime.toInstant(shift.getWorkDate(), shift.getStartTime());
+        if (!now.isBefore(shiftStart)) {
+            throw new AppException(ErrorCode.WORK_SHIFT_ALREADY_STARTED);
+        }
+    }
+
+    private long countApproved(UUID shiftId) {
+        return shiftRegistrationRepository.countByWorkShiftIdAndRegistrationStatus(shiftId, RegistrationStatus.APPROVED);
     }
 
     private void checkVersion(ShiftRegistration value, Long version) {

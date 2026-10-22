@@ -6,11 +6,22 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.providerservice.enums.RegistrationStatus;
 
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RegistrationReviewRequest {
-    @NotNull RegistrationStatus status;
-    @Size(max = 500) String reason;
-    @Size(max = 2000) String scheduleNote;
-    @NotNull Long version;
+
+    @NotNull
+    RegistrationStatus status;
+
+    @Size(max = 500)
+    String reason;
+
+    @Size(max = 2000)
+    String scheduleNote;
+
+    @NotNull
+    Long version;
 }

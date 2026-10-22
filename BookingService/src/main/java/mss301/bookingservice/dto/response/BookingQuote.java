@@ -6,7 +6,8 @@ import lombok.experimental.FieldDefaults;
 import java.math.BigDecimal;
 import java.util.List;
 
-// Báo giá cả booking. Tổng tiền NULL khi chưa nối Catalog / chưa chốt % đặt cọc.
+// Kết quả tính giá nội bộ (BookingPriceCalculator): dòng dịch vụ + từng buổi đã có giá + tổng. Tiền cọc KHÔNG tính ở
+// Booking — PaymentService quyết định theo chính sách hiệu lực (PAY-03 / PAY-08).
 @Data
 @Builder
 @AllArgsConstructor
@@ -15,9 +16,9 @@ import java.util.List;
 public class BookingQuote {
     List<ServiceQuote> items;
 
-    BigDecimal subtotal;
+    List<OccurrenceSlot> occurrences;
 
-    BigDecimal depositAmount;
+    BigDecimal subtotal;
 
     BigDecimal totalAmount;
 }

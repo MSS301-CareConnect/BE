@@ -209,11 +209,13 @@ CREATE TABLE shift_registrations
 
     created_at          timestamptz NOT NULL,
     updated_at          timestamptz NOT NULL,
-    deleted_at          timestamptz,
-
-    CONSTRAINT uk_shift_registrations_shift_caregiver
-        UNIQUE (work_shift_id, caregiver_id)
+    deleted_at          timestamptz
 );
+
+-- Một đăng ký còn hiệu lực cho mỗi (ca, caregiver); đã CANCELLED/REJECTED thì được đăng ký lại (PRV-03).
+CREATE UNIQUE INDEX uk_shift_registrations_shift_caregiver_active
+    ON shift_registrations (work_shift_id, caregiver_id)
+    WHERE registration_status IN ('PENDING', 'APPROVED');
 
 CREATE INDEX idx_shift_registrations_shift
     ON shift_registrations (work_shift_id, registration_status);
@@ -234,8 +236,10 @@ CREATE TABLE caregiver_schedules
     work_shift_id       uuid        NOT NULL
         REFERENCES work_shifts (work_shift_id),
 
+    -- D11 (PRV-02): lịch chỉ là khung rảnh; tiến độ ca thật do BookingService quản lý.
     schedule_status     varchar(50) NOT NULL
-        CHECK (schedule_status IN ('SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+        CONSTRAINT caregiver_schedules_schedule_status_check
+            CHECK (schedule_status IN ('SCHEDULED', 'CANCELLED')),
 
     assigned_by         uuid        NOT NULL,
     assigned_at         timestamptz NOT NULL,
@@ -251,16 +255,61 @@ CREATE TABLE caregiver_schedules
     deleted_at          timestamptz,
 
     CONSTRAINT uk_caregiver_schedules_registration
-        UNIQUE (registration_id),
-
-    CONSTRAINT uk_caregiver_schedules_shift_caregiver
-        UNIQUE (work_shift_id, caregiver_id)
+        UNIQUE (registration_id)
 );
+
+-- Lịch đã hủy không chặn lịch mới của cùng caregiver cho cùng ca (đăng ký lại sau khi hủy, PRV-03).
+CREATE UNIQUE INDEX uk_caregiver_schedules_shift_caregiver_active
+    ON caregiver_schedules (work_shift_id, caregiver_id)
+    WHERE schedule_status <> 'CANCELLED';
 
 CREATE INDEX idx_caregiver_schedules_caregiver
     ON caregiver_schedules (caregiver_id, schedule_status);
 
 CREATE INDEX idx_caregiver_schedules_shift
     ON caregiver_schedules (work_shift_id);
+
+
+-- Kỹ năng caregiver = offering của trung tâm (CareCatalogService, không FK xuyên service) — PRV-01.
+-- care_service_id (dịch vụ chuẩn) lưu kèm để Booking so khớp; service_name là snapshot tên lúc gán.
+CREATE TABLE caregiver_services
+(
+    caregiver_id      uuid        NOT NULL
+        REFERENCES caregiver_profiles (caregiver_id),
+    center_service_id uuid        NOT NULL,
+    care_service_id   uuid        NOT NULL,
+    service_name      varchar(255),
+    assigned_by       uuid        NOT NULL,
+    assigned_at       timestamptz NOT NULL,
+
+    CONSTRAINT pk_caregiver_services PRIMARY KEY (caregiver_id, center_service_id)
+);
+
+CREATE INDEX idx_caregiver_services_care_service
+    ON caregiver_services (care_service_id);
+
+
+-- Ngày nghỉ caregiver (PRV-02): khoảng nửa mở [start_at, end_at), tối đa 30 ngày (kiểm ở service), xóa mềm.
+CREATE TABLE caregiver_time_offs
+(
+    time_off_id  uuid PRIMARY KEY,
+    caregiver_id uuid        NOT NULL
+        REFERENCES caregiver_profiles (caregiver_id),
+    start_at     timestamptz NOT NULL,
+    end_at       timestamptz NOT NULL,
+    reason       varchar(500),
+    created_by   uuid        NOT NULL,
+    version      bigint      NOT NULL DEFAULT 0
+        CHECK (version >= 0),
+
+    created_at   timestamptz NOT NULL,
+    updated_at   timestamptz NOT NULL,
+    deleted_at   timestamptz,
+
+    CONSTRAINT caregiver_time_offs_range CHECK (end_at > start_at)
+);
+
+CREATE INDEX idx_caregiver_time_offs_caregiver_start
+    ON caregiver_time_offs (caregiver_id, start_at);
 
 COMMIT;

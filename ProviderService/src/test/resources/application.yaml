@@ -19,6 +19,10 @@ provider:
     url: http://identity.test
   media:
     url: http://media.test
+  care-catalog:
+    url: http://catalog.test
+  booking:
+    url: http://booking.test
 
 springdoc:
   api-docs:

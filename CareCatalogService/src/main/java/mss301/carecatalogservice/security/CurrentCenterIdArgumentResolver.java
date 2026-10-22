@@ -34,6 +34,9 @@ public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentRes
         if (authentication instanceof JwtAuthenticationToken jwtAuth) {
             String centerIdClaim = jwtAuth.getToken().getClaimAsString(TokenClaims.CENTER_ID);
             if (centerIdClaim == null || centerIdClaim.isBlank()) {
+                if (!parameter.getParameterAnnotation(CurrentCenterId.class).required()) {
+                    return null;
+                }
                 throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
             }
             try {

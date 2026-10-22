@@ -63,6 +63,10 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public APIResponse<RoleResponse> create(UUID actorId, RoleRequest request) {
         checkRoleManager(actorId);
+        // Role tùy chỉnh trùng tên SERVICE sẽ thành ROLE_SERVICE ở service khác → chặn tự nâng quyền máy.
+        if (RoleCode.SERVICE.name().equals(request.getRoleCode())) {
+            throw new AppException(ErrorCode.INVALID_ROLE);
+        }
         if (roleRepository.findByRoleCodeAndDeletedAtIsNull(request.getRoleCode()).isPresent()) {
             throw new AppException(ErrorCode.ROLE_EXISTED);
         }

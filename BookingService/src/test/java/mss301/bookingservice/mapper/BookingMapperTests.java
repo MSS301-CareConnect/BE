@@ -1,5 +1,7 @@
 package mss301.bookingservice.mapper;
 
+import mss301.bookingservice.enums.UnitType;
+import mss301.bookingservice.client.dto.CareCatalogQuoteRequest;
 import mss301.bookingservice.client.dto.IdentityUserResponse;
 import mss301.bookingservice.dto.request.BookingCreateRequest;
 import mss301.bookingservice.dto.request.BookingServiceRequest;
@@ -151,22 +153,34 @@ class BookingMapperTests {
     }
 
     @Test
-    void unpricedQuoteNeverCarriesPrices() {
+    void catalogRequestCarriesOnlyIdsAndDetailKeepsComputedUnits() {
         BookingServiceRequest service = BookingServiceRequest.builder()
                 .careServiceId(UUID.randomUUID())
                 .centerServiceId(UUID.randomUUID())
                 .pricePlanId(UUID.randomUUID())
                 .build();
-        ServiceQuote quote = bookingDetailMapper.toUnpricedQuoteList(List.of(service)).getFirst();
-        assertThat(quote.getCareServiceId()).isEqualTo(service.getCareServiceId());
-        assertThat(quote.getPricePlanId()).isEqualTo(service.getPricePlanId());
-        assertThat(quote.getServiceName()).isNull();
-        assertThat(quote.getUnitPrice()).isNull();
-        assertThat(quote.getTotalPrice()).isNull();
+        UUID centerId = UUID.randomUUID();
+        CareCatalogQuoteRequest catalogRequest = bookingDetailMapper.toCatalogQuoteRequest(centerId, List.of(service));
+        assertThat(catalogRequest.getCenterId()).isEqualTo(centerId);
+        assertThat(catalogRequest.getItems()).singleElement()
+                .satisfies(item -> assertThat(item.getPricePlanId()).isEqualTo(service.getPricePlanId()));
+        ServiceQuote quote = ServiceQuote.builder()
+                .careServiceId(service.getCareServiceId())
+                .centerServiceId(service.getCenterServiceId())
+                .pricePlanId(service.getPricePlanId())
+                .serviceName("Tắm gội")
+                .unitType(UnitType.HOUR)
+                .unitPrice(new BigDecimal("100000"))
+                .unitsPerOccurrence(3)
+                .quantity(9)
+                .totalPrice(new BigDecimal("900000"))
+                .build();
         Booking booking = new Booking();
         BookingDetail detail = bookingDetailMapper.toBookingDetailList(List.of(quote), booking).getFirst();
         assertThat(detail.getBooking()).isSameAs(booking);
         assertThat(detail.getCenterServiceId()).isEqualTo(service.getCenterServiceId());
+        assertThat(detail.getUnitsPerOccurrence()).isEqualTo(3);
+        assertThat(detail.getQuantity()).isEqualTo(9);
         assertThat(detail.getId()).isNull();
     }
 
@@ -193,10 +207,13 @@ class BookingMapperTests {
         assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null).getCustomer()).isNull();
 
         List<BookingSummaryResponse> withCustomer = bookingMapper.toSummaryResponseList(List.of(booking),
-                Map.of(booking.getCustomerId(), customer));
+                Map.of(booking.getCustomerId(), customer), Map.of());
         assertThat(withCustomer.getFirst().getRecipientName()).isEqualTo("Bà Lan");
+        // Không có thống kê buổi (booking không còn buổi) → 0, không NPE.
+        assertThat(withCustomer.getFirst().getTotalCount()).isZero();
+        assertThat(withCustomer.getFirst().getNextOccurrenceAt()).isNull();
         assertThat(withCustomer.getFirst().getCustomer().getPhoneNumber()).isEqualTo("0987654321");
-        assertThat(bookingMapper.toSummaryResponseList(List.of(booking), Map.of()).getFirst().getCustomer()).isNull();
+        assertThat(bookingMapper.toSummaryResponseList(List.of(booking), Map.of(), Map.of()).getFirst().getCustomer()).isNull();
     }
 
     @Test

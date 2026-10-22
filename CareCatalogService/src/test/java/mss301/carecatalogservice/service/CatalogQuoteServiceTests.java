@@ -9,6 +9,9 @@ import mss301.carecatalogservice.enums.PricingUnit;
 import mss301.carecatalogservice.enums.ServiceStatus;
 import mss301.carecatalogservice.exception.AppException;
 import mss301.carecatalogservice.exception.ErrorCode;
+import mss301.carecatalogservice.mapper.CatalogItemMapperImpl;
+import mss301.carecatalogservice.mapper.CenterOfferingMapperImpl;
+import mss301.carecatalogservice.mapper.PricePlanMapperImpl;
 import mss301.carecatalogservice.repository.CatalogItemRepository;
 import mss301.carecatalogservice.repository.CenterOfferingRepository;
 import mss301.carecatalogservice.repository.PricePlanRepository;
@@ -19,6 +22,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +34,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,7 +61,8 @@ class CatalogQuoteServiceTests {
         catalogQuoteService = new CatalogQuoteServiceImpl(
                 catalogItemRepository,
                 centerOfferingRepository,
-                pricePlanRepository
+                pricePlanRepository,
+                new CenterOfferingMapperImpl(new CatalogItemMapperImpl(), new PricePlanMapperImpl())
         );
     }
 
@@ -142,5 +152,75 @@ class CatalogQuoteServiceTests {
         assertThatThrownBy(() -> catalogQuoteService.quote(request))
                 .isInstanceOf(AppException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CENTER_SERVICE_NOT_FOUND);
+    }
+
+    @Test
+    void quoteIsDeterministicForSameInput() {
+        stubActiveChain(true);
+        ServiceQuoteRequest request = requestWithPlan(pricePlanId);
+        List<ServiceQuoteResponse> first = catalogQuoteService.quote(request);
+        for (int i = 0; i < 9; i++) {
+            assertThat(catalogQuoteService.quote(request)).isEqualTo(first);
+        }
+        assertThat(first.getFirst().getPricePlanId()).isEqualTo(pricePlanId);
+        assertThat(first.getFirst().getCenterServiceId()).isEqualTo(centerServiceId);
+        assertThat(first.getFirst().isActive()).isTrue();
+    }
+
+    @Test
+    void quoteRequiresPricePlanAndNeverPicksADefault() {
+        stubActiveChain(true);
+        assertThatThrownBy(() -> catalogQuoteService.quote(requestWithPlan(null)))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PRICE_PLAN_ID_REQUIRED);
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(requestWithPlan(null)))
+                    .extracting(ConstraintViolation::getMessage)
+                    .containsExactly("PRICE_PLAN_ID_REQUIRED");
+        }
+    }
+
+    @Test
+    void quoteRejectsInactivePlanOfferingOrItem() {
+        stubActiveChain(false);
+        assertThatThrownBy(() -> catalogQuoteService.quote(requestWithPlan(pricePlanId)))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PRICE_PLAN_NOT_ACTIVE);
+
+        CatalogItem inactiveItem = CatalogItem.builder().name("Tắm gội").status(ServiceStatus.INACTIVE).build();
+        inactiveItem.setId(careServiceId);
+        when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(inactiveItem));
+        assertThatThrownBy(() -> catalogQuoteService.quote(requestWithPlan(pricePlanId)))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SERVICE_NOT_ACTIVE);
+    }
+
+    void stubActiveChain(boolean planActive) {
+        CatalogItem catalogItem = CatalogItem.builder().name("Tắm gội").status(ServiceStatus.ACTIVE).build();
+        catalogItem.setId(careServiceId);
+        CenterOffering centerOffering = CenterOffering.builder()
+                .catalogItem(catalogItem).centerId(centerId).status(ServiceStatus.ACTIVE).build();
+        centerOffering.setId(centerServiceId);
+        PricePlan pricePlan = PricePlan.builder()
+                .centerOffering(centerOffering).planName("Theo giờ").pricingUnit(PricingUnit.HOUR)
+                .durationMinutes(60).basePrice(new BigDecimal("100000.00")).isActive(planActive).build();
+        pricePlan.setId(pricePlanId);
+        lenient().when(catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)).thenReturn(Optional.of(catalogItem));
+        lenient().when(centerOfferingRepository.findByIdAndCenterIdAndDeletedAtIsNull(centerServiceId, centerId))
+                .thenReturn(Optional.of(centerOffering));
+        lenient().when(pricePlanRepository.findByIdAndCenterOfferingIdAndDeletedAtIsNull(pricePlanId, centerServiceId))
+                .thenReturn(Optional.of(pricePlan));
+    }
+
+    ServiceQuoteRequest requestWithPlan(UUID planId) {
+        return ServiceQuoteRequest.builder()
+                .centerId(centerId)
+                .items(List.of(ServiceQuoteRequest.Item.builder()
+                        .careServiceId(careServiceId)
+                        .centerServiceId(centerServiceId)
+                        .pricePlanId(planId)
+                        .build()))
+                .build();
     }
 }

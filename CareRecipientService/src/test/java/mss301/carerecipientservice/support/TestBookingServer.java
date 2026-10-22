@@ -13,9 +13,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * BookingService giả cho test: GET /api/v1/bookings/caregiver-access kiểm Bearer token, trả allowed theo các cặp
+ * BookingService giả cho test: GET /api/v1/bookings/caregiver-access chỉ nhận token SERVICE, trả allowed theo các cặp
  * (caregiverUserId, recipientId) đã đăng ký. Có thể tắt (500) để kiểm fail-closed.
  */
 public final class TestBookingServer {
@@ -24,6 +25,7 @@ public final class TestBookingServer {
 
     private final Set<String> assignments = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean failing = new AtomicBoolean(false);
+    private final AtomicInteger rejectedUserTokens = new AtomicInteger();
     private final HttpServer server;
 
     private TestBookingServer() {
@@ -56,10 +58,20 @@ public final class TestBookingServer {
         failing.set(value);
     }
 
+    public int rejectedUserTokens() {
+        return rejectedUserTokens.get();
+    }
+
     private void handleCaregiverAccess(HttpExchange exchange) throws IOException {
         String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             write(exchange, 401, "{\"code\":401,\"message\":\"Bạn chưa được xác thực\"}");
+            return;
+        }
+        // Như BookingService thật: caregiver-access chỉ nhận token SERVICE (hasRole('SERVICE')), token người dùng → 403.
+        if (!TestIdentityServer.get().isServiceToken(authHeader.substring("Bearer ".length()))) {
+            rejectedUserTokens.incrementAndGet();
+            write(exchange, 403, "{\"code\":403,\"message\":\"Bạn không có quyền truy cập\"}");
             return;
         }
         if (failing.get()) {

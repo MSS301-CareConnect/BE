@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.providerservice.client.IdentityClient;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.enums.RoleCode;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.service.IdentityAccountService;
@@ -20,18 +21,20 @@ import java.util.UUID;
 @Slf4j
 public class IdentityAccountServiceImpl implements IdentityAccountService {
 
+    static String ACTIVE_STATUS = "ACTIVE";
+
     IdentityClient identityClient;
 
     /** Gọi trước transaction ghi Provider DB. */
     @Override
-    public IdentityUserResponse requireActiveRole(UUID userId, String requiredRole) {
+    public IdentityUserResponse requireActiveRole(UUID userId, RoleCode requiredRole) {
         APIResponse<IdentityUserResponse> response = identityClient.get(userId);
         IdentityUserResponse user = response == null ? null : response.getResult();
         if (user == null) {
             throw new AppException(ErrorCode.IDENTITY_USER_NOT_FOUND);
         }
-        boolean active = "ACTIVE".equals(user.getStatus());
-        boolean hasRole = user.getRoles() != null && user.getRoles().contains(requiredRole);
+        boolean active = ACTIVE_STATUS.equals(user.getStatus());
+        boolean hasRole = user.getRoles() != null && user.getRoles().contains(requiredRole.name());
         if (!active || !hasRole) {
             throw new AppException(ErrorCode.IDENTITY_USER_INVALID);
         }

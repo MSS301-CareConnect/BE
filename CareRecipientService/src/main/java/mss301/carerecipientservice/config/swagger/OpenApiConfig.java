@@ -10,6 +10,7 @@ import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import mss301.carerecipientservice.config.CareRecipientProperties;
+import mss301.carerecipientservice.security.CurrentRoles;
 import mss301.carerecipientservice.security.CurrentUserId;
 import mss301.carerecipientservice.security.ReadOnlyCookieCsrfTokenRepository;
 import org.springdoc.core.customizers.OpenApiCustomizer;
@@ -33,8 +34,8 @@ public class OpenApiConfig {
     private static final List<String> GLOBAL_ERROR_RESPONSES = List.of("400", "401", "403", "404", "500", "503");
 
     static {
-        // userId của người gọi lấy từ token, không phải tham số client gửi → ẩn khỏi Swagger.
-        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class);
+        // userId / role của người gọi lấy từ token, không phải tham số client gửi → ẩn khỏi Swagger.
+        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class, CurrentRoles.class);
     }
 
     @Bean

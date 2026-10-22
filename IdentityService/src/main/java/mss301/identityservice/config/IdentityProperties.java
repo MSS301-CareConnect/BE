@@ -43,6 +43,14 @@ public class IdentityProperties {
     @NotNull
     Duration refreshTtl;
 
+    // TTL token SERVICE (client-credentials) — ngắn vì không thu hồi được tại service khác.
+    @NotNull
+    Duration serviceTokenTtl = Duration.ofMinutes(10);
+
+    // Danh sách client seed: "booking:<bcrypt>,payment:<bcrypt>" (env IDENTITY_SERVICE_CLIENTS). Không chứa secret thô.
+    @ToString.Exclude
+    String serviceClients = "";
+
     @NotNull
     Duration otpTtl;
 
@@ -71,7 +79,8 @@ public class IdentityProperties {
         return accessTtl != null && accessTtl.toSeconds() > 0
                 && refreshTtl != null && refreshTtl.compareTo(accessTtl) > 0
                 && otpTtl != null && otpTtl.toSeconds() > 0
-                && otpCooldown != null && otpCooldown.toSeconds() > 0;
+                && otpCooldown != null && otpCooldown.toSeconds() > 0
+                && serviceTokenTtl != null && serviceTokenTtl.toSeconds() > 0;
     }
 
     @Data

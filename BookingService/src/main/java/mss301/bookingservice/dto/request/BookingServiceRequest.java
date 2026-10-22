@@ -18,5 +18,7 @@ public class BookingServiceRequest {
 
     UUID centerServiceId;
 
+    // Bắt buộc (D12): khách chọn đúng gói giá; Catalog không tự chọn gói.
+    @NotNull(message = "PRICE_PLAN_REQUIRED")
     UUID pricePlanId;
 }

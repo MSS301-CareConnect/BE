@@ -17,16 +17,19 @@ Gateway không có controller/service/entity. Layout:
 ```
 config/     GatewayProperties (gateway.*), GatewayConfig, GatewayPaths (MỌI path public/route — nguồn duy nhất), RouteConfig
 security/   SecurityConfig (JWT sớm + CORS), JwtConfig, JwtAuthorityConverter, SecurityErrorHandler, TokenClaims
-filter/     RequestIdFilter, InternalPathBlockFilter (servlet filter), GatewayRequestHeaders (before-filter cho route)
+filter/     RequestIdFilter, GatewayRequestHeaders (before-filter cho route)
+handler/    SseProxyHandler (route SSE riêng: không read timeout, không buffer)
 dto/response/APIResponse, exception/ErrorCode + GlobalExceptionHandler
 ```
 
 ## Quy tắc
 
-1. Route mới: thêm pattern vào `GatewayPaths`, route vào `RouteConfig` với đủ `uri` → `stripPrefix(2)` →
-   `GatewayRequestHeaders.sanitize()` → `removeResponseHeader(X-Request-Id)`. Endpoint public của service phải thêm vào
-   `GatewayPaths` (nếu không gateway trả 401 trước khi tới service).
-2. Không bao giờ route `/internal/**`; không bỏ `InternalPathBlockFilter`.
+1. Route mới: thêm pattern vào `GatewayPaths`, route vào `RouteConfig` qua `forward(...)` (`uri` →
+   `GatewayRequestHeaders.sanitize()` → `removeResponseHeader(X-Request-Id)`), **không cắt prefix**. Endpoint public của
+   service phải thêm vào `GatewayPaths` (nếu không gateway trả 401 trước khi tới service); endpoint chỉ public với một
+   method (vd IPN VNPay = GET) đặt ở `PUBLIC_GET_ENDPOINTS`, không mở mọi method.
+2. Không bao giờ route `/internal/**`: gateway chỉ khai báo route `/api/v1/**` nên path ngoài prefix này → 404 tại gateway;
+   service cũng không còn endpoint `/internal/**` (bỏ hẳn 2026-10-22). Không thêm route ngoài `/api/v1/**` (trừ đã ghi ở README).
 3. Gateway không phân quyền nghiệp vụ, không kiểm CSRF, không đổi body; service phía sau luôn tự xác minh JWT.
 4. Header `X-User-*` chỉ để log — không thêm logic phụ thuộc vào chúng ở service.
 5. Không rewrite cookie path khi Identity còn đặt `Path=/` (có test `identityCookiesPassThroughWithPathRoot`).

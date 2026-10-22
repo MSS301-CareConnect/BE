@@ -39,7 +39,7 @@ public interface RecipientManagerMapper {
     @Mapping(target = "relationshipType")
     void update(ManagerUpdateRequest request, @MappingTarget RecipientManager manager);
 
-    // API nội bộ /internal/care-recipients/{id}/access.
+    // GET /care-recipients/{id}/access.
     AccessCheckResponse toAccessCheckResponse(UUID recipientId, UUID userId, boolean allowed,
                                               RecipientAccessLevel accessLevel);
 }

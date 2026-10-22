@@ -57,6 +57,10 @@ public class BookingDetail {
     @Column(name = "quantity")
     Integer quantity;
 
+    // Số đơn vị tính mỗi buổi (HOUR = số giờ làm tròn lên, DAY / SHIFT = 1) — BK-01.
+    @Column(name = "units_per_occurrence")
+    Integer unitsPerOccurrence;
+
     @Column(name = "total_price", precision = 14, scale = 2)
     BigDecimal totalPrice;
 

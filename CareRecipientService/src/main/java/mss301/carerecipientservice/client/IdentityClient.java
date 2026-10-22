@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * API nội bộ của IdentityService (/internal/users/**). Không có service discovery → URL qua env
- * CARE_RECIPIENT_IDENTITY_URL; header X-Internal-Secret, timeout, ErrorDecoder ở {@link IdentityClientConfig};
+ * IdentityService (/api/v1/users/**, qua ApiGateway). Không có service discovery → URL qua env
+ * CARE_RECIPIENT_IDENTITY_URL; chuyển tiếp token người dùng, ErrorDecoder ở {@link IdentityClientConfig};
  * circuit breaker + fallback ở {@link IdentityClientFallbackFactory}. Dùng qua IdentityUserService, không gọi trực tiếp.
  */
 @FeignClient(name = "identity", url = "${care-recipient.identity.url}",

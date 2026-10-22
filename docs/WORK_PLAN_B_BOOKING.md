@@ -388,9 +388,11 @@
 - **Role:** CUSTOMER (`POST /bookings`), CENTER_MANAGER (accept, đổi caregiver).
 - **API** (đều là path hiện có):
   - `POST /api/v1/bookings`;
-  - `POST /api/v1/bookings/center/{id}/accept`;
-  - `PATCH /api/v1/bookings/center/{id}/caregiver`;
-  - `PATCH /api/v1/bookings/center/occurrences/{occurrenceId}/caregiver`.
+  - `POST /api/v1/bookings/{id}/accept`;
+  - `PATCH /api/v1/bookings/{id}/caregiver`;
+  - `PATCH /api/v1/bookings/{id}/occurrences/{occurrenceId}/caregiver`.
+
+  (2026-10-22: path tách theo role `/bookings/center/**`, `/bookings/admin/**` đã bỏ — một API, phạm vi theo role.)
 - **Quy tắc nghiệp vụ** (theo thứ tự, mọi gọi mạng **trước** `TransactionTemplate`):
   1. **Nợ:** gọi Payment `GET /payments/me/outstanding` (token khách chuyển tiếp). `hasDebt` → 409 `CUSTOMER_HAS_OUTSTANDING_DEBT`. Payment lỗi → 503 (fail-closed).
   2. **Giới hạn PENDING** (SEC-12): khách có ≥ `BOOKING_MAX_PENDING_PER_CUSTOMER` (mặc định 3) booking ở PENDING / AWAITING_DEPOSIT → 409 `TOO_MANY_PENDING_BOOKINGS`.
@@ -543,8 +545,8 @@
 
 - **Role:** CENTER_MANAGER (trung tâm mình), SERVICE (Provider khi khóa trung tâm / caregiver).
 - **API:**
-  - `POST /api/v1/bookings/center/{id}/reject` (hiện có);
-  - `POST /api/v1/bookings/center/{id}/cancel` (hiện có) — MANAGER, request mở rộng `{reason, occurrenceIds?}` (rỗng = mọi buổi chưa diễn ra);
+  - `POST /api/v1/bookings/{id}/reject` (hiện có);
+  - `POST /api/v1/bookings/{id}/cancel` (hiện có, dùng chung với khách — manager của trung tâm) — MANAGER, request mở rộng `{reason, occurrenceIds?}` (rỗng = mọi buổi chưa diễn ra);
   - `POST /api/v1/bookings/system-cancellations` — SERVICE, request `{centerId?, caregiverId?, reason: CENTER_LOCKED \| CAREGIVER_DEACTIVATED, note}` → `{affectedBookings, affectedOccurrences}`.
 - **Quy tắc nghiệp vụ:**
   1. **Từ chối** (PENDING): không có tiền → không refund; thông báo khách.
@@ -633,7 +635,7 @@
   2. `DOCKER.md`, `compose.yaml`: thêm Payment. Sửa override URL trong container (`BOOKING_CARE_CATALOG_URL`, `PROVIDER_MEDIA_URL`, `BOOKING_PAYMENT_URL` …).
   3. `scripts/e2e`:
      - bỏ `*_INTERNAL_SECRET`, đặt `*_SERVICE_CLIENT_*`;
-     - sửa path trong `e2e.py` (`/api/v1/bookings/center` …);
+     - sửa path trong `e2e.py` (path cũ `/api/v1/bookings/center/**`, `/bookings/admin/**` → API hợp nhất `/api/v1/bookings/**`);
      - thêm Catalog, Media, Payment vào dựng hạ tầng;
      - phase a–f chạy lại được trước cuối S2.
   4. `docs/PLAN.md`: cập nhật các mục đã xong / mới.

@@ -11,6 +11,7 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.security.CurrentCenterId;
+import mss301.bookingservice.security.CurrentRoles;
 import mss301.bookingservice.security.CurrentUserId;
 import mss301.bookingservice.security.ReadOnlyCookieCsrfTokenRepository;
 import org.springdoc.core.customizers.OpenApiCustomizer;
@@ -35,7 +36,7 @@ public class OpenApiConfig {
 
     static {
         // userId / centerId của người gọi lấy từ token, không phải tham số client gửi → ẩn khỏi Swagger.
-        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class, CurrentCenterId.class);
+        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class, CurrentCenterId.class, CurrentRoles.class);
     }
 
     @Bean

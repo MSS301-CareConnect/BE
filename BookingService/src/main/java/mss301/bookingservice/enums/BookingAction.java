@@ -27,12 +27,17 @@ public enum BookingAction {
     // Trung tâm hủy trường hợp đặc biệt (PENDING thì dùng REJECT).
     CANCEL_BY_CENTER(BookingStatus.CANCELLED,
             BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
+    // Hệ thống hủy (BK-04: trung tâm bị khóa) — mọi trạng thái còn giữ chỗ; IN_PROGRESS chỉ khi không còn buổi nào.
+    CANCEL_BY_SYSTEM(BookingStatus.CANCELLED,
+            BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
     // Scheduler: quá hạn duyệt (PENDING) hoặc quá hạn đặt cọc (AWAITING_DEPOSIT).
     EXPIRE(BookingStatus.EXPIRED, BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT),
-    // TODO(giai đoạn ca chăm sóc): buổi đầu tiên bắt đầu.
+    // Caregiver check-in buổi đầu tiên (OPS-02).
     START(BookingStatus.IN_PROGRESS, BookingStatus.CONFIRMED),
-    // TODO(giai đoạn ca chăm sóc): mọi buổi đã kết thúc.
-    COMPLETE(BookingStatus.COMPLETED, BookingStatus.IN_PROGRESS);
+    // Không còn buổi nào chưa kết thúc và ít nhất một buổi đã được phục vụ (COMPLETED / CUSTOMER_NO_SHOW) — OPS-04.
+    FINALIZE(BookingStatus.COMPLETED, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
+    // Không còn buổi nào chưa kết thúc và không buổi nào được phục vụ (mọi buổi bị hủy / MISSED) — OPS-04.
+    FINALIZE_CANCELLED(BookingStatus.CANCELLED, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
 
     private final BookingStatus targetStatus;
 

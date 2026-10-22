@@ -1,6 +1,7 @@
 package mss301.carecatalogservice.config;
 
 import mss301.carecatalogservice.security.CurrentCenterIdArgumentResolver;
+import mss301.carecatalogservice.security.CurrentRolesArgumentResolver;
 import mss301.carecatalogservice.security.CurrentUserIdArgumentResolver;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -15,5 +16,6 @@ public class WebConfig implements WebMvcConfigurer {
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
         resolvers.add(new CurrentUserIdArgumentResolver());
         resolvers.add(new CurrentCenterIdArgumentResolver());
+        resolvers.add(new CurrentRolesArgumentResolver());
     }
 }

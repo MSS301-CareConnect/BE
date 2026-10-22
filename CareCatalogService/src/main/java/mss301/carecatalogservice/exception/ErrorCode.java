@@ -33,6 +33,7 @@ public enum ErrorCode {
     CARE_SERVICE_ID_REQUIRED(3104, "Mã dịch vụ chăm sóc không được để trống", HttpStatus.BAD_REQUEST),
     SERVICE_NOT_ACTIVE(3105, "Dịch vụ chăm sóc hiện không hoạt động", HttpStatus.CONFLICT),
     SERVICES_REQUIRED(3106, "Cần ít nhất một dịch vụ", HttpStatus.BAD_REQUEST),
+    CARE_SERVICE_IN_USE(3110, "Dịch vụ chuẩn đang được trung tâm sử dụng — hãy chuyển trạng thái INACTIVE thay vì xóa", HttpStatus.CONFLICT),
 
     // CENTER SERVICES (Dịch vụ trung tâm)
     CENTER_SERVICE_NOT_FOUND(3200, "Dịch vụ trung tâm không tồn tại", HttpStatus.NOT_FOUND),
@@ -40,13 +41,17 @@ public enum ErrorCode {
     CENTER_SERVICE_ID_REQUIRED(3202, "Mã dịch vụ trung tâm không được để trống", HttpStatus.BAD_REQUEST),
     CENTER_ACCESS_DENIED(3204, "Bạn không có quyền thao tác trên dịch vụ của trung tâm này", HttpStatus.FORBIDDEN),
     CENTER_SERVICE_ALREADY_EXISTS(3205, "Trung tâm đã đăng ký dịch vụ chăm sóc này", HttpStatus.CONFLICT),
+    CENTER_SERVICE_IN_USE(3206, "Dịch vụ trung tâm còn bảng giá đang áp dụng — hãy chuyển trạng thái INACTIVE thay vì xóa", HttpStatus.CONFLICT),
+    PRICE_RANGE_INVALID(3207, "Khoảng giá không hợp lệ (giá tối thiểu phải ≤ giá tối đa, không âm)", HttpStatus.BAD_REQUEST),
 
     // PRICE PLANS
     PRICE_PLAN_NOT_FOUND(3300, "Bảng giá không tồn tại", HttpStatus.NOT_FOUND),
     PRICE_PLAN_NAME_REQUIRED(3301, "Tên bảng giá không được để trống", HttpStatus.BAD_REQUEST),
     PRICING_UNIT_REQUIRED(3302, "Đơn vị giá không được để trống", HttpStatus.BAD_REQUEST),
-    INVALID_DURATION(3303, "Thời lượng (phút) phải lớn hơn 0", HttpStatus.BAD_REQUEST),
-    INVALID_BASE_PRICE(3304, "Giá cơ bản phải lớn hơn hoặc bằng 0", HttpStatus.BAD_REQUEST);
+    INVALID_DURATION(3303, "Thời lượng (phút) phải lớn hơn 0; bảng giá theo giờ (HOUR) phải là 60 phút", HttpStatus.BAD_REQUEST),
+    INVALID_BASE_PRICE(3304, "Giá cơ bản phải lớn hơn hoặc bằng 0", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_ID_REQUIRED(3305, "Cần chọn bảng giá cho mỗi dịch vụ", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_NOT_ACTIVE(3306, "Bảng giá hiện không áp dụng", HttpStatus.CONFLICT);
 
     private int code;
     private String message;

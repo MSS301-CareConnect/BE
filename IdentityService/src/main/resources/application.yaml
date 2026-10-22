@@ -61,6 +61,8 @@ identity:
   public-key: ${IDENTITY_JWT_PUBLIC_KEY}
   access-ttl: ${IDENTITY_ACCESS_TTL}
   refresh-ttl: ${IDENTITY_REFRESH_TTL}
+  service-token-ttl: ${IDENTITY_SERVICE_TOKEN_TTL:10m}
+  service-clients: ${IDENTITY_SERVICE_CLIENTS:}
   otp-ttl: ${IDENTITY_OTP_TTL}
   otp-cooldown: ${IDENTITY_OTP_COOLDOWN}
   otp-max-attempts: ${IDENTITY_OTP_MAX_ATTEMPTS}

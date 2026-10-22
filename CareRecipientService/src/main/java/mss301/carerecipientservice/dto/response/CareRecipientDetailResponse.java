@@ -16,10 +16,14 @@ import java.util.List;
 public class CareRecipientDetailResponse {
     CareRecipientResponse profile;
 
-    // Quyền của người gọi trên hồ sơ (null với API admin)
+    // Quyền của người gọi trên hồ sơ (null khi ADMIN / CAREGIVER xem)
     RecipientAccessLevel myAccessLevel;
 
     List<MedicationResponse> medications;
 
     List<EmergencyContactResponse> emergencyContacts;
+
+    // Chỉ có khi CAREGIVER được phân công xem: khi đó profile / medications / emergencyContacts luôn null (bị bỏ khỏi
+    // JSON) để caregiver không thấy nhiều hơn snapshot chăm sóc (không có tiền sử bệnh đầy đủ, mọi liên hệ…).
+    RecipientSnapshotResponse careSnapshot;
 }

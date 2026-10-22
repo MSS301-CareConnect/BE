@@ -20,8 +20,8 @@ public class BookingErrorDecoder implements ErrorDecoder {
     public Exception decode(String methodKey, Response response) {
         int status = response.status();
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            // Sai/thiếu CARE_RECIPIENT_BOOKING_INTERNAL_SECRET — lỗi cấu hình, cần người vận hành xử lý.
-            log.error("BookingService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            // Token SERVICE bị từ chối (client chưa được cấp role SERVICE / cấu hình sai) — cần người vận hành xử lý.
+            log.error("BookingService rejected service token (HTTP {}) for {}", status, methodKey);
         } else {
             log.warn("BookingService error (HTTP {}) for {}", status, methodKey);
         }

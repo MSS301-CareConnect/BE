@@ -6,4 +6,10 @@ public interface RateLimiter {
     void recordLoginFailure(String email, String ip);
 
     void resetLoginAttempts(String email, String ip);
+
+    void checkServiceTokenRateLimit(String clientId);
+
+    void recordServiceTokenFailure(String clientId);
+
+    void resetServiceTokenAttempts(String clientId);
 }

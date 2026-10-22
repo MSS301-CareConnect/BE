@@ -23,6 +23,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
@@ -31,8 +32,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.text.ParseException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -44,6 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class TestPlatformServer {
 
     public static final String ISSUER = "https://identity.test";
+    public static final UUID DEFAULT_CARE_SERVICE_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
     public static final String KEY_ID = "booking-test-key";
     public static final String IDENTITY_SECRET = "identity-internal-test-secret";
     public static final String CARE_RECIPIENT_SECRET = "care-recipient-internal-test-secret";
@@ -60,6 +64,18 @@ public final class TestPlatformServer {
     private final AtomicBoolean identityFailing = new AtomicBoolean(false);
     private final AtomicBoolean careRecipientFailing = new AtomicBoolean(false);
     private final AtomicBoolean providerFailing = new AtomicBoolean(false);
+    private final AtomicBoolean catalogFailing = new AtomicBoolean(false);
+    private final AtomicBoolean paymentFailing = new AtomicBoolean(false);
+    // Gói giá Catalog giả theo pricePlanId; gói chưa khai báo = HOUR 60 phút 100.000đ.
+    private final Map<UUID, Map<String, Object>> pricePlans = new ConcurrentHashMap<>();
+    // Idempotency-Key của từng lần PaymentService giả nhận yêu cầu tạo hóa đơn REMAINING (kể cả lần trùng).
+    private final List<String> remainingInvoiceKeys = new CopyOnWriteArrayList<>();
+    private final List<String> refundKeys = new CopyOnWriteArrayList<>();
+    // NULL = bảng mốc mặc định; có giá trị = mọi buổi hoàn đúng % này (giả lập chính sách / mốc đã đổi).
+    private final AtomicReference<Integer> refundPercentOverride = new AtomicReference<>();
+    // Khách đang nợ (Payment giả) và caregiver không có lịch rảnh (Provider giả) — BK-02.
+    private final Set<UUID> debtors = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> unavailableCaregivers = ConcurrentHashMap.newKeySet();
     private final AtomicReference<String> lastCareRecipientRequestId = new AtomicReference<>();
     private final RSAKey signingKey;
     private final HttpServer server;
@@ -82,6 +98,14 @@ public final class TestPlatformServer {
         server.createContext("/api/v1/care-recipients", this::handleCareRecipients);
         server.createContext("/api/v1/care-centers", this::handleCenters);
         server.createContext("/api/v1/caregivers", this::handleCaregivers);
+        server.createContext("/api/v1/center-services/quote", this::handleCatalogQuote);
+        server.createContext("/api/v1/payment-policies/effective", this::handlePaymentPolicy);
+        server.createContext("/api/v1/remaining-invoices", this::handleRemainingInvoice);
+        server.createContext("/api/v1/refunds", this::handleRefund);
+        server.createContext("/api/v1/refund-quotes", this::handleRefundQuote);
+        server.createContext("/api/v1/payments/me/outstanding", this::handleOutstanding);
+        server.createContext("/api/v1/caregivers/availability-checks", this::handleAvailabilityCheck);
+        server.createContext("/api/v1/auth/service-token", this::handleServiceToken);
         server.start();
     }
 
@@ -183,8 +207,9 @@ public final class TestPlatformServer {
         return new CaregiverIds(caregiverId, userId);
     }
 
+    // Caregiver đủ điều kiện, làm được dịch vụ mặc định của mọi scenario test.
     public CaregiverIds addActiveCaregiver(UUID centerId) {
-        return addCaregiver(centerId, "VERIFIED", "ACTIVE", null);
+        return addCaregiver(centerId, "VERIFIED", "ACTIVE", List.of(DEFAULT_CARE_SERVICE_ID));
     }
 
     public void setIdentityFailing(boolean value) {
@@ -193,6 +218,42 @@ public final class TestPlatformServer {
 
     public void setCareRecipientFailing(boolean value) {
         careRecipientFailing.set(value);
+    }
+
+    public void setCatalogFailing(boolean value) {
+        catalogFailing.set(value);
+    }
+
+    public void setPaymentFailing(boolean value) {
+        paymentFailing.set(value);
+    }
+
+    public void addDebtor(UUID customerId) {
+        debtors.add(customerId);
+    }
+
+    public void setCaregiverUnavailable(UUID caregiverId) {
+        unavailableCaregivers.add(caregiverId);
+    }
+
+    public List<String> remainingInvoiceKeys() {
+        return remainingInvoiceKeys;
+    }
+
+    public List<String> refundKeys() {
+        return refundKeys;
+    }
+
+    public void setRefundPercentOverride(Integer percent) {
+        refundPercentOverride.set(percent);
+    }
+
+    public void addPricePlan(UUID pricePlanId, String pricingUnit, int durationMinutes, long basePrice) {
+        Map<String, Object> plan = new HashMap<>();
+        plan.put("pricingUnit", pricingUnit);
+        plan.put("durationMinutes", durationMinutes);
+        plan.put("basePrice", basePrice);
+        pricePlans.put(pricePlanId, plan);
     }
 
     public void setProviderFailing(boolean value) {
@@ -298,6 +359,141 @@ public final class TestPlatformServer {
         }
         UUID caregiverId = UUID.fromString(exchange.getRequestURI().getPath().substring("/api/v1/caregivers/".length()));
         writeOrNotFound(exchange, caregivers.get(caregiverId), "{\"code\":4200,\"message\":\"Hồ sơ người chăm sóc không tồn tại\"}");
+    }
+
+    // CareCatalogService giả: báo giá đúng gói khách chọn (pricePlanId bắt buộc như Catalog thật).
+    private void handleCatalogQuote(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, catalogFailing)) {
+            return;
+        }
+        JsonNode body = objectMapper.readTree(exchange.getRequestBody());
+        List<Object> quotes = new ArrayList<>();
+        for (JsonNode item : body.get("items")) {
+            UUID pricePlanId = UUID.fromString(item.get("pricePlanId").asString());
+            Map<String, Object> plan = pricePlans.getOrDefault(pricePlanId,
+                    Map.of("pricingUnit", "HOUR", "durationMinutes", 60, "basePrice", 100000));
+            Map<String, Object> quote = new HashMap<>(plan);
+            quote.put("careServiceId", item.get("careServiceId").asString());
+            JsonNode centerServiceId = item.get("centerServiceId");
+            quote.put("centerServiceId", centerServiceId == null || centerServiceId.isNull()
+                    ? UUID.randomUUID().toString() : centerServiceId.asString());
+            quote.put("pricePlanId", pricePlanId.toString());
+            quote.put("serviceName", "Dịch vụ " + pricePlanId.toString().substring(0, 4));
+            quote.put("active", true);
+            quotes.add(quote);
+        }
+        writeSuccess(exchange, quotes);
+    }
+
+    // PaymentService giả: chính sách hiệu lực 30% cọc (C2.1).
+    private void handlePaymentPolicy(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        Map<String, Object> policy = new HashMap<>();
+        policy.put("policyId", "00000000-0000-0000-0000-000000000030");
+        policy.put("depositPercent", 30);
+        policy.put("commissionPercent", 10);
+        writeSuccess(exchange, policy);
+    }
+
+    // PaymentService giả (C2.6): đọc sub của token khách để biết có nợ không.
+    private void handleOutstanding(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        String token = exchange.getRequestHeaders().getFirst("Authorization").substring("Bearer ".length());
+        UUID customerId;
+        try {
+            customerId = UUID.fromString(SignedJWT.parse(token).getJWTClaimsSet().getSubject());
+        } catch (ParseException e) {
+            write(exchange, 401, "{\"code\":401}");
+            return;
+        }
+        writeSuccess(exchange, Map.of("hasDebt", debtors.contains(customerId)));
+    }
+
+    // ProviderService giả (C5.2): caregiver đánh dấu không rảnh → available=false với lý do NO_SCHEDULE.
+    private void handleAvailabilityCheck(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, providerFailing)) {
+            return;
+        }
+        JsonNode body = objectMapper.readTree(exchange.getRequestBody());
+        UUID caregiverId = UUID.fromString(body.get("caregiverId").asString());
+        boolean available = !unavailableCaregivers.contains(caregiverId);
+        List<Object> violations = new ArrayList<>();
+        if (!available) {
+            JsonNode slot = body.get("slots").get(0);
+            violations.add(Map.of("startAt", slot.get("startAt").asString(), "endAt", slot.get("endAt").asString(),
+                    "reason", "NO_SCHEDULE"));
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("available", available);
+        result.put("violations", violations);
+        writeSuccess(exchange, result);
+    }
+
+    // IdentityService giả: cấp token SERVICE cho client-credentials của BookingService (IAM-01).
+    private void handleServiceToken(HttpExchange exchange) throws IOException {
+        Map<String, Object> token = new HashMap<>();
+        token.put("accessToken", accessToken(UUID.randomUUID(), null, "SERVICE"));
+        token.put("tokenType", "Bearer");
+        token.put("expiresInSeconds", 600);
+        writeSuccess(exchange, token);
+    }
+
+    // PaymentService giả: chỉ nhận token SERVICE; ghi lại Idempotency-Key để test đếm số lần gửi (OPS-04).
+    private void handleRemainingInvoice(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        remainingInvoiceKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+        objectMapper.readTree(exchange.getRequestBody());
+        writeSuccess(exchange, Map.of("amount", 0, "status", "NOT_REQUIRED"));
+    }
+
+    // C2.3: hoàn tiền (OPS-06 / BK-03 / BK-04) — ghi Idempotency-Key để test đếm số lần gửi.
+    private void handleRefund(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        refundKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+        objectMapper.readTree(exchange.getRequestBody());
+        writeSuccess(exchange, Map.of("items", List.of(), "totalRefund", 0));
+    }
+
+    // C2.2: mỗi buổi đã trả 100.000; ≥ 72h trước giờ bắt đầu hoàn 100%, 24–72h 50%, < 24h 0%.
+    private void handleRefundQuote(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        JsonNode body = objectMapper.readTree(exchange.getRequestBody());
+        Instant cancelledAt = Instant.parse(body.get("cancelledAt").asString());
+        List<Map<String, Object>> items = new ArrayList<>();
+        long totalRefund = 0;
+        long totalFee = 0;
+        for (JsonNode occurrence : body.get("occurrences")) {
+            long hours = Duration.between(cancelledAt, Instant.parse(occurrence.get("startAt").asString())).toHours();
+            int percent = hours >= 72 ? 100 : hours >= 24 ? 50 : 0;
+            String rule = hours >= 72 ? "FULL" : hours >= 24 ? "TIER_24_72" : "TIER_UNDER_24";
+            if (refundPercentOverride.get() != null) {
+                percent = refundPercentOverride.get();
+                rule = "OVERRIDE";
+            }
+            long refund = 100_000L * percent / 100;
+            totalRefund += refund;
+            totalFee += 100_000L - refund;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("occurrenceId", occurrence.get("occurrenceId").asString());
+            item.put("priceAmount", 100_000);
+            item.put("paidAmount", 100_000);
+            item.put("feeAmount", 100_000L - refund);
+            item.put("refundAmount", refund);
+            item.put("rule", rule);
+            items.add(item);
+        }
+        writeSuccess(exchange, Map.of("items", items, "totalPaid", 100_000L * items.size(),
+                "totalFee", totalFee, "totalRefund", totalRefund));
     }
 
     private boolean rejected(HttpExchange exchange, AtomicBoolean failing) throws IOException {

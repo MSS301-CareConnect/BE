@@ -213,8 +213,8 @@ Ký hiệu mức độ: **Đủ** · **Thiếu validate** · **Thiếu nghiệp 
 | POST | `/api/v1/auth/forgot-password`, `/reset-password` | `.forgotPassword/.resetPassword` | public | Quên / đặt lại mật khẩu | 🔴 Thiếu nghiệp vụ: không thu hồi refresh (SEC-05) |
 | POST | `/api/v1/auth/login` | `.login` | public | Login hợp nhất web/mobile (`X-Client-Type`) | Đủ (B6: tin `X-Forwarded-For`) |
 | POST | `/api/v1/auth/refresh` | `.refresh` | public | Xoay refresh opaque | 🔴 Không nguyên tử, không kiểm `authz_version`, reuse không thu hồi (SEC-05) |
-| POST | `/api/v1/auth/logout`, `/logout-all` | `.logout/.logoutAll` | public / authenticated | Đăng xuất | Đủ |
-| POST | `/api/v1/auth/mobile/login`, `/mobile/refresh`, `/mobile/logout` | `.mobile*` | public | Legacy, header `Deprecation` | Đủ |
+| POST | `/api/v1/auth/logout` (`allSessions` thay `/logout-all`) | `.logout` | public | Đăng xuất | Đủ |
+| POST | `/api/v1/auth/mobile/login`, `/mobile/refresh` (`/mobile/logout` bỏ 2026-10-22, dùng `/auth/logout`) | `.mobile*` | public | Legacy, header `Deprecation` | Đủ |
 | DELETE | `/api/v1/auth/sessions/{sessionId}` | `.revokeSession` | authenticated + owner | Hủy một phiên | Thiếu nghiệp vụ: access của phiên vẫn dùng được (SEC-06) |
 | GET | `/.well-known/jwks.json` | `JwksController.get` | public | JWK Set | Đủ |
 | GET | `/api/v1/users/me` | `UserController.me` | authenticated | Hồ sơ mình | Đủ |
@@ -237,10 +237,8 @@ Ký hiệu mức độ: **Đủ** · **Thiếu validate** · **Thiếu nghiệp 
 
 | Method | Path | Handler (dòng) | Role | Mô tả | Mức độ |
 |---|---|---|---|---|---|
-| GET | `` | `list` (31) | CUSTOMER | Hồ sơ tôi quản lý, lọc + phân trang | Đủ |
-| GET | `/{id}` | `get` (42) | CUSTOMER (VIEWER) | Chi tiết + thuốc + liên hệ | Đủ |
-| GET | `/admin`, `/admin/{id}` | `listForAdmin`, `getForAdmin` (48, 60) | ADMIN | Toàn hệ thống | Đủ |
-| GET | `/caregiver/{id}` | `getForCaregiver` (66) | CAREGIVER | Snapshot khi Booking cho phép | Đủ (phụ thuộc lỗi SEC-03 phía Booking) |
+| GET | `` | `list` | CUSTOMER, ADMIN | CUSTOMER: hồ sơ tôi quản lý; ADMIN: toàn hệ thống (+ `createdBy`, `includeDeleted`). Lọc + phân trang (2026-10-22: gộp `/admin`) | Đủ |
+| GET | `/{id}` | `get` | CUSTOMER (VIEWER), ADMIN, CAREGIVER | CUSTOMER/ADMIN: chi tiết + thuốc + liên hệ; CAREGIVER: `careSnapshot` khi Booking cho phép (token SERVICE) (2026-10-22: gộp `/admin/{id}`, `/caregiver/{id}`) | Đủ |
 | GET | `/{id}/snapshot` | `getSnapshot` (72) | **isAuthenticated** | Snapshot y tế cho Booking | 🔴 SEC-02 |
 | GET | `/{id}/access` | `checkAccess` (78) | **isAuthenticated** | Kiểm quyền user bất kỳ | 🔴 SEC-02 |
 | POST | `/batch` | `listBatch` (140) | **isAuthenticated** | Tóm tắt nhiều hồ sơ | 🔴 SEC-02 |

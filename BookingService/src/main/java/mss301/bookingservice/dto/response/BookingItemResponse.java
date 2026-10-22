@@ -30,5 +30,7 @@ public class BookingItemResponse {
 
     Integer quantity;
 
+    Integer unitsPerOccurrence;
+
     BigDecimal totalPrice;
 }

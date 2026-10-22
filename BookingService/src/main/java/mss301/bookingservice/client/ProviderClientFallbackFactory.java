@@ -1,7 +1,6 @@
 package mss301.bookingservice.client;
 
 import lombok.extern.slf4j.Slf4j;
-import mss301.bookingservice.client.dto.ProviderCaregiverResponse;
 import mss301.bookingservice.client.dto.ProviderCenterResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
 import mss301.bookingservice.exception.AppException;
@@ -24,11 +23,6 @@ public class ProviderClientFallbackFactory implements FallbackFactory<ProviderCl
         return new ProviderClient() {
             @Override
             public RemoteApiResponse<ProviderCenterResponse> getCenter(UUID centerId) {
-                throw toAppException(cause);
-            }
-
-            @Override
-            public RemoteApiResponse<ProviderCaregiverResponse> getCaregiver(UUID caregiverId) {
                 throw toAppException(cause);
             }
         };

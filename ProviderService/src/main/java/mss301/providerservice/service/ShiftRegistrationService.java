@@ -12,11 +12,11 @@ public interface ShiftRegistrationService {
 
     APIResponse<ShiftRegistrationResponse> register(UUID actorId, UUID shiftId, ShiftRegistrationRequest request);
 
-    APIResponse<PageResponse<ShiftRegistrationResponse>> listForShift(UUID actorId, UUID shiftId, int page, int size);
+    APIResponse<PageResponse<ShiftRegistrationResponse>> listByShift(UUID actorId, UUID shiftId, int page, int size);
 
-    APIResponse<PageResponse<ShiftRegistrationResponse>> myRegistrations(UUID actorId, int page, int size);
+    APIResponse<PageResponse<ShiftRegistrationResponse>> listMine(UUID actorId, int page, int size);
 
     APIResponse<ShiftRegistrationResponse> review(UUID actorId, UUID registrationId, RegistrationReviewRequest request);
 
-    APIResponse<Void> cancelOwn(UUID actorId, UUID registrationId, Long version);
+    APIResponse<Void> cancel(UUID actorId, UUID registrationId, Long version);
 }

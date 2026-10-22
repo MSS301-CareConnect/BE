@@ -3,6 +3,7 @@ package mss301.providerservice.service;
 import mss301.providerservice.client.IdentityClient;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.enums.RoleCode;
 import mss301.providerservice.exception.*;
 import mss301.providerservice.service.Impl.IdentityAccountServiceImpl;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ class IdentityAccountServiceTests {
                 .id(id).status("ACTIVE").roles(Set.of("CAREGIVER")).build();
         when(client.get(id)).thenReturn(APIResponse.success("ok", user));
 
-        assertEquals(id, service.requireActiveRole(id, "CAREGIVER").getId());
+        assertEquals(id, service.requireActiveRole(id, RoleCode.CAREGIVER).getId());
     }
 
     @Test
@@ -34,7 +35,7 @@ class IdentityAccountServiceTests {
         when(client.get(id)).thenReturn(APIResponse.success("ok", user));
 
         AppException error = assertThrows(AppException.class,
-                () -> service.requireActiveRole(id, "CAREGIVER"));
+                () -> service.requireActiveRole(id, RoleCode.CAREGIVER));
         assertEquals(ErrorCode.IDENTITY_USER_INVALID, error.getErrorCode());
     }
 }

@@ -18,9 +18,45 @@
 - Chỉ IdentityService phát token. ProviderService xác minh access JWT bằng JWKS và tự kiểm tra role/phạm vi tài nguyên.
 - Admin CRUD trung tâm. Tạo mới luôn `PENDING`; `REJECTED`/`SUSPENDED` bắt buộc có lý do; xóa mềm thành `ARCHIVED`.
 - `care_centers.manager_user_id` ánh xạ tài khoản `CENTER_MANAGER`; manager chỉ thao tác đúng center của mình.
-- `client/` gọi API nội bộ IdentityService trước transaction ghi để xác minh tài khoản `ACTIVE` và đúng role.
-- Duyệt shift registration phải khóa dữ liệu, kiểm tra capacity/trùng lịch và tạo caregiver schedule trong cùng transaction.
-- API nội bộ chỉ đọc cho BookingService (`/internal/caregivers/**`, `/internal/centers/**`, `X-Internal-Secret`):
-  `InternalCaregiverController`, `InternalCenterController`, `InternalProviderService` + `Impl`, `InternalProviderMapper`.
-  `careServiceIds = null` nghĩa là chưa quản lý kỹ năng — không đổi thành `[]` khi chưa có bảng `caregiver_services`.
-  Provider không đánh dấu slot đã đặt (Booking là nguồn sự thật về giờ đã đặt).
+- `client/` gọi service khác qua ApiGateway, **trước** transaction ghi (rule #24):
+  - `IdentityClient` + `FeignAuthForwardingInterceptor` (token người dùng) — `IdentityAccountService.requireActiveRole(userId,
+    RoleCode)` kiểm tài khoản `ACTIVE` + đúng role khi gán manager / tạo caregiver.
+  - `CareCatalogClient` + `ServiceTokenInterceptor` (token SERVICE) — kiểm offering khi gán kỹ năng caregiver;
+    `getPriceSummary` (C9.2) cho danh sách trung tâm công khai (SRCH-02).
+  - `BookingClient` + `ServiceTokenInterceptor` (token SERVICE) — C5.1 busy-caregivers; luôn gọi qua
+    `BookingAvailabilityService.findBusyCaregiverIds` (chia lô ≤ 200 id × ≤ 60 khung, lỗi → 503 4702, không coi là rảnh).
+  - `MediaClient` (token người dùng) — `ProviderMediaService.findImageUrls` lấy URL ảnh công khai best-effort.
+  - `ServiceTokenProvider`: client-credentials `POST /api/v1/auth/service-token` (`provider.service-client.*`,
+    env `PROVIDER_SERVICE_CLIENT_ID/SECRET`), cache tới `exp − 60s`, lỗi → 503 `SERVICE_TOKEN_UNAVAILABLE` 4700.
+  - Không còn `/internal/**`, `X-Internal-Secret`, `Internal*Controller`, `InternalProviderMapper`. BookingService đọc
+    `GET /api/v1/caregivers/{id}` (chỉ ADMIN / manager trung tâm / chính caregiver / SERVICE),
+    `/caregivers/by-user/{userId}`, `/care-centers/{id}` bằng token SERVICE, và gọi `POST /caregivers/availability-checks`
+    (C5.2, `hasRole('SERVICE')`).
+- Mapper theo aggregate (`@Mapper(config = MapStructConfig.class)`): `CareCenterMapper`, `CaregiverMapper` (gồm kỹ năng
+  `CaregiverSkill`), `CertificateMapper`, `WorkShiftMapper`, `ShiftRegistrationMapper`, `CaregiverScheduleMapper`,
+  `ProviderMediaMapper`, `ServiceTokenMapper`, `BookingClientMapper` (request C5.1).
+- **Kỹ năng caregiver (PRV-01):** bảng `caregiver_services` = entity `CaregiverSkill` (+ `CaregiverSkillId`; đặt tên khác
+  `CaregiverService` để không trùng interface service). Entity con của `CaregiverProfile` (`skills`, chỉ đọc, `@BatchSize`):
+  chỉ có `CaregiverSkillRepository`, logic ở `CaregiverServiceImpl.listServices/replaceServices`. Lưu `care_service_id`
+  (dịch vụ chuẩn) + snapshot `service_name`. `CaregiverResponse.careServiceIds/centerServiceIds` luôn là list (chưa gán
+  → `[]`, Booking coi là không làm được dịch vụ nào).
+- **Thời gian:** giờ ca là giờ Việt Nam — quy đổi qua `util/ProviderTime` (`Asia/Ho_Chi_Minh`), "bây giờ" lấy từ bean
+  `Clock` (`ProviderConfig`). Không dùng `ZoneOffset.UTC` / `Instant.now()` trong logic ca.
+- Duyệt shift registration khóa ca + đăng ký, kiểm trung tâm ACTIVE, ca chưa bắt đầu, capacity (đếm trước khi duyệt;
+  đóng ca khi approved == capacity), trùng lịch và tạo caregiver schedule trong cùng transaction. Unique (ca, caregiver)
+  là index một phần (PENDING/APPROVED; lịch khác CANCELLED) — không khai báo `@UniqueConstraint` trong entity.
+- `GET /work-shifts` phân phạm vi theo role trong `WorkShiftServiceImpl.resolveListCenterId` (`ProviderAuthorization.hasRole`).
+- `GET /work-shifts/{id}` dùng cùng phạm vi (`WorkShiftServiceImpl.checkReadScope`): ngoài phạm vi → 404.
+- Provider không đánh dấu slot đã đặt (Booking là nguồn sự thật về giờ đã đặt).
+- **Lịch rảnh / ngày nghỉ (PRV-02):** `caregiver_schedules` chỉ còn `SCHEDULED`/`CANCELLED` (D11). Ngày nghỉ = entity
+  `CaregiverTimeOff` (con của `CaregiverProfile`, chỉ có `CaregiverTimeOffRepository`, logic ở `CaregiverServiceImpl`).
+  Phép toán khoảng `[start, end)` ở `util/TimeWindow` + `util/TimeWindows` (gộp ca liền kề, trừ ngày nghỉ).
+  Tạo ngày nghỉ / hủy lịch: kiểm phạm vi trong transaction ngắn → hỏi Booking NGOÀI transaction → ghi (khóa hồ sơ khi
+  kiểm chồng ngày nghỉ).
+- **Tìm kiếm (SRCH-01):** `CaregiverProfileRepository.searchCandidates` (giao tập dịch vụ bằng subquery
+  `having count(distinct)`), giới hạn 500 (+1) ứng viên, lọc lịch + Booking, rồi sắp xếp / phân trang trong bộ nhớ.
+  DTO công khai (`CaregiverCardResponse`, `CaregiverPublicResponse`, `CenterCardResponse`) không chứa field nội bộ.
+- Dải ErrorCode đã dùng thêm (2026-10-22): 4119, 4207–4215 (kỹ năng / tìm kiếm), 4308, 4405–4415 (ngày nghỉ / lịch
+  rảnh), 4700–4702 (tích hợp). Lệch spec có chủ đích: `CARE_SERVICE_IDS_REQUIRED` = **4212** (spec ghi 4210, đã thuộc
+  `CAREGIVER_SERVICES_REQUIRED`), `BOOKING_SERVICE_UNAVAILABLE` = **4702** (spec ghi 4700, đã thuộc
+  `SERVICE_TOKEN_UNAVAILABLE`).

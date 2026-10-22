@@ -30,6 +30,7 @@ import mss301.carerecipientservice.entity.Medication;
 import mss301.carerecipientservice.entity.RecipientManager;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
 import mss301.carerecipientservice.enums.RecipientStatus;
+import mss301.carerecipientservice.enums.RoleCode;
 import mss301.carerecipientservice.exception.AppException;
 import mss301.carerecipientservice.exception.ErrorCode;
 import mss301.carerecipientservice.mapper.CareRecipientMapper;
@@ -48,12 +49,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -77,6 +80,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     MedicationServiceImpl medicationServiceImpl;
     EmergencyContactServiceImpl emergencyContactServiceImpl;
     RecipientManagerServiceImpl recipientManagerServiceImpl;
+    TransactionTemplate transactionTemplate;
 
     @Override
     @Transactional
@@ -105,23 +109,38 @@ public class CareRecipientServiceImpl implements CareRecipientService {
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<PageResponse<CareRecipientSummaryResponse>> list(UUID actorId, RecipientStatus status,
-                                                                        String keyword, int page, int size) {
-        PageRequest pageRequest = toPageRequest(page, size, "recipient.createdAt");
-        Page<RecipientManager> memberships = recipientManagerRepository.findAll(
-                CareRecipientSpecifications.managedBy(actorId, status, keyword), pageRequest);
-        List<CareRecipientSummaryResponse> summaryResponses = memberships.getContent().stream()
-                .map(membership -> careRecipientMapper.toSummaryResponse(membership.getRecipient(), membership))
-                .toList();
-        PageResponse<CareRecipientSummaryResponse> pageResponse = PageResponse.of(memberships, summaryResponses);
+    public APIResponse<PageResponse<CareRecipientSummaryResponse>> list(UUID actorId, Set<RoleCode> roles,
+                                                                        RecipientStatus status, String keyword,
+                                                                        UUID createdBy, boolean includeDeleted,
+                                                                        int page, int size) {
+        PageResponse<CareRecipientSummaryResponse> pageResponse;
+        // ADMIN ưu tiên (toàn hệ thống); CUSTOMER chỉ thấy hồ sơ mình quản lý — createdBy / includeDeleted bị bỏ qua để
+        // customer không dò được hồ sơ của người khác hay hồ sơ đã lưu trữ.
+        if (roles.contains(RoleCode.ADMIN)) {
+            pageResponse = listAll(status, keyword, createdBy, includeDeleted, page, size);
+        } else if (roles.contains(RoleCode.CUSTOMER)) {
+            pageResponse = listManaged(actorId, status, keyword, page, size);
+        } else {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         return APIResponse.success("Lấy danh sách hồ sơ thành công", pageResponse);
     }
 
+    // Không @Transactional: nhánh CAREGIVER gọi BookingService qua mạng — không giữ transaction DB trong lúc chờ
+    // (rule #24). Phần đọc DB của từng nhánh chạy trong transaction ngắn qua TransactionTemplate.
+    // Thứ tự ưu tiên khi token có nhiều role: ADMIN → CUSTOMER → CAREGIVER.
     @Override
-    @Transactional(readOnly = true)
-    public APIResponse<CareRecipientDetailResponse> get(UUID actorId, UUID id) {
-        RecipientManager membership = recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.VIEWER);
-        CareRecipientDetailResponse detailResponse = toDetailResponse(membership.getRecipient(), membership.getAccessLevel());
+    public APIResponse<CareRecipientDetailResponse> get(UUID actorId, Set<RoleCode> roles, UUID id) {
+        CareRecipientDetailResponse detailResponse;
+        if (roles.contains(RoleCode.ADMIN)) {
+            detailResponse = transactionTemplate.execute(status -> getAnyDetail(id));
+        } else if (roles.contains(RoleCode.CUSTOMER)) {
+            detailResponse = transactionTemplate.execute(status -> getManagedDetail(actorId, id));
+        } else if (roles.contains(RoleCode.CAREGIVER)) {
+            detailResponse = getAssignedDetail(actorId, id);
+        } else {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         return APIResponse.success("Lấy hồ sơ người bệnh thành công", detailResponse);
     }
 
@@ -169,57 +188,12 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Đã lưu trữ hồ sơ người bệnh");
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<PageResponse<CareRecipientSummaryResponse>> listForAdmin(RecipientStatus status, String keyword,
-                                                                                UUID createdBy, boolean includeDeleted,
-                                                                                int page, int size) {
-        PageRequest pageRequest = toPageRequest(page, size, "createdAt");
-        Page<CareRecipient> recipients = careRecipientRepository.findAll(
-                CareRecipientSpecifications.forAdmin(status, keyword, createdBy, includeDeleted), pageRequest);
-        List<CareRecipientSummaryResponse> summaryResponses = careRecipientMapper.toSummaryResponseList(recipients.getContent());
-        PageResponse<CareRecipientSummaryResponse> pageResponse = PageResponse.of(recipients, summaryResponses);
-        return APIResponse.success("Lấy danh sách hồ sơ thành công", pageResponse);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<CareRecipientDetailResponse> getForAdmin(UUID id) {
-        CareRecipient recipient = careRecipientRepository.findById(id)
-                .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
-        CareRecipientDetailResponse detailResponse = toDetailResponse(recipient, null);
-        return APIResponse.success("Lấy hồ sơ người bệnh thành công", detailResponse);
-    }
-
-    // ===== Merged Caregiver Logic =====
-
-    @Override
-    public APIResponse<RecipientSnapshotResponse> getSnapshotForCaregiver(UUID actorId, UUID id) {
-        if (!isAssigned(id, actorId)) {
-            throw new AppException(ErrorCode.RECIPIENT_NOT_FOUND);
-        }
-        return getSnapshot(id);
-    }
-
-    private boolean isAssigned(UUID recipientId, UUID caregiverUserId) {
-        BookingApiResponse<CaregiverAccessResponse> response = bookingClient.checkCaregiverAccess(caregiverUserId, recipientId);
-        if (response == null || response.getResult() == null) {
-            throw new AppException(ErrorCode.BOOKING_UNAVAILABLE);
-        }
-        return response.getResult().isAllowed();
-    }
-
-    // ===== Merged Inter-Service Logic =====
+    // ===== Inter-Service =====
 
     @Override
     @Transactional(readOnly = true)
     public APIResponse<RecipientSnapshotResponse> getSnapshot(UUID id) {
-        CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
-        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(id, true);
-        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(id).orElse(null);
-        RecipientSnapshotResponse snapshotResponse = careRecipientMapper.toSnapshotResponse(recipient, activeMedications,
-                primaryContact, Instant.now());
+        RecipientSnapshotResponse snapshotResponse = buildSnapshot(id);
         return APIResponse.success("Lấy snapshot hồ sơ thành công", snapshotResponse);
     }
 
@@ -243,6 +217,64 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     }
 
     // ===== Helpers =====
+
+    private PageResponse<CareRecipientSummaryResponse> listManaged(UUID actorId, RecipientStatus status, String keyword,
+                                                                   int page, int size) {
+        PageRequest pageRequest = toPageRequest(page, size, "recipient.createdAt");
+        Page<RecipientManager> memberships = recipientManagerRepository.findAll(
+                CareRecipientSpecifications.managedBy(actorId, status, keyword), pageRequest);
+        List<CareRecipientSummaryResponse> summaryResponses = memberships.getContent().stream()
+                .map(membership -> careRecipientMapper.toSummaryResponse(membership.getRecipient(), membership))
+                .toList();
+        return PageResponse.of(memberships, summaryResponses);
+    }
+
+    private PageResponse<CareRecipientSummaryResponse> listAll(RecipientStatus status, String keyword, UUID createdBy,
+                                                               boolean includeDeleted, int page, int size) {
+        PageRequest pageRequest = toPageRequest(page, size, "createdAt");
+        Page<CareRecipient> recipients = careRecipientRepository.findAll(
+                CareRecipientSpecifications.forAdmin(status, keyword, createdBy, includeDeleted), pageRequest);
+        List<CareRecipientSummaryResponse> summaryResponses = careRecipientMapper.toSummaryResponseList(recipients.getContent());
+        return PageResponse.of(recipients, summaryResponses);
+    }
+
+    // ADMIN đọc được cả hồ sơ đã lưu trữ (findById không lọc deletedAt) để tra soát / xử lý khiếu nại.
+    private CareRecipientDetailResponse getAnyDetail(UUID id) {
+        CareRecipient recipient = careRecipientRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
+        return toDetailResponse(recipient, null);
+    }
+
+    private CareRecipientDetailResponse getManagedDetail(UUID actorId, UUID id) {
+        RecipientManager membership = recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.VIEWER);
+        return toDetailResponse(membership.getRecipient(), membership.getAccessLevel());
+    }
+
+    // Không được phân công → 404 như hồ sơ không tồn tại (không lộ sự tồn tại); Booking lỗi → 503, không bao giờ đoán
+    // là được phép. Caregiver chỉ nhận careSnapshot, không bao giờ nhận profile / thuốc / liên hệ đầy đủ.
+    private CareRecipientDetailResponse getAssignedDetail(UUID caregiverUserId, UUID id) {
+        if (!checkAssigned(id, caregiverUserId)) {
+            throw new AppException(ErrorCode.RECIPIENT_NOT_FOUND);
+        }
+        RecipientSnapshotResponse snapshotResponse = transactionTemplate.execute(status -> buildSnapshot(id));
+        return careRecipientMapper.toCaregiverDetailResponse(snapshotResponse);
+    }
+
+    private boolean checkAssigned(UUID recipientId, UUID caregiverUserId) {
+        BookingApiResponse<CaregiverAccessResponse> response = bookingClient.checkCaregiverAccess(caregiverUserId, recipientId);
+        if (response == null || response.getResult() == null) {
+            throw new AppException(ErrorCode.BOOKING_UNAVAILABLE);
+        }
+        return response.getResult().isAllowed();
+    }
+
+    private RecipientSnapshotResponse buildSnapshot(UUID id) {
+        CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
+        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(id, true);
+        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(id).orElse(null);
+        return careRecipientMapper.toSnapshotResponse(recipient, activeMedications, primaryContact, Instant.now());
+    }
 
     private CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel) {
         List<Medication> medications = medicationRepository.findAllByRecipient(recipient.getId());

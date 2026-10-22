@@ -28,26 +28,12 @@ import java.util.UUID;
 public class UserController {
     UserService userService;
 
-    // ===== Tài khoản của chính mình =====
+    // ===== GET =====
 
     @GetMapping("/me")
     public APIResponse<UserResponse> me(@CurrentUserId UUID actorId) {
         return userService.me(actorId);
     }
-
-    @PutMapping("/me")
-    public APIResponse<UserResponse> update(@CurrentUserId UUID actorId,
-                                            @Valid @RequestBody UpdateProfileRequest request) {
-        return userService.update(actorId, request);
-    }
-
-    @PostMapping("/me/change-password")
-    public APIResponse<Void> changePassword(@CurrentUserId UUID actorId,
-                                            @Valid @RequestBody ChangePasswordRequest request) {
-        return userService.changePassword(actorId, request);
-    }
-
-    // ===== Tra cứu tài khoản (người dùng & service-to-service qua ApiGateway) =====
 
     @GetMapping("/{id}")
     public APIResponse<UserResponse> get(@PathVariable UUID id) {
@@ -59,13 +45,6 @@ public class UserController {
         return userService.getByEmail(email);
     }
 
-    @PostMapping("/batch")
-    public APIResponse<List<UserResponse>> listBatch(@Valid @RequestBody UserBatchRequest request) {
-        return userService.listBatch(request);
-    }
-
-    // ===== Quản trị tài khoản =====
-
     @GetMapping
     @PreAuthorize("hasAuthority('user:read') and (hasRole('ADMIN') or hasRole('CENTER_MANAGER'))")
     public APIResponse<List<UserResponse>> list(@CurrentUserId UUID actorId,
@@ -74,11 +53,32 @@ public class UserController {
         return userService.list(actorId, page, size);
     }
 
+    // ===== POST =====
+
+    @PostMapping("/me/change-password")
+    public APIResponse<Void> changePassword(@CurrentUserId UUID actorId,
+                                            @Valid @RequestBody ChangePasswordRequest request) {
+        return userService.changePassword(actorId, request);
+    }
+
+    @PostMapping("/batch")
+    public APIResponse<List<UserResponse>> listBatch(@Valid @RequestBody UserBatchRequest request) {
+        return userService.listBatch(request);
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('CENTER_MANAGER')")
     public APIResponse<UserResponse> create(@CurrentUserId UUID actorId,
                                             @Valid @RequestBody ProvisionRequest request) {
         return userService.provision(actorId, request);
+    }
+
+    // ===== PUT =====
+
+    @PutMapping("/me")
+    public APIResponse<UserResponse> update(@CurrentUserId UUID actorId,
+                                            @Valid @RequestBody UpdateProfileRequest request) {
+        return userService.update(actorId, request);
     }
 
     @PutMapping("/{id}")
@@ -89,6 +89,16 @@ public class UserController {
         return userService.update(actorId, id, request);
     }
 
+    @PutMapping("/{id}/roles/{roleId}")
+    @PreAuthorize("hasRole('ADMIN') and hasAuthority('role:manage')")
+    public APIResponse<UserResponse> assign(@CurrentUserId UUID actorId,
+                                            @PathVariable UUID id,
+                                            @PathVariable UUID roleId) {
+        return userService.assign(actorId, id, roleId);
+    }
+
+    // ===== PATCH =====
+
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<UserResponse> updateStatus(@CurrentUserId UUID actorId,
@@ -97,18 +107,12 @@ public class UserController {
         return userService.updateStatus(actorId, id, status);
     }
 
+    // ===== DELETE =====
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return userService.delete(actorId, id);
-    }
-
-    @PutMapping("/{id}/roles/{roleId}")
-    @PreAuthorize("hasRole('ADMIN') and hasAuthority('role:manage')")
-    public APIResponse<UserResponse> assign(@CurrentUserId UUID actorId,
-                                            @PathVariable UUID id,
-                                            @PathVariable UUID roleId) {
-        return userService.assign(actorId, id, roleId);
     }
 
     @DeleteMapping("/{id}/roles/{roleId}")

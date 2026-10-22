@@ -4,35 +4,28 @@ import mss301.carerecipientservice.dto.request.*;
 import mss301.carerecipientservice.dto.response.*;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
 import mss301.carerecipientservice.enums.RecipientStatus;
+import mss301.carerecipientservice.enums.RoleCode;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public interface CareRecipientService {
 
-    // Customer
+    // Hồ sơ — list/get chọn phạm vi dữ liệu theo role của người gọi (roles lấy từ token)
     APIResponse<CareRecipientDetailResponse> create(UUID actorId, CareRecipientCreateRequest request);
 
-    APIResponse<PageResponse<CareRecipientSummaryResponse>> list(UUID actorId, RecipientStatus status, String keyword,
+    APIResponse<PageResponse<CareRecipientSummaryResponse>> list(UUID actorId, Set<RoleCode> roles, RecipientStatus status,
+                                                                 String keyword, UUID createdBy, boolean includeDeleted,
                                                                  int page, int size);
 
-    APIResponse<CareRecipientDetailResponse> get(UUID actorId, UUID id);
+    APIResponse<CareRecipientDetailResponse> get(UUID actorId, Set<RoleCode> roles, UUID id);
 
     APIResponse<CareRecipientResponse> update(UUID actorId, UUID id, CareRecipientUpdateRequest request);
 
     APIResponse<CareRecipientResponse> updateStatus(UUID actorId, UUID id, RecipientStatus status);
 
     APIResponse<Void> delete(UUID actorId, UUID id);
-
-    // Admin
-    APIResponse<PageResponse<CareRecipientSummaryResponse>> listForAdmin(RecipientStatus status, String keyword,
-                                                                         UUID createdBy, boolean includeDeleted,
-                                                                         int page, int size);
-
-    APIResponse<CareRecipientDetailResponse> getForAdmin(UUID id);
-
-    // Caregiver
-    APIResponse<RecipientSnapshotResponse> getSnapshotForCaregiver(UUID actorId, UUID id);
 
     // Inter-Service
     APIResponse<RecipientSnapshotResponse> getSnapshot(UUID id);

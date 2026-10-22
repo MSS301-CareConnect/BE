@@ -3,21 +3,23 @@ package mss301.bookingservice.service.Impl;
 import lombok.AccessLevel;
 import java.util.Map;
 import java.util.Comparator;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.data.domain.PageRequest;
-import mss301.bookingservice.service.RefundPolicy;
 import mss301.bookingservice.service.IdentityUserService;
-import mss301.bookingservice.repository.BookingStatusHistoryRepository;
-import mss301.bookingservice.mapper.BookingStatusHistoryMapper;
-import mss301.bookingservice.enums.CancelledBy;
-import mss301.bookingservice.dto.response.RefundQuote;
 import mss301.bookingservice.client.dto.IdentityUserResponse;
+import mss301.bookingservice.client.dto.PaymentPolicyResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.config.BookingProperties;
+import mss301.bookingservice.client.dto.RefundQuoteRequest;
+import mss301.bookingservice.client.dto.RefundQuoteResponse;
 import mss301.bookingservice.dto.request.AcceptRequest;
+import mss301.bookingservice.dto.request.BookingCancelRequest;
+import mss301.bookingservice.dto.request.CancellationPreviewRequest;
+import mss301.bookingservice.dto.request.SystemCancellationRequest;
 import mss301.bookingservice.dto.request.BookingCreateRequest;
+import mss301.bookingservice.dto.request.BookingQuoteRequest;
+import mss301.bookingservice.dto.request.BookingSearchRequest;
 import mss301.bookingservice.dto.request.BookingServiceRequest;
 import mss301.bookingservice.dto.request.CaregiverAssignRequest;
 import mss301.bookingservice.dto.request.DepositPaidRequest;
@@ -25,11 +27,15 @@ import mss301.bookingservice.dto.request.ReasonRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
+import mss301.bookingservice.dto.response.BookingHistoryResponse;
 import mss301.bookingservice.dto.response.BookingQuote;
+import mss301.bookingservice.dto.response.BookingQuoteResponse;
+import mss301.bookingservice.dto.response.CancellationPreviewResponse;
+import mss301.bookingservice.dto.response.CancellationRefundResponse;
+import mss301.bookingservice.dto.response.SystemCancellationResponse;
+import mss301.bookingservice.dto.response.PaymentContextResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
-import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
-import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.dto.response.PageResponse;
@@ -39,20 +45,35 @@ import mss301.bookingservice.entity.BookingDetail;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.BookingAction;
 import mss301.bookingservice.enums.BookingStatus;
+import mss301.bookingservice.enums.CancelledBy;
+import mss301.bookingservice.enums.RefundReason;
+import mss301.bookingservice.enums.SystemCancellationReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
+import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.BookingDetailMapper;
+import mss301.bookingservice.mapper.BookingEventMapper;
+import mss301.bookingservice.mapper.BookingStatusHistoryMapper;
+import mss301.bookingservice.repository.BookingEventRepository;
+import mss301.bookingservice.repository.BookingStatusHistoryRepository;
 import mss301.bookingservice.mapper.BookingMapper;
 import mss301.bookingservice.mapper.OccurrenceMapper;
 import mss301.bookingservice.repository.BookingDetailRepository;
 import mss301.bookingservice.repository.BookingOccurrenceRepository;
 import mss301.bookingservice.repository.BookingRepository;
-import mss301.bookingservice.repository.BookingSpecifications;
+import mss301.bookingservice.repository.CareSessionRepository;
+import mss301.bookingservice.repository.OccurrenceStatsView;
+import mss301.bookingservice.util.BookingSorts;
+import mss301.bookingservice.util.BookingSpecifications;
 import mss301.bookingservice.service.BookingCodeGenerator;
+import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingService;
+import mss301.bookingservice.service.CancellationTokenService;
 import mss301.bookingservice.service.CareRecipientDirectoryService;
+import mss301.bookingservice.service.BookingPriceCalculator;
 import mss301.bookingservice.service.CareServiceCatalogPort;
+import mss301.bookingservice.service.PaymentPort;
 import mss301.bookingservice.service.CaregiverPort;
 import mss301.bookingservice.service.CenterPort;
 import mss301.bookingservice.service.OccurrenceGenerator;
@@ -60,20 +81,30 @@ import mss301.bookingservice.util.IdempotencyHasher;
 import mss301.bookingservice.util.PageRequests;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Gộp logic CUSTOMER, CENTER_MANAGER và ADMIN vào một class duy nhất.
@@ -92,10 +123,12 @@ public class BookingServiceImpl implements BookingService {
 
     static Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("[A-Za-z0-9._-]{1,100}");
     static String PAYMENT_REFERENCE_PREFIX = "paymentReference=";
-    static String EXPIRED_REASON = "Quá hạn duyệt hoặc quá hạn đặt cọc";
-    static String REJECTED_OCCURRENCE_REASON = "Trung tâm từ chối booking";
     static String CAREGIVER_LOCK_PREFIX = "booking:caregiver:";
     static String RECIPIENT_LOCK_PREFIX = "booking:recipient:";
+    static String CUSTOMER_LOCK_PREFIX = "booking:customer:";
+    static Set<BookingStatus> PENDING_STATUSES = EnumSet.of(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT);
+    static int ACCEPT_ATTEMPTS = 2;
+    static BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
 
     BookingRepository bookingRepository;
     BookingOccurrenceRepository bookingOccurrenceRepository;
@@ -105,20 +138,25 @@ public class BookingServiceImpl implements BookingService {
     BookingDetailMapper bookingDetailMapper;
     OccurrenceGenerator occurrenceGenerator;
     BookingCodeGenerator bookingCodeGenerator;
-    BookingStatusHistoryRepository bookingStatusHistoryRepository;
-    BookingStatusHistoryMapper bookingStatusHistoryMapper;
-    RefundPolicy refundPolicy;
     IdentityUserService identityUserService;
     CareRecipientDirectoryService careRecipientDirectoryService;
     CenterPort centerPort;
     CaregiverPort caregiverPort;
     CareServiceCatalogPort careServiceCatalogPort;
+    BookingPriceCalculator bookingPriceCalculator;
+    BookingLifecycleService bookingLifecycleService;
+    CareSessionRepository careSessionRepository;
+    PaymentPort paymentPort;
+    CancellationTokenService cancellationTokenService;
+    BookingEventRepository bookingEventRepository;
+    BookingEventMapper bookingEventMapper;
+    BookingStatusHistoryRepository bookingStatusHistoryRepository;
+    BookingStatusHistoryMapper bookingStatusHistoryMapper;
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
-    BookingOccurrenceServiceImpl bookingOccurrenceServiceImpl;
     Clock clock;
 
-    // ─── CUSTOMER ────────────────────────────────────────────────────────────
+    // ─── MỌI ROLE (phạm vi theo role) ─────────────────────────────────────────
 
     // Không @Transactional: kiểm idempotency / sinh lịch / gọi các service khác trước, chỉ ghi trong TransactionTemplate.
     @Override
@@ -133,13 +171,21 @@ public class BookingServiceImpl implements BookingService {
         }
         checkDistinctServices(request.getServices());
         List<OccurrenceSlot> slots = occurrenceGenerator.generate(request);
+        // BK-02 — mọi lời gọi mạng trước transaction: nợ (Payment), giới hạn PENDING, người bệnh, trung tâm, caregiver + lịch rảnh.
+        paymentPort.checkNoOutstandingDebt();
+        checkPendingLimit(actorId);
         RecipientSnapshot recipientSnapshot = careRecipientDirectoryService.getBookableSnapshot(request.getRecipientId(), actorId);
         centerPort.checkBookable(request.getCenterId());
         List<UUID> careServiceIds = collectCareServiceIds(request.getServices());
         AssignedCaregiver caregiver = request.getCaregiverId() == null
                 ? null
                 : caregiverPort.resolveAssignable(request.getCenterId(), request.getCaregiverId(), careServiceIds);
-        BookingQuote quote = careServiceCatalogPort.quote(request.getCenterId(), request.getServices(), slots);
+        if (caregiver != null) {
+            caregiverPort.checkAvailable(caregiver.getCaregiverId(), slots);
+        }
+        // Gán giá từng buổi lên chính các slot sẽ lưu (BK-01); Catalog lỗi → 503 trước khi ghi gì.
+        BookingQuote quote = bookingPriceCalculator.calculate(
+                careServiceCatalogPort.quote(request.getCenterId(), request.getServices()), slots);
         Booking savedBooking;
         try {
             savedBooking = transactionTemplate.execute(status -> persistBooking(actorId, request, slots, recipientSnapshot,
@@ -158,104 +204,211 @@ public class BookingServiceImpl implements BookingService {
         return APIResponse.success("Đặt lịch thành công, chờ trung tâm xác nhận", bookingDetailResponse);
     }
 
+    // Không @Transactional: response của manager / admin gọi Identity batch (mạng) để hiển thị khách hàng.
     @Override
-    @Transactional(readOnly = true)
-    public APIResponse<PageResponse<BookingSummaryResponse>> listByCustomer(UUID actorId, BookingStatus status, UUID recipientId,
-                                                                            int page, int size) {
-        Page<Booking> bookings = bookingRepository.findAll(
-                BookingSpecifications.filter(actorId, null, recipientId, null, status, null, null),
-                PageRequests.newestFirst(page, size));
-        PageResponse<BookingSummaryResponse> pageResponse = toPageResponse(bookings, false);
+    public APIResponse<PageResponse<BookingSummaryResponse>> list(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
+                                                                  BookingSearchRequest request) {
+        checkDateFilter(request.getFrom(), request.getTo());
+        Specification<Booking> specification;
+        boolean includeCustomer = true;
+        if (roles.contains(RoleCode.ADMIN)) {
+            specification = BookingSpecifications.filter(request.getCustomerId(), request.getCenterId(),
+                    request.getRecipientId(), request.getCaregiverId(), request.getStatus(), request.getFrom(), request.getTo(),
+                    request.getKeyword());
+        } else if (roles.contains(RoleCode.CENTER_MANAGER)) {
+            // Trung tâm luôn lấy từ token; centerId trong query bị bỏ qua.
+            specification = BookingSpecifications.filter(request.getCustomerId(), findManagerCenter(scopeCenterId),
+                    request.getRecipientId(), request.getCaregiverId(), request.getStatus(), request.getFrom(), request.getTo(),
+                    request.getKeyword());
+        } else {
+            // Khách chỉ thấy booking của mình; customerId / centerId trong query bị bỏ qua.
+            specification = BookingSpecifications.filter(actorId, null, request.getRecipientId(), request.getCaregiverId(),
+                    request.getStatus(), request.getFrom(), request.getTo(), request.getKeyword());
+            includeCustomer = false;
+        }
+        Page<Booking> bookings = bookingRepository.findAll(specification,
+                PageRequests.sorted(request.getPage(), request.getSize(), BookingSorts.parse(request.getSort())));
+        PageResponse<BookingSummaryResponse> pageResponse = toPageResponse(bookings, includeCustomer);
         return APIResponse.success("Lấy danh sách booking thành công", pageResponse);
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public APIResponse<BookingDetailResponse> getByCustomer(UUID actorId, UUID id) {
-        Booking booking = findCustomerBooking(actorId, id);
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, false);
+    public APIResponse<BookingDetailResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id) {
+        Booking booking = findScopedBooking(actorId, roles, scopeCenterId, id);
+        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, !isCustomerScope(roles));
         return APIResponse.success("Lấy chi tiết booking thành công", bookingDetailResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<List<OccurrenceResponse>> listOccurrences(UUID actorId, UUID id) {
-        Booking booking = findCustomerBooking(actorId, id);
-        List<OccurrenceResponse> occurrenceResponses = occurrenceMapper.toResponseList(
-                bookingOccurrenceRepository.findAllByBooking(booking.getId()));
+    public APIResponse<PageResponse<OccurrenceResponse>> listOccurrences(UUID actorId, Set<RoleCode> roles,
+                                                                         UUID scopeCenterId, UUID id,
+                                                                         OccurrenceStatus status, int page, int size) {
+        PageRequest pageRequest = PageRequests.unsorted(page, size);
+        Booking booking = findScopedBooking(actorId, roles, scopeCenterId, id);
+        Set<OccurrenceStatus> statuses = status == null ? EnumSet.allOf(OccurrenceStatus.class) : EnumSet.of(status);
+        Page<BookingOccurrence> occurrences = bookingOccurrenceRepository.findPageByBooking(booking.getId(), statuses,
+                pageRequest);
+        PageResponse<OccurrenceResponse> occurrenceResponses = PageResponse.of(occurrences,
+                occurrenceMapper.toResponseList(occurrences.getContent()));
         return APIResponse.success("Lấy danh sách buổi chăm sóc thành công", occurrenceResponses);
     }
 
     @Override
-    public APIResponse<BookingDetailResponse> cancelByCustomer(UUID actorId, UUID id, ReasonRequest request) {
-        Booking cancelledBooking = transactionTemplate.execute(status -> {
-            Booking booking = lockCustomerBooking(actorId, id);
-            if (!BookingAction.CANCEL_BY_CUSTOMER.isAllowedFrom(booking.getStatus())) {
-                throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
-            }
-            checkNotStarted(booking);
-            applyAction(booking, BookingAction.CANCEL_BY_CUSTOMER, actorId, request.getReason().strip());
-            return booking;
-        });
-        log.info("Booking {} cancelled by customer {}", id, actorId);
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(cancelledBooking, false);
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<BookingHistoryResponse>> listHistory(UUID actorId, Set<RoleCode> roles,
+                                                                         UUID scopeCenterId, UUID id, int page,
+                                                                         int size) {
+        PageRequest pageRequest = PageRequests.unsorted(page, size);
+        Booking booking = findScopedBooking(actorId, roles, scopeCenterId, id);
+        // Gộp hai bảng khi đọc (không migrate dữ liệu cũ); số dòng mỗi booking nhỏ nên sắp + cắt trang trong bộ nhớ.
+        List<BookingHistoryResponse> histories = new ArrayList<>(bookingStatusHistoryMapper.toHistoryResponseList(
+                bookingStatusHistoryRepository.findAllByBooking(booking.getId())));
+        histories.addAll(bookingEventMapper.toHistoryResponseList(bookingEventRepository.findAllByBooking(booking.getId())));
+        histories.sort(Comparator.comparing(BookingHistoryResponse::getChangedAt));
+        int fromIndex = (int) Math.min(pageRequest.getOffset(), histories.size());
+        int toIndex = Math.min(fromIndex + size, histories.size());
+        Page<BookingHistoryResponse> historyPage = new PageImpl<>(histories.subList(fromIndex, toIndex), pageRequest,
+                histories.size());
+        PageResponse<BookingHistoryResponse> historyResponse = PageResponse.of(historyPage, historyPage.getContent());
+        return APIResponse.success("Lấy lịch sử booking thành công", historyResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PaymentContextResponse> getPaymentContext(UUID id) {
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(id);
+        Instant firstStartAt = occurrences.stream()
+                .map(BookingOccurrence::getStartAt)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+        PaymentContextResponse paymentContextResponse = bookingMapper.toPaymentContextResponse(booking, occurrences,
+                firstStartAt, findOccurrenceIdsWithSession(id));
+        return APIResponse.success("Lấy dữ liệu thanh toán của booking thành công", paymentContextResponse);
+    }
+
+    // Không @Transactional và không ghi DB: chỉ sinh lịch + gọi Catalog / Provider / Payment (mạng).
+    @Override
+    public APIResponse<BookingQuoteResponse> quote(UUID actorId, BookingQuoteRequest request) {
+        checkDistinctServices(request.getServices());
+        List<OccurrenceSlot> slots = occurrenceGenerator.generate(request);
+        centerPort.checkBookable(request.getCenterId());
+        BookingQuote bookingQuote = bookingPriceCalculator.calculate(
+                careServiceCatalogPort.quote(request.getCenterId(), request.getServices()), slots);
+        PaymentPolicyResponse policy = paymentPort.findEffective(request.getCenterId(), clock.instant())
+                .orElse(null);
+        BigDecimal estimatedDepositAmount = policy == null
+                ? null
+                : bookingQuote.getTotalAmount().multiply(policy.getDepositPercent())
+                .divide(ONE_HUNDRED, 0, RoundingMode.HALF_UP);
+        BookingQuoteResponse bookingQuoteResponse = bookingMapper.toQuoteResponse(bookingQuote, policy,
+                estimatedDepositAmount);
+        log.info("Quote for customer {} at center {}: {} occurrences, total={}", actorId, request.getCenterId(),
+                slots.size(), bookingQuote.getTotalAmount());
+        return APIResponse.success("Báo giá tạm tính thành công", bookingQuoteResponse);
+    }
+
+    // Không @Transactional: hỏi PaymentService (mạng); chỉ đọc DB, không ghi.
+    @Override
+    public APIResponse<CancellationPreviewResponse> previewCancellation(UUID actorId, UUID id,
+                                                                        CancellationPreviewRequest request) {
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
+                .filter(found -> found.getCustomerId().equals(actorId))
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        Instant now = clock.instant();
+        List<UUID> requestedIds = request == null ? null : request.getOccurrenceIds();
+        List<BookingOccurrence> targets = findCancellableOccurrences(booking, requestedIds, now);
+        List<UUID> targetIds = collectIds(targets);
+        Instant expiresAt = now.plus(bookingProperties.getCancellation().getPreviewTtl());
+        CancellationPreviewResponse previewResponse;
+        if (BookingStatus.DEPOSIT_PAID.contains(booking.getStatus())) {
+            RefundQuoteResponse refundQuote = quoteCustomerRefund(booking, targets, now);
+            String previewToken = cancellationTokenService.sign(id, targetIds, refundQuote.getTotalRefund(), expiresAt);
+            previewResponse = bookingMapper.toCancellationPreviewResponse(refundQuote, previewToken, expiresAt,
+                    collectStartTimes(targets));
+        } else {
+            String previewToken = cancellationTokenService.sign(id, targetIds, BigDecimal.ZERO, expiresAt);
+            previewResponse = bookingMapper.toUnpaidPreviewResponse(targets, previewToken, expiresAt);
+        }
+        return APIResponse.success("Xem trước hoàn tiền thành công", previewResponse);
+    }
+
+    // Khách hủy booking của mình, manager hủy booking trung tâm mình (PENDING thì dùng reject). Ngoài phạm vi → 404.
+    // Không @Transactional: kiểm previewToken cần hỏi lại PaymentService (mạng) trước khi khóa booking.
+    @Override
+    public APIResponse<BookingDetailResponse> cancel(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id,
+                                                     BookingCancelRequest request) {
+        String reason = request.getReason().strip();
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        boolean byCenter = isManagerOf(roles, scopeCenterId, booking);
+        if (!byCenter && !(roles.contains(RoleCode.CUSTOMER) && booking.getCustomerId().equals(actorId))) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        // Khách gửi kèm token: số tiền tính lại phải khớp lúc preview (vd chưa qua mốc 24h), khác → hỏi lại khách.
+        BigDecimal verifiedRefund = byCenter || request.getPreviewToken() == null
+                ? null
+                : verifyPreview(booking, request, clock.instant());
+        CancellationRefundResponse refundResponse = transactionTemplate.execute(status ->
+                cancelInTransaction(actorId, byCenter, id, reason, request, verifiedRefund));
+        log.info("Booking {} cancelled by {} ({})", id, actorId, byCenter ? CancelledBy.CENTER : CancelledBy.CUSTOMER);
+        Booking cancelledBooking = bookingRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        BookingDetailResponse bookingDetailResponse = toDetailResponse(cancelledBooking, !isCustomerScope(roles));
+        bookingMapper.updateRefund(refundResponse, bookingDetailResponse);
         return APIResponse.success("Hủy booking thành công", bookingDetailResponse);
+    }
+
+    // Không @Transactional: mỗi booking một transaction ngắn — lỗi một booking (log) không dừng cả lô; chạy lại không hủy /
+    // hoàn tiền lần hai vì buổi đã hủy không còn được chọn.
+    @Override
+    public APIResponse<SystemCancellationResponse> cancelBySystem(SystemCancellationRequest request) {
+        String note = request.getNote() == null || request.getNote().isBlank()
+                ? request.getReason().name()
+                : request.getNote().strip();
+        SystemCancellationResponse systemCancellationResponse;
+        if (request.getReason() == SystemCancellationReason.CENTER_LOCKED) {
+            if (request.getCenterId() == null) {
+                throw new AppException(ErrorCode.CENTER_ID_REQUIRED);
+            }
+            systemCancellationResponse = cancelCenterBookings(request.getCenterId(), note);
+        } else {
+            if (request.getCaregiverId() == null) {
+                throw new AppException(ErrorCode.CAREGIVER_ID_REQUIRED);
+            }
+            systemCancellationResponse = transactionTemplate.execute(status ->
+                    flagForReassignment(request.getCaregiverId()));
+        }
+        log.info("System cancellation {} processed: {} bookings, {} occurrences", request.getReason(),
+                systemCancellationResponse.getAffectedBookings(), systemCancellationResponse.getAffectedOccurrences());
+        return APIResponse.success("Đã xử lý hủy hệ thống", systemCancellationResponse);
     }
 
     // ─── CENTER_MANAGER ───────────────────────────────────────────────────────
 
     @Override
-    // Không @Transactional: response gọi Identity batch (mạng).
-    public APIResponse<PageResponse<BookingSummaryResponse>> listByCenter(UUID centerId, BookingStatus status, UUID caregiverId,
-                                                                          LocalDate from, LocalDate to, int page, int size) {
-        checkDateFilter(from, to);
-        Page<Booking> bookings = bookingRepository.findAll(
-                BookingSpecifications.filter(null, centerId, null, caregiverId, status, from, to),
-                PageRequests.newestFirst(page, size));
-        PageResponse<BookingSummaryResponse> pageResponse = toPageResponse(bookings, true);
-        return APIResponse.success("Lấy danh sách booking của trung tâm thành công", pageResponse);
-    }
-
-    @Override
-    public APIResponse<BookingDetailResponse> getByCenter(UUID centerId, UUID id) {
-        Booking booking = findCenterBooking(centerId, id);
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, true);
-        return APIResponse.success("Lấy chi tiết booking thành công", bookingDetailResponse);
-    }
-
-    @Override
     public APIResponse<BookingDetailResponse> accept(UUID actorId, UUID centerId, UUID id, AcceptRequest request) {
-        Booking booking = findCenterBooking(centerId, id);
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
-        }
-        // Caregiver mới (nếu truyền) hoặc caregiver khách đã chọn — luôn xác minh lại với Provider trước khi chấp nhận.
-        UUID caregiverId = request == null || request.getCaregiverId() == null ? booking.getCaregiverId() : request.getCaregiverId();
-        if (caregiverId == null) {
-            throw new AppException(ErrorCode.CAREGIVER_REQUIRED);
-        }
-        AssignedCaregiver caregiver = caregiverPort.resolveAssignable(centerId, caregiverId, findCareServiceIds(id));
-        Booking acceptedBooking = transactionTemplate.execute(status -> {
-            Booking lockedBooking = lockCenterBooking(centerId, id);
-            BookingAction.ACCEPT.apply(lockedBooking.getStatus());
-            // Quá hạn duyệt nhưng scheduler chưa kịp chuyển EXPIRED → không cho chấp nhận.
-            if (!clock.instant().isBefore(lockedBooking.getAcceptanceDueAt())) {
-                throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        UUID requestedCaregiverId = request == null ? null : request.getCaregiverId();
+        // SEC-11: caregiver xác minh ngoài transaction có thể đã bị đổi trước khi khóa booking → thử lại một lần.
+        for (int attempt = 1; attempt <= ACCEPT_ATTEMPTS; attempt++) {
+            Optional<Booking> acceptedBooking = tryAccept(actorId, centerId, id, requestedCaregiverId);
+            if (acceptedBooking.isPresent()) {
+                log.info("Booking {} accepted by manager {} with caregiver {}", id, actorId,
+                        acceptedBooking.get().getCaregiverId());
+                BookingDetailResponse bookingDetailResponse = toDetailResponse(acceptedBooking.get(), true);
+                return APIResponse.success("Đã chấp nhận booking, chờ khách đặt cọc", bookingDetailResponse);
             }
-            assignCaregiver(lockedBooking, caregiver);
-            applyAction(lockedBooking, BookingAction.ACCEPT, actorId, null);
-            return lockedBooking;
-        });
-        log.info("Booking {} accepted by manager {} with caregiver {}", id, actorId, caregiver.getCaregiverId());
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(acceptedBooking, true);
-        return APIResponse.success("Đã chấp nhận booking, chờ khách đặt cọc", bookingDetailResponse);
+        }
+        throw new AppException(ErrorCode.CONCURRENT_UPDATE);
     }
 
     @Override
     public APIResponse<BookingDetailResponse> reject(UUID actorId, UUID centerId, UUID id, ReasonRequest request) {
         Booking rejectedBooking = transactionTemplate.execute(status -> {
             Booking lockedBooking = lockCenterBooking(centerId, id);
-            applyAction(lockedBooking, BookingAction.REJECT, actorId, request.getReason().strip());
+            bookingLifecycleService.apply(lockedBooking, BookingAction.REJECT, actorId, request.getReason().strip());
             return lockedBooking;
         });
         log.info("Booking {} rejected by manager {}", id, actorId);
@@ -269,10 +422,14 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = findCenterBooking(centerId, id);
         checkCaregiverChangeable(booking);
         AssignedCaregiver caregiver = caregiverPort.resolveAssignable(centerId, request.getCaregiverId(), findCareServiceIds(id));
+        List<OccurrenceSlot> reassignedSlots = findReassignableSlots(booking);
+        if (!reassignedSlots.isEmpty()) {
+            caregiverPort.checkAvailable(caregiver.getCaregiverId(), reassignedSlots);
+        }
         Booking updatedBooking = transactionTemplate.execute(status -> {
             Booking lockedBooking = lockCenterBooking(centerId, id);
             checkCaregiverChangeable(lockedBooking);
-            assignCaregiver(lockedBooking, caregiver);
+            assignCaregiver(lockedBooking, caregiver, actorId);
             return lockedBooking;
         });
         log.info("Booking {} caregiver changed to {} by manager {}", id, caregiver.getCaregiverId(), actorId);
@@ -281,14 +438,17 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public APIResponse<OccurrenceResponse> updateOccurrenceCaregiver(UUID actorId, UUID centerId, UUID occurrenceId,
+    public APIResponse<OccurrenceResponse> updateOccurrenceCaregiver(UUID actorId, UUID centerId, UUID id, UUID occurrenceId,
                                                                      CaregiverAssignRequest request) {
+        // Buổi phải thuộc đúng booking trên path và trung tâm của manager — khác thì 404 như không tồn tại.
         BookingOccurrence occurrence = bookingOccurrenceRepository.findWithBooking(occurrenceId)
+                .filter(found -> found.getBooking().getId().equals(id))
                 .filter(found -> found.getBooking().getCenterId().equals(centerId))
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
         UUID bookingId = occurrence.getBooking().getId();
         AssignedCaregiver caregiver = caregiverPort.resolveAssignable(centerId, request.getCaregiverId(),
                 findCareServiceIds(bookingId));
+        caregiverPort.checkAvailable(caregiver.getCaregiverId(), occurrenceMapper.toSlotList(List.of(occurrence)));
         BookingOccurrence updatedOccurrence = transactionTemplate.execute(status -> {
             // Khóa booking trước (cùng thứ tự với đổi trạng thái) rồi mới khóa buổi.
             Booking lockedBooking = lockCenterBooking(centerId, bookingId);
@@ -301,8 +461,10 @@ public class BookingServiceImpl implements BookingService {
             lockSchedule(caregiver.getCaregiverId(), null);
             checkCaregiverAvailable(caregiver.getCaregiverId(),
                     occurrenceMapper.toSlotList(List.of(lockedOccurrence)), bookingId);
-            lockedOccurrence.setCaregiverId(caregiver.getCaregiverId());
-            lockedOccurrence.setCaregiverUserId(caregiver.getCaregiverUserId());
+            Instant now = clock.instant();
+            recordCaregiverChange(lockedBooking, lockedOccurrence, caregiver, actorId, now);
+            lockedOccurrence.assignCaregiver(caregiver.getCaregiverId(), caregiver.getCaregiverUserId());
+            syncBookingCaregiver(lockedBooking, caregiver, now);
             return lockedOccurrence;
         });
         log.info("Occurrence {} of booking {} reassigned to caregiver {} by manager {}", occurrenceId, bookingId,
@@ -311,41 +473,61 @@ public class BookingServiceImpl implements BookingService {
         return APIResponse.success("Đổi người chăm sóc cho buổi thành công", occurrenceResponse);
     }
 
-    @Override
-    public APIResponse<BookingDetailResponse> cancelByCenter(UUID actorId, UUID centerId, UUID id, ReasonRequest request) {
-        Booking cancelledBooking = transactionTemplate.execute(status -> {
-            Booking lockedBooking = lockCenterBooking(centerId, id);
-            applyAction(lockedBooking, BookingAction.CANCEL_BY_CENTER, actorId, request.getReason().strip());
-            return lockedBooking;
-        });
-        log.info("Booking {} cancelled by manager {}", id, actorId);
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(cancelledBooking, true);
-        return APIResponse.success("Trung tâm đã hủy booking", bookingDetailResponse);
-    }
+    // ─── SERVICE / THANH TOÁN (tạm) ───────────────────────────────────────────
 
-    // ─── ADMIN ───────────────────────────────────────────────────────────────
-
-    // Không @Transactional: response gọi Identity batch (mạng) để hiển thị khách hàng.
     @Override
-    public APIResponse<PageResponse<BookingSummaryResponse>> listAll(BookingStatus status, UUID centerId, UUID customerId,
-                                                                     UUID recipientId, LocalDate from, LocalDate to,
-                                                                     int page, int size) {
-        if (from != null && to != null && to.isBefore(from)) {
-            throw new AppException(ErrorCode.INVALID_DATE_FILTER);
-        }
-        Page<Booking> bookings = bookingRepository.findAll(
-                BookingSpecifications.filter(customerId, centerId, recipientId, null, status, from, to),
-                PageRequests.newestFirst(page, size));
-        PageResponse<BookingSummaryResponse> pageResponse = toPageResponse(bookings, true);
-        return APIResponse.success("Lấy danh sách booking thành công", pageResponse);
+    @Transactional(readOnly = true)
+    public APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId) {
+        Instant completedSince = clock.instant().minus(bookingProperties.getSchedule().getCaregiverAccessGrace());
+        boolean allowed = bookingOccurrenceRepository.existsCaregiverAccess(caregiverUserId, recipientId,
+                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, OccurrenceStatus.ACTIVE, OccurrenceStatus.COMPLETED,
+                completedSince);
+        CaregiverAccessResponse caregiverAccessResponse = bookingMapper.toCaregiverAccessResponse(caregiverUserId,
+                recipientId, allowed);
+        return APIResponse.success("Kiểm tra phân công thành công", caregiverAccessResponse);
     }
 
     @Override
-    public APIResponse<BookingDetailResponse> getAny(UUID id) {
-        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
+    @Transactional
+    public APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request) {
+        Booking booking = bookingRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, true);
-        return APIResponse.success("Lấy chi tiết booking thành công", bookingDetailResponse);
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            BookingDetailResponse confirmedResponse = toDetailResponse(booking, false);
+            return APIResponse.success("Booking đã được xác nhận đặt cọc trước đó", confirmedResponse);
+        }
+        BookingAction.PAY_DEPOSIT.apply(booking.getStatus());
+        if (!clock.instant().isBefore(booking.getDepositDueAt())) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        }
+        String paymentReference = request == null ? null : request.getPaymentReference();
+        String reason = paymentReference == null || paymentReference.isBlank()
+                ? null
+                : PAYMENT_REFERENCE_PREFIX + paymentReference.strip();
+        bookingLifecycleService.apply(booking, BookingAction.PAY_DEPOSIT, null, reason);
+        log.info("Booking {} deposit confirmed", id);
+        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, false);
+        return APIResponse.success("Xác nhận đặt cọc thành công", bookingDetailResponse);
+    }
+
+    // ─── HẾT HẠN (scheduler) ─────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findExpirableIds() {
+        return bookingRepository.findExpirableIds(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, clock.instant(),
+                PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
+    }
+
+    @Override
+    @Transactional
+    public void expire(UUID id) {
+        Optional<Booking> lockedBooking = bookingRepository.findForUpdateSkipLocked(id);
+        // Instance khác đang xử lý → rỗng, bỏ qua. Booking có thể vừa được duyệt / đặt cọc / hủy → kiểm lại.
+        if (lockedBooking.isEmpty() || !isOverdue(lockedBooking.get(), clock.instant())) {
+            return;
+        }
+        bookingLifecycleService.apply(lockedBooking.get(), BookingAction.EXPIRE, null, null);
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────────
@@ -354,6 +536,9 @@ public class BookingServiceImpl implements BookingService {
                                    RecipientSnapshot recipientSnapshot, AssignedCaregiver caregiver, BookingQuote quote,
                                    String idempotencyKey, String requestHash) {
         UUID caregiverId = caregiver == null ? null : caregiver.getCaregiverId();
+        // Hai booking song song của cùng khách không cùng lọt giới hạn PENDING: khóa theo khách rồi đếm lại.
+        bookingRepository.lockScheduleKey(CUSTOMER_LOCK_PREFIX + actorId);
+        checkPendingLimit(actorId);
         lockSchedule(caregiverId, request.getRecipientId());
         checkCaregiverAvailable(caregiverId, slots, null);
         checkRecipientAvailable(request.getRecipientId(), slots, null);
@@ -367,7 +552,7 @@ public class BookingServiceImpl implements BookingService {
         Booking savedBooking = bookingRepository.save(booking);
         bookingOccurrenceRepository.saveAll(occurrenceMapper.toOccurrenceList(slots, savedBooking, OccurrenceStatus.SCHEDULED));
         bookingDetailRepository.saveAll(bookingDetailMapper.toBookingDetailList(quote.getItems(), savedBooking));
-        recordCreated(savedBooking, actorId);
+        bookingLifecycleService.recordCreated(savedBooking, actorId);
         return savedBooking;
     }
 
@@ -375,7 +560,7 @@ public class BookingServiceImpl implements BookingService {
      * Gán caregiver mặc định cho booking và mọi buổi SCHEDULED chưa bắt đầu đang theo caregiver mặc định cũ.
      * Hai id (Provider + Identity) luôn ghi cùng nhau. Chạy trong transaction, booking đã khóa.
      */
-    private void assignCaregiver(Booking booking, AssignedCaregiver caregiver) {
+    private void assignCaregiver(Booking booking, AssignedCaregiver caregiver, UUID changedBy) {
         Instant now = clock.instant();
         UUID previousCaregiverId = booking.getCaregiverId();
         List<BookingOccurrence> targetOccurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
@@ -388,8 +573,80 @@ public class BookingServiceImpl implements BookingService {
         booking.setCaregiverId(caregiver.getCaregiverId());
         booking.setCaregiverUserId(caregiver.getCaregiverUserId());
         for (BookingOccurrence occurrence : targetOccurrences) {
-            occurrence.setCaregiverId(caregiver.getCaregiverId());
-            occurrence.setCaregiverUserId(caregiver.getCaregiverUserId());
+            recordCaregiverChange(booking, occurrence, caregiver, changedBy, now);
+            occurrence.assignCaregiver(caregiver.getCaregiverId(), caregiver.getCaregiverUserId());
+        }
+    }
+
+    // BK-05: mỗi buổi đổi người một dòng CAREGIVER_CHANGED (khác người mới ghi). TODO(NTF-01, Người C): thông báo
+    // caregiver cũ ("lịch bị hủy giao"), caregiver mới ("lịch mới") và khách.
+    private void recordCaregiverChange(Booking booking, BookingOccurrence occurrence, AssignedCaregiver caregiver,
+                                       UUID changedBy, Instant now) {
+        if (Objects.equals(occurrence.getCaregiverId(), caregiver.getCaregiverId())) {
+            return;
+        }
+        bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(booking, occurrence.getId(),
+                occurrence.getCaregiverId(), caregiver.getCaregiverId(), changedBy, null, now));
+    }
+
+    // Đổi người từng buổi: khi mọi buổi tương lai đã thuộc caregiver mới thì cập nhật luôn caregiver cấp booking để danh
+    // sách / bộ lọc theo caregiver đúng.
+    private void syncBookingCaregiver(Booking booking, AssignedCaregiver caregiver, Instant now) {
+        boolean allFutureAssigned = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+                .filter(occurrence -> isFutureScheduled(occurrence, now))
+                .allMatch(occurrence -> caregiver.getCaregiverId().equals(occurrence.getCaregiverId()));
+        if (allFutureAssigned) {
+            booking.setCaregiverId(caregiver.getCaregiverId());
+            booking.setCaregiverUserId(caregiver.getCaregiverUserId());
+        }
+    }
+
+    // Một lượt accept: xác minh caregiver + lịch rảnh ngoài transaction rồi khóa booking. Trả empty khi caregiver mặc định
+    // của booking đã bị đổi giữa chừng (caller thử lại với giá trị mới).
+    private Optional<Booking> tryAccept(UUID actorId, UUID centerId, UUID id, UUID requestedCaregiverId) {
+        Booking booking = findCenterBooking(centerId, id);
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        }
+        // Caregiver mới (nếu truyền) hoặc caregiver khách đã chọn — luôn xác minh lại với Provider trước khi chấp nhận.
+        UUID caregiverId = requestedCaregiverId == null ? booking.getCaregiverId() : requestedCaregiverId;
+        if (caregiverId == null) {
+            throw new AppException(ErrorCode.CAREGIVER_REQUIRED);
+        }
+        AssignedCaregiver caregiver = caregiverPort.resolveAssignable(centerId, caregiverId, findCareServiceIds(id));
+        caregiverPort.checkAvailable(caregiverId, findReassignableSlots(booking));
+        Booking acceptedBooking = transactionTemplate.execute(status -> {
+            Booking lockedBooking = lockCenterBooking(centerId, id);
+            if (requestedCaregiverId == null && !Objects.equals(lockedBooking.getCaregiverId(), caregiverId)) {
+                return null;
+            }
+            BookingAction.ACCEPT.apply(lockedBooking.getStatus());
+            // Quá hạn duyệt nhưng scheduler chưa kịp chuyển EXPIRED → không cho chấp nhận.
+            if (!clock.instant().isBefore(lockedBooking.getAcceptanceDueAt())) {
+                throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+            }
+            assignCaregiver(lockedBooking, caregiver, actorId);
+            bookingLifecycleService.apply(lockedBooking, BookingAction.ACCEPT, actorId, null);
+            return lockedBooking;
+        });
+        return Optional.ofNullable(acceptedBooking);
+    }
+
+    // Buổi chưa bắt đầu đang theo caregiver mặc định của booking — những buổi sẽ chuyển sang caregiver mới.
+    private List<OccurrenceSlot> findReassignableSlots(Booking booking) {
+        Instant now = clock.instant();
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+                .filter(occurrence -> isFutureScheduled(occurrence, now))
+                .filter(occurrence -> Objects.equals(occurrence.getCaregiverId(), booking.getCaregiverId()))
+                .toList();
+        return occurrenceMapper.toSlotList(occurrences);
+    }
+
+    // SEC-12: chặn khách giữ quá nhiều booking chưa xác nhận (spam chiếm lịch caregiver).
+    private void checkPendingLimit(UUID customerId) {
+        long pendingCount = bookingRepository.countByCustomerIdAndStatusInAndDeletedAtIsNull(customerId, PENDING_STATUSES);
+        if (pendingCount >= bookingProperties.getMaxPendingPerCustomer()) {
+            throw new AppException(ErrorCode.TOO_MANY_PENDING_BOOKINGS);
         }
     }
 
@@ -440,17 +697,203 @@ public class BookingServiceImpl implements BookingService {
                 .toList();
     }
 
-    // Khách chỉ hủy được trước giờ buổi đầu và khi chưa buổi nào bắt đầu.
-    private void checkNotStarted(Booking booking) {
+    // Chạy trong transaction, booking đã khóa: kiểm lại phạm vi hủy (trạng thái có thể vừa đổi), hủy buổi, xếp hoàn tiền,
+    // đóng booking khi không còn buổi nào. Trả null khi booking chưa đặt cọc (không có tiền để hoàn).
+    private CancellationRefundResponse cancelInTransaction(UUID actorId, boolean byCenter, UUID id, String reason,
+                                                           BookingCancelRequest request, BigDecimal verifiedRefund) {
+        Booking lockedBooking = bookingRepository.findForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (byCenter && lockedBooking.getStatus() == BookingStatus.PENDING) {
+            // Booking chưa duyệt thì trung tâm từ chối (reject), không "hủy".
+            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        }
         Instant now = clock.instant();
-        for (BookingOccurrence occurrence : bookingOccurrenceRepository.findAllByBooking(booking.getId())) {
-            boolean started = occurrence.getStatus() == OccurrenceStatus.IN_PROGRESS
-                    || occurrence.getStatus() == OccurrenceStatus.COMPLETED
-                    || !occurrence.getStartAt().isAfter(now);
-            if (started && occurrence.getStatus() != OccurrenceStatus.CANCELLED) {
-                throw new AppException(ErrorCode.BOOKING_ALREADY_STARTED);
+        List<BookingOccurrence> targets = findCancellableOccurrences(lockedBooking, request.getOccurrenceIds(), now);
+        List<UUID> targetIds = collectIds(targets);
+        if (verifiedRefund != null) {
+            // Buổi hủy được có thể đã đổi trong lúc chờ khóa → token không còn khớp.
+            cancellationTokenService.verify(request.getPreviewToken(), id, targetIds, verifiedRefund, now);
+        }
+        BookingAction cancelAction = byCenter ? BookingAction.CANCEL_BY_CENTER : BookingAction.CANCEL_BY_CUSTOMER;
+        if (!BookingStatus.DEPOSIT_PAID.contains(lockedBooking.getStatus())) {
+            bookingLifecycleService.apply(lockedBooking, cancelAction, actorId, reason);
+            return null;
+        }
+        CancelledBy cancelledBy = byCenter ? CancelledBy.CENTER : CancelledBy.CUSTOMER;
+        RefundReason refundReason = byCenter ? RefundReason.CENTER_CANCEL : RefundReason.CUSTOMER_CANCEL;
+        bookingLifecycleService.cancelOccurrences(lockedBooking, targets, cancelledBy, actorId, reason);
+        // Ghi outbox cùng transaction: Payment lỗi thì dispatcher gửi lại, không rollback việc hủy.
+        bookingLifecycleService.requestRefund(lockedBooking, targetIds, refundReason, cancelledBy, actorId,
+                buildRefundKeySuffix(id, targetIds));
+        closeAfterCancellation(lockedBooking, cancelAction, actorId, reason);
+        return bookingMapper.toCancellationRefundResponse(refundReason, targetIds, verifiedRefund);
+    }
+
+    private SystemCancellationResponse cancelCenterBookings(UUID centerId, String note) {
+        List<UUID> bookingIds = bookingRepository.findIdsByCenter(centerId, BookingStatus.SCHEDULE_HOLDING);
+        int affectedBookings = 0;
+        int affectedOccurrences = 0;
+        for (UUID bookingId : bookingIds) {
+            try {
+                Integer cancelledOccurrences = transactionTemplate.execute(status ->
+                        cancelForLockedCenter(bookingId, note));
+                if (cancelledOccurrences != null) {
+                    affectedBookings++;
+                    affectedOccurrences += cancelledOccurrences;
+                }
+            } catch (RuntimeException e) {
+                log.error("Failed to cancel booking {} of locked center {} ({})", bookingId, centerId,
+                        e.getClass().getSimpleName(), e);
             }
         }
+        return SystemCancellationResponse.of(affectedBookings, affectedOccurrences);
+    }
+
+    // Trung tâm bị khóa: hủy mọi buổi chưa check-in (kể cả đã quá giờ); đã cọc → hoàn 100% (CENTER_LOCKED). Trả số buổi
+    // bị hủy, null khi booking không đổi gì (đã xử lý ở lần gọi trước).
+    private Integer cancelForLockedCenter(UUID bookingId, String note) {
+        Optional<Booking> foundBooking = bookingRepository.findForUpdate(bookingId);
+        if (foundBooking.isEmpty() || !BookingStatus.SCHEDULE_HOLDING.contains(foundBooking.get().getStatus())) {
+            return null;
+        }
+        Booking lockedBooking = foundBooking.get();
+        Set<UUID> occurrenceIdsWithSession = findOccurrenceIdsWithSession(bookingId);
+        List<BookingOccurrence> targets = bookingOccurrenceRepository.findAllByBooking(bookingId).stream()
+                .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()))
+                .filter(occurrence -> !occurrenceIdsWithSession.contains(occurrence.getId()))
+                .toList();
+        if (!BookingStatus.DEPOSIT_PAID.contains(lockedBooking.getStatus())) {
+            bookingLifecycleService.apply(lockedBooking, BookingAction.CANCEL_BY_SYSTEM, null, note);
+            return targets.size();
+        }
+        if (targets.isEmpty()) {
+            return null;
+        }
+        List<UUID> targetIds = collectIds(targets);
+        bookingLifecycleService.cancelOccurrences(lockedBooking, targets, CancelledBy.SYSTEM, null, note);
+        bookingLifecycleService.requestRefund(lockedBooking, targetIds, RefundReason.CENTER_LOCKED, CancelledBy.SYSTEM,
+                null, buildRefundKeySuffix(bookingId, targetIds));
+        closeAfterCancellation(lockedBooking, BookingAction.CANCEL_BY_SYSTEM, null, note);
+        // TODO(NTF-02, Người C): thông báo khách + caregiver buổi bị hủy do trung tâm ngừng hoạt động.
+        return targets.size();
+    }
+
+    // Caregiver bị khóa: không hủy — đánh dấu buổi tương lai để manager đổi người (đổi xong cờ tự bỏ); quá giờ chưa đổi
+    // thì job MISSED xử lý (OPS-06).
+    private SystemCancellationResponse flagForReassignment(UUID caregiverId) {
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findReassignmentCandidates(caregiverId,
+                OccurrenceStatus.NOT_STARTED, BookingStatus.SCHEDULE_HOLDING, clock.instant());
+        Set<UUID> bookingIds = new HashSet<>();
+        for (BookingOccurrence occurrence : occurrences) {
+            occurrence.setNeedsReassignment(true);
+            bookingIds.add(occurrence.getBooking().getId());
+        }
+        // TODO(NTF-01, Người C): thông báo manager trung tâm phải đổi caregiver các buổi đã đánh dấu.
+        return SystemCancellationResponse.of(bookingIds.size(), occurrences.size());
+    }
+
+    // Không còn buổi nào chưa kết thúc: chưa phục vụ buổi nào → hủy booking (đúng bên hủy, lý do); có buổi đã phục vụ
+    // → FINALIZE (OPS-04). Còn buổi → booking giữ trạng thái.
+    private void closeAfterCancellation(Booking booking, BookingAction cancelAction, UUID actorId, String reason) {
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        boolean unfinished = occurrences.stream()
+                .anyMatch(occurrence -> OccurrenceStatus.ACTIVE.contains(occurrence.getStatus()));
+        if (unfinished) {
+            return;
+        }
+        boolean served = occurrences.stream()
+                .anyMatch(occurrence -> occurrence.getStatus() == OccurrenceStatus.COMPLETED
+                        || occurrence.getStatus() == OccurrenceStatus.CUSTOMER_NO_SHOW);
+        if (!served && cancelAction.isAllowedFrom(booking.getStatus())) {
+            bookingLifecycleService.apply(booking, cancelAction, actorId, reason);
+            return;
+        }
+        bookingLifecycleService.finalizeIfDone(booking, actorId);
+    }
+
+    // Buổi sẽ bị hủy. occurrenceIds rỗng = mọi buổi chưa diễn ra; có buổi không hủy được trong danh sách → từ chối cả lệnh.
+    private List<BookingOccurrence> findCancellableOccurrences(Booking booking, List<UUID> occurrenceIds, Instant now) {
+        if (!BookingStatus.SCHEDULE_HOLDING.contains(booking.getStatus())) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        }
+        boolean partial = occurrenceIds != null && !occurrenceIds.isEmpty();
+        boolean paid = BookingStatus.DEPOSIT_PAID.contains(booking.getStatus());
+        if (partial && !paid) {
+            throw new AppException(ErrorCode.CANCEL_SCOPE_NOT_ALLOWED);
+        }
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        Set<UUID> occurrenceIdsWithSession = findOccurrenceIdsWithSession(booking.getId());
+        if (!partial) {
+            List<BookingOccurrence> cancellable = occurrences.stream()
+                    .filter(occurrence -> isCancellable(occurrence, occurrenceIdsWithSession, now))
+                    .toList();
+            // Chưa cọc thì vẫn hủy được cả booking dù không còn buổi tương lai (chờ hết hạn); đã cọc phải có buổi để hủy.
+            if (cancellable.isEmpty() && paid) {
+                throw new AppException(ErrorCode.OCCURRENCE_NOT_CANCELLABLE);
+            }
+            return cancellable;
+        }
+        Map<UUID, BookingOccurrence> occurrencesById = occurrences.stream()
+                .collect(Collectors.toMap(BookingOccurrence::getId, Function.identity()));
+        List<BookingOccurrence> selected = new ArrayList<>();
+        for (UUID occurrenceId : new LinkedHashSet<>(occurrenceIds)) {
+            BookingOccurrence occurrence = occurrenceId == null ? null : occurrencesById.get(occurrenceId);
+            if (occurrence == null) {
+                throw new AppException(ErrorCode.OCCURRENCE_NOT_IN_BOOKING);
+            }
+            if (!isCancellable(occurrence, occurrenceIdsWithSession, now)) {
+                throw new AppException(ErrorCode.OCCURRENCE_NOT_CANCELLABLE);
+            }
+            selected.add(occurrence);
+        }
+        selected.sort(Comparator.comparing(BookingOccurrence::getStartAt));
+        return selected;
+    }
+
+    // Hủy được: chưa bắt đầu (chưa check-in, chưa tới giờ) — buổi trễ giờ chưa check-in để job MISSED xử lý.
+    private boolean isCancellable(BookingOccurrence occurrence, Set<UUID> occurrenceIdsWithSession, Instant now) {
+        return isFutureScheduled(occurrence, now) && !occurrenceIdsWithSession.contains(occurrence.getId());
+    }
+
+    private BigDecimal verifyPreview(Booking booking, BookingCancelRequest request, Instant now) {
+        List<BookingOccurrence> targets = findCancellableOccurrences(booking, request.getOccurrenceIds(), now);
+        BigDecimal totalRefund = BookingStatus.DEPOSIT_PAID.contains(booking.getStatus())
+                ? quoteCustomerRefund(booking, targets, now).getTotalRefund()
+                : BigDecimal.ZERO;
+        cancellationTokenService.verify(request.getPreviewToken(), booking.getId(), collectIds(targets), totalRefund, now);
+        return totalRefund;
+    }
+
+    // C2.2: Payment tính theo chính sách đã snapshot; mốc % theo buổi chưa diễn ra gần nhất.
+    private RefundQuoteResponse quoteCustomerRefund(Booking booking, List<BookingOccurrence> targets, Instant now) {
+        Instant firstUpcomingStartAt = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+                .filter(occurrence -> isFutureScheduled(occurrence, now))
+                .map(BookingOccurrence::getStartAt)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+        RefundQuoteRequest refundQuoteRequest = bookingMapper.toRefundQuoteRequest(booking, targets,
+                CancelledBy.CUSTOMER, RefundReason.CUSTOMER_CANCEL, now, firstUpcomingStartAt);
+        return paymentPort.quoteRefund(refundQuoteRequest);
+    }
+
+    private List<UUID> collectIds(List<BookingOccurrence> occurrences) {
+        return occurrences.stream()
+                .map(BookingOccurrence::getId)
+                .toList();
+    }
+
+    private Map<UUID, Instant> collectStartTimes(List<BookingOccurrence> occurrences) {
+        return occurrences.stream()
+                .collect(Collectors.toMap(BookingOccurrence::getId, BookingOccurrence::getStartAt));
+    }
+
+    // Idempotency key cố định theo tập buổi: retry outbox cùng một key; một buổi chỉ hủy được một lần nên không trùng.
+    private String buildRefundKeySuffix(UUID bookingId, List<UUID> occurrenceIds) {
+        String sortedIds = occurrenceIds.stream()
+                .sorted()
+                .map(UUID::toString)
+                .collect(Collectors.joining(","));
+        return bookingId + ":" + UUID.nameUUIDFromBytes(sortedIds.getBytes(StandardCharsets.UTF_8));
     }
 
     private void checkCaregiverChangeable(Booking booking) {
@@ -466,22 +909,43 @@ public class BookingServiceImpl implements BookingService {
     }
 
     private boolean isFutureScheduled(BookingOccurrence occurrence, Instant now) {
-        return occurrence.getStatus() == OccurrenceStatus.SCHEDULED && occurrence.getStartAt().isAfter(now);
+        return OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()) && occurrence.getStartAt().isAfter(now);
     }
 
-    private Booking findCustomerBooking(UUID actorId, UUID id) {
-        return bookingRepository.findByIdAndCustomerIdAndDeletedAtIsNull(id, actorId)
+    // Phạm vi đọc theo role: ADMIN mọi booking, manager cùng trung tâm, khách của mình; ngoài phạm vi → 404.
+    private Booking findScopedBooking(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id) {
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-    }
-
-    // Booking của người khác → 404 giống không tồn tại (không lộ booking tồn tại).
-    private Booking lockCustomerBooking(UUID actorId, UUID id) {
-        Booking booking = bookingRepository.findForUpdate(id)
-                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        if (!booking.getCustomerId().equals(actorId)) {
+        boolean visible = roles.contains(RoleCode.ADMIN)
+                || isManagerOf(roles, scopeCenterId, booking)
+                || (roles.contains(RoleCode.CUSTOMER) && booking.getCustomerId().equals(actorId));
+        if (!visible) {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
         return booking;
+    }
+
+    // Buổi đã có care session — PaymentService không hoàn tiền cho buổi đã bắt đầu.
+    private Set<UUID> findOccurrenceIdsWithSession(UUID bookingId) {
+        return Set.copyOf(careSessionRepository.findOccurrenceIdsByBooking(bookingId));
+    }
+
+    private boolean isManagerOf(Set<RoleCode> roles, UUID scopeCenterId, Booking booking) {
+        return roles.contains(RoleCode.CENTER_MANAGER) && scopeCenterId != null
+                && scopeCenterId.equals(booking.getCenterId());
+    }
+
+    // Khách (không kèm quyền manager / admin) không cần thông tin liên hệ của chính mình từ Identity.
+    private boolean isCustomerScope(Set<RoleCode> roles) {
+        return !roles.contains(RoleCode.ADMIN) && !roles.contains(RoleCode.CENTER_MANAGER);
+    }
+
+    // Manager phải có center_id trong token mới liệt kê được booking.
+    private UUID findManagerCenter(UUID scopeCenterId) {
+        if (scopeCenterId == null) {
+            throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
+        }
+        return scopeCenterId;
     }
 
     private Booking findCenterBooking(UUID centerId, UUID id) {
@@ -497,78 +961,6 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
         return booking;
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId) {
-        boolean allowed = bookingRepository.existsCaregiverAssignment(caregiverUserId, recipientId,
-                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, OccurrenceStatus.ACTIVE);
-        CaregiverAccessResponse caregiverAccessResponse = bookingMapper.toCaregiverAccessResponse(caregiverUserId,
-                recipientId, allowed);
-        return APIResponse.success("Kiểm tra phân công thành công", caregiverAccessResponse);
-    }
-
-    @Override
-    @Transactional
-    public APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request) {
-        Booking booking = bookingRepository.findForUpdate(id)
-                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        if (booking.getStatus() == BookingStatus.CONFIRMED) {
-            BookingDetailResponse confirmedResponse = toDetailResponse(booking, false);
-            return APIResponse.success("Booking đã được xác nhận đặt cọc trước đó", confirmedResponse);
-        }
-        BookingAction.PAY_DEPOSIT.apply(booking.getStatus());
-        if (!clock.instant().isBefore(booking.getDepositDueAt())) {
-            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
-        }
-        String paymentReference = request == null ? null : request.getPaymentReference();
-        String reason = paymentReference == null || paymentReference.isBlank()
-                ? null
-                : PAYMENT_REFERENCE_PREFIX + paymentReference.strip();
-        applyAction(booking, BookingAction.PAY_DEPOSIT, null, reason);
-        log.info("Booking {} deposit confirmed", id);
-        BookingDetailResponse bookingDetailResponse = toDetailResponse(booking, false);
-        return APIResponse.success("Xác nhận đặt cọc thành công", bookingDetailResponse);
-    }
-
-    // ─── HẾT HẠN (scheduler) ─────────────────────────────────────────────────
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<UUID> findExpirableIds() {
-        return bookingRepository.findExpirableIds(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, clock.instant(),
-                PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<List<CaregiverOccurrenceResponse>> listCaregiverOccurrences(UUID actorId, LocalDate from, LocalDate to,
-                                                                                   OccurrenceStatus status) {
-        return bookingOccurrenceServiceImpl.list(actorId, from, to, status);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrence(UUID actorId, UUID id) {
-        return bookingOccurrenceServiceImpl.get(actorId, id);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public APIResponse<CaregiverOccurrenceResponse> getCaregiverOccurrenceById(UUID id) {
-        return bookingOccurrenceServiceImpl.getById(id);
-    }
-
-    @Override
-    @Transactional
-    public void expire(UUID id) {
-        Optional<Booking> lockedBooking = bookingRepository.findForUpdate(id);
-        // Trong lúc chờ khóa, booking có thể vừa được duyệt / đặt cọc / hủy → kiểm lại, không đúng thì bỏ qua.
-        if (lockedBooking.isEmpty() || !isOverdue(lockedBooking.get(), clock.instant())) {
-            return;
-        }
-        applyAction(lockedBooking.get(), BookingAction.EXPIRE, null, null);
     }
 
     private boolean isOverdue(Booking booking, Instant now) {
@@ -592,82 +984,14 @@ public class BookingServiceImpl implements BookingService {
         Map<UUID, IdentityUserResponse> customerProfiles = includeCustomer
                 ? identityUserService.getProfiles(bookings.map(Booking::getCustomerId).getContent())
                 : Map.of();
-        List<BookingSummaryResponse> items = bookingMapper.toSummaryResponseList(bookings.getContent(), customerProfiles);
+        Map<UUID, OccurrenceStatsView> occurrenceStats = bookings.isEmpty()
+                ? Map.of()
+                : bookingOccurrenceRepository.summarizeByBookings(bookings.map(Booking::getId).getContent(),
+                                OccurrenceStatus.ACTIVE, OccurrenceStatus.COMPLETED, clock.instant()).stream()
+                        .collect(Collectors.toMap(OccurrenceStatsView::getBookingId, Function.identity()));
+        List<BookingSummaryResponse> items = bookingMapper.toSummaryResponseList(bookings.getContent(), customerProfiles,
+                occurrenceStats);
         return PageResponse.of(bookings, items);
-    }
-
-    // ─── VÒNG ĐỜI TRẠNG THÁI (chỉ gọi trong transaction ghi, booking đã khóa dòng) ────
-    private void recordCreated(Booking booking, UUID customerId) {
-        bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, null, booking.getStatus(),
-                customerId, null, clock.instant()));
-    }
-    private void applyAction(Booking booking, BookingAction action, UUID changedBy, String reason) {
-        BookingStatus fromStatus = booking.getStatus();
-        BookingStatus toStatus = action.apply(fromStatus);
-        Instant now = clock.instant();
-        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
-        booking.setStatus(toStatus);
-        String historyReason = reason;
-        switch (action) {
-            case ACCEPT -> {
-                booking.setAcceptedBy(changedBy);
-                booking.setAcceptedAt(now);
-                booking.setDepositDueAt(calculateDepositDueAt(now, occurrences));
-            }
-            case REJECT -> {
-                booking.setRejectedBy(changedBy);
-                booking.setRejectedAt(now);
-                booking.setRejectedReason(reason);
-                cancelScheduledOccurrences(occurrences, REJECTED_OCCURRENCE_REASON);
-            }
-            case PAY_DEPOSIT -> booking.setConfirmedAt(now);
-            case CANCEL_BY_CUSTOMER, CANCEL_BY_CENTER -> {
-                booking.setCancelledAt(now);
-                booking.setCancelledBy(changedBy);
-                booking.setCancelReason(reason);
-                cancelScheduledOccurrences(occurrences, reason);
-                quoteRefund(booking, action == BookingAction.CANCEL_BY_CENTER ? CancelledBy.CENTER : CancelledBy.CUSTOMER, now);
-            }
-            case EXPIRE -> {
-                historyReason = reason == null ? EXPIRED_REASON : reason;
-                cancelScheduledOccurrences(occurrences, historyReason);
-                quoteRefund(booking, CancelledBy.SYSTEM, now);
-            }
-            // TODO(giai đoạn ca chăm sóc): START / COMPLETE do bắt đầu / kết thúc buổi kích hoạt — chưa có API gọi.
-            case START, COMPLETE -> {
-            }
-        }
-        bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, fromStatus, toStatus,
-                changedBy, historyReason, now));
-        log.info("Booking {} {} -> {} ({})", booking.getId(), fromStatus, toStatus, action);
-    }
-
-    // Hạn đặt cọc = accept + depositTimeout, nhưng không quá giờ buổi đầu.
-    private Instant calculateDepositDueAt(Instant now, List<BookingOccurrence> occurrences) {
-        Instant dueAt = now.plus(bookingProperties.getSchedule().getDepositTimeout());
-        for (BookingOccurrence occurrence : occurrences) {
-            if (occurrence.getStartAt().isBefore(dueAt)) {
-                dueAt = occurrence.getStartAt();
-            }
-        }
-        return dueAt;
-    }
-
-    // Booking kết thúc sớm → các buổi chưa diễn ra bị hủy (giải phóng caregiver); buổi đang / đã diễn ra giữ nguyên.
-    private void cancelScheduledOccurrences(List<BookingOccurrence> occurrences, String reason) {
-        for (BookingOccurrence occurrence : occurrences) {
-            if (occurrence.getStatus().canTransitionTo(OccurrenceStatus.CANCELLED)) {
-                occurrence.setStatus(OccurrenceStatus.CANCELLED);
-                occurrence.setCancelReason(reason);
-            }
-        }
-    }
-
-    // TODO(Payment): gửi yêu cầu hoàn tiền sang Payment khi có (event + outbox). Hiện chỉ tính và ghi log.
-    private void quoteRefund(Booking booking, CancelledBy cancelledBy, Instant cancelledAt) {
-        RefundQuote refundQuote = refundPolicy.quote(booking, cancelledBy, cancelledAt);
-        log.info("Booking {} refund quote: cancelledBy={}, percent={}", booking.getId(),
-                refundQuote.getCancelledBy(), refundQuote.getRefundPercent());
     }
 
     // ─── TRÙNG LỊCH ──────────────────────────────────────────────────────────

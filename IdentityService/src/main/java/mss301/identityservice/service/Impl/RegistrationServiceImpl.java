@@ -81,7 +81,7 @@ public class RegistrationServiceImpl implements RegistrationService {
     }
 
     @Override
-    public APIResponse<OtpResponse> resend(EmailRequest request) {
+    public APIResponse<OtpResponse> resendOtp(EmailRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
         Map<String, String> pendingData = identityStateService.getOtp(REGISTER_PURPOSE, email);
         if (!pendingData.containsKey(F_PASSWORD)) {

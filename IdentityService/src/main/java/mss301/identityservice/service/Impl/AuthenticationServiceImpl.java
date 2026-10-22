@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.identityservice.config.IdentityProperties;
 import mss301.identityservice.config.RedisKeys;
 import mss301.identityservice.dto.request.LoginRequest;
+import mss301.identityservice.dto.request.LogoutRequest;
 import mss301.identityservice.dto.request.RefreshRequest;
 import mss301.identityservice.dto.response.*;
 import mss301.identityservice.enums.ClientType;
@@ -37,6 +38,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     static String LOGIN_SUCCESS = "Đăng nhập thành công";
     static String REFRESH_SUCCESS = "Làm mới phiên đăng nhập thành công";
     static String LOGOUT_SUCCESS = "Đăng xuất thành công";
+    static String LOGOUT_ALL_SUCCESS = "Đã đăng xuất mọi phiên";
+    static String DEPRECATION_PREFIX = "@deprecated since 2026-10-19; migrate to ";
+    static String DEPRECATION_SUFFIX = " with X-Client-Type: mobile";
+    static String LOGIN_REPLACEMENT_PATH = "/api/v1/auth/login";
+    static String REFRESH_REPLACEMENT_PATH = "/api/v1/auth/refresh";
 
     UserService userService;
     CurrentIdentityService currentIdentityService;
@@ -84,7 +90,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public APIResponse<AuthenticationResponse> refresh(RefreshRequest refreshRequest, HttpServletRequest httpRequest,
                                                        HttpServletResponse httpResponse) {
         ClientType clientType = tokenTransport.resolveClientType(httpRequest);
-        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, refreshRequest, httpRequest);
+        String bodyRefreshToken = refreshRequest != null ? refreshRequest.getRefreshToken() : null;
+        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, bodyRefreshToken, httpRequest);
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
@@ -135,63 +142,30 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     @Override
-    public APIResponse<Void> logout(RefreshRequest refreshRequest, HttpServletRequest httpRequest,
+    public APIResponse<Void> logout(LogoutRequest logoutRequest, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
         ClientType clientType = tokenTransport.resolveClientType(httpRequest);
-        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, refreshRequest, httpRequest);
-
-        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
-            try {
-                try {
-                    Jwt jwtRefresh = jwtService.parseRefresh(rawRefreshToken);
-                    identityStateService.consumeRefresh(jwtRefresh.getId(), jwtService.getUserId(jwtRefresh));
-                } catch (Exception ignored) {
-                }
-
-                String tokenHash = jwtService.hashToken(rawRefreshToken);
-                Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
-                if (!tokenData.isEmpty()) {
-                    UUID userId = UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
-                    String sessionId = tokenData.get(RedisKeys.FIELD_SESSION_ID);
-                    tokenStore.revokeRefreshToken(tokenHash, userId);
-                    sessionStore.removeSession(userId, sessionId);
-                }
-            } catch (AppException e) {
-                // Token lỗi/không hợp lệ vẫn cho logout thành công (idempotent)
-                rethrowUnlessUnauthenticated(e);
-            }
-        }
-
-        // Blacklist access token nếu có
+        String bodyRefreshToken = logoutRequest != null ? logoutRequest.getRefreshToken() : null;
+        String rawRefreshToken = tokenTransport.extractRefreshToken(clientType, bodyRefreshToken, httpRequest);
         String rawAccessToken = tokenTransport.resolveAccessToken(httpRequest);
-        if (rawAccessToken != null) {
-            try {
-                Jwt accessToken = jwtService.parseAccess(rawAccessToken);
-                if (accessToken.getExpiresAt() != null) {
-                    Duration remaining = Duration.between(Instant.now(), accessToken.getExpiresAt());
-                    tokenStore.blacklistAccessToken(accessToken.getId(), remaining);
-                    identityStateService.blacklist(accessToken.getId(), remaining);
-                }
-            } catch (AppException e) {
-                rethrowUnlessUnauthenticated(e);
-            }
+        boolean allSessions = logoutRequest != null && Boolean.TRUE.equals(logoutRequest.getAllSessions());
+
+        // Phải xác định chủ tài khoản TRƯỚC khi thu hồi token hiện tại — sau đó dữ liệu refresh trên Redis không còn.
+        UUID ownerId = allSessions ? findSessionOwner(rawRefreshToken, rawAccessToken) : null;
+
+        revokeRefreshToken(rawRefreshToken);
+        blacklistAccessToken(rawAccessToken);
+
+        String message = LOGOUT_SUCCESS;
+        if (ownerId != null) {
+            // Thu hồi mọi session/refresh trên Redis + tăng authzVersion để mọi access token cũ mất hiệu lực
+            sessionStore.removeAllUserSessions(ownerId);
+            userService.invalidateSessions(ownerId);
+            message = LOGOUT_ALL_SUCCESS;
         }
 
         tokenTransport.clearTokens(clientType, httpResponse);
-        return APIResponse.success(LOGOUT_SUCCESS);
-    }
-
-    @Override
-    public APIResponse<Void> logoutAll(UUID actorId, HttpServletResponse response) {
-        // Thu hồi toàn bộ session và refresh token trên Redis
-        sessionStore.removeAllUserSessions(actorId);
-
-        // Tăng authzVersion trên DB để vô hiệu hóa toàn bộ access token cũ
-        userService.invalidateSessions(actorId);
-
-        // Xóa cookie nếu là client web
-        tokenTransport.clearTokens(ClientType.WEB, response);
-        return APIResponse.success("Đã đăng xuất mọi phiên");
+        return APIResponse.success(message);
     }
 
     @Override
@@ -264,23 +238,28 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     @Override
     @Deprecated
-    public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request) {
+    public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request, HttpServletResponse httpResponse) {
+        markDeprecated(httpResponse, LOGIN_REPLACEMENT_PATH);
         return login(request, null, null);
     }
 
     @Override
     @Deprecated
-    public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request) {
+    public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request, HttpServletResponse httpResponse) {
+        markDeprecated(httpResponse, REFRESH_REPLACEMENT_PATH);
         return refresh(request, null, null);
     }
 
-    @Override
-    @Deprecated
-    public APIResponse<Void> logoutMobile(RefreshRequest refreshRequest, HttpServletRequest request) {
-        return logout(refreshRequest, request, null);
-    }
-
     // ===== Private helpers =====
+
+    // /auth/mobile/* cũ: báo client chuyển sang endpoint hợp nhất kèm X-Client-Type: mobile (từ 2026-10-19).
+    private void markDeprecated(HttpServletResponse httpResponse, String replacementPath) {
+        if (httpResponse == null) {
+            return;
+        }
+        httpResponse.setHeader(TokenClaims.DEPRECATION_HEADER,
+                DEPRECATION_PREFIX + replacementPath + DEPRECATION_SUFFIX);
+    }
 
     private APIResponse<AuthenticationResponse> issueSessionAndTokens(
             UserResponse user, long authzVersion, String existingSessionId,
@@ -315,6 +294,74 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr() != null ? request.getRemoteAddr() : "unknown";
+    }
+
+    // Đăng xuất mọi phiên làm giảm quyền cả tài khoản (endpoint public) → chỉ nhận refresh còn trên Redis hoặc
+    // access token còn hiệu lực đầy đủ (chưa blacklist, user ACTIVE, authzVersion khớp) như /logout-all cũ.
+    private UUID findSessionOwner(String rawRefreshToken, String rawAccessToken) {
+        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+            Map<String, String> tokenData = tokenStore.getRefreshToken(jwtService.hashToken(rawRefreshToken));
+            if (!tokenData.isEmpty()) {
+                return UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
+            }
+        }
+        if (rawAccessToken != null) {
+            try {
+                Jwt accessToken = jwtService.parseAccess(rawAccessToken);
+                String jti = accessToken.getId();
+                if (jti != null && !identityStateService.isBlacklisted(jti) && !tokenStore.isAccessTokenBlacklisted(jti)) {
+                    UUID userId = jwtService.getUserId(accessToken);
+                    currentIdentityService.getActiveUser(userId, jwtService.getAuthzVersion(accessToken));
+                    return userId;
+                }
+            } catch (AppException e) {
+                rethrowUnlessUnauthenticated(e);
+            } catch (AuthenticationException e) {
+                log.debug("Access token không còn hiệu lực khi đăng xuất mọi phiên");
+            }
+        }
+        throw new AppException(ErrorCode.UNAUTHENTICATED);
+    }
+
+    private void revokeRefreshToken(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            return;
+        }
+        try {
+            try {
+                Jwt jwtRefresh = jwtService.parseRefresh(rawRefreshToken);
+                identityStateService.consumeRefresh(jwtRefresh.getId(), jwtService.getUserId(jwtRefresh));
+            } catch (Exception ignored) {
+            }
+
+            String tokenHash = jwtService.hashToken(rawRefreshToken);
+            Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
+            if (!tokenData.isEmpty()) {
+                UUID userId = UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
+                String sessionId = tokenData.get(RedisKeys.FIELD_SESSION_ID);
+                tokenStore.revokeRefreshToken(tokenHash, userId);
+                sessionStore.removeSession(userId, sessionId);
+            }
+        } catch (AppException e) {
+            // Token lỗi/không hợp lệ vẫn cho logout thành công (idempotent)
+            rethrowUnlessUnauthenticated(e);
+        }
+    }
+
+    private void blacklistAccessToken(String rawAccessToken) {
+        if (rawAccessToken == null) {
+            return;
+        }
+        try {
+            Jwt accessToken = jwtService.parseAccess(rawAccessToken);
+            if (accessToken.getExpiresAt() != null) {
+                Duration remaining = Duration.between(Instant.now(), accessToken.getExpiresAt());
+                tokenStore.blacklistAccessToken(accessToken.getId(), remaining);
+                identityStateService.blacklist(accessToken.getId(), remaining);
+            }
+        } catch (AppException e) {
+            rethrowUnlessUnauthenticated(e);
+        }
     }
 
     private void rethrowUnlessUnauthenticated(AppException exception) {

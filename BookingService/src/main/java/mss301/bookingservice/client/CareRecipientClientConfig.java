@@ -8,8 +8,9 @@ import org.springframework.context.annotation.Bean;
 public class CareRecipientClientConfig {
 
     @Bean
-    public RequestInterceptor careRecipientRequestInterceptor() {
-        return new FeignAuthForwardingInterceptor();
+    // snapshot / access của CareRecipient chỉ cho SERVICE (người dùng không được dò hồ sơ / quyền của người khác).
+    public RequestInterceptor careRecipientRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
+        return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
     @Bean

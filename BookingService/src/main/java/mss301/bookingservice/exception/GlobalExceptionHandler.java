@@ -26,6 +26,7 @@ public class GlobalExceptionHandler {
 
     // Tên unique constraint trong schema/booking.sql
     private static final String DETAIL_SERVICE_CONSTRAINT = "uk_booking_details_service";
+    private static final String CAREGIVER_SLOT_CONSTRAINT = "ex_booking_occurrences_caregiver_slot";
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<APIResponse<Void>> handlingAppException(AppException exception) {
@@ -77,6 +78,9 @@ public class GlobalExceptionHandler {
         String normalizedDetail = detail == null ? "" : detail.toLowerCase(Locale.ROOT);
         if (normalizedDetail.contains(DETAIL_SERVICE_CONSTRAINT)) {
             return toResponse(ErrorCode.DUPLICATE_SERVICE);
+        }
+        if (normalizedDetail.contains(CAREGIVER_SLOT_CONSTRAINT)) {
+            return toResponse(ErrorCode.CAREGIVER_SCHEDULE_CONFLICT);
         }
         return toResponse(ErrorCode.INVALID_REQUEST);
     }

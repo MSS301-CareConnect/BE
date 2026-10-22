@@ -4,5 +4,6 @@ package mss301.bookingservice.enums;
 public enum CancelledBy {
     CUSTOMER,
     CENTER,
-    SYSTEM
+    SYSTEM,
+    ADMIN
 }

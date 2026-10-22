@@ -28,14 +28,9 @@ spring:
 
   cloud:
     openfeign:
+      # Chưa có Feign client (Catalog chỉ nhận lời gọi). Client mới khai báo timeout riêng ở client.config.<tên>.
       circuitbreaker:
         enabled: true
-      client:
-        config:
-          identity:
-            connect-timeout: ${CARE_CATALOG_IDENTITY_CONNECT_TIMEOUT_MS:2000}
-            read-timeout: ${CARE_CATALOG_IDENTITY_READ_TIMEOUT_MS:3000}
-            logger-level: none
     circuitbreaker:
       # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
       resilience4j:
@@ -77,6 +72,3 @@ care-catalog:
   jwt:
     issuer: ${CARE_CATALOG_JWT_ISSUER}
     jwks-uri: ${CARE_CATALOG_JWT_JWKS_URI}
-
-  identity:
-    url: ${CARE_CATALOG_IDENTITY_URL}

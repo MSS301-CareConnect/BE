@@ -20,9 +20,6 @@ public class CareCatalogProperties {
     @Valid
     Jwt jwt = new Jwt();
 
-    @Valid
-    Identity identity = new Identity();
-
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Jwt {
@@ -33,13 +30,5 @@ public class CareCatalogProperties {
         // JWKS của IdentityService, gọi trực tiếp (không qua gateway).
         @NotBlank
         String jwksUri;
-    }
-
-    @Data
-    @FieldDefaults(level = AccessLevel.PRIVATE)
-    public static class Identity {
-        // Base URL IdentityService cho Feign (không có service discovery).
-        @NotBlank
-        String url;
     }
 }

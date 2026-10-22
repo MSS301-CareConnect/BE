@@ -9,12 +9,15 @@ import mss301.carerecipientservice.dto.request.*;
 import mss301.carerecipientservice.dto.response.*;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
 import mss301.carerecipientservice.enums.RecipientStatus;
+import mss301.carerecipientservice.enums.RoleCode;
+import mss301.carerecipientservice.security.CurrentRoles;
 import mss301.carerecipientservice.security.CurrentUserId;
 import mss301.carerecipientservice.service.CareRecipientService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -28,55 +31,43 @@ public class CareRecipientController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // Phạm vi theo role nằm ở service: CUSTOMER → hồ sơ mình quản lý; ADMIN → toàn hệ thống. createdBy / includeDeleted
+    // chỉ có tác dụng với ADMIN — CUSTOMER gửi lên bị bỏ qua.
     @GetMapping
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER','ADMIN')")
     public APIResponse<PageResponse<CareRecipientSummaryResponse>> list(
             @CurrentUserId UUID actorId,
-            @RequestParam(required = false) RecipientStatus status,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return careRecipientService.list(actorId, status, keyword, page, size);
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("hasRole('CUSTOMER')")
-    public APIResponse<CareRecipientDetailResponse> get(@CurrentUserId UUID actorId, @PathVariable UUID id) {
-        return careRecipientService.get(actorId, id);
-    }
-
-    @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
-    public APIResponse<PageResponse<CareRecipientSummaryResponse>> listForAdmin(
+            @CurrentRoles Set<RoleCode> roles,
             @RequestParam(required = false) RecipientStatus status,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID createdBy,
             @RequestParam(defaultValue = "false") boolean includeDeleted,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return careRecipientService.listForAdmin(status, keyword, createdBy, includeDeleted, page, size);
+        return careRecipientService.list(actorId, roles, status, keyword, createdBy, includeDeleted, page, size);
     }
 
-    @GetMapping("/admin/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public APIResponse<CareRecipientDetailResponse> getForAdmin(@PathVariable UUID id) {
-        return careRecipientService.getForAdmin(id);
+    // ADMIN → mọi hồ sơ (kể cả đã lưu trữ); CUSTOMER → hồ sơ mình quản lý; CAREGIVER → chỉ careSnapshot khi
+    // BookingService xác nhận đang được phân công. Ngoài phạm vi → 404.
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('CUSTOMER','ADMIN','CAREGIVER')")
+    public APIResponse<CareRecipientDetailResponse> get(
+            @CurrentUserId UUID actorId,
+            @CurrentRoles Set<RoleCode> roles,
+            @PathVariable UUID id) {
+        return careRecipientService.get(actorId, roles, id);
     }
 
-    @GetMapping("/caregiver/{id}")
-    @PreAuthorize("hasRole('CAREGIVER')")
-    public APIResponse<RecipientSnapshotResponse> getForCaregiver(@CurrentUserId UUID actorId, @PathVariable UUID id) {
-        return careRecipientService.getSnapshotForCaregiver(actorId, id);
-    }
-
+    // Chỉ service khác (BookingService lúc đặt lịch) — người dùng xem hồ sơ qua GET /{id} theo quyền thành viên.
     @GetMapping("/{id}/snapshot")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<RecipientSnapshotResponse> getSnapshot(@PathVariable UUID id) {
         return careRecipientService.getSnapshot(id);
     }
 
+    // Chỉ service khác: userId tùy ý trong query, người dùng thường không được dò quyền của người khác.
     @GetMapping("/{id}/access")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<AccessCheckResponse> checkAccess(
             @PathVariable UUID id,
             @RequestParam UUID userId,

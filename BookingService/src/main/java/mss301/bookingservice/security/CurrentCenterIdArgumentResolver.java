@@ -29,8 +29,12 @@ public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentRes
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         // Phạm vi trung tâm chỉ lấy từ token (Identity phát), không bao giờ từ request.
+        boolean required = parameter.getParameterAnnotation(CurrentCenterId.class).required();
         String centerId = jwtAuthentication.getToken().getClaimAsString(TokenClaims.CENTER_ID);
         if (centerId == null || centerId.isBlank()) {
+            if (!required) {
+                return null;
+            }
             throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
         }
         try {

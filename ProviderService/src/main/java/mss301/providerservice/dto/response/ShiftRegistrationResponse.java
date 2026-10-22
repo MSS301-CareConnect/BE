@@ -7,7 +7,10 @@ import mss301.providerservice.enums.RegistrationStatus;
 import java.time.Instant;
 import java.util.UUID;
 
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ShiftRegistrationResponse {
     UUID id;

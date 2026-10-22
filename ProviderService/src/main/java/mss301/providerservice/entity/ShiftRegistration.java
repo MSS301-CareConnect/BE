@@ -9,8 +9,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "shift_registrations", uniqueConstraints = @UniqueConstraint(
-        name = "uk_shift_registrations_shift_caregiver", columnNames = {"work_shift_id", "caregiver_id"}))
+// Unique (ca, caregiver) chỉ áp cho đăng ký PENDING/APPROVED — index một phần trong schema/provider.sql
+// (JPA không khai báo được), nên không đặt @UniqueConstraint ở đây.
+@Table(name = "shift_registrations")
 @Getter
 @Setter
 @NoArgsConstructor

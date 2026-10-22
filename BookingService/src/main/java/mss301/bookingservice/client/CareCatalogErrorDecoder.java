@@ -25,7 +25,7 @@ public class CareCatalogErrorDecoder implements ErrorDecoder {
             return new AppException(ErrorCode.CENTER_SERVICE_NOT_SUPPORTED);
         }
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            log.error("CareCatalogService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            log.error("CareCatalogService rejected credentials (HTTP {}) for {}", status, methodKey);
         } else {
             log.warn("CareCatalogService error (HTTP {}) for {}", status, methodKey);
         }

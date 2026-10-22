@@ -54,4 +54,11 @@ public class BookingSummaryResponse {
     BigDecimal totalAmount;
 
     Instant createdAt;
+
+    // BK-06: buổi kế tiếp chưa kết thúc (null khi không còn), số buổi đã hoàn thành / tổng số buổi.
+    Instant nextOccurrenceAt;
+
+    int completedCount;
+
+    int totalCount;
 }

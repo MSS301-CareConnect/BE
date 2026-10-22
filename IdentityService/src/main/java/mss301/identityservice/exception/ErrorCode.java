@@ -82,6 +82,12 @@ public enum ErrorCode {
     USER_IDS_REQUIRED(1112, "Danh sách userId không được để trống", HttpStatus.BAD_REQUEST),
     USER_BATCH_TOO_LARGE(1113, "Danh sách userId vượt quá giới hạn 100 phần tử", HttpStatus.BAD_REQUEST),
 
+    // SERVICE CLIENT (client-credentials)
+    INVALID_CLIENT_CREDENTIALS(1114, "clientId hoặc clientSecret không đúng", HttpStatus.UNAUTHORIZED),
+    CLIENT_ID_REQUIRED(1115, "clientId không được để trống", HttpStatus.BAD_REQUEST),
+    CLIENT_SECRET_REQUIRED(1116, "clientSecret không được để trống", HttpStatus.BAD_REQUEST),
+    SERVICE_CLIENT_DISABLED(1117, "Service client đã bị vô hiệu hóa", HttpStatus.UNAUTHORIZED),
+
     // PHIÊN & BẢO MẬT HỢP NHẤT
     LOGIN_ATTEMPTS_EXCEEDED(1082, "Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.", HttpStatus.TOO_MANY_REQUESTS),
     SESSION_NOT_FOUND(1083, "Phiên đăng nhập không tồn tại hoặc đã hết hạn", HttpStatus.NOT_FOUND),

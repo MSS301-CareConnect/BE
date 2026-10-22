@@ -4,8 +4,13 @@ import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ShiftRegistrationRequest {
-    @Size(max = 2000) String caregiverNote;
+
+    @Size(max = 2000)
+    String caregiverNote;
 }

@@ -6,6 +6,7 @@ import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.request.EmergencyContactRequest;
 import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
 import mss301.carerecipientservice.dto.request.MedicationRequest;
+import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
 import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
@@ -36,6 +37,20 @@ class CareRecipientMapperTests {
     private final EmergencyContactMapper emergencyContactMapper = new EmergencyContactMapperImpl();
     private final CareRecipientMapper careRecipientMapper = new CareRecipientMapperImpl(medicationMapper, emergencyContactMapper);
     private final RecipientManagerMapper recipientManagerMapper = new RecipientManagerMapperImpl();
+
+    @Test
+    void caregiverDetailOnlyCarriesSnapshot() {
+        RecipientSnapshotResponse snapshot = RecipientSnapshotResponse.builder()
+                .recipientId(UUID.randomUUID())
+                .fullName("Ong B")
+                .build();
+        CareRecipientDetailResponse response = careRecipientMapper.toCaregiverDetailResponse(snapshot);
+        assertThat(response.getCareSnapshot()).isSameAs(snapshot);
+        assertThat(response.getProfile()).isNull();
+        assertThat(response.getMyAccessLevel()).isNull();
+        assertThat(response.getMedications()).isNull();
+        assertThat(response.getEmergencyContacts()).isNull();
+    }
 
     @Test
     void managerResponseWithoutProfileOnlyHasLocalData() {

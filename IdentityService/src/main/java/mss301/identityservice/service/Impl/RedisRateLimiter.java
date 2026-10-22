@@ -69,6 +69,49 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    @Override
+    public void checkServiceTokenRateLimit(String clientId) {
+        String key = buildServiceTokenKey(clientId);
+        try {
+            String value = stringRedisTemplate.opsForValue().get(key);
+            if (value != null && Integer.parseInt(value) >= MAX_LOGIN_ATTEMPTS) {
+                log.warn("Service token rate limit exceeded for clientId={}", clientId);
+                throw new AppException(ErrorCode.LOGIN_ATTEMPTS_EXCEEDED);
+            }
+        } catch (DataAccessException e) {
+            log.error("Redis service token rate limit check failed", e);
+            throw new AppException(ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
+        }
+    }
+
+    @Override
+    public void recordServiceTokenFailure(String clientId) {
+        String key = buildServiceTokenKey(clientId);
+        try {
+            Long count = stringRedisTemplate.opsForValue().increment(key);
+            if (count != null && count == 1) {
+                stringRedisTemplate.expire(key, RATE_LIMIT_WINDOW);
+            }
+        } catch (DataAccessException e) {
+            log.error("Redis service token rate limit record failure failed", e);
+            throw new AppException(ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
+        }
+    }
+
+    @Override
+    public void resetServiceTokenAttempts(String clientId) {
+        try {
+            stringRedisTemplate.delete(buildServiceTokenKey(clientId));
+        } catch (DataAccessException e) {
+            log.error("Redis service token rate limit reset failed", e);
+            throw new AppException(ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
+        }
+    }
+
+    private String buildServiceTokenKey(String clientId) {
+        return RedisKeys.RATE_LIMIT_SERVICE_TOKEN + sha256Hex(clientId.trim().toLowerCase());
+    }
+
     private String rateLimitKey(String email, String ip) {
         String normalized = (email != null ? email.trim().toLowerCase() : "") + ":" + (ip != null ? ip.trim() : "unknown");
         return RedisKeys.RATE_LIMIT_LOGIN + sha256Hex(normalized);

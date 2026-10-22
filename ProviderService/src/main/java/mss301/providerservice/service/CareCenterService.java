@@ -4,10 +4,12 @@ import mss301.providerservice.dto.request.CenterCreateRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.CenterCardResponse;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.dto.response.PageResponse;
 import mss301.providerservice.enums.CenterStatus;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 public interface CareCenterService {
@@ -18,6 +20,11 @@ public interface CareCenterService {
                                                    int page, int size);
 
     APIResponse<CenterResponse> get(UUID id);
+
+    APIResponse<PageResponse<CenterCardResponse>> listPublic(String keyword, UUID careServiceId, BigDecimal minPrice,
+                                                             BigDecimal maxPrice, int page, int size);
+
+    APIResponse<CenterCardResponse> getPublic(UUID centerId);
 
     APIResponse<CenterResponse> update(UUID actorId, UUID id, CenterUpdateRequest request);
 

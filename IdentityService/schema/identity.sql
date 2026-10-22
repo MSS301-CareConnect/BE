@@ -64,4 +64,17 @@ CREATE TABLE identity_audit (
     created_at timestamptz NOT NULL
 );
 CREATE INDEX idx_identity_audit_target ON identity_audit(target_id, created_at);
+-- Token SERVICE (client-credentials, IAM-01): seed từ env IDENTITY_SERVICE_CLIENTS, chỉ lưu BCrypt hash.
+CREATE TABLE service_clients (
+    client_uuid uuid PRIMARY KEY,
+    client_id varchar(50) NOT NULL,
+    secret_hash varchar(255) NOT NULL,
+    active boolean NOT NULL DEFAULT true,
+    description varchar(255),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    deleted_at timestamptz
+);
+-- client_id duy nhất trong các client chưa xóa mềm (xóa rồi tạo lại cùng tên được).
+CREATE UNIQUE INDEX uk_service_clients_client_id ON service_clients (client_id) WHERE deleted_at IS NULL;
 COMMIT;

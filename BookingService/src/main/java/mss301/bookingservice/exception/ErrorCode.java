@@ -40,6 +40,7 @@ public enum ErrorCode {
     SERVICES_REQUIRED(5108, "Cần chọn ít nhất một dịch vụ", HttpStatus.BAD_REQUEST),
     TOO_MANY_SERVICES(5109, "Một booking tối đa 10 dịch vụ", HttpStatus.BAD_REQUEST),
     DUPLICATE_SERVICE(5110, "Mỗi dịch vụ chỉ được chọn một lần", HttpStatus.BAD_REQUEST),
+    INVALID_SORT(5112, "Chỉ sắp xếp theo createdAt hoặc startDate, chiều asc / desc", HttpStatus.BAD_REQUEST),
     CARE_SERVICE_ID_REQUIRED(5111, "Dịch vụ chăm sóc không được để trống", HttpStatus.BAD_REQUEST),
 
     // LỊCH / BUỔI CHĂM SÓC
@@ -63,6 +64,19 @@ public enum ErrorCode {
     OCCURRENCE_NOT_FOUND(5217, "Buổi chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
     OCCURRENCE_NOT_MODIFIABLE(5218, "Chỉ đổi được buổi chăm sóc chưa bắt đầu", HttpStatus.CONFLICT),
     INVALID_DATE_FILTER(5219, "Khoảng ngày lọc không hợp lệ hoặc vượt quá giới hạn", HttpStatus.BAD_REQUEST),
+    SESSION_WINDOW_NOT_OPEN(5222, "Chưa tới giờ check-in (sớm nhất 30 phút trước giờ bắt đầu) hoặc buổi đã kết thúc", HttpStatus.CONFLICT),
+    OCCURRENCE_ID_REQUIRED(5227, "Mã buổi chăm sóc không được để trống", HttpStatus.BAD_REQUEST),
+    INVALID_OCCURRENCE_TRANSITION(5221, "Buổi chăm sóc không ở trạng thái cho phép thao tác này", HttpStatus.CONFLICT),
+    BOOKING_NOT_CONFIRMED(5223, "Booking chưa được xác nhận (chưa đặt cọc) hoặc đã kết thúc", HttpStatus.CONFLICT),
+    CAREGIVER_NOT_AVAILABLE(5226, "Người chăm sóc không có lịch làm việc (hoặc đang nghỉ) vào thời gian đã chọn", HttpStatus.CONFLICT),
+    TOO_MANY_PENDING_BOOKINGS(5228, "Bạn đang có quá nhiều booking chờ xử lý, vui lòng chờ trung tâm duyệt hoặc hủy bớt", HttpStatus.CONFLICT),
+    CAREGIVER_IDS_REQUIRED(5229, "Danh sách người chăm sóc không được để trống", HttpStatus.BAD_REQUEST),
+    SLOTS_REQUIRED(5230, "Danh sách khoảng thời gian không được để trống", HttpStatus.BAD_REQUEST),
+    INVALID_TIME_SLOT(5231, "Khoảng thời gian không hợp lệ (giờ kết thúc phải sau giờ bắt đầu)", HttpStatus.BAD_REQUEST),
+    TOO_MANY_CAREGIVER_IDS(5232, "Tối đa 200 người chăm sóc mỗi lần kiểm", HttpStatus.BAD_REQUEST),
+    TOO_MANY_SLOTS(5233, "Tối đa 60 khoảng thời gian mỗi lần kiểm", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_REQUIRED(5224, "Cần chọn bảng giá cho mỗi dịch vụ", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_UNIT_MISMATCH(5225, "Thời lượng mỗi buổi vượt quá thời lượng của gói giá theo ca đã chọn", HttpStatus.BAD_REQUEST),
 
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "Cần phân công người chăm sóc trước khi chấp nhận booking", HttpStatus.CONFLICT),
@@ -76,12 +90,30 @@ public enum ErrorCode {
     CENTER_NOT_ACTIVE(5408, "Trung tâm chăm sóc hiện không nhận đặt lịch", HttpStatus.CONFLICT),
 
     // TÍCH HỢP CARE CATALOG
+    CUSTOMER_HAS_OUTSTANDING_DEBT(5157, "Bạn còn hóa đơn quá hạn chưa thanh toán, vui lòng thanh toán trước khi đặt lịch mới", HttpStatus.CONFLICT),
+    OCCURRENCE_NOT_CANCELLABLE(5150, "Có buổi chăm sóc đã bắt đầu, đã kết thúc hoặc đã hủy — không hủy được", HttpStatus.CONFLICT),
+    CANCEL_SCOPE_NOT_ALLOWED(5151, "Booking chưa đặt cọc chỉ hủy được toàn bộ, không hủy từng buổi", HttpStatus.CONFLICT),
+    OCCURRENCE_NOT_IN_BOOKING(5153, "Buổi chăm sóc không thuộc booking này", HttpStatus.BAD_REQUEST),
+    CANCELLATION_PREVIEW_EXPIRED(5159, "Số tiền hoàn đã thay đổi hoặc bản xem trước đã hết hạn, vui lòng xem lại", HttpStatus.CONFLICT),
+    SYSTEM_CANCELLATION_REASON_REQUIRED(5160, "Lý do hủy hệ thống không được để trống (CENTER_LOCKED, CAREGIVER_DEACTIVATED)", HttpStatus.BAD_REQUEST),
+    PAYMENT_SERVICE_UNAVAILABLE(5154, "Dịch vụ thanh toán tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     CARE_CATALOG_UNAVAILABLE(5300, "Dịch vụ danh mục / bảng giá tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     PRICE_PLAN_NOT_FOUND(5301, "Bảng giá dịch vụ không tồn tại hoặc không hợp lệ", HttpStatus.NOT_FOUND),
     CENTER_SERVICE_NOT_SUPPORTED(5302, "Trung tâm không cung cấp dịch vụ chăm sóc đã chọn", HttpStatus.BAD_REQUEST),
 
     // TÍCH HỢP IDENTITY
+    SESSION_NOT_FOUND(5800, "Ca chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
+    SESSION_ALREADY_EXISTS(5801, "Buổi chăm sóc này đã được check-in", HttpStatus.CONFLICT),
+    SESSION_NOT_IN_PROGRESS(5802, "Ca chăm sóc đã kết thúc", HttpStatus.CONFLICT),
+    INVALID_COORDINATES(5803, "Tọa độ không hợp lệ", HttpStatus.BAD_REQUEST),
+    TASKS_PENDING(5805, "Còn công việc chưa hoàn thành hoặc chưa ghi lý do bỏ qua", HttpStatus.CONFLICT),
+    NO_SHOW_NOTE_REQUIRED(5812, "Cần mô tả tình huống khách vắng mặt (10–1000 ký tự)", HttpStatus.BAD_REQUEST),
+    NO_SHOW_NOT_REPORTED(5813, "Buổi chăm sóc chưa có báo cáo khách vắng mặt", HttpStatus.CONFLICT),
+    NO_SHOW_ALREADY_REPORTED(5814, "Buổi chăm sóc này đã được báo khách vắng mặt", HttpStatus.CONFLICT),
+    NO_SHOW_DECISION_REQUIRED(5815, "Cần chọn xác nhận hoặc bác báo cáo khách vắng mặt", HttpStatus.BAD_REQUEST),
+    NO_SHOW_WINDOW_INVALID(5817, "Chỉ báo khách vắng mặt từ giờ bắt đầu buổi tới 60 phút sau giờ kết thúc", HttpStatus.CONFLICT),
     IDENTITY_UNAVAILABLE(5500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
+    SERVICE_TOKEN_UNAVAILABLE(5501, "Không xác thực được với dịch vụ liên quan, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),
 
     // TÍCH HỢP CARE RECIPIENT
     CARE_RECIPIENT_UNAVAILABLE(5600, "Dịch vụ hồ sơ người bệnh tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),

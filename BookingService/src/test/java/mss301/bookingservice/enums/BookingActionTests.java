@@ -34,12 +34,17 @@ class BookingActionTests {
         EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_CENTER,
                 EnumSet.of(BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
         EXPECTED_TARGETS.put(BookingAction.CANCEL_BY_CENTER, BookingStatus.CANCELLED);
+        EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_SYSTEM, EnumSet.of(BookingStatus.PENDING,
+                BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
+        EXPECTED_TARGETS.put(BookingAction.CANCEL_BY_SYSTEM, BookingStatus.CANCELLED);
         EXPECTED_SOURCES.put(BookingAction.EXPIRE, EnumSet.of(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT));
         EXPECTED_TARGETS.put(BookingAction.EXPIRE, BookingStatus.EXPIRED);
         EXPECTED_SOURCES.put(BookingAction.START, EnumSet.of(BookingStatus.CONFIRMED));
         EXPECTED_TARGETS.put(BookingAction.START, BookingStatus.IN_PROGRESS);
-        EXPECTED_SOURCES.put(BookingAction.COMPLETE, EnumSet.of(BookingStatus.IN_PROGRESS));
-        EXPECTED_TARGETS.put(BookingAction.COMPLETE, BookingStatus.COMPLETED);
+        EXPECTED_SOURCES.put(BookingAction.FINALIZE, EnumSet.of(BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
+        EXPECTED_TARGETS.put(BookingAction.FINALIZE, BookingStatus.COMPLETED);
+        EXPECTED_SOURCES.put(BookingAction.FINALIZE_CANCELLED, EnumSet.of(BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
+        EXPECTED_TARGETS.put(BookingAction.FINALIZE_CANCELLED, BookingStatus.CANCELLED);
     }
 
     @Test

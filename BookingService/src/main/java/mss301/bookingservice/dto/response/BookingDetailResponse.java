@@ -74,6 +74,10 @@ public class BookingDetailResponse {
 
     Instant confirmedAt;
 
+    Instant startedAt;
+
+    Instant completedAt;
+
     Instant cancelledAt;
 
     UUID cancelledBy;
@@ -93,4 +97,7 @@ public class BookingDetailResponse {
     List<BookingItemResponse> services;
 
     List<OccurrenceResponse> occurrences;
+
+    // Chỉ có ở response hủy khi booking đã đặt cọc (BK-03 / BK-04).
+    CancellationRefundResponse refund;
 }

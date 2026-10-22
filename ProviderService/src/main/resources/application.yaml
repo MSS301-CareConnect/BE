@@ -36,6 +36,14 @@ spring:
             connect-timeout: ${PROVIDER_IDENTITY_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${PROVIDER_IDENTITY_READ_TIMEOUT_MS:3000}
             logger-level: none
+          care-catalog:
+            connect-timeout: ${PROVIDER_CARE_CATALOG_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${PROVIDER_CARE_CATALOG_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          booking:
+            connect-timeout: ${PROVIDER_BOOKING_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${PROVIDER_BOOKING_READ_TIMEOUT_MS:3000}
+            logger-level: none
     circuitbreaker:
       resilience4j:
         disable-thread-pool: true
@@ -81,4 +89,19 @@ provider:
     url: ${PROVIDER_IDENTITY_URL}
 
   media:
-    url: ${PROVIDER_MEDIA_URL:http://localhost:8085}
+    url: ${PROVIDER_MEDIA_URL:http://localhost:8080}
+
+  # CareCatalogService qua ApiGateway (không cắt prefix) — kiểm offering khi gán kỹ năng caregiver.
+  care-catalog:
+    url: ${PROVIDER_CARE_CATALOG_URL:http://localhost:8080}
+
+  # BookingService qua ApiGateway — caregiver bận (C5.1) khi tạo ngày nghỉ / hủy lịch / tìm caregiver theo khung giờ.
+  booking:
+    url: ${PROVIDER_BOOKING_URL:http://localhost:8080}
+
+  # Client-credentials xin token SERVICE ở Identity (POST /api/v1/auth/service-token, qua provider.identity.url).
+  service-client:
+    client-id: ${PROVIDER_SERVICE_CLIENT_ID:}
+    client-secret: ${PROVIDER_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${PROVIDER_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${PROVIDER_SERVICE_TOKEN_READ_TIMEOUT:3s}

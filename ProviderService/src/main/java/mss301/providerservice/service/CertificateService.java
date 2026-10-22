@@ -14,7 +14,7 @@ public interface CertificateService {
 
     APIResponse<List<CertificateResponse>> list(UUID actorId, UUID caregiverId);
 
-    APIResponse<List<CertificateResponse>> verifiedList(UUID caregiverId);
+    APIResponse<List<CertificateResponse>> listVerified(UUID caregiverId);
 
     APIResponse<CertificateResponse> update(UUID actorId, UUID id, CertificateRequest request);
 

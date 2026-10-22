@@ -20,8 +20,8 @@ public class IdentityErrorDecoder implements ErrorDecoder {
     public Exception decode(String methodKey, Response response) {
         int status = response.status();
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            // Sai/thiếu BOOKING_IDENTITY_INTERNAL_SECRET — lỗi cấu hình, cần người vận hành xử lý.
-            log.error("IdentityService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            // Token bị từ chối (forward token người dùng hết hạn / thiếu quyền) — cần người vận hành kiểm tra.
+            log.error("IdentityService rejected credentials (HTTP {}) for {}", status, methodKey);
         } else {
             log.warn("IdentityService error (HTTP {}) for {}", status, methodKey);
         }

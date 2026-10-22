@@ -1,6 +1,10 @@
 package mss301.providerservice.security;
 
-import java.lang.annotation.*;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
  * Bind userId (UUID, = {@code sub} của access token) của người đang gọi vào tham số controller —

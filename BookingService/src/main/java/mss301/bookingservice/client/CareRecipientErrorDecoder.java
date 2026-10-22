@@ -24,8 +24,8 @@ public class CareRecipientErrorDecoder implements ErrorDecoder {
             return new AppException(ErrorCode.RECIPIENT_NOT_FOUND);
         }
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            // Sai/thiếu BOOKING_CARE_RECIPIENT_INTERNAL_SECRET — lỗi cấu hình.
-            log.error("CareRecipientService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            // Token bị từ chối: token SERVICE sai cấu hình / thiếu quyền, hoặc token người dùng không đủ phạm vi.
+            log.error("CareRecipientService rejected credentials (HTTP {}) for {}", status, methodKey);
         } else {
             log.warn("CareRecipientService error (HTTP {}) for {}", status, methodKey);
         }

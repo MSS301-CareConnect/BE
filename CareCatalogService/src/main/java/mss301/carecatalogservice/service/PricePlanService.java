@@ -14,7 +14,7 @@ public interface PricePlanService {
 
     APIResponse<List<PricePlanResponse>> listByCenterOffering(UUID centerOfferingId);
 
-    APIResponse<PricePlanResponse> getById(UUID id);
+    APIResponse<PricePlanResponse> get(UUID id);
 
     APIResponse<Void> delete(UUID centerId, UUID id);
 }

@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 
 /**
  * Correlation id: nhận X-Request-Id từ gateway (hoặc sinh mới), đưa vào MDC cho log và trả lại trong response.
- * Feign đọc MDC để chuyển tiếp sang IdentityService. Chạy trước Spring Security để cả 401/403 cũng có id.
+ * Feign client (khi có) đọc MDC để chuyển tiếp sang service khác. Chạy trước Spring Security để cả 401/403 cũng có id.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)

@@ -24,6 +24,18 @@ import java.util.UUID;
 public class PricePlanController {
     PricePlanService pricePlanService;
 
+    @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
+        return pricePlanService.listByCenterOffering(centerOfferingId);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<PricePlanResponse> get(@PathVariable UUID id) {
+        return pricePlanService.get(id);
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<PricePlanResponse> create(@CurrentCenterId UUID centerId,
@@ -37,18 +49,6 @@ public class PricePlanController {
                                                  @PathVariable UUID id,
                                                  @Valid @RequestBody PricePlanRequest request) {
         return pricePlanService.update(centerId, id, request);
-    }
-
-    @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
-    @PreAuthorize("isAuthenticated()")
-    public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
-        return pricePlanService.listByCenterOffering(centerOfferingId);
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public APIResponse<PricePlanResponse> getById(@PathVariable UUID id) {
-        return pricePlanService.getById(id);
     }
 
     @DeleteMapping("/{id}")

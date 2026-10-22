@@ -1,6 +1,5 @@
 package mss301.bookingservice.client;
 
-import mss301.bookingservice.client.dto.ProviderCaregiverResponse;
 import mss301.bookingservice.client.dto.ProviderCenterResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -20,6 +19,4 @@ public interface ProviderClient {
     @GetMapping("/api/v1/care-centers/{centerId}")
     RemoteApiResponse<ProviderCenterResponse> getCenter(@PathVariable("centerId") UUID centerId);
 
-    @GetMapping("/api/v1/caregivers/{caregiverId}")
-    RemoteApiResponse<ProviderCaregiverResponse> getCaregiver(@PathVariable("caregiverId") UUID caregiverId);
 }

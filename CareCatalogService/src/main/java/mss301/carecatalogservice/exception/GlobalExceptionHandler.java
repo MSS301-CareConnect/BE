@@ -16,9 +16,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.util.Locale;
+
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    private static final String CENTER_SERVICE_UNIQUE_INDEX = "uk_center_services_center_care";
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<APIResponse<Void>> handlingAppException(AppException exception) {
@@ -65,7 +69,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<APIResponse<Void>> handlingDataIntegrityViolation(DataIntegrityViolationException exception) {
-        // Constraint ở DB là chốt chặn cuối (FK, NOT NULL) khi bước kiểm tra trong service bị lọt.
+        // Constraint ở DB là chốt chặn cuối (FK, NOT NULL, unique) khi bước kiểm tra trong service bị lọt — vd hai request
+        // song song cùng đăng ký một dịch vụ chuẩn cho một trung tâm.
+        String detail = exception.getMostSpecificCause().getMessage();
+        if (detail != null && detail.toLowerCase(Locale.ROOT).contains(CENTER_SERVICE_UNIQUE_INDEX)) {
+            return toResponse(ErrorCode.CENTER_SERVICE_ALREADY_EXISTS);
+        }
         return toResponse(ErrorCode.INVALID_REQUEST);
     }
 

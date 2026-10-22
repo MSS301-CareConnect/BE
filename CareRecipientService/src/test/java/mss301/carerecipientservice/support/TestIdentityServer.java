@@ -45,6 +45,8 @@ public final class TestIdentityServer {
 
     public static final String ISSUER = "https://identity.test";
     public static final String KEY_ID = "test-key";
+    public static final String SERVICE_CLIENT_ID = "care-recipient";
+    public static final String SERVICE_CLIENT_SECRET = "care-recipient-test-secret";
 
     private static final TestIdentityServer INSTANCE = new TestIdentityServer();
 
@@ -53,6 +55,8 @@ public final class TestIdentityServer {
     private final AtomicBoolean failing = new AtomicBoolean(false);
     private final AtomicInteger batchCalls = new AtomicInteger();
     private final AtomicReference<String> lastRequestId = new AtomicReference<>();
+    private final Set<String> serviceTokens = ConcurrentHashMap.newKeySet();
+    private final AtomicInteger serviceTokenCalls = new AtomicInteger();
     private final RSAKey signingKey;
     private final HttpServer server;
 
@@ -71,7 +75,20 @@ public final class TestIdentityServer {
         }
         server.createContext("/.well-known/jwks.json", this::handleJwks);
         server.createContext("/api/v1/users", this::handleApiUsers);
+        server.createContext("/api/v1/auth/service-token", this::handleServiceToken);
         server.start();
+    }
+
+    /**
+     * Token SERVICE hợp lệ do server giả này phát cho đúng client id/secret test — TestBookingServer dùng để chắc chắn
+     * CareRecipient gửi token SERVICE chứ không chuyển tiếp token người dùng.
+     */
+    public boolean isServiceToken(String token) {
+        return serviceTokens.contains(token);
+    }
+
+    public int serviceTokenCalls() {
+        return serviceTokenCalls.get();
     }
 
     public static TestIdentityServer get() {
@@ -227,6 +244,23 @@ public final class TestIdentityServer {
         }
         UUID id = UUID.fromString(path.substring("/api/v1/users/".length()));
         writeUserOrNotFound(exchange, usersById.get(id));
+    }
+
+    private void handleServiceToken(HttpExchange exchange) throws IOException {
+        serviceTokenCalls.incrementAndGet();
+        JsonNode body = objectMapper.readTree(exchange.getRequestBody());
+        if (!SERVICE_CLIENT_ID.equals(body.path("clientId").asString())
+                || !SERVICE_CLIENT_SECRET.equals(body.path("clientSecret").asString())) {
+            write(exchange, 401, "{\"code\":1114,\"message\":\"Sai thông tin client\"}");
+            return;
+        }
+        String token = token(UUID.randomUUID(), List.of("careconnect-api"), "access", ISSUER, List.of("SERVICE"));
+        serviceTokens.add(token);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("accessToken", token);
+        result.put("tokenType", "Bearer");
+        result.put("expiresInSeconds", 600);
+        writeSuccess(exchange, result);
     }
 
     private void writeUserOrNotFound(HttpExchange exchange, Map<String, Object> user) throws IOException {

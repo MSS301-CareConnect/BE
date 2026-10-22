@@ -9,9 +9,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
+// Unique (ca, caregiver) chỉ áp cho lịch chưa CANCELLED — index một phần trong schema/provider.sql, để caregiver
+// đăng ký lại ca sau khi lịch cũ bị hủy (PRV-03).
 @Table(name = "caregiver_schedules", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_caregiver_schedules_registration", columnNames = "registration_id"),
-        @UniqueConstraint(name = "uk_caregiver_schedules_shift_caregiver", columnNames = {"work_shift_id", "caregiver_id"})
+        @UniqueConstraint(name = "uk_caregiver_schedules_registration", columnNames = "registration_id")
 })
 @Getter
 @Setter

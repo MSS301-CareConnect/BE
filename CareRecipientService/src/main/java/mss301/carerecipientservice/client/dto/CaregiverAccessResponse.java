@@ -6,7 +6,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.util.UUID;
 
-// Bản sao CaregiverAccessResponse của BookingService (GET /internal/bookings/caregiver-access).
+// Bản sao CaregiverAccessResponse của BookingService (GET /api/v1/bookings/caregiver-access).
 @Data
 @Builder
 @AllArgsConstructor

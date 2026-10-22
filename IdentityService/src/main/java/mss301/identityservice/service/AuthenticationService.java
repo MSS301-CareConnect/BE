@@ -3,6 +3,7 @@ package mss301.identityservice.service;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mss301.identityservice.dto.request.LoginRequest;
+import mss301.identityservice.dto.request.LogoutRequest;
 import mss301.identityservice.dto.request.RefreshRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.AuthenticationResponse;
@@ -22,9 +23,8 @@ public interface AuthenticationService {
 
     APIResponse<AuthenticationResponse> refresh(RefreshRequest refreshRequest, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
 
-    APIResponse<Void> logout(RefreshRequest refreshRequest, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
-
-    APIResponse<Void> logoutAll(UUID actorId, HttpServletResponse response);
+    // allSessions = true → đăng xuất mọi phiên của tài khoản (gộp /auth/logout-all, 2026-10-22).
+    APIResponse<Void> logout(LogoutRequest logoutRequest, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
 
     APIResponse<UserResponse> me(UUID actorId);
 
@@ -33,12 +33,10 @@ public interface AuthenticationService {
     APIResponse<Void> revokeSession(UUID actorId, String sessionId);
 
     // Deprecated methods for backward compatibility
+    // httpResponse chỉ dùng để gắn header Deprecation — không đặt cookie (mobile nhận token trong body).
     @Deprecated
-    APIResponse<AuthenticationResponse> loginMobile(LoginRequest request);
+    APIResponse<AuthenticationResponse> loginMobile(LoginRequest request, HttpServletResponse httpResponse);
 
     @Deprecated
-    APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request);
-
-    @Deprecated
-    APIResponse<Void> logoutMobile(RefreshRequest refreshRequest, HttpServletRequest request);
+    APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request, HttpServletResponse httpResponse);
 }

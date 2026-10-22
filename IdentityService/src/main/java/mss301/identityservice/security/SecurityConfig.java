@@ -38,9 +38,10 @@ public class SecurityConfig {
     // Luồng tự xử lý token của chính nó — cookie cũ/hỏng không được chặn login/refresh/logout/đăng ký.
     static String[] TOKEN_FLOW_ENDPOINTS = {
             "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/csrf",
-            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh", "/api/v1/auth/mobile/logout",
+            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh",
             "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
-            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"
+            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+            "/api/v1/auth/service-token"
     };
 
     static String[] PUBLIC_ENDPOINTS = Stream.concat(Stream.of(TOKEN_FLOW_ENDPOINTS), Stream.of(
@@ -58,6 +59,8 @@ public class SecurityConfig {
             "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password");
     static Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
     public static final String MOBILE_AUTH_PREFIX = "/api/v1/auth/mobile/";
+    // Client-credentials giữa các service: không cookie, không phiên trình duyệt → luôn miễn CSRF.
+    public static final String SERVICE_TOKEN_PATH = "/api/v1/auth/service-token";
     public static final String CSRF_HEADER = "X-XSRF-TOKEN";
 
     IdentityProperties identityProperties;
@@ -143,7 +146,7 @@ public class SecurityConfig {
 
     // Request mang cookie xác thực LUÔN cần CSRF (kể cả có thêm bearer); bearer thuần và /auth/mobile/* hoặc X-Client-Type: mobile được miễn.
     private boolean requiresCsrf(HttpServletRequest request) {
-        if (SAFE_METHODS.contains(request.getMethod())) {
+        if (SAFE_METHODS.contains(request.getMethod()) || SERVICE_TOKEN_PATH.equals(request.getRequestURI())) {
             return false;
         }
         if (CookieUtils.read(request, CookieUtils.ACCESS) != null || CookieUtils.read(request, CookieUtils.REFRESH) != null) {

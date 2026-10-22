@@ -6,10 +6,13 @@ import lombok.experimental.FieldDefaults;
 import mss301.providerservice.enums.CaregiverStatus;
 import mss301.providerservice.enums.Gender;
 import mss301.providerservice.enums.VerificationStatus;
+import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -77,4 +80,12 @@ public class CaregiverProfile extends BaseEntity {
     @Version
     @Column(name = "version", nullable = false)
     Long version;
+
+    // Kỹ năng (caregiver_services) — chỉ đọc qua aggregate để dựng response; ghi bằng CaregiverSkillRepository.
+    // BatchSize: danh sách caregiver nạp kỹ năng theo lô thay vì một query mỗi caregiver.
+    @OneToMany(mappedBy = "caregiver", fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
+    @OrderBy("assignedAt ASC")
+    @Builder.Default
+    List<CaregiverSkill> skills = new ArrayList<>();
 }

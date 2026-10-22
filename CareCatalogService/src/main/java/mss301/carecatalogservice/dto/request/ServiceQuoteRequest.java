@@ -33,6 +33,8 @@ public class ServiceQuoteRequest {
 
         UUID centerServiceId;
 
+        // Bắt buộc (D12): khách chọn đúng gói giá, không để Catalog tự chọn gói "đầu tiên".
+        @NotNull(message = "PRICE_PLAN_ID_REQUIRED")
         UUID pricePlanId;
     }
 }

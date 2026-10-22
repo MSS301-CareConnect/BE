@@ -8,3 +8,8 @@ include:
   - BookingService/compose.stack.yaml
   - MediaService/compose.stack.yaml
   - ApiGateway/compose.stack.yaml
+  # PaymentService (port 8087, dải lỗi 6000–6999) do chủ module khác làm, CHƯA có trong repo. Khi thư mục
+  # PaymentService/ có compose.stack.yaml + Dockerfile thì bỏ dấu # dòng dưới. Gateway đã trỏ GATEWAY_PAYMENT_URL tới
+  # http://payment-service:8087 — trước lúc đó route Payment trả 503 (9001): Booking không tạo được booking mới (kiểm nợ
+  # → 503 5154) và báo giá không có phần cọc.
+  # - PaymentService/compose.stack.yaml

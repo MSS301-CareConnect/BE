@@ -88,44 +88,44 @@ Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì
 
 **Sprint 1**
 
-- [ ] **IAM-01** — Token service (client-credentials, role SERVICE) · P0 · 5 SP
-- [ ] **GW-01** — Gateway: route Payment, IPN public, CORS, SSE · P0 · 3 SP
-- [ ] **BK-07** — Sửa phạm vi occurrence + `caregiver-access` (SEC-03, SEC-09) · P0 · 3 SP
-- [ ] **BK-08** — Tách `BookingOccurrenceController`, chuẩn hóa layer · P1 · 2 SP
-- [ ] **CAT-01** — Sửa lỗi Catalog + quote xác định · P0 · 3 SP
+- [x] **IAM-01** — Token service (client-credentials, role SERVICE) · P0 · 5 SP · ✅ 2026-10-22
+- [x] **GW-01** — Gateway: route Payment, IPN public, CORS, SSE · P0 · 3 SP · ✅ 2026-10-22
+- [x] **BK-07** — Sửa phạm vi occurrence + `caregiver-access` (SEC-03, SEC-09) · P0 · 3 SP · ✅ 2026-10-22
+- [x] **BK-08** — Tách `BookingOccurrenceController`, chuẩn hóa layer · P1 · 2 SP · ✅ 2026-10-22
+- [x] **CAT-01** — Sửa lỗi Catalog + quote xác định · P0 · 3 SP · ✅ 2026-10-22
 
 **Sprint 2**
 
-- [ ] **CAT-02** — Duyệt danh mục / dịch vụ trung tâm cho khách, vô hiệu hóa an toàn · P1 · 3 SP
-- [ ] **PRV-01** — Kỹ năng caregiver (`caregiver_services`) · P0 · 5 SP
-- [ ] **BK-01** — Giá từng buổi + API báo giá tạm tính + `payment-context` · P0 · 5 SP
-- [ ] **OPS-01** — Caregiver xác nhận nhận ca + chi tiết ca · P1 · 3 SP
+- [x] **CAT-02** — Duyệt danh mục / dịch vụ trung tâm cho khách, vô hiệu hóa an toàn · P1 · 3 SP · ✅ 2026-10-22
+- [x] **PRV-01** — Kỹ năng caregiver (`caregiver_services`) · P0 · 5 SP · ✅ 2026-10-22
+- [x] **BK-01** — Giá từng buổi + API báo giá tạm tính + `payment-context` · P0 · 5 SP · ✅ 2026-10-22
+- [x] **OPS-01** — Caregiver xác nhận nhận ca + chi tiết ca · P1 · 3 SP · ✅ 2026-10-22
 
 **Sprint 3**
 
-- [ ] **OPS-02** — Bắt đầu ca (check-in), sinh checklist · P0 · 8 SP
-- [ ] **OPS-04** — Kết thúc ca, hoàn tất booking (FINALIZE), tạo hóa đơn REMAINING · P0 · 5 SP
-- [ ] **PRV-03** — Sửa lỗi ca làm việc (capacity, múi giờ, đăng ký lại) · P1 · 5 SP
+- [x] **OPS-02** — Bắt đầu ca (check-in), sinh checklist · P0 · 8 SP · ✅ 2026-10-22
+- [x] **OPS-04** — Kết thúc ca, hoàn tất booking (FINALIZE), tạo hóa đơn REMAINING · P0 · 5 SP · ✅ 2026-10-22
+- [x] **PRV-03** — Sửa lỗi ca làm việc (capacity, múi giờ, đăng ký lại) · P1 · 5 SP · ✅ 2026-10-22
 
 **Sprint 4**
 
-- [ ] **PRV-02** — Lịch rảnh + ngày nghỉ caregiver, API kiểm tra lịch · P0 · 8 SP
-- [ ] **BK-02** — Kiểm tra khi tạo / duyệt booking: lịch rảnh, kỹ năng, nợ, giới hạn PENDING · P0 · 5 SP
-- [ ] **OPS-06** — Job MISSED + báo khách vắng mặt (CUSTOMER_NO_SHOW) · P0 · 5 SP
+- [x] **PRV-02** — Lịch rảnh + ngày nghỉ caregiver, API kiểm tra lịch · P0 · 8 SP · ✅ 2026-10-22
+- [x] **BK-02** — Kiểm tra khi tạo / duyệt booking: lịch rảnh, kỹ năng, nợ, giới hạn PENDING · P0 · 5 SP · ✅ 2026-10-22
+- [x] **OPS-06** — Job MISSED + báo khách vắng mặt (CUSTOMER_NO_SHOW) · P0 · 5 SP · ✅ 2026-10-22
 
 **Sprint 5**
 
-- [ ] **SRCH-01** — Tìm caregiver (giao tập dịch vụ, lọc, sắp xếp, lịch trống) + chi tiết công khai · P0 · 8 SP
-- [ ] **BK-03** — Khách hủy booking / từng buổi + preview-cancel · P0 · 8 SP
-- [ ] **SRCH-02** — Danh sách trung tâm ACTIVE cho khách (lọc khu vực, dịch vụ, giá) · P1 · 3 SP
+- [x] **SRCH-01** — Tìm caregiver (giao tập dịch vụ, lọc, sắp xếp, lịch trống) + chi tiết công khai · P0 · 8 SP · ✅ 2026-10-22
+- [x] **BK-03** — Khách hủy booking / từng buổi + preview-cancel · P0 · 8 SP · ✅ 2026-10-22
+- [x] **SRCH-02** — Danh sách trung tâm ACTIVE cho khách (lọc khu vực, dịch vụ, giá) · P1 · 3 SP · ✅ 2026-10-22
 
 **Sprint 6**
 
-- [ ] **BK-04** — Trung tâm từ chối / hủy, hủy hệ thống (khóa trung tâm) + hoàn tiền · P0 · 5 SP
-- [ ] **BK-05** — Audit đổi caregiver + lịch sử trạng thái booking · P1 · 3 SP
-- [ ] **BK-06** — Lịch sử booking: lọc, sắp xếp, phân trang · P1 · 3 SP
-- [ ] **BK-09** — Chống trùng lịch tầng DB + scheduler nhiều instance · P2 · 3 SP
-- [ ] **INF-01** — Tài liệu chung, e2e, Docker cập nhật theo kiến trúc mới · P1 · 3 SP
+- [x] **BK-04** — Trung tâm từ chối / hủy, hủy hệ thống (khóa trung tâm) + hoàn tiền · P0 · 5 SP · ✅ 2026-10-22
+- [x] **BK-05** — Audit đổi caregiver + lịch sử trạng thái booking · P1 · 3 SP · ✅ 2026-10-22
+- [x] **BK-06** — Lịch sử booking: lọc, sắp xếp, phân trang · P1 · 3 SP · ✅ 2026-10-22
+- [x] **BK-09** — Chống trùng lịch tầng DB + scheduler nhiều instance · P2 · 3 SP · ✅ 2026-10-22
+- [x] **INF-01** — Tài liệu chung, e2e, Docker cập nhật theo kiến trúc mới · P1 · 3 SP · ✅ 2026-10-22
 
 ### [Người C] — Hậu mãi, chất lượng & bảo mật (74 SP · `docs/WORK_PLAN_C_AFTERCARE.md`)
 
