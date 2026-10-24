@@ -12,6 +12,9 @@ import mss301.identityservice.entity.UserRole;
 import mss301.identityservice.entity.UserRoleId;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
+import mss301.identityservice.dto.response.UserStatisticsResponse;
+import java.util.Map;
+import mss301.identityservice.dto.response.AffectedUsersResponse;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
@@ -22,6 +25,10 @@ import java.util.UUID;
 // Không có password trong bất kỳ response nào; password hash chỉ do service gán (IgnoreServerManagedUserFields).
 @Mapper(config = MapStructConfig.class, imports = UserRoleId.class)
 public interface UserMapper {
+    UserStatisticsResponse toStatisticsResponse(Map<String, Long> usersByRole, Map<String, Long> usersByStatus, long newCustomers);
+
+    AffectedUsersResponse toAffectedUsersResponse(Long affectedUsers);
+
     @Mapping(target = "roles", expression = "java(user.effectiveRoleCodes())")
     @Mapping(target = "permissions", expression = "java(user.effectivePermissionCodes())")
     UserResponse toResponse(User user);

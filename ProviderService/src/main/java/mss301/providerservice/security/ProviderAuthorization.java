@@ -16,6 +16,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProviderAuthorization {
 
+    public UUID currentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        return UUID.fromString(authentication.getName());
+    }
+
     public boolean isAdmin() {
         return hasRole(RoleCode.ADMIN);
     }

@@ -25,7 +25,6 @@ public interface MediaClient {
             @RequestPart("file") MultipartFile file,
             @RequestParam("purpose") String purpose,
             @RequestParam("uploadedBy") UUID uploadedBy,
-            @RequestParam("sourceService") String sourceService,
             @RequestParam("referenceType") String referenceType,
             @RequestParam("referenceId") UUID referenceId);
 

@@ -45,6 +45,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import mss301.bookingservice.service.NotificationService;
+import java.util.Map;
+import mss301.bookingservice.service.BookingNotificationService;
+import mss301.bookingservice.enums.NotificationType;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -83,6 +87,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
     Clock clock;
+    BookingNotificationService bookingNotificationService;
+    NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -220,7 +226,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         lockedOccurrence.setNoShowNote(request.getNote());
         bookingEventRepository.save(bookingEventMapper.toStatusEvent(lockedOccurrence, BookingEventType.NO_SHOW_REPORTED,
                 lockedOccurrence.getStatus(), lockedOccurrence.getStatus(), actorId, request.getNote(), now));
-        // TODO(NTF-01, Người C): thông báo manager trung tâm NO_SHOW_REPORTED.
+        bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.NO_SHOW_REPORTED);
         log.info("Occurrence {} reported customer no-show by caregiver {}", id, actorId);
         CaregiverOccurrenceResponse occurrenceResponse = occurrenceMapper.toCaregiverResponse(lockedOccurrence);
         return APIResponse.success("Đã báo khách vắng mặt, chờ trung tâm xác nhận", occurrenceResponse);
@@ -255,7 +261,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.CENTER, actorId, request.getNote(), now);
         }
         bookingLifecycleService.finalizeIfDone(booking, actorId);
-        // TODO(NTF-01, Người C): thông báo khách kết quả xử lý báo vắng.
+        bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.NO_SHOW_REPORTED);
         log.info("Occurrence {} no-show report {} by manager {}", id,
                 Boolean.TRUE.equals(request.getApproved()) ? "approved" : "rejected", actorId);
         CaregiverOccurrenceResponse occurrenceResponse = occurrenceMapper.toCaregiverResponse(lockedOccurrence);
@@ -295,7 +301,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
         markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.SYSTEM, null, MISSED_BY_JOB_REASON, now);
         bookingLifecycleService.finalizeIfDone(booking, null);
-        // TODO(NTF-01, Người C): thông báo manager + khách buổi MISSED (đã tự hoàn tiền).
+        bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.OCCURRENCE_MISSED);
         log.warn("Occurrence {} marked MISSED — no check-in within the grace period", id);
     }
 
@@ -316,9 +322,38 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 .filter(occurrence -> occurrence.getNoShowRemindedAt() == null)
                 .ifPresent(occurrence -> {
                     occurrence.setNoShowRemindedAt(clock.instant());
-                    // TODO(NTF-01, Người C): nhắc manager trung tâm quyết định báo vắng (không tự quyết).
+                    bookingNotificationService.notifyCenter(occurrence.getBooking().getCenterId(), NotificationType.NO_SHOW_REPORTED,
+                            "BOOKING_OCCURRENCE", id);
                     log.warn("Occurrence {} has an undecided no-show report — reminder recorded", id);
                 });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findShiftReminderIds() {
+        Instant now = clock.instant();
+        return bookingOccurrenceRepository.findShiftReminderIds(OccurrenceStatus.NOT_STARTED,
+                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, now, now.plusSeconds(7200), PageRequest.of(0, 100));
+    }
+
+    @Override
+    @Transactional
+    public void remindShift(UUID id) {
+        BookingOccurrence snapshot = bookingOccurrenceRepository.findWithBooking(id)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        Booking booking = lockBooking(snapshot);
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        Instant now = clock.instant();
+        if (occurrence.getReminderSentAt() != null || occurrence.getCaregiverUserId() == null
+                || !OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())
+                || !BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())
+                || !occurrence.getStartAt().isAfter(now) || occurrence.getStartAt().isAfter(now.plusSeconds(7200))) {
+            return;
+        }
+        occurrence.setReminderSentAt(now);
+        notificationService.notify(List.of(occurrence.getCaregiverUserId()), NotificationType.SHIFT_REMINDER,
+                Map.of(), "BOOKING_OCCURRENCE", id);
     }
 
     // Khóa booking trước rồi mới tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.

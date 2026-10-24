@@ -24,7 +24,7 @@ public class CaregiverCreateRequest {
     UUID userId;
 
     @NotBlank(message = "INVALID_REQUEST")
-    @Size(max = 255)
+    @Size(max = 255, message = "INVALID_REQUEST")
     String fullName;
 
     Gender gender;
@@ -32,11 +32,11 @@ public class CaregiverCreateRequest {
     @Past(message = "INVALID_REQUEST")
     LocalDate dateOfBirth;
 
-    @NotNull
-    @Min(0)
-    @Max(80)
+    @NotNull(message = "INVALID_REQUEST")
+    @Min(value = 0, message = "INVALID_REQUEST")
+    @Max(value = 80, message = "INVALID_REQUEST")
     Integer experienceYears;
 
-    @Size(max = 5000)
+    @Size(max = 5000, message = "INVALID_REQUEST")
     String bio;
 }

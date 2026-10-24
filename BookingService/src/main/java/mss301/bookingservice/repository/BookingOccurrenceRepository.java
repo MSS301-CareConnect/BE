@@ -55,6 +55,15 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
     @Query("select o from BookingOccurrence o join fetch o.booking b where o.id = :id and o.deletedAt is null and b.deletedAt is null")
     Optional<BookingOccurrence> findWithBooking(@Param("id") UUID id);
 
+    @Query("""
+            select o.id from BookingOccurrence o where o.deletedAt is null and o.reminderSentAt is null
+              and o.caregiverUserId is not null and o.status in :statuses and o.booking.status in :bookingStatuses
+              and o.startAt > :now and o.startAt <= :before order by o.startAt
+            """)
+    List<UUID> findShiftReminderIds(@Param("statuses") Collection<OccurrenceStatus> statuses,
+            @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+            @Param("now") Instant now, @Param("before") Instant before, Pageable pageable);
+
     // Khóa dòng buổi khi đổi caregiver riêng cho buổi đó (hai manager cùng đổi một buổi).
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from BookingOccurrence o where o.id = :id and o.deletedAt is null")

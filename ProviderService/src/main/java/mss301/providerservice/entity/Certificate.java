@@ -3,7 +3,7 @@ package mss301.providerservice.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import mss301.providerservice.enums.VerificationStatus;
+import mss301.providerservice.enums.CertificateVerificationStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -40,7 +40,7 @@ public class Certificate extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 50)
-    VerificationStatus verificationStatus;
+    CertificateVerificationStatus verificationStatus;
 
     @Column(name = "verification_reason", length = 500)
     String verificationReason;
@@ -50,6 +50,15 @@ public class Certificate extends BaseEntity {
 
     @Column(name = "verified_at")
     Instant verifiedAt;
+
+    @Column(name = "center_verified_by")
+    UUID centerVerifiedBy;
+
+    @Column(name = "center_verified_at")
+    Instant centerVerifiedAt;
+
+    @Column(name = "center_verification_reason", length = 500)
+    String centerVerificationReason;
 
     @Version
     @Column(name = "version", nullable = false)

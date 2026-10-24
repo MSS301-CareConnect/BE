@@ -9,6 +9,12 @@ import mss301.bookingservice.dto.request.CareSessionEndRequest;
 import mss301.bookingservice.dto.request.CareSessionForceEndRequest;
 import mss301.bookingservice.dto.request.CareSessionStartRequest;
 import mss301.bookingservice.dto.response.APIResponse;
+import mss301.bookingservice.dto.request.CareTaskCreateRequest;
+import mss301.bookingservice.dto.request.CareTaskUpdateRequest;
+import mss301.bookingservice.dto.request.SessionNoteRequest;
+import mss301.bookingservice.dto.response.CareTaskResponse;
+import mss301.bookingservice.dto.response.SessionNoteResponse;
+import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.dto.response.CareSessionResponse;
 import mss301.bookingservice.dto.response.RecipientSnapshot;
 import mss301.bookingservice.entity.Booking;
@@ -43,6 +49,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import mss301.bookingservice.entity.CareSessionNote;
+import mss301.bookingservice.repository.CareSessionNoteRepository;
+import mss301.bookingservice.service.NotificationService;
+import mss301.bookingservice.service.BookingNotificationService;
+import mss301.bookingservice.enums.NotificationType;
+import mss301.bookingservice.dto.response.SessionUpdateResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -78,6 +92,9 @@ public class CareSessionServiceImpl implements CareSessionService {
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
     Clock clock;
+    NotificationService notificationService;
+    BookingNotificationService bookingNotificationService;
+    CareSessionNoteRepository careSessionNoteRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -103,7 +120,7 @@ public class CareSessionServiceImpl implements CareSessionService {
             // Hai lần check-in song song: UNIQUE(occurrence_id) chặn lần thứ hai.
             throw new AppException(ErrorCode.SESSION_ALREADY_EXISTS);
         }
-        // TODO(NTF-01, Người C): thông báo khách SESSION_STARTED + SSE session-update sau commit.
+
         log.info("Care session {} started for occurrence {} by caregiver {}", careSessionResponse.getSessionId(),
                 request.getOccurrenceId(), actorId);
         return APIResponse.success("Bắt đầu ca chăm sóc thành công", careSessionResponse);
@@ -172,7 +189,10 @@ public class CareSessionServiceImpl implements CareSessionService {
                 .filter(session -> session.getOverdueRemindedAt() == null)
                 .ifPresent(session -> {
                     session.setOverdueRemindedAt(clock.instant());
-                    // TODO(NTF-01, Người C): thông báo caregiver + manager trung tâm "chưa kết thúc ca".
+                    notificationService.notify(List.of(session.getCaregiverUserId()), NotificationType.SHIFT_REMINDER,
+                            Map.of("body", "Ca chăm sóc đã quá giờ, vui lòng kết thúc ca"), "CARE_SESSION", id);
+                    bookingNotificationService.notifyCenter(session.getBooking().getCenterId(), NotificationType.SHIFT_REMINDER,
+                            "CARE_SESSION", id);
                     log.warn("Care session {} is still open after the occurrence ended — reminder recorded", id);
                 });
     }
@@ -209,6 +229,8 @@ public class CareSessionServiceImpl implements CareSessionService {
         if (booking.getStatus() == BookingStatus.CONFIRMED) {
             bookingLifecycleService.apply(booking, BookingAction.START, actorId, null);
         }
+        notificationService.notify(List.of(booking.getCustomerId()), NotificationType.SESSION_STARTED,
+                Map.of(), "CARE_SESSION", session.getId());
         return careSessionMapper.toResponse(session, tasks);
     }
 
@@ -270,6 +292,83 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
+    @Override
+    @Transactional
+    public APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request) {
+        CareSession session = lockWritableSession(actorId, sessionId);
+        if (request.getStatus() != CareTaskStatus.DONE && request.getStatus() != CareTaskStatus.SKIPPED) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+        if (request.getStatus() == CareTaskStatus.SKIPPED
+                && (request.getSkipReason() == null || request.getSkipReason().isBlank())) {
+            throw new AppException(ErrorCode.TASK_SKIP_REASON_REQUIRED);
+        }
+        CareTask task = careTaskRepository.findByIdAndSessionIdAndDeletedAtIsNull(taskId, sessionId)
+                .orElseThrow(() -> new AppException(ErrorCode.TASK_NOT_FOUND));
+        task.setStatus(request.getStatus());
+        task.setNote(request.getNote());
+        task.setSkipReason(request.getStatus() == CareTaskStatus.SKIPPED ? request.getSkipReason().trim() : null);
+        task.setCompletedAt(request.getStatus() == CareTaskStatus.DONE ? clock.instant() : null);
+        task.setUpdatedBy(actorId);
+        CareTaskResponse response = careSessionMapper.toTaskResponse(careTaskRepository.saveAndFlush(task));
+        SessionUpdateResponse update = careSessionMapper.toSessionUpdateResponse(sessionId, taskId, task.getStatus(), null);
+        notificationService.publishSessionUpdate(session.getBooking().getCustomerId(), update);
+        return APIResponse.success("Cập nhật công việc thành công", response);
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<CareTaskResponse> createTask(UUID actorId, UUID sessionId, CareTaskCreateRequest request) {
+        CareSession session = lockWritableSession(actorId, sessionId);
+        if (careTaskRepository.countBySessionIdAndTaskTypeAndDeletedAtIsNull(sessionId, CareTaskType.CUSTOM) >= 20) {
+            throw new AppException(ErrorCode.TOO_MANY_CUSTOM_TASKS);
+        }
+        int order = careTaskRepository.findAllBySession(sessionId).stream().mapToInt(CareTask::getSortOrder).max().orElse(0) + 1;
+        CareTask task = careSessionMapper.toMedicationTask(request.getTitle().trim(), null, session,
+                CareTaskType.CUSTOM, CareTaskStatus.PENDING, order);
+        task.setUpdatedBy(actorId);
+        CareTask saved = careTaskRepository.saveAndFlush(task);
+        CareTaskResponse response = careSessionMapper.toTaskResponse(saved);
+        notificationService.publishSessionUpdate(session.getBooking().getCustomerId(),
+                careSessionMapper.toSessionUpdateResponse(sessionId, saved.getId(), saved.getStatus(), null));
+        return APIResponse.success("Thêm công việc thành công", response);
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<SessionNoteResponse> createNote(UUID actorId, UUID sessionId, SessionNoteRequest request) {
+        CareSession session = lockWritableSession(actorId, sessionId);
+        CareSessionNote note = careSessionMapper.toCareSessionNote(request, session, actorId);
+        CareSessionNote saved = careSessionNoteRepository.saveAndFlush(note);
+        SessionNoteResponse response = careSessionMapper.toNoteResponse(saved);
+        notificationService.publishSessionUpdate(session.getBooking().getCustomerId(),
+                careSessionMapper.toSessionUpdateResponse(sessionId, null, null, saved.getId()));
+        return APIResponse.success("Ghi nhận tình trạng thành công", response);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<SessionNoteResponse>> listNotes(UUID actorId, Set<RoleCode> roles, UUID centerId,
+                                                                    UUID id, int page, int size) {
+        careSessionRepository.findWithBooking(id).filter(session -> canRead(actorId, roles, centerId, session))
+                .orElseThrow(() -> new AppException(ErrorCode.SESSION_NOT_FOUND));
+        if (page < 0 || size < 1 || size > 100) {
+            throw new AppException(ErrorCode.INVALID_PAGE);
+        }
+        Page<CareSessionNote> notes = careSessionNoteRepository.findBySessionIdAndDeletedAtIsNull(id,
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        PageResponse<SessionNoteResponse> response = PageResponse.of(notes,
+                careSessionMapper.toNoteResponseList(notes.getContent()));
+        return APIResponse.success("Lấy ghi chú tình trạng thành công", response);
+    }
+
+    private CareSession lockWritableSession(UUID actorId, UUID id) {
+        CareSession session = careSessionRepository.findWithBooking(id)
+                .filter(found -> actorId.equals(found.getCaregiverUserId()))
+                .orElseThrow(() -> new AppException(ErrorCode.SESSION_NOT_FOUND));
+        return lockSession(session);
+    }
+
     // Khóa booking → buổi → session (cùng thứ tự với check-in) và kiểm session còn mở.
     private CareSession lockSession(CareSession session) {
         bookingRepository.findForUpdate(session.getBooking().getId())
@@ -288,6 +387,8 @@ public class CareSessionServiceImpl implements CareSessionService {
     private void closeSession(CareSession session, UUID actorId, String reason) {
         Instant now = clock.instant();
         session.setStatus(CareSessionStatus.ENDED);
+        notificationService.notify(List.of(session.getBooking().getCustomerId()), NotificationType.SESSION_ENDED,
+                Map.of(), "CARE_SESSION", session.getId());
         session.setCheckOutAt(now);
         session.setEndedBy(actorId);
         session.setEndReason(reason);
@@ -297,7 +398,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence, BookingEventType.OCCURRENCE_STATUS_CHANGED,
                 OccurrenceStatus.IN_PROGRESS, OccurrenceStatus.COMPLETED, actorId, reason, now));
         if (bookingLifecycleService.finalizeIfDone(session.getBooking(), actorId)) {
-            // TODO(NTF-01, Người C): thông báo khách BOOKING_COMPLETED (mời đánh giá + hóa đơn phần còn lại).
+
             log.info("Booking {} finalized after session {}", session.getBooking().getId(), session.getId());
         }
     }

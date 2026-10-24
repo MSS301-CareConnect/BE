@@ -76,10 +76,13 @@
 8. CareRecipient lỗi khi tạo booking → 503, **không** tạo booking thiếu kiểm quyền / thiếu snapshot. Identity lỗi chỉ làm
    thiếu thông tin khách ở màn hình trung tâm / admin.
 
-## TODO đã biết
+## Aftercare (2026-10-24)
 
-Payment (thay `deposit-paid` bằng `deposit-confirmations` — PAY-08; endpoint C2.2 / C2.3 / C2.5 chưa có thật, mới thử
-với stub); thông báo (NTF-01 / NTF-02, người C — các chỗ `TODO(NTF-0x)`); cập nhật checklist / care report (OPS-03 /
-OPS-05, người C); ca qua đêm; Flyway (đợt chung). Scheduler (BK-09): lô id đọc không khóa, mỗi dòng khóa bằng
-`findForUpdateSkipLocked` / outbox `findForUpdate` (`SKIP LOCKED`) rồi kiểm lại trong transaction riêng — nhiều instance
-không chờ nhau, không xử lý trùng (test PostgreSQL `expirySkipsBookingLockedByAnotherInstance`).
+Notification là aggregate riêng; SSE là ngoại lệ envelope đã ghi tại rule #3 gốc. CareTask và CareSessionNote thuộc
+CareSession; report, feedback, complaint có service/controller/repository/mapper riêng. Không gọi Media/Payment
+trong transaction. Report SUBMITTED bất biến; mọi cập nhật task/note dùng khóa booking → buổi → session.
+Rating và complaint refund đi qua booking_outbox; refund dùng complaintId làm idempotency key.
+
+SSE registry trong RAM cho một instance; chạy nhiều instance cần broker chưa có trong phạm vi này, client dùng
+polling làm fallback. PaymentService thật chưa có trong repo, e2e dùng stub. Scheduler khóa/recheck trong transaction.
+Không dùng Flyway. Database mới dùng booking.sql; DB hiện hữu dùng script aftercare sau các migration B.

@@ -25,6 +25,15 @@ import mss301.providerservice.repository.ProviderMediaRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.ProviderMediaService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+import mss301.providerservice.enums.RoleCode;
+import mss301.providerservice.enums.CenterStatus;
+import mss301.providerservice.enums.CaregiverStatus;
+import mss301.providerservice.enums.VerificationStatus;
+import mss301.providerservice.enums.CertificateVerificationStatus;
+import java.time.Clock;
+import java.time.LocalDate;
+import mss301.providerservice.util.ProviderTime;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
@@ -42,7 +51,6 @@ import java.util.UUID;
 public class ProviderMediaServiceImpl implements ProviderMediaService {
 
     static int MAX_FILES_PER_REQUEST = 10;
-    static String SOURCE_SERVICE = "PROVIDER_SERVICE";
 
     ProviderMediaRepository providerMediaRepository;
     CareCenterRepository careCenterRepository;
@@ -51,6 +59,8 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
     ProviderAuthorization providerAuthorization;
     MediaClient mediaClient;
     ProviderMediaMapper providerMediaMapper;
+    TransactionTemplate transactionTemplate;
+    Clock clock;
 
     @Override
     public APIResponse<List<ProviderMediaResponse>> upload(UUID actorId, MediaOwnerType ownerType, UUID ownerId, List<MultipartFile> files) {
@@ -58,25 +68,30 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         List<MultipartFile> validFiles = validateFiles(files);
         int displayOrder = providerMediaRepository.findMaximumDisplayOrder(ownerType, ownerId) + 1;
 
-        List<ProviderMediaResponse> responses = new ArrayList<>();
+        List<ProviderMediaResponse> responses;
         List<UUID> uploadedMediaIds = new ArrayList<>();
-
+        List<MediaClientResponse> uploadedFiles = new ArrayList<>();
+        Map<UUID, DownloadUrlClientResponse> downloads = new HashMap<>();
         try {
             for (MultipartFile file : validFiles) {
-                APIResponse<MediaClientResponse> uploadResult = mediaClient.upload(file, resolvePurpose(ownerType), actorId,
-                        SOURCE_SERVICE, ownerType.name(), ownerId);
-
-                MediaClientResponse uploaded = requireMediaResult(uploadResult);
+                MediaClientResponse uploaded = requireMediaResult(mediaClient.upload(file, resolvePurpose(ownerType),
+                        actorId, ownerType.name(), ownerId));
                 uploadedMediaIds.add(uploaded.getMediaFileId());
-
-                ProviderMedia providerMedia = providerMediaMapper.toProviderMedia(ownerType, ownerId, uploaded,
-                        displayOrder, actorId);
-                displayOrder++;
-
-                ProviderMedia savedMedia = providerMediaRepository.save(providerMedia);
-                DownloadUrlClientResponse download = getDownloadUrl(uploaded.getMediaFileId());
-                responses.add(providerMediaMapper.toResponse(savedMedia, uploaded, download));
+                uploadedFiles.add(uploaded);
+                downloads.put(uploaded.getMediaFileId(), getDownloadUrl(uploaded.getMediaFileId()));
             }
+            responses = transactionTemplate.execute(status -> {
+                requireOwnerAccess(actorId, ownerType, ownerId);
+                List<ProviderMediaResponse> items = new ArrayList<>();
+                int nextOrder = displayOrder;
+                for (MediaClientResponse uploaded : uploadedFiles) {
+                    ProviderMedia media = providerMediaMapper.toProviderMedia(ownerType, ownerId, uploaded,
+                            nextOrder++, actorId);
+                    ProviderMedia saved = providerMediaRepository.saveAndFlush(media);
+                    items.add(providerMediaMapper.toResponse(saved, uploaded, downloads.get(uploaded.getMediaFileId())));
+                }
+                return items;
+            });
         } catch (RuntimeException exception) {
             deleteUploadedFilesQuietly(uploadedMediaIds);
             throw exception;
@@ -87,7 +102,11 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
 
     @Override
     public APIResponse<List<ProviderMediaResponse>> list(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
-        requireOwnerAccess(actorId, ownerType, ownerId);
+        if (providerAuthorization.hasRole(RoleCode.CUSTOMER)) {
+            checkPublicMedia(ownerType, ownerId);
+        } else {
+            requireOwnerAccess(actorId, ownerType, ownerId);
+        }
 
         List<ProviderMediaResponse> responses = providerMediaRepository
                 .findAllByOwnerTypeAndOwnerIdOrderByDisplayOrderAsc(ownerType, ownerId)
@@ -147,6 +166,34 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    private void checkPublicMedia(MediaOwnerType ownerType, UUID ownerId) {
+        switch (ownerType) {
+            case CARE_CENTER -> careCenterRepository.findByIdAndDeletedAtIsNull(ownerId)
+                    .filter(center -> center.getCenterStatus() == CenterStatus.ACTIVE)
+                    .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
+            case CAREGIVER_PROFILE -> checkPublicCaregiver(caregiverProfileRepository.findByIdAndDeletedAtIsNull(ownerId)
+                    .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND)));
+            case CERTIFICATE -> {
+                Certificate certificate = certificateRepository.findByIdAndDeletedAtIsNull(ownerId)
+                        .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
+                if (certificate.getVerificationStatus() != CertificateVerificationStatus.ADMIN_VERIFIED
+                        || (certificate.getExpiryDate() != null
+                            && certificate.getExpiryDate().isBefore(LocalDate.now(clock.withZone(ProviderTime.ZONE))))) {
+                    throw new AppException(ErrorCode.MEDIA_NOT_FOUND);
+                }
+                checkPublicCaregiver(certificate.getCaregiver());
+            }
+        }
+    }
+
+    private void checkPublicCaregiver(CaregiverProfile caregiver) {
+        if (caregiver.getDeletedAt() != null || caregiver.getCaregiverStatus() != CaregiverStatus.ACTIVE
+                || caregiver.getVerificationStatus() != VerificationStatus.VERIFIED
+                || caregiver.getCenter().getDeletedAt() != null || caregiver.getCenter().getCenterStatus() != CenterStatus.ACTIVE) {
+            throw new AppException(ErrorCode.MEDIA_NOT_FOUND);
+        }
+    }
+
     private void requireOwnerAccess(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
         switch (ownerType) {
             case CARE_CENTER -> requireCenterAccess(actorId, ownerId);
@@ -194,8 +241,8 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
 
     private String resolvePurpose(MediaOwnerType ownerType) {
         return switch (ownerType) {
-            case CARE_CENTER -> "CARE_CENTER_IMAGE";
-            case CAREGIVER_PROFILE -> "CAREGIVER_PROFILE_IMAGE";
+            case CARE_CENTER -> "CARE_CENTER_LOGO";
+            case CAREGIVER_PROFILE -> "CAREGIVER_AVATAR";
             case CERTIFICATE -> "CAREGIVER_CERTIFICATE";
         };
     }

@@ -13,12 +13,12 @@ import mss301.providerservice.enums.VerificationStatus;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class VerificationRequest {
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     VerificationStatus status;
 
-    @Size(max = 500)
+    @Size(max = 500, message = "INVALID_REQUEST")
     String reason;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     Long version;
 }

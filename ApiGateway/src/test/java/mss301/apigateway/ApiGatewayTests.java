@@ -140,10 +140,15 @@ class ApiGatewayTests {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
         mockMvc.perform(get("/api/v1/bookings").header("Authorization", "Bearer " + token)
                         .header("X-Service-Client", "booking")
-                        .header("x-service-token", "forged"))
+                        .header("x-service-token", "forged")
+                        .header("Forwarded", "for=198.51.100.2")
+                        .header("X-Forwarded-For", "198.51.100.2")
+                        .with(request -> { request.setRemoteAddr("203.0.113.10"); return request; }))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.headers['x-service-client']").doesNotExist())
-                .andExpect(jsonPath("$.result.headers['x-service-token']").doesNotExist());
+                .andExpect(jsonPath("$.result.headers['x-service-token']").doesNotExist())
+                .andExpect(jsonPath("$.result.headers['forwarded']").doesNotExist())
+                .andExpect(jsonPath("$.result.headers['x-forwarded-for']").value("203.0.113.10"));
     }
 
     @Test

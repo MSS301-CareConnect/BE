@@ -20,30 +20,30 @@ import java.time.LocalTime;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class WorkShiftRequest {
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     LocalDate workDate;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     LocalTime startTime;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     LocalTime endTime;
 
-    @NotBlank
-    @Size(max = 50)
+    @NotBlank(message = "INVALID_REQUEST")
+    @Size(max = 50, message = "INVALID_REQUEST")
     String shiftType;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     ShiftStatus shiftStatus;
 
-    @NotNull
-    @Min(1)
-    @Max(1000)
+    @NotNull(message = "INVALID_REQUEST")
+    @Min(value = 1, message = "INVALID_REQUEST")
+    @Max(value = 1000, message = "INVALID_REQUEST")
     Integer capacity;
 
     Instant registrationDeadline;
 
-    @Size(max = 5000)
+    @Size(max = 5000, message = "INVALID_REQUEST")
     String note;
 
     Long version;

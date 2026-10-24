@@ -30,7 +30,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.regex.Pattern;
+import mss301.mediaservice.security.CurrentRequestIdentity;
 
 @Service
 @RequiredArgsConstructor
@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class MediaServiceImpl implements MediaService {
 
-    static Pattern SOURCE_SERVICE_PATTERN = Pattern.compile("[A-Z][A-Z0-9_]{2,49}");
+    CurrentRequestIdentity currentRequestIdentity;
 
     MediaFileRepository mediaFileRepository;
     MediaMapper mediaMapper;
@@ -48,7 +48,8 @@ public class MediaServiceImpl implements MediaService {
 
     @Override
     public APIResponse<MediaResponse> upload(MultipartFile file, MediaPurpose purpose, UUID uploadedBy,
-                                             String sourceService, String referenceType, UUID referenceId) {
+                                             String referenceType, UUID referenceId) {
+        String sourceService = currentRequestIdentity.clientId();
         String contentType = validateUpload(file, purpose, sourceService);
         String objectKey = buildObjectKey(purpose, FileContentInspector.extension(contentType));
         String etag;
@@ -60,21 +61,10 @@ public class MediaServiceImpl implements MediaService {
 
         try {
             MediaFile savedMedia = transactionTemplate.execute(status -> {
-                MediaFile mediaFile = MediaFile.builder()
-                        .bucketName(mediaProperties.getR2().getBucket())
-                        .objectKey(objectKey)
-                        .originalFileName(sanitizeOriginalFileName(file.getOriginalFilename()))
-                        .contentType(contentType)
-                        .fileType(resolveFileType(contentType))
-                        .fileSize(file.getSize())
-                        .mediaPurpose(purpose)
-                        .mediaStatus(MediaStatus.ACTIVE)
-                        .uploadedBy(uploadedBy)
-                        .sourceService(sourceService)
-                        .referenceType(normalizeOptional(referenceType))
-                        .referenceId(referenceId)
-                        .etag(etag)
-                        .build();
+                MediaFile mediaFile = mediaMapper.toMediaFile(mediaProperties.getR2().getBucket(), objectKey,
+                        sanitizeOriginalFileName(file.getOriginalFilename()), contentType, resolveFileType(contentType),
+                        file.getSize(), purpose, MediaStatus.ACTIVE, uploadedBy, sourceService,
+                        normalizeOptional(referenceType), referenceId, etag);
                 return mediaFileRepository.save(mediaFile);
             });
             MediaResponse response = mediaMapper.toResponse(savedMedia);
@@ -99,11 +89,8 @@ public class MediaServiceImpl implements MediaService {
         MediaFile mediaFile = findActiveMedia(mediaFileId);
         String downloadUrl = r2StorageService.createDownloadUrl(mediaFile.getObjectKey());
         long ttl = mediaProperties.getR2().getDownloadUrlTtlSeconds();
-        DownloadUrlResponse response = DownloadUrlResponse.builder()
-                .mediaFileId(mediaFileId)
-                .downloadUrl(downloadUrl)
-                .expiresAt(Instant.now().plusSeconds(ttl))
-                .build();
+        DownloadUrlResponse response = mediaMapper.toDownloadUrlResponse(mediaFileId, downloadUrl,
+                Instant.now().plusSeconds(ttl));
         return APIResponse.success("Tạo đường dẫn tải file thành công", response);
     }
 
@@ -151,25 +138,31 @@ public class MediaServiceImpl implements MediaService {
         if (!purpose.getAllowedContentTypes().contains(contentType)) {
             throw new AppException(ErrorCode.INVALID_FILE_TYPE);
         }
-        if (sourceService == null || !SOURCE_SERVICE_PATTERN.matcher(sourceService).matches()) {
-            throw new AppException(ErrorCode.INVALID_SOURCE_SERVICE);
-        }
         FileContentInspector.check(file, contentType);
         return contentType;
     }
 
     private MediaFile findExistingMedia(UUID mediaFileId) {
-        return mediaFileRepository.findById(mediaFileId)
+        MediaFile mediaFile = mediaFileRepository.findById(mediaFileId)
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
+        checkSourceService(mediaFile);
+        return mediaFile;
     }
 
     private MediaFile findActiveMedia(UUID mediaFileId) {
         MediaFile mediaFile = mediaFileRepository.findByIdAndDeletedAtIsNull(mediaFileId)
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
+        checkSourceService(mediaFile);
         if (mediaFile.getMediaStatus() != MediaStatus.ACTIVE) {
             throw new AppException(ErrorCode.MEDIA_NOT_ACTIVE);
         }
         return mediaFile;
+    }
+
+    private void checkSourceService(MediaFile mediaFile) {
+        if (!currentRequestIdentity.clientId().equals(mediaFile.getSourceService())) {
+            throw new AppException(ErrorCode.MEDIA_ACCESS_DENIED);
+        }
     }
 
     private String buildObjectKey(MediaPurpose purpose, String extension) {

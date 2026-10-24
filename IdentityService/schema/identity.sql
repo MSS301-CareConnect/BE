@@ -78,3 +78,8 @@ CREATE TABLE service_clients (
 -- client_id duy nhất trong các client chưa xóa mềm (xóa rồi tạo lại cùng tên được).
 CREATE UNIQUE INDEX uk_service_clients_client_id ON service_clients (client_id) WHERE deleted_at IS NULL;
 COMMIT;
+
+-- IAM-05 / IAM-06
+ALTER TABLE users ADD COLUMN status_reason varchar(500);
+ALTER TABLE users ADD COLUMN lock_source varchar(20) CHECK (lock_source IN ('ADMIN', 'CENTER'));
+UPDATE users SET lock_source = 'ADMIN' WHERE user_status = 'LOCKED';

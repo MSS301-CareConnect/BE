@@ -10,8 +10,13 @@ import mss301.identityservice.dto.request.ProvisionRequest;
 import mss301.identityservice.dto.request.UpdateProfileRequest;
 import mss301.identityservice.dto.request.UserBatchRequest;
 import mss301.identityservice.dto.response.APIResponse;
+import mss301.identityservice.dto.response.UserStatisticsResponse;
 import mss301.identityservice.dto.response.UserResponse;
 import mss301.identityservice.enums.UserStatus;
+import mss301.identityservice.enums.RoleCode;
+import mss301.identityservice.dto.request.UserStatusRequest;
+import mss301.identityservice.dto.response.AffectedUsersResponse;
+import mss301.identityservice.dto.response.PageResponse;
 import mss301.identityservice.security.CurrentUserId;
 import mss301.identityservice.service.UserService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -30,27 +36,41 @@ public class UserController {
 
     // ===== GET =====
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<UserStatisticsResponse> statistics(@RequestParam(required = false) LocalDate from,
+                                                         @RequestParam(required = false) LocalDate to) {
+        return userService.statistics(from, to);
+    }
+
     @GetMapping("/me")
     public APIResponse<UserResponse> me(@CurrentUserId UUID actorId) {
         return userService.me(actorId);
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<UserResponse> get(@PathVariable UUID id) {
         return userService.get(id);
     }
 
     @GetMapping("/by-email")
+    @PreAuthorize("hasAnyRole('SERVICE','ADMIN')")
     public APIResponse<UserResponse> getByEmail(@RequestParam(required = false) String email) {
         return userService.getByEmail(email);
     }
 
     @GetMapping
     @PreAuthorize("hasAuthority('user:read') and (hasRole('ADMIN') or hasRole('CENTER_MANAGER'))")
-    public APIResponse<List<UserResponse>> list(@CurrentUserId UUID actorId,
+    public APIResponse<PageResponse<UserResponse>> list(@CurrentUserId UUID actorId,
+                                                @RequestParam(required = false) RoleCode role,
+                                                @RequestParam(required = false) UserStatus status,
+                                                @RequestParam(required = false) UUID centerId,
+                                                @RequestParam(required = false) String keyword,
+                                                @RequestParam(defaultValue = "createdAt,desc") String sort,
                                                 @RequestParam(defaultValue = "0") int page,
                                                 @RequestParam(defaultValue = "20") int size) {
-        return userService.list(actorId, page, size);
+        return userService.list(actorId, role, status, centerId, keyword, page, size, sort);
     }
 
     // ===== POST =====
@@ -62,6 +82,7 @@ public class UserController {
     }
 
     @PostMapping("/batch")
+    @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<List<UserResponse>> listBatch(@Valid @RequestBody UserBatchRequest request) {
         return userService.listBatch(request);
     }
@@ -99,12 +120,28 @@ public class UserController {
 
     // ===== PATCH =====
 
-    @PatchMapping("/{id}/status")
+    @PatchMapping(value = "/{id}/status", params = "status")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<UserResponse> updateStatus(@CurrentUserId UUID actorId,
                                                   @PathVariable UUID id,
-                                                  @RequestParam UserStatus status) {
-        return userService.updateStatus(actorId, id, status);
+                                                  @RequestParam UserStatus status,
+                                                  @RequestParam(required = false) String reason) {
+        return userService.updateStatus(actorId, id, status, reason);
+    }
+
+    @PatchMapping(value = "/{id}/status", params = "!status")
+    @PreAuthorize("hasAuthority('user:manage')")
+    public APIResponse<UserResponse> updateStatus(@CurrentUserId UUID actorId, @PathVariable UUID id,
+                                                  @Valid @RequestBody UserStatusRequest request) {
+        return userService.updateStatus(actorId, id, request.getStatus(), request.getReason());
+    }
+
+    @PatchMapping("/centers/{centerId}/status")
+    @PreAuthorize("hasAnyRole('SERVICE','ADMIN')")
+    public APIResponse<AffectedUsersResponse> updateCenterStatus(@CurrentUserId UUID actorId,
+                                                                 @PathVariable UUID centerId,
+                                                                 @Valid @RequestBody UserStatusRequest request) {
+        return userService.updateCenterStatus(actorId, centerId, request);
     }
 
     // ===== DELETE =====

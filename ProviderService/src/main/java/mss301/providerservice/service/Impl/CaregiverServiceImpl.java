@@ -12,6 +12,8 @@ import mss301.providerservice.dto.request.CaregiverCreateRequest;
 import mss301.providerservice.dto.request.CaregiverSearchRequest;
 import mss301.providerservice.dto.request.CaregiverSkillRequest;
 import mss301.providerservice.dto.request.CaregiverUpdateRequest;
+import mss301.providerservice.dto.request.CaregiverStatusRequest;
+import mss301.providerservice.dto.request.CaregiverRatingRequest;
 import mss301.providerservice.dto.request.TimeOffRequest;
 import mss301.providerservice.dto.request.VerificationRequest;
 import mss301.providerservice.dto.response.APIResponse;
@@ -63,6 +65,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -71,6 +74,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import mss301.providerservice.enums.CertificateVerificationStatus;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -161,9 +165,7 @@ public class CaregiverServiceImpl implements CaregiverService {
     @Transactional(readOnly = true)
     public APIResponse<CaregiverResponse> get(UUID actorId, UUID caregiverId) {
         CaregiverProfile caregiver = findActiveCaregiver(caregiverId);
-        if (!providerAuthorization.hasRole(RoleCode.SERVICE)) {
-            providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
-        }
+        checkReadScope(caregiver, actorId);
         CaregiverResponse caregiverResponse = caregiverMapper.toResponse(caregiver);
         return APIResponse.success("Lấy hồ sơ người chăm sóc thành công", caregiverResponse);
     }
@@ -172,6 +174,7 @@ public class CaregiverServiceImpl implements CaregiverService {
     @Transactional(readOnly = true)
     public APIResponse<CaregiverResponse> getByUser(UUID userId) {
         CaregiverProfile caregiver = findActiveCaregiverByUser(userId);
+        checkReadScope(caregiver, providerAuthorization.currentUserId());
         CaregiverResponse caregiverResponse = caregiverMapper.toResponse(caregiver);
         return APIResponse.success("Lấy hồ sơ người chăm sóc thành công", caregiverResponse);
     }
@@ -191,7 +194,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         String normalizedKeyword = normalize(keyword);
         Sort sort = Sort.by(Sort.Direction.DESC, "ratingAverage")
                 .and(Sort.by(Sort.Direction.DESC, "experienceYears"));
-        Page<CaregiverProfile> caregiverPage = caregiverProfileRepository.catalog(centerId, normalizedKeyword,
+        Page<CaregiverProfile> caregiverPage = caregiverProfileRepository.catalog(VerificationStatus.VERIFIED, CaregiverStatus.ACTIVE, CenterStatus.ACTIVE, centerId, normalizedKeyword,
                 PageRequest.of(page, size, sort));
         List<CaregiverResponse> items = caregiverMapper.toResponseList(caregiverPage.getContent());
         PageResponse<CaregiverResponse> pageResponse = PageResponse.of(caregiverPage, items);
@@ -253,6 +256,25 @@ public class CaregiverServiceImpl implements CaregiverService {
 
     @Override
     @Transactional
+    public APIResponse<CaregiverResponse> updateStatus(UUID actorId, UUID caregiverId, CaregiverStatusRequest request) {
+        CaregiverProfile caregiver = caregiverProfileRepository.findForUpdate(caregiverId)
+                .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
+        providerAuthorization.requireCenterManagement(caregiver.getCenter(), actorId);
+        checkVersion(caregiver, request.getVersion());
+        if (caregiver.getCaregiverStatus() == CaregiverStatus.ARCHIVED || request.getStatus() == CaregiverStatus.ARCHIVED) {
+            throw new AppException(ErrorCode.CAREGIVER_INVALID_TRANSITION);
+        }
+        if (request.getStatus() == CaregiverStatus.ACTIVE && caregiver.getVerificationStatus() != VerificationStatus.VERIFIED) {
+            throw new AppException(ErrorCode.CAREGIVER_NOT_VERIFIED);
+        }
+        caregiver.setCaregiverStatus(request.getStatus());
+        caregiver.setUpdatedBy(actorId);
+        CaregiverResponse response = caregiverMapper.toResponse(caregiverProfileRepository.saveAndFlush(caregiver));
+        return APIResponse.success("Cập nhật trạng thái người chăm sóc thành công", response);
+    }
+
+    @Override
+    @Transactional
     public APIResponse<CaregiverResponse> verify(UUID actorId, UUID caregiverId, VerificationRequest request) {
         CaregiverProfile caregiver = findActiveCaregiver(caregiverId);
         checkVersion(caregiver, request.getVersion());
@@ -261,6 +283,11 @@ public class CaregiverServiceImpl implements CaregiverService {
         }
         if (request.getStatus() == VerificationStatus.REJECTED && isBlank(request.getReason())) {
             throw new AppException(ErrorCode.VERIFICATION_REASON_REQUIRED);
+        }
+        if (caregiver.getCaregiverStatus() == CaregiverStatus.ARCHIVED
+                || caregiver.getCaregiverStatus() == CaregiverStatus.SUSPENDED
+                || caregiver.getCenter().getCenterStatus() != CenterStatus.ACTIVE) {
+            throw new AppException(ErrorCode.CAREGIVER_INVALID_TRANSITION);
         }
         caregiver.setVerificationStatus(request.getStatus());
         caregiver.setVerificationReason(normalize(request.getReason()));
@@ -722,7 +749,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         }
         Map<UUID, Long> certificateCounts = new HashMap<>();
         for (CaregiverCertificateCount count : certificateRepository.countByCaregiverIds(pageIds,
-                VerificationStatus.VERIFIED)) {
+                CertificateVerificationStatus.ADMIN_VERIFIED, LocalDate.now(clock.withZone(ProviderTime.ZONE)))) {
             certificateCounts.put(count.getCaregiverId(), count.getCertificateCount());
         }
         List<CaregiverCardResponse> cards = new ArrayList<>();
@@ -751,7 +778,10 @@ public class CaregiverServiceImpl implements CaregiverService {
         // VERIFIED = đã được ADMIN duyệt (CertificateController.verify chỉ cho ADMIN) — PENDING/REJECTED không hiện.
         List<Certificate> certificates = certificateRepository
                 .findByCaregiverIdAndVerificationStatusAndDeletedAtIsNullOrderByIssuedDateDesc(
-                        caregiverId, VerificationStatus.VERIFIED);
+                        caregiverId, CertificateVerificationStatus.ADMIN_VERIFIED).stream()
+                        .filter(certificate -> certificate.getExpiryDate() == null
+                                || !certificate.getExpiryDate().isBefore(LocalDate.now(clock.withZone(ProviderTime.ZONE))))
+                        .toList();
         return caregiverMapper.toPublicResponse(caregiver, certificates, avatarUrl);
     }
 
@@ -777,6 +807,39 @@ public class CaregiverServiceImpl implements CaregiverService {
         if (version == null || !version.equals(caregiver.getVersion())) {
             throw new AppException(ErrorCode.CAREGIVER_VERSION_CONFLICT);
         }
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> updateRating(UUID caregiverId, CaregiverRatingRequest request) {
+        CaregiverProfile caregiver = caregiverProfileRepository.findForUpdate(caregiverId)
+                .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
+        caregiver.setRatingAverage(request.getRatingAverage());
+        caregiver.setRatingCount(request.getRatingCount());
+        return APIResponse.success("Cập nhật điểm đánh giá thành công");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(UUID centerId, int page, int size) {
+        validatePage(page, size);
+        Page<CaregiverProfile> profiles = caregiverProfileRepository.findAll((root, query, builder) -> {
+            Predicate predicate = builder.and(builder.isNull(root.get("deletedAt")),
+                    builder.equal(root.get("verificationStatus"), VerificationStatus.PENDING));
+            return centerId == null ? predicate : builder.and(predicate, builder.equal(root.get("center").get("id"), centerId));
+        }, PageRequest.of(page, size));
+        PageResponse<CaregiverResponse> response = PageResponse.of(profiles, caregiverMapper.toResponseList(profiles.getContent()));
+        return APIResponse.success("Lấy hồ sơ chờ xác minh thành công", response);
+    }
+
+    private void checkReadScope(CaregiverProfile caregiver, UUID actorId) {
+        if (providerAuthorization.isAdmin() || providerAuthorization.hasRole(RoleCode.SERVICE)
+                || (providerAuthorization.hasRole(RoleCode.CAREGIVER) && actorId.equals(caregiver.getUserId()))
+                || (providerAuthorization.hasRole(RoleCode.CENTER_MANAGER)
+                    && actorId.equals(caregiver.getCenter().getManagerUserId()))) {
+            return;
+        }
+        throw new AppException(ErrorCode.CAREGIVER_NOT_FOUND);
     }
 
     private void validatePage(int page, int size) {

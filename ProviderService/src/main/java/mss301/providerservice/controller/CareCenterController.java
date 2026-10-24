@@ -8,7 +8,9 @@ import lombok.experimental.FieldDefaults;
 import mss301.providerservice.dto.request.CenterCreateRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
+import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.ProviderStatisticsResponse;
 import mss301.providerservice.dto.response.CenterCardResponse;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.dto.response.PageResponse;
@@ -34,6 +36,12 @@ public class CareCenterController {
     CaregiverScheduleService caregiverScheduleService;
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
+
+    @GetMapping("/statistics")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<ProviderStatisticsResponse> statistics() {
+        return careCenterService.statistics();
+    }
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
@@ -91,6 +99,12 @@ public class CareCenterController {
     }
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
+    @PutMapping("/me")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<CenterResponse> updateMine(@CurrentUserId UUID actorId, @Valid @RequestBody CenterSelfUpdateRequest request) {
+        return careCenterService.updateMine(actorId, request);
+    }
 
     @PutMapping("/{centerId}")
     @PreAuthorize("hasRole('ADMIN')")

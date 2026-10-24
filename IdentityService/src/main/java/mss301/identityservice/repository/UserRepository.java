@@ -7,18 +7,23 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
+    @Query("select u.id from User u where u.centerId = :centerId and u.deletedAt is null order by u.id")
+    List<UUID> findIdsByCenter(@Param("centerId") UUID centerId);
+
     Optional<User> findByEmailIgnoreCaseAndDeletedAtIsNull(String email);
 
     Optional<User> findByIdAndDeletedAtIsNull(UUID id);
@@ -57,4 +62,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                                    @Param("roleCode") String roleCode,
                                    @Param("excludedRoleCodes") Collection<String> excludedRoleCodes,
                                    Pageable pageable);
+    @Query("select r.roleCode as category, count(distinct u) as count from User u join u.userRoles ur join ur.role r where u.deletedAt is null and r.deletedAt is null and r.active = true group by r.roleCode")
+    List<StatisticsCountView> countUsersByRole();
+
+    @Query("select u.status as category, count(u) as count from User u where u.deletedAt is null group by u.status")
+    List<StatisticsCountView> countUsersByStatus();
+
+    @Query("select count(distinct u) from User u join u.userRoles ur where u.deletedAt is null and u.createdAt >= :from and u.createdAt < :to and ur.role.roleCode = :role and ur.role.deletedAt is null and ur.role.active = true")
+    long countNewCustomers(@Param("from") Instant from, @Param("to") Instant to, @Param("role") String role);
 }

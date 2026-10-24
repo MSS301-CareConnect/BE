@@ -1,19 +1,15 @@
 # AGENTS.md — MediaService
 
-> Áp dụng cùng quy ước của `../AGENTS.md` trong CareConnect.
+Áp dụng quy ước `../AGENTS.md`.
 
 | Field | Value |
 |---|---|
-| Artifact | `mss301:MediaService:0.0.1-SNAPSHOT` |
-| Base package | `mss301.mediaservice` |
-| Port / env prefix | `8085` / `MEDIA_` |
-| Dải ErrorCode | `5000–5999` (+ `401`, `403`, `404`, `9999`) |
-| DB | PostgreSQL riêng `127.0.0.1:5445`, database `CARECONNECT_MEDIA` |
+| Artifact / package | `mss301:MediaService:0.0.1-SNAPSHOT` / `mss301.mediaservice` |
+| Port / prefix | 8086 / MEDIA_ |
+| PostgreSQL | 127.0.0.1:5446 / CARECONNECT_MEDIA |
+| ErrorCode | 7000–7999 (+ 401/403/404/9999) |
 
-## Phạm vi
-
-- Sở hữu metadata file và credentials Cloudflare R2.
-- Chỉ cung cấp API `/internal/media/**` cho service-to-service; không đi qua ApiGateway.
-- Service nghiệp vụ sở hữu quan hệ tới file bằng `media_file_id` UUID, không FK xuyên database.
-- Upload sử dụng multipart backend-to-backend theo phạm vi hiện tại; không dùng presigned PUT.
-- Download private bằng presigned GET ngắn hạn.
+Media giữ metadata và credentials Cloudflare R2. Mọi `/api/v1/media/**` chỉ nhận token SERVICE qua gateway.
+`source_service` lấy từ JWT `client_id`; tuyệt đối không lấy từ multipart. Get/download/delete phải cùng owner
+service, khác owner trả 404. Service nghiệp vụ kiểm quyền người dùng và sở hữu liên kết file UUID trong DB riêng.
+Upload backend multipart, download presigned GET ngắn hạn; không dùng presigned PUT trong phạm vi này.

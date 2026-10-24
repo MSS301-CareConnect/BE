@@ -24,6 +24,8 @@ import mss301.bookingservice.repository.BookingOccurrenceRepository;
 import mss301.bookingservice.repository.BookingStatusHistoryRepository;
 import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingOutboxService;
+import mss301.bookingservice.service.BookingNotificationService;
+import mss301.bookingservice.enums.NotificationType;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -56,11 +58,13 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     BookingOutboxService bookingOutboxService;
     BookingProperties bookingProperties;
     Clock clock;
+    BookingNotificationService bookingNotificationService;
 
     @Override
     public void recordCreated(Booking booking, UUID customerId) {
         bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, null, booking.getStatus(),
                 customerId, null, clock.instant()));
+        bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.BOOKING_CREATED, "BOOKING", booking.getId());
     }
 
     @Override
@@ -112,6 +116,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         }
         bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, fromStatus, toStatus,
                 changedBy, historyReason, now));
+        bookingNotificationService.notifyLifecycle(booking, occurrences, action);
         log.info("Booking {} {} -> {} ({})", booking.getId(), fromStatus, toStatus, action);
     }
 
@@ -152,6 +157,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence,
                     BookingEventType.OCCURRENCE_STATUS_CHANGED, fromStatus, OccurrenceStatus.CANCELLED, changedBy,
                     reason, now));
+            bookingNotificationService.notifyOccurrence(occurrence, NotificationType.OCCURRENCE_CANCELLED);
         }
     }
 

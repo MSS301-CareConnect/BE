@@ -7,8 +7,8 @@ import org.springframework.context.annotation.Bean;
 public class IdentityClientConfig {
 
     @Bean
-    public RequestInterceptor identityRequestInterceptor() {
-        return new FeignAuthForwardingInterceptor();
+    public RequestInterceptor identityRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
+        return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
     @Bean

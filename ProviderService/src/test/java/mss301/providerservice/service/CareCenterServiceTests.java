@@ -1,5 +1,8 @@
 package mss301.providerservice.service;
 
+import mss301.providerservice.client.BookingArchiveClient;
+import mss301.providerservice.client.dto.BookingCountResponse;
+import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.dto.request.CenterCreateRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.response.CenterResponse;
@@ -19,6 +22,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.function.Consumer;
+import org.springframework.transaction.TransactionStatus;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,6 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -44,6 +52,12 @@ class CareCenterServiceTests {
 
     @Mock
     TransactionTemplate transactionTemplate;
+
+    @Mock
+    BookingArchiveClient bookingArchiveClient;
+
+    @Mock
+    ProviderOutboxService providerOutboxService;
 
     @InjectMocks
     CareCenterServiceImpl careCenterService;
@@ -103,7 +117,11 @@ class CareCenterServiceTests {
         UUID centerId = UUID.randomUUID();
         CareCenter entity = new CareCenter();
         entity.setVersion(1L);
+        entity.setCenterStatus(CenterStatus.ACTIVE);
         when(careCenterRepository.findByIdAndDeletedAtIsNull(centerId)).thenReturn(Optional.of(entity));
+        when(careCenterRepository.findForUpdate(centerId)).thenReturn(Optional.of(entity));
+        when(transactionTemplate.execute(any())).thenAnswer(invocation ->
+                invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
         CenterStatusUpdateRequest request = CenterStatusUpdateRequest.builder()
                 .status(CenterStatus.SUSPENDED)
                 .version(1L)
@@ -121,13 +139,22 @@ class CareCenterServiceTests {
         UUID centerId = UUID.randomUUID();
         CareCenter entity = new CareCenter();
         entity.setVersion(2L);
-        when(careCenterRepository.findByIdAndDeletedAtIsNull(centerId)).thenReturn(Optional.of(entity));
-        when(careCenterRepository.save(any(CareCenter.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        entity.setCenterStatus(CenterStatus.ACTIVE);
+        when(bookingArchiveClient.list(any(), anyString(), anyInt(), anyInt()))
+                .thenReturn(RemoteApiResponse.<BookingCountResponse>builder()
+                        .code(200).result(BookingCountResponse.builder().totalElements(0L).build()).build());
+        when(careCenterRepository.findForUpdate(centerId)).thenReturn(Optional.of(entity));
+        when(careCenterMapper.toStatusRequest(CenterStatus.ARCHIVED, "Lưu trữ bởi admin", 2L))
+                .thenReturn(CenterStatusUpdateRequest.builder().status(CenterStatus.ARCHIVED).reason("Lưu trữ bởi admin").version(2L).build());
+        doAnswer(invocation -> {
+            invocation.<Consumer<TransactionStatus>>getArgument(0).accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
 
         careCenterService.delete(actorId, centerId, 2L);
 
         assertEquals(CenterStatus.ARCHIVED, entity.getCenterStatus());
         assertEquals(actorId, entity.getUpdatedBy());
-        verify(careCenterRepository).save(entity);
+        verify(careCenterRepository).saveAndFlush(entity);
     }
 }

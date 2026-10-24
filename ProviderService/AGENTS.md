@@ -19,13 +19,13 @@
 - Admin CRUD trung tâm. Tạo mới luôn `PENDING`; `REJECTED`/`SUSPENDED` bắt buộc có lý do; xóa mềm thành `ARCHIVED`.
 - `care_centers.manager_user_id` ánh xạ tài khoản `CENTER_MANAGER`; manager chỉ thao tác đúng center của mình.
 - `client/` gọi service khác qua ApiGateway, **trước** transaction ghi (rule #24):
-  - `IdentityClient` + `FeignAuthForwardingInterceptor` (token người dùng) — `IdentityAccountService.requireActiveRole(userId,
+  - `IdentityClient` + `ServiceTokenInterceptor` (token SERVICE) — `IdentityAccountService.requireActiveRole(userId,
     RoleCode)` kiểm tài khoản `ACTIVE` + đúng role khi gán manager / tạo caregiver.
   - `CareCatalogClient` + `ServiceTokenInterceptor` (token SERVICE) — kiểm offering khi gán kỹ năng caregiver;
     `getPriceSummary` (C9.2) cho danh sách trung tâm công khai (SRCH-02).
   - `BookingClient` + `ServiceTokenInterceptor` (token SERVICE) — C5.1 busy-caregivers; luôn gọi qua
     `BookingAvailabilityService.findBusyCaregiverIds` (chia lô ≤ 200 id × ≤ 60 khung, lỗi → 503 4702, không coi là rảnh).
-  - `MediaClient` (token người dùng) — `ProviderMediaService.findImageUrls` lấy URL ảnh công khai best-effort.
+  - `MediaClient` (token SERVICE) — `ProviderMediaService.findImageUrls` lấy URL ảnh công khai best-effort.
   - `ServiceTokenProvider`: client-credentials `POST /api/v1/auth/service-token` (`provider.service-client.*`,
     env `PROVIDER_SERVICE_CLIENT_ID/SECRET`), cache tới `exp − 60s`, lỗi → 503 `SERVICE_TOKEN_UNAVAILABLE` 4700.
   - Không còn `/internal/**`, `X-Internal-Secret`, `Internal*Controller`, `InternalProviderMapper`. BookingService đọc
@@ -60,3 +60,13 @@
   rảnh), 4700–4702 (tích hợp). Lệch spec có chủ đích: `CARE_SERVICE_IDS_REQUIRED` = **4212** (spec ghi 4210, đã thuộc
   `CAREGIVER_SERVICES_REQUIRED`), `BOOKING_SERVICE_UNAVAILABLE` = **4702** (spec ghi 4700, đã thuộc
   `SERVICE_TOKEN_UNAVAILABLE`).
+
+## Aftercare (2026-10-24)
+
+- Certificate dùng CertificateVerificationStatus riêng: PENDING → CENTER_VERIFIED → ADMIN_VERIFIED; từ chối cần lý do,
+  quá hạn không duyệt. Nội dung sửa reset xác minh; public chỉ ADMIN_VERIFIED chưa hết hạn.
+- Caregiver PUT không nhận status; PATCH riêng, ACTIVE yêu cầu VERIFIED, không lách ARCHIVED/SUSPENDED bằng verify.
+- Vòng đời trung tâm theo PRV-04; manager PUT /care-centers/me theo whitelist. Archive kiểm Booking bằng token ADMIN
+  chuyển tiếp trước transaction. Cascade khóa/mở qua provider_outbox sau commit bằng SERVICE, thứ tự theo version.
+- Feign dùng Apache HC5 để hỗ trợ PATCH. Không bỏ dependency feign-hc5 khi còn center cascade.
+- SQL nâng cấp và giới hạn vận hành: ../docs/2026-10-24-AFTERCARE_IMPLEMENTATION.md.

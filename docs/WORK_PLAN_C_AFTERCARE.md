@@ -4,6 +4,13 @@
 > Phần dùng chung — nguyên tắc chia việc, quy ước ErrorCode / token SERVICE / tiền tệ / thời gian (§1–§3), toàn bộ hợp đồng (§7), lộ trình chung (§8), rủi ro (§9) — nằm ở `docs/WORK_PLAN.md`.
 > **Số mục giữ nguyên như bản gốc**, nên mọi tham chiếu `§x`, `C2.3`… trỏ đúng sang `docs/WORK_PLAN.md`. Khảo sát hiện trạng: `docs/GAP_ANALYSIS.md`.
 
+## Trạng thái triển khai — 2026-10-24
+
+17/17 task đã triển khai và kiểm chứng. E2E 102 kiểm tra thành công với 7 service + PostgreSQL/Redis thật,
+Payment stub; chưa kiểm PaymentService/VNPay thật. Chi tiết API, công thức thống kê đã chốt, số lỗi thay thế
+khi trùng, SQL áp dụng tay và giới hạn SSE: [kết quả triển khai](2026-10-24-AFTERCARE_IMPLEMENTATION.md).
+Checklist chính tại `PLAN.md`. Các yêu cầu dưới đây giữ nguyên làm tiêu chí đối chiếu.
+
 ## Tổng quan: [Người C] làm gì
 
 **Vai trò trong nhóm:** phần **hậu mãi và chất lượng** quanh booking cùng **bảo mật nền tảng**. C không điều khiển vòng đời booking (đó là việc của [Người B]), mà làm những gì xảy ra **trong và sau** mỗi buổi chăm sóc: checklist / ghi chú, care report, thông báo realtime, đánh giá, khiếu nại. C cũng sở hữu kiểm soát chất lượng phía trung tâm (xác minh chứng chỉ, vòng đời trung tâm), hồ sơ người bệnh, file / ảnh, và các lỗ hổng bảo mật ở Identity / CareRecipient / Provider / Media. Khối lượng nhẹ hơn B có chủ đích; C là người dự phòng khi B quá tải.

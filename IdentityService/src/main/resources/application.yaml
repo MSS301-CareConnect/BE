@@ -67,6 +67,7 @@ identity:
   otp-cooldown: ${IDENTITY_OTP_COOLDOWN}
   otp-max-attempts: ${IDENTITY_OTP_MAX_ATTEMPTS}
   allowed-origins: ${IDENTITY_ALLOWED_ORIGINS}
+  trusted-proxies: ${IDENTITY_TRUSTED_PROXIES:127.0.0.1,::1}
   cookie-secure: ${IDENTITY_COOKIE_SECURE:true}
   cookie-same-site: ${IDENTITY_COOKIE_SAME_SITE:Lax}
   open-api-server-url: ${IDENTITY_OPENAPI_SERVER_URL:}

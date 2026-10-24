@@ -44,7 +44,7 @@ class RecipientAccessRulesTests {
     IdentityUserService identityUserService = mock(IdentityUserService.class);
     RecipientManagerMapper recipientManagerMapper = mock(RecipientManagerMapper.class);
     TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
-    RecipientAccessService recipientAccessService = new RecipientAccessServiceImpl(recipientManagerRepository);
+    RecipientAccessService recipientAccessService = new RecipientAccessServiceImpl(recipientManagerRepository, careRecipientRepository);
     RecipientManagerServiceImpl recipientManagerService = new RecipientManagerServiceImpl(recipientManagerRepository,
             careRecipientRepository, recipientAccessService, identityUserService, recipientManagerMapper, transactionTemplate);
 

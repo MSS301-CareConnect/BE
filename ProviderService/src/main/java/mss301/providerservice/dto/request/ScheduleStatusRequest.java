@@ -13,12 +13,12 @@ import mss301.providerservice.enums.ScheduleStatus;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ScheduleStatusRequest {
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     ScheduleStatus status;
 
-    @Size(max = 500)
+    @Size(max = 500, message = "INVALID_REQUEST")
     String reason;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     Long version;
 }

@@ -19,5 +19,7 @@ import java.lang.annotation.Target;
 @Mapping(target = "centerId", ignore = true)
 @Mapping(target = "authzVersion", ignore = true)
 @Mapping(target = "userRoles", ignore = true)
+@Mapping(target = "statusReason", ignore = true)
+@Mapping(target = "lockSource", ignore = true)
 public @interface IgnoreServerManagedUserFields {
 }

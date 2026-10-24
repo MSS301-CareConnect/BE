@@ -6,6 +6,7 @@ import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.util.LockHints;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,6 +16,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import mss301.bookingservice.enums.FeedbackVisibility;
+import mss301.bookingservice.enums.CareSessionStatus;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -74,4 +77,39 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     // cùng caregiver / người bệnh giữa các request song song (bước kiểm ở service không tự chống race).
     @Query(value = "select 1 from (select pg_advisory_xact_lock(hashtext(:lockKey))) as schedule_lock", nativeQuery = true)
     Integer lockScheduleKey(@Param("lockKey") String lockKey);
+    @Query("select b.status as category, count(b) as count from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId) group by b.status")
+    List<StatisticsCountView> countBookings(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select o.status as category, count(o) as count from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId) group by o.status")
+    List<StatisticsCountView> countOccurrences(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select c.status as category, count(c) as count from Complaint c where c.deletedAt is null and c.createdAt >= :from and c.createdAt < :to and (:centerId is null or c.centerId = :centerId) group by c.status")
+    List<StatisticsCountView> countComplaints(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select avg(f.rating) as ratingAverage, count(f) as ratingCount from Feedback f where f.deletedAt is null and f.visibility = :visibility and f.createdAt >= :from and f.createdAt < :to and (:centerId is null or f.centerId = :centerId)")
+    FeedbackRatingView summarizeRating(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
+                                        @Param("visibility") FeedbackVisibility visibility);
+
+    @Query("""
+            select s.caregiverId as caregiverId, count(s) as completedSessions,
+                (select avg(f.rating) from Feedback f where f.caregiverId = s.caregiverId and f.deletedAt is null
+                 and f.visibility = :visibility and f.createdAt >= :from and f.createdAt < :to) as avgRating
+            from CareSession s where s.deletedAt is null and s.status = :ended
+              and s.occurrence.startAt >= :from and s.occurrence.startAt < :to
+              and (:centerId is null or s.booking.centerId = :centerId)
+            group by s.caregiverId order by count(s) desc, s.caregiverId
+            """)
+    List<TopCaregiverView> topCaregivers(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
+                                        @Param("visibility") FeedbackVisibility visibility, @Param("ended") CareSessionStatus ended,
+                                        Pageable pageable);
+
+    @Query("""
+            select distinct b.centerId from Booking b where b.deletedAt is null and (
+                (b.createdAt >= :from and b.createdAt < :to)
+                or exists (select o.id from BookingOccurrence o where o.booking = b and o.deletedAt is null and o.startAt >= :from and o.startAt < :to)
+                or exists (select f.id from Feedback f where f.booking = b and f.deletedAt is null and f.createdAt >= :from and f.createdAt < :to)
+                or exists (select c.id from Complaint c where c.bookingId = b.id and c.deletedAt is null and c.createdAt >= :from and c.createdAt < :to))
+            order by b.centerId
+            """)
+    Page<UUID> findCenterIds(@Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
 }

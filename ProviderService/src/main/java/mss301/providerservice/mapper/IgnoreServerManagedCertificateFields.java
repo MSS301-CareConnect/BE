@@ -17,5 +17,8 @@ import java.lang.annotation.Target;
 @Mapping(target = "verifiedBy", ignore = true)
 @Mapping(target = "verifiedAt", ignore = true)
 @Mapping(target = "version", ignore = true)
+@Mapping(target = "centerVerifiedBy", ignore = true)
+@Mapping(target = "centerVerifiedAt", ignore = true)
+@Mapping(target = "centerVerificationReason", ignore = true)
 public @interface IgnoreServerManagedCertificateFields {
 }

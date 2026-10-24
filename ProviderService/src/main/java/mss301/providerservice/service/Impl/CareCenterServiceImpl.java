@@ -10,7 +10,9 @@ import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.dto.request.CenterCreateRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
+import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.ProviderStatisticsResponse;
 import mss301.providerservice.dto.response.CenterCardResponse;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.dto.response.PageResponse;
@@ -22,7 +24,7 @@ import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CareCenterMapper;
 import mss301.providerservice.repository.CareCenterRepository;
-import mss301.providerservice.repository.CareCenterSpecifications;
+import mss301.providerservice.util.CareCenterSpecifications;
 import mss301.providerservice.service.CareCenterService;
 import mss301.providerservice.service.IdentityAccountService;
 import mss301.providerservice.service.ProviderMediaService;
@@ -30,6 +32,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import mss301.providerservice.security.ProviderAuthorization;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -40,6 +44,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import mss301.providerservice.repository.StatisticsCountView;
+import java.util.LinkedHashMap;
+import mss301.providerservice.service.ProviderOutboxService;
+import mss301.providerservice.client.BookingArchiveClient;
+import mss301.providerservice.client.dto.BookingCountResponse;
 
 @Service
 @RequiredArgsConstructor
@@ -52,11 +61,14 @@ public class CareCenterServiceImpl implements CareCenterService {
     static int DETAIL_IMAGE_LIMIT = 10;
 
     CareCenterRepository careCenterRepository;
+    ProviderAuthorization providerAuthorization;
     CareCenterMapper careCenterMapper;
     IdentityAccountService identityAccountService;
     TransactionTemplate transactionTemplate;
     CareCatalogClient careCatalogClient;
     ProviderMediaService providerMediaService;
+    ProviderOutboxService providerOutboxService;
+    BookingArchiveClient bookingArchiveClient;
 
     /**
      * Không đặt @Transactional: kiểm tài khoản manager ở IdentityService là lời gọi mạng nên chạy TRƯỚC, ngoài
@@ -75,8 +87,14 @@ public class CareCenterServiceImpl implements CareCenterService {
                                                            boolean includeDeleted, int page, int size) {
         validatePage(page, size);
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<CareCenter> centerPage = careCenterRepository.findAll(
-                CareCenterSpecifications.filter(status, keyword, includeDeleted), pageRequest);
+        Specification<CareCenter> specification = CareCenterSpecifications.filter(status, keyword,
+                providerAuthorization.isAdmin() && includeDeleted);
+        if (!providerAuthorization.isAdmin()) {
+            UUID actorId = providerAuthorization.currentUserId();
+            specification = specification.and((root, query, builder) ->
+                    builder.equal(root.get("managerUserId"), actorId));
+        }
+        Page<CareCenter> centerPage = careCenterRepository.findAll(specification, pageRequest);
         List<CenterResponse> items = careCenterMapper.toResponseList(centerPage.getContent());
         PageResponse<CenterResponse> result = PageResponse.of(centerPage, items);
         return APIResponse.success("Lấy danh sách trung tâm chăm sóc thành công", result);
@@ -85,9 +103,16 @@ public class CareCenterServiceImpl implements CareCenterService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CenterResponse> get(UUID id) {
-        CareCenter careCenter = careCenterRepository.findById(id)
-                .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
+        CareCenter careCenter = findActiveCenter(id);
         CenterResponse response = careCenterMapper.toResponse(careCenter);
+        if (!providerAuthorization.isAdmin() && !providerAuthorization.hasRole(RoleCode.SERVICE)
+                && !providerAuthorization.currentUserId().equals(careCenter.getManagerUserId())) {
+            response.setEmail(null);
+            response.setManagerUserId(null);
+            response.setCreatedBy(null);
+            response.setUpdatedBy(null);
+            response.setStatusReason(null);
+        }
         return APIResponse.success("Lấy thông tin trung tâm chăm sóc thành công", response);
     }
 
@@ -156,38 +181,110 @@ public class CareCenterServiceImpl implements CareCenterService {
     }
 
     @Override
-    @Transactional
     public APIResponse<CenterResponse> updateStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request) {
-        CareCenter careCenter = findActiveCenter(id);
-        checkVersion(careCenter, request.getVersion());
-        validateStatusReason(request);
-
-        careCenter.setCenterStatus(request.getStatus());
-        careCenter.setStatusReason(normalizeNullable(request.getReason()));
-        careCenter.setUpdatedBy(actorId);
-        if (request.getStatus() == CenterStatus.ARCHIVED) {
-            careCenter.setDeletedAt(Instant.now());
+        CareCenter snapshot = findActiveCenter(id);
+        checkVersion(snapshot, request.getVersion());
+        if (request.getStatus() == CenterStatus.ACTIVE && snapshot.getCenterStatus() == CenterStatus.PENDING) {
+            if (snapshot.getManagerUserId() == null) {
+                throw new AppException(ErrorCode.CENTER_MANAGER_REQUIRED);
+            }
+            checkManagerAccount(snapshot.getManagerUserId());
         }
-
-        CareCenter savedCenter = careCenterRepository.save(careCenter);
-        log.info("Admin {} changed care center {} status to {}", actorId, id, request.getStatus());
-
-        CenterResponse response = careCenterMapper.toResponse(savedCenter);
+        if (request.getStatus() == CenterStatus.ARCHIVED) {
+            checkNoActiveBookings(id);
+        }
+        CenterResponse response = transactionTemplate.execute(status -> changeStatus(actorId, id, request));
         return APIResponse.success("Cập nhật trạng thái trung tâm thành công", response);
     }
 
     @Override
-    @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
-        CareCenter careCenter = findActiveCenter(id);
-        checkVersion(careCenter, version);
-        careCenter.setCenterStatus(CenterStatus.ARCHIVED);
-        careCenter.setStatusReason("Archived by administrator");
-        careCenter.setUpdatedBy(actorId);
-        careCenter.setDeletedAt(Instant.now());
-        careCenterRepository.save(careCenter);
-        log.info("Admin {} archived care center {}", actorId, id);
-        return APIResponse.success("Lưu trữ trung tâm chăm sóc thành công");
+        checkNoActiveBookings(id);
+        transactionTemplate.executeWithoutResult(status -> {
+            CenterStatusUpdateRequest request = careCenterMapper.toStatusRequest(CenterStatus.ARCHIVED, "Lưu trữ bởi admin", version);
+            changeStatus(actorId, id, request);
+        });
+        return APIResponse.success("Lưu trữ trung tâm thành công");
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<CenterResponse> updateMine(UUID actorId, CenterSelfUpdateRequest request) {
+        CareCenter found = careCenterRepository.findByManagerUserIdAndDeletedAtIsNull(actorId)
+                .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
+        CareCenter center = careCenterRepository.findForUpdate(found.getId())
+                .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
+        if (center.getCenterStatus() == CenterStatus.ARCHIVED || center.getCenterStatus() == CenterStatus.REJECTED) {
+            throw new AppException(ErrorCode.CENTER_INVALID_TRANSITION);
+        }
+        if (request.getCenterName() != null && request.getCenterName().isBlank()) {
+            throw new AppException(ErrorCode.CENTER_NAME_REQUIRED);
+        }
+        careCenterMapper.update(request, center);
+        center.setUpdatedBy(actorId);
+        CenterResponse response = careCenterMapper.toResponse(careCenterRepository.saveAndFlush(center));
+        return APIResponse.success("Cập nhật trung tâm thành công", response);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<ProviderStatisticsResponse> statistics() {
+        ProviderStatisticsResponse response = careCenterMapper.toStatisticsResponse(
+                toStatisticsCounts(careCenterRepository.countCentersByStatus()),
+                toStatisticsCounts(careCenterRepository.countCaregiversByStatus()),
+                toStatisticsCounts(careCenterRepository.countCaregiversByVerification()));
+        return APIResponse.success("Lấy thống kê nhà cung cấp thành công", response);
+    }
+
+    private Map<String, Long> toStatisticsCounts(List<StatisticsCountView> rows) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        rows.forEach(row -> counts.put(row.getCategory(), row.getCount()));
+        return counts;
+    }
+
+    private CenterResponse changeStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request) {
+        CareCenter center = careCenterRepository.findForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
+        checkVersion(center, request.getVersion());
+        validateStatusReason(request);
+        CenterStatus from = center.getCenterStatus();
+        CenterStatus to = request.getStatus();
+        boolean allowed = to == CenterStatus.ARCHIVED || switch (from) {
+            case PENDING -> to == CenterStatus.ACTIVE || to == CenterStatus.REJECTED;
+            case ACTIVE -> to == CenterStatus.SUSPENDED || to == CenterStatus.INACTIVE;
+            case SUSPENDED, INACTIVE -> to == CenterStatus.ACTIVE;
+            default -> false;
+        };
+        if (!allowed || from == CenterStatus.ARCHIVED) {
+            throw new AppException(ErrorCode.CENTER_INVALID_TRANSITION);
+        }
+        center.setCenterStatus(to);
+        center.setStatusReason(normalizeNullable(request.getReason()));
+        center.setUpdatedBy(actorId);
+        if (to == CenterStatus.ARCHIVED) {
+            center.setDeletedAt(Instant.now());
+        }
+        careCenterRepository.saveAndFlush(center);
+        if (to == CenterStatus.SUSPENDED) {
+            providerOutboxService.enqueue(center, "SUSPEND", request.getReason());
+        } else if (from == CenterStatus.SUSPENDED && to == CenterStatus.ACTIVE) {
+            providerOutboxService.enqueue(center, "RESUME", request.getReason());
+        } else if (from == CenterStatus.PENDING && to == CenterStatus.ACTIVE) {
+            providerOutboxService.enqueue(center, "ACTIVATE", request.getReason());
+        }
+        return careCenterMapper.toResponse(center);
+    }
+
+    private void checkNoActiveBookings(UUID id) {
+        for (String state : List.of("PENDING", "AWAITING_DEPOSIT", "CONFIRMED", "IN_PROGRESS")) {
+            RemoteApiResponse<BookingCountResponse> response = bookingArchiveClient.list(id, state, 0, 1);
+            if (response == null || response.getResult() == null || response.getResult().getTotalElements() == null) {
+                throw new AppException(ErrorCode.BOOKING_SERVICE_UNAVAILABLE);
+            }
+            if (response.getResult().getTotalElements() > 0) {
+                throw new AppException(ErrorCode.CENTER_HAS_ACTIVE_BOOKINGS);
+            }
+        }
     }
 
     // Chạy trong transactionTemplate của create — không gọi mạng ở đây.
@@ -292,7 +389,8 @@ public class CareCenterServiceImpl implements CareCenterService {
 
     private void validateStatusReason(CenterStatusUpdateRequest request) {
         boolean reasonRequired = request.getStatus() == CenterStatus.REJECTED
-                || request.getStatus() == CenterStatus.SUSPENDED;
+                || request.getStatus() == CenterStatus.SUSPENDED
+                || request.getStatus() == CenterStatus.INACTIVE;
         if (reasonRequired && (request.getReason() == null || request.getReason().isBlank())) {
             throw new AppException(ErrorCode.CENTER_STATUS_REASON_REQUIRED);
         }

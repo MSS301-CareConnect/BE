@@ -3,6 +3,8 @@ package mss301.providerservice.repository;
 import jakarta.persistence.LockModeType;
 import mss301.providerservice.entity.CaregiverProfile;
 import mss301.providerservice.enums.CaregiverStatus;
+import mss301.providerservice.enums.CenterStatus;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import mss301.providerservice.enums.Gender;
 import mss301.providerservice.enums.VerificationStatus;
 import org.springframework.data.domain.Page;
@@ -20,7 +22,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfile, UUID> {
+public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfile, UUID>, JpaSpecificationExecutor<CaregiverProfile> {
     Optional<CaregiverProfile> findByIdAndDeletedAtIsNull(UUID id);
     Optional<CaregiverProfile> findByUserIdAndDeletedAtIsNull(UUID userId);
 
@@ -39,14 +41,17 @@ public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfi
     @Query("""
             select c from CaregiverProfile c
             where c.deletedAt is null
-              and c.verificationStatus = mss301.providerservice.enums.VerificationStatus.VERIFIED
-              and c.caregiverStatus = mss301.providerservice.enums.CaregiverStatus.ACTIVE
-              and c.center.centerStatus = mss301.providerservice.enums.CenterStatus.ACTIVE
+              and c.verificationStatus = :verificationStatus
+              and c.caregiverStatus = :caregiverStatus
+              and c.center.centerStatus = :centerStatus
               and c.center.deletedAt is null
               and (:centerId is null or c.center.id = :centerId)
               and (:keyword is null or lower(c.fullName) like lower(concat('%', :keyword, '%')))
             """)
-    Page<CaregiverProfile> catalog(@Param("centerId") UUID centerId,
+    Page<CaregiverProfile> catalog(@Param("verificationStatus") VerificationStatus verificationStatus,
+                                   @Param("caregiverStatus") CaregiverStatus caregiverStatus,
+                                   @Param("centerStatus") CenterStatus centerStatus,
+                                   @Param("centerId") UUID centerId,
                                    @Param("keyword") String keyword,
                                    Pageable pageable);
 

@@ -1,6 +1,7 @@
 package mss301.identityservice.service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -9,6 +10,11 @@ public interface TokenStore {
                            String userAgent, String ip, Duration ttl);
 
     Map<String, String> getRefreshToken(String tokenHash);
+
+    boolean rotateRefreshToken(String tokenHash, String nextTokenHash, long authzVersion,
+                               String accessJti, Instant expiresAt, Duration ttl);
+
+    UUID findRevokedTokenOwner(String tokenHash);
 
     boolean revokeRefreshToken(String tokenHash, UUID userId);
 

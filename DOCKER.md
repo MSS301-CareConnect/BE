@@ -131,3 +131,14 @@ Mở psql: `docker compose exec identity-postgres psql -U <IDENTITY_DB_USERNAME>
 - Port chỉ mở trên `127.0.0.1`. Thiết bị thật trong LAN (app mobile) không gọi được trực tiếp — dùng emulator
   (`10.0.2.2:8080`) hoặc đổi bind trong `compose.stack.yaml` khi cần.
 - Build image bỏ qua test (`-DskipTests`); test vẫn chạy bằng `.\mvnw.cmd test` trong từng service.
+
+## Aftercare — nâng cấp 2026-10-24
+
+Build lại image sau khi cập nhật source: `docker compose build`. Build thành công chỉ xác nhận image đóng gói được;
+khởi động stack vẫn cần .env hợp lệ và schema khớp. `docker compose config --quiet` kiểm cú pháp cấu hình mà không
+in giá trị secret. Mọi dòng .env phải theo KEY=value; các dòng bcrypt/service clients không được xuống dòng giữa giá trị.
+
+Volume DB đang có cần chạy SQL nâng cấp Identity/Provider/Booking/Media theo
+[aftercare](docs/2026-10-24-AFTERCARE_IMPLEMENTATION.md#sql-áp-dụng-tay) trước khi chạy JAR mới (`ddl-auto=validate`).
+Docker không tự áp các change script vào volume đã có. Media chỉ nhận token SERVICE và source_service=client_id;
+kiểm lại mapping metadata cũ. Identity trusted proxies cần IP gateway ổn định phù hợp mạng Docker để ghi IP client.

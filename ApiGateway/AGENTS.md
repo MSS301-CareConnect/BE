@@ -17,7 +17,7 @@ Gateway không có controller/service/entity. Layout:
 ```
 config/     GatewayProperties (gateway.*), GatewayConfig, GatewayPaths (MỌI path public/route — nguồn duy nhất), RouteConfig
 security/   SecurityConfig (JWT sớm + CORS), JwtConfig, JwtAuthorityConverter, SecurityErrorHandler, TokenClaims
-filter/     RequestIdFilter, GatewayRequestHeaders (before-filter cho route)
+filter/     RequestIdFilter, GatewayRequestHeaders (before-filter cho route), TrustedClientIpHeadersFilter
 handler/    SseProxyHandler (route SSE riêng: không read timeout, không buffer)
 dto/response/APIResponse, exception/ErrorCode + GlobalExceptionHandler
 ```
@@ -34,3 +34,5 @@ dto/response/APIResponse, exception/ErrorCode + GlobalExceptionHandler
 4. Header `X-User-*` chỉ để log — không thêm logic phụ thuộc vào chúng ở service.
 5. Không rewrite cookie path khi Identity còn đặt `Path=/` (có test `identityCookiesPassThroughWithPathRoot`).
 6. Rate limiting: chưa làm, hỏi trước.
+
+IAM-03: gateway xóa Forwarded/XFF client và gắn X-Forwarded-For từ remoteAddr ở filter HTTP cuối, sau bộ lọc mặc định của framework.

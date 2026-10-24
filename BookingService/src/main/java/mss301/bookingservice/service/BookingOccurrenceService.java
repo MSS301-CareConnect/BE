@@ -47,6 +47,10 @@ public interface BookingOccurrenceService {
 
     void markMissed(UUID id);
 
+    List<UUID> findShiftReminderIds();
+
+    void remindShift(UUID id);
+
     // Nhắc manager báo vắng chưa quyết định (một lần mỗi buổi).
     List<UUID> findUndecidedNoShowIds();
 

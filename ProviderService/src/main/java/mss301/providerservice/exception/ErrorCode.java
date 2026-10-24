@@ -24,6 +24,9 @@ public enum ErrorCode {
     AUTH_DEPENDENCY_UNAVAILABLE(4005, "Dịch vụ xác thực tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
     CONCURRENT_UPDATE(4006, "Dữ liệu vừa được thay đổi bởi người khác, vui lòng tải lại rồi thử lại", HttpStatus.CONFLICT),
 
+    CENTER_INVALID_TRANSITION(4122, "Không thể chuyển trạng thái trung tâm", HttpStatus.CONFLICT),
+    CENTER_MANAGER_REQUIRED(4120, "Trung tâm phải có manager đang hoạt động", HttpStatus.CONFLICT),
+    CENTER_HAS_ACTIVE_BOOKINGS(4121, "Trung tâm vẫn còn lịch chăm sóc chưa kết thúc", HttpStatus.CONFLICT),
     CENTER_NOT_FOUND(4100, "Trung tâm chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
     CENTER_EMAIL_EXISTED(4101, "Email trung tâm đã tồn tại", HttpStatus.CONFLICT),
     CENTER_NAME_REQUIRED(4102, "Tên trung tâm không được để trống", HttpStatus.BAD_REQUEST),
@@ -46,6 +49,7 @@ public enum ErrorCode {
     CENTER_MANAGER_EXISTED(4118, "Tài khoản quản lý đã được gán cho trung tâm khác", HttpStatus.CONFLICT),
     PRICE_RANGE_INVALID(4119, "Giá tối thiểu không được lớn hơn giá tối đa", HttpStatus.BAD_REQUEST),
 
+    CAREGIVER_INVALID_TRANSITION(4216, "Không thể chuyển trạng thái hồ sơ người chăm sóc", HttpStatus.CONFLICT),
     CAREGIVER_NOT_FOUND(4200, "Hồ sơ người chăm sóc không tồn tại", HttpStatus.NOT_FOUND),
     CAREGIVER_USER_EXISTED(4201, "Tài khoản đã có hồ sơ người chăm sóc", HttpStatus.CONFLICT),
     CAREGIVER_NOT_VERIFIED(4202, "Hồ sơ người chăm sóc chưa được xác minh", HttpStatus.CONFLICT),
@@ -64,6 +68,8 @@ public enum ErrorCode {
     MIN_RATING_INVALID(4214, "Điểm đánh giá tối thiểu phải từ 0 đến 5", HttpStatus.BAD_REQUEST),
     MIN_EXPERIENCE_INVALID(4215, "Số năm kinh nghiệm tối thiểu không được âm", HttpStatus.BAD_REQUEST),
 
+    CERTIFICATE_INVALID_TRANSITION(4253, "Không thể chuyển bước xác minh chứng chỉ", HttpStatus.CONFLICT),
+    CERTIFICATE_EXPIRED(4254, "Chứng chỉ đã hết hạn", HttpStatus.CONFLICT),
     CERTIFICATE_NOT_FOUND(4250, "Chứng chỉ không tồn tại", HttpStatus.NOT_FOUND),
     CERTIFICATE_VERSION_CONFLICT(4251, "Chứng chỉ đã được cập nhật, vui lòng tải lại", HttpStatus.CONFLICT),
     CERTIFICATE_DATE_INVALID(4252, "Ngày hết hạn phải bằng hoặc sau ngày cấp", HttpStatus.BAD_REQUEST),
@@ -110,6 +116,7 @@ public enum ErrorCode {
     MEDIA_NOT_FOUND(4602, "File không tồn tại hoặc không thuộc dữ liệu này", HttpStatus.NOT_FOUND),
     MEDIA_SERVICE_UNAVAILABLE(4603, "Dịch vụ file tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
 
+    REMOTE_COMMAND_REJECTED(4703, "Dịch vụ liên quan từ chối lệnh, cần kiểm tra cấu hình hoặc dữ liệu", HttpStatus.SERVICE_UNAVAILABLE),
     SERVICE_TOKEN_UNAVAILABLE(4700, "Không xác thực được với dịch vụ liên quan, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),
     CATALOG_UNAVAILABLE(4701, "Dịch vụ danh mục tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     // Spec ghi 4700 nhưng 4700 đã là SERVICE_TOKEN_UNAVAILABLE (PRV-01) → dùng 4702.

@@ -11,14 +11,25 @@ import mss301.identityservice.config.RedisKeys;
 import mss301.identityservice.dto.request.LoginRequest;
 import mss301.identityservice.dto.request.LogoutRequest;
 import mss301.identityservice.dto.request.RefreshRequest;
-import mss301.identityservice.dto.response.*;
+import mss301.identityservice.dto.response.APIResponse;
+import mss301.identityservice.dto.response.AuthenticationResponse;
+import mss301.identityservice.dto.response.AuthenticatedUser;
+import mss301.identityservice.dto.response.CsrfResponse;
+import mss301.identityservice.dto.response.SessionResponse;
+import mss301.identityservice.dto.response.UserResponse;
 import mss301.identityservice.enums.ClientType;
 import mss301.identityservice.exception.AppException;
 import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.mapper.AuthenticationMapper;
 import mss301.identityservice.security.TokenClaims;
 import mss301.identityservice.security.TokenTransport;
-import mss301.identityservice.service.*;
+import mss301.identityservice.service.AuthenticationService;
+import mss301.identityservice.service.CurrentIdentityService;
+import mss301.identityservice.service.UserService;
+import mss301.identityservice.service.TokenStore;
+import mss301.identityservice.service.SessionStore;
+import mss301.identityservice.service.RateLimiter;
+import mss301.identityservice.service.JwtService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,7 +38,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -46,7 +62,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     UserService userService;
     CurrentIdentityService currentIdentityService;
-    IdentityStateService identityStateService;
     TokenStore tokenStore;
     SessionStore sessionStore;
     RateLimiter rateLimiter;
@@ -98,47 +113,36 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
         String tokenHash = jwtService.hashToken(rawRefreshToken);
         Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
-
         if (tokenData.isEmpty()) {
-            // Kiểm tra Token Reuse: nếu token này từng tồn tại và đã bị thu hồi trước đó
-            if (tokenStore.isTokenRevoked(tokenHash)) {
-                log.warn("Refresh token reuse detected for tokenHash={}. Revoking all user sessions.", tokenHash);
-                // Token bị dùng lại: ném UNAUTHENTICATED để từ chối truy cập
-                throw new AppException(ErrorCode.UNAUTHENTICATED);
-            }
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
+            rejectRefresh(tokenHash);
         }
-
         UUID userId = UUID.fromString(tokenData.get(RedisKeys.FIELD_USER_ID));
         String sessionId = tokenData.get(RedisKeys.FIELD_SESSION_ID);
-
-        // Kiểm tra session còn tồn tại trong Redis
         Map<String, String> sessionData = sessionStore.getSession(sessionId);
         if (sessionData.isEmpty()) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
-
-        // Kiểm tra tài khoản còn ACTIVE trong DB
         AuthenticatedUser authenticatedUser;
         try {
             authenticatedUser = currentIdentityService.getActiveAuthenticatedUser(userId);
         } catch (AuthenticationException e) {
+            sessionStore.removeSession(userId, sessionId);
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
-
-        // Thu hồi token cũ và đánh dấu đã thu hồi để chống reuse
-        tokenStore.revokeRefreshToken(tokenHash, userId);
-        tokenStore.recordRevokedToken(tokenHash, userId, identityProperties.getRefreshTtl());
-
-        // Cấp phát token mới trên cùng một sessionId (Refresh Token Rotation)
-        String ip = extractIp(httpRequest);
-        String deviceId = httpRequest != null ? httpRequest.getHeader(TokenClaims.DEVICE_ID_HEADER)
-                : sessionData.get(RedisKeys.FIELD_DEVICE_ID);
-        String userAgent = httpRequest != null ? httpRequest.getHeader(HttpHeaders.USER_AGENT)
-                : sessionData.get(RedisKeys.FIELD_USER_AGENT);
-
-        return issueSessionAndTokens(authenticatedUser.getUser(), authenticatedUser.getAuthzVersion(),
-                sessionId, clientType, deviceId, userAgent, ip, httpResponse, REFRESH_SUCCESS);
+        long version = authenticatedUser.getAuthzVersion();
+        if (!Long.toString(version).equals(sessionData.get(RedisKeys.FIELD_AUTHZ_VERSION))) {
+            sessionStore.removeSession(userId, sessionId);
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+        String nextRefreshToken = jwtService.issueOpaqueRefreshToken();
+        Jwt accessToken = jwtService.issueAccess(authenticatedUser.getUser(), version, sessionId);
+        boolean rotated = tokenStore.rotateRefreshToken(tokenHash, jwtService.hashToken(nextRefreshToken), version,
+                accessToken.getId(), accessToken.getExpiresAt(), identityProperties.getRefreshTtl());
+        if (!rotated) {
+            rejectRefresh(tokenHash);
+        }
+        return tokenTransport.deliverTokens(clientType, authenticatedUser.getUser(), accessToken.getTokenValue(),
+                nextRefreshToken, identityProperties.getAccessTtl().toSeconds(), httpResponse, REFRESH_SUCCESS);
     }
 
     @Override
@@ -200,15 +204,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                     ? Instant.parse(sData.get(RedisKeys.FIELD_LAST_ACTIVE_AT))
                     : createdAt;
 
-            result.add(SessionResponse.builder()
-                    .sessionId(sid)
-                    .deviceId(sData.get(RedisKeys.FIELD_DEVICE_ID))
-                    .userAgent(sData.get(RedisKeys.FIELD_USER_AGENT))
-                    .ip(sData.get(RedisKeys.FIELD_IP))
-                    .createdAt(createdAt)
-                    .lastActiveAt(lastActiveAt)
-                    .current(sid.equals(currentSid))
-                    .build());
+            SessionResponse sessionResponse = authenticationMapper.toSessionResponse(sid,
+                    sData.get(RedisKeys.FIELD_DEVICE_ID), sData.get(RedisKeys.FIELD_USER_AGENT),
+                    sData.get(RedisKeys.FIELD_IP), createdAt, lastActiveAt, sid.equals(currentSid));
+            result.add(sessionResponse);
         }
 
         result.sort(Comparator.comparing(SessionResponse::getLastActiveAt).reversed());
@@ -230,6 +229,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (tokenHash != null) {
             tokenStore.revokeRefreshToken(tokenHash, actorId);
         }
+        String accessJti = sessionData.get(RedisKeys.FIELD_ACCESS_JTI);
+        String accessExpiry = sessionData.get(RedisKeys.FIELD_ACCESS_EXPIRES_AT);
+        if (accessJti != null && accessExpiry != null) {
+            tokenStore.blacklistAccessToken(accessJti, Duration.between(Instant.now(), Instant.parse(accessExpiry)));
+        }
         sessionStore.removeSession(actorId, sessionId);
         return APIResponse.success("Xóa phiên đăng nhập thành công");
     }
@@ -248,6 +252,16 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request, HttpServletResponse httpResponse) {
         markDeprecated(httpResponse, REFRESH_REPLACEMENT_PATH);
         return refresh(request, null, null);
+    }
+
+    private void rejectRefresh(String tokenHash) {
+        UUID ownerId = tokenStore.findRevokedTokenOwner(tokenHash);
+        if (ownerId != null) {
+            userService.invalidateSessions(ownerId);
+            log.warn("Phát hiện dùng lại refresh; đã thu hồi các phiên của user {}", ownerId);
+            throw new AppException(ErrorCode.TOKEN_REUSED);
+        }
+        throw new AppException(ErrorCode.UNAUTHENTICATED);
     }
 
     // ===== Private helpers =====
@@ -280,6 +294,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         tokenStore.storeRefreshToken(tokenHash, user.getId(), sessionId, deviceId, userAgent, ip, refreshTtl);
 
         Jwt accessToken = jwtService.issueAccess(user, authzVersion, sessionId);
+        sessionStore.bindAccessToken(sessionId, authzVersion, accessToken.getId(), accessToken.getExpiresAt());
+        try {
+            currentIdentityService.getActiveUser(user.getId(), authzVersion);
+        } catch (AuthenticationException e) {
+            sessionStore.removeSession(user.getId(), sessionId);
+            tokenStore.revokeRefreshToken(tokenHash, user.getId());
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
 
         return tokenTransport.deliverTokens(clientType, user, accessToken.getTokenValue(),
                 rawRefreshToken, identityProperties.getAccessTtl().toSeconds(), response, message);
@@ -290,8 +312,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             return "unknown";
         }
         String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+        if (identityProperties.getTrustedProxies().contains(request.getRemoteAddr())
+                && forwarded != null && !forwarded.isBlank()) {
+            String[] addresses = forwarded.split(",");
+            return addresses[addresses.length - 1].trim();
         }
         return request.getRemoteAddr() != null ? request.getRemoteAddr() : "unknown";
     }
@@ -309,7 +333,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             try {
                 Jwt accessToken = jwtService.parseAccess(rawAccessToken);
                 String jti = accessToken.getId();
-                if (jti != null && !identityStateService.isBlacklisted(jti) && !tokenStore.isAccessTokenBlacklisted(jti)) {
+                if (jti != null && !tokenStore.isAccessTokenBlacklisted(jti)) {
                     UUID userId = jwtService.getUserId(accessToken);
                     currentIdentityService.getActiveUser(userId, jwtService.getAuthzVersion(accessToken));
                     return userId;
@@ -328,12 +352,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             return;
         }
         try {
-            try {
-                Jwt jwtRefresh = jwtService.parseRefresh(rawRefreshToken);
-                identityStateService.consumeRefresh(jwtRefresh.getId(), jwtService.getUserId(jwtRefresh));
-            } catch (Exception ignored) {
-            }
-
             String tokenHash = jwtService.hashToken(rawRefreshToken);
             Map<String, String> tokenData = tokenStore.getRefreshToken(tokenHash);
             if (!tokenData.isEmpty()) {
@@ -357,7 +375,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             if (accessToken.getExpiresAt() != null) {
                 Duration remaining = Duration.between(Instant.now(), accessToken.getExpiresAt());
                 tokenStore.blacklistAccessToken(accessToken.getId(), remaining);
-                identityStateService.blacklist(accessToken.getId(), remaining);
             }
         } catch (AppException e) {
             rethrowUnlessUnauthenticated(e);

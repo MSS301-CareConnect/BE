@@ -14,15 +14,15 @@ import java.time.LocalDate;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CertificateRequest {
 
-    @NotBlank
-    @Size(max = 255)
+    @NotBlank(message = "INVALID_REQUEST")
+    @Size(max = 255, message = "INVALID_REQUEST")
     String certificateName;
 
-    @NotBlank
-    @Size(max = 255)
+    @NotBlank(message = "INVALID_REQUEST")
+    @Size(max = 255, message = "INVALID_REQUEST")
     String issuedBy;
 
-    @Size(max = 255)
+    @Size(max = 255, message = "INVALID_REQUEST")
     String credentialNumber;
 
     LocalDate issuedDate;

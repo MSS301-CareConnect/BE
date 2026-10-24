@@ -7,9 +7,9 @@ Java 21 / Spring Boot 4.1.1. Port mặc định **8081**. Service sở hữu tà
 - Đăng ký CUSTOMER bằng OTP email Brevo; chỉ tạo tài khoản sau xác thực. OTP hash, TTL, cooldown, giới hạn thử và claim một lần trên Redis.
 - Login web bằng HttpOnly cookies; login mobile bằng bearer/access + refresh trong body. CSRF bắt buộc cho web, kể cả refresh/logout; request bearer thuần không dùng cookie được miễn CSRF.
 - JWT RS256, `sub=userId`, `iss`, `aud`, `jti`, `token_type`, `authz_version`; access có `roles`, `permissions`, `center_id` khi có. JWKS chỉ công bố public key.
-- `aud` của **access token** = `["careconnect-identity", "careconnect-api"]`; refresh token chỉ có `careconnect-identity`. IdentityService kiểm `careconnect-identity`; các service backend khác và ApiGateway kiểm `careconnect-api` (audience chung, hằng `TokenClaims.API_AUDIENCE`). Access token phát trước khi thêm `careconnect-api` vẫn hợp lệ tại IdentityService tới khi hết hạn; gateway/service khác trả 401 với token đó → client refresh.
+- `aud` của **access token** = `["careconnect-identity", "careconnect-api"]`; refresh opaque không có audience. IdentityService kiểm `careconnect-identity`; các service backend khác và ApiGateway kiểm `careconnect-api` (audience chung, hằng `TokenClaims.API_AUDIENCE`). Access token phát trước khi thêm `careconnect-api` vẫn hợp lệ tại IdentityService tới khi hết hạn; gateway/service khác trả 401 với token đó → client refresh.
 - Token SERVICE (client-credentials, IAM-01 2026-10-22): `POST /auth/service-token` cho service khác gọi endpoint `hasRole('SERVICE')`; không còn `/internal/**` / `X-Internal-Secret`.
-- Refresh JWT lưu `jti` trên Redis, rotation nguyên tử; logout thu hồi refresh và blacklist access được gửi. Logout all/đổi mật khẩu/reset/khóa/xóa mềm tăng `authz_version`.
+- Refresh opaque: Redis chỉ giữ SHA-256 hash + user/session/authzVersion; Lua rotate nguyên tử. Reuse thu hồi mọi phiên. Đổi mật khẩu/reset/khóa/thu hồi role tăng version và xóa phiên; access có `sid` bị chặn khi phiên đã xóa.
 - Mỗi request tại IdentityService kiểm account/status/version và nạp quyền hiện hành từ DB; token không giữ được quyền đã thu hồi tại service này.
 - ADMIN tạo CUSTOMER/manager; manager tạo và quản lý caregiver trong trung tâm của mình. ADMIN xem toàn bộ tài khoản, manager chỉ danh sách caregiver cùng trung tâm; CUSTOMER/CAREGIVER chỉ hồ sơ cá nhân.
 - Gán/thu hồi role, tạo role bổ sung và cấu hình permissions của role bổ sung. Bốn role nền tảng có responsibilities/grants cố định trong bản này; không đổi permissions của built-in roles qua API. Permission catalog hiện chỉ gồm các thao tác IdentityService đã triển khai.
@@ -166,3 +166,13 @@ docker stop careconnect-identity-verify-pg careconnect-identity-verify-redis
 Đợi PostgreSQL sẵn sàng trước chạy test. Suite tạo schema có UUID riêng rồi dọn schema đó; không chạy flags này trỏ vào DB production. Tests bao gồm auth/token claims, web cookie/CSRF, role và center isolation, revocation/soft delete, OTP/refresh replay và concurrent consumption, unique email, password reset, bootstrap guard/admin cuối cùng và Brevo adapter bằng HTTP server local. Brevo account thật chưa được kiểm chứng nếu chưa có key/sender hợp lệ.
 
 Khi triển khai production đặt `IDENTITY_SWAGGER_ENABLED=false`, `IDENTITY_COOKIE_SECURE=true` và dùng HTTPS; secret/key từ cấu hình triển khai và Redis có persistence phù hợp cho refresh/blacklist. Không cần file application theo profile riêng. Tạo schema/change script theo runbook; không bật tự động create/update database.
+
+## Aftercare — IAM-02/03/04/05/06, STAT-01 (2026-10-24)
+
+- `GET /api/v1/users` trả `result.content` + page/size/totalElements/totalPages; lọc role/status/centerId/keyword, sort whitelist. Manager chỉ caregiver thuần trong trung tâm mình.
+- `GET /users/{id}` và batch: ADMIN/SERVICE toàn bộ, user chính mình, manager cùng trung tâm; ngoài phạm vi 404. By-email chỉ ADMIN/SERVICE. Lookup người khác không lộ permissions.
+- `PATCH /users/{id}/status` body `{status,reason}`; LOCKED cần lý do. Query status cũ giữ thêm một sprint (lý do tương thích được sinh mặc định).
+- `PATCH /users/centers/{centerId}/status` SERVICE/ADMIN: chỉ mở các tài khoản có lock_source=CENTER, không mở tài khoản admin khóa riêng.
+- `GET /users/statistics?from=&to=` ADMIN: role/status counts và khách mới; ngày giờ VN, tối đa 366 ngày.
+- `IDENTITY_TRUSTED_PROXIES` là danh sách IP proxy tin cậy, mặc định `127.0.0.1,::1`; chỉ đọc X-Forwarded-For khi remoteAddr có trong danh sách. Docker cần cấu hình IP gateway ổn định phù hợp mạng triển khai. Gateway ghi đè XFF từ peer thật.
+- Database đang có: áp dụng `schema/2026-10-24-user-status.sql` trước khi chạy bản mới. Xem [hướng dẫn chung](../docs/2026-10-24-AFTERCARE_IMPLEMENTATION.md).

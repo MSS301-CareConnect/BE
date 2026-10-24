@@ -1,4 +1,4 @@
-package mss301.providerservice.repository;
+package mss301.providerservice.util;
 
 import jakarta.persistence.criteria.Predicate;
 import mss301.providerservice.entity.CareCenter;

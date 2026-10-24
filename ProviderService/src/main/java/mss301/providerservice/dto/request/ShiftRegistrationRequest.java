@@ -11,6 +11,6 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ShiftRegistrationRequest {
 
-    @Size(max = 2000)
+    @Size(max = 2000, message = "INVALID_REQUEST")
     String caregiverNote;
 }

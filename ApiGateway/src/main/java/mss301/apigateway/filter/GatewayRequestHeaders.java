@@ -23,6 +23,7 @@ import java.util.function.Function;
  */
 public final class GatewayRequestHeaders {
 
+    public static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
     public static final String USER_HEADER_PREFIX = "x-user-";
     public static final String SERVICE_HEADER_PREFIX = "x-service-";
     public static final String USER_ID_HEADER = "X-User-Id";
@@ -37,6 +38,8 @@ public final class GatewayRequestHeaders {
                 .headers(headers -> {
                     removeClientControlledHeaders(headers);
                     addUserHeaders(headers);
+                    headers.remove("Forwarded");
+                    headers.set(FORWARDED_FOR_HEADER, request.servletRequest().getRemoteAddr());
                     Object requestId = request.servletRequest().getAttribute(RequestIdFilter.ATTRIBUTE);
                     if (requestId != null) {
                         headers.set(RequestIdFilter.HEADER, requestId.toString());

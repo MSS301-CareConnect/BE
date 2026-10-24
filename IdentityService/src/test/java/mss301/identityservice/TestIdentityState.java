@@ -29,8 +29,8 @@ public class TestIdentityState {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "identity.testing.real-state", havingValue = "false", matchIfMissing = true)
-    TokenStore memoryTokenStore() {
-        return new MemoryTokenStore();
+    TokenStore memoryTokenStore(SessionStore sessionStore) {
+        return new MemoryTokenStore(sessionStore);
     }
 
     @Bean
@@ -107,6 +107,41 @@ public class TestIdentityState {
     }
 
     static class MemoryTokenStore implements TokenStore {
+        final SessionStore sessionStore;
+
+        MemoryTokenStore(SessionStore sessionStore) {
+            this.sessionStore = sessionStore;
+        }
+
+        @Override
+        public synchronized boolean rotateRefreshToken(String hash, String nextHash, long version,
+                                                        String jti, Instant expiry, Duration ttl) {
+            Map<String, String> data = refreshTokens.get(hash);
+            if (data == null) {
+                return false;
+            }
+            String sid = data.get(RedisKeys.FIELD_SESSION_ID);
+            synchronized (sessionStore) {
+                Map<String, String> session = sessionStore.getSession(sid);
+                if (!hash.equals(session.get(RedisKeys.FIELD_REFRESH_TOKEN_HASH))
+                        || !Long.toString(version).equals(session.get(RedisKeys.FIELD_AUTHZ_VERSION))) {
+                    refreshTokens.remove(hash);
+                    return false;
+                }
+                refreshTokens.remove(hash);
+                revokedTokens.put(hash, UUID.fromString(data.get(RedisKeys.FIELD_USER_ID)));
+                refreshTokens.put(nextHash, data);
+                sessionStore.updateSessionActivity(sid, nextHash, ttl);
+                sessionStore.bindAccessToken(sid, version, jti, expiry);
+                return true;
+            }
+        }
+
+        @Override
+        public synchronized UUID findRevokedTokenOwner(String hash) {
+            return revokedTokens.get(hash);
+        }
+
         final Map<String, Map<String, String>> refreshTokens = new HashMap<>();
         final Map<String, UUID> revokedTokens = new HashMap<>();
         final Map<String, Instant> blacklist = new HashMap<>();
@@ -157,6 +192,17 @@ public class TestIdentityState {
     }
 
     static class MemorySessionStore implements SessionStore {
+        @Override
+        public synchronized void bindAccessToken(String sid, long version, String jti, Instant expiry) {
+            Map<String, String> data = sessions.get(sid);
+            if (data == null) {
+                throw new AppException(ErrorCode.UNAUTHENTICATED);
+            }
+            data.put(RedisKeys.FIELD_AUTHZ_VERSION, Long.toString(version));
+            data.put(RedisKeys.FIELD_ACCESS_JTI, jti);
+            data.put(RedisKeys.FIELD_ACCESS_EXPIRES_AT, expiry.toString());
+        }
+
         final Map<String, Map<String, String>> sessions = new HashMap<>();
         final Map<UUID, Set<String>> userSessions = new HashMap<>();
 
@@ -187,6 +233,9 @@ public class TestIdentityState {
         @Override
         public synchronized void updateSessionActivity(String sessionId, String newTokenHash, Duration ttl) {
             Map<String, String> data = sessions.get(sessionId);
+            if (data == null) {
+                throw new AppException(ErrorCode.UNAUTHENTICATED);
+            }
             if (data != null) {
                 data.put(RedisKeys.FIELD_REFRESH_TOKEN_HASH, newTokenHash);
                 data.put(RedisKeys.FIELD_LAST_ACTIVE_AT, Instant.now().toString());

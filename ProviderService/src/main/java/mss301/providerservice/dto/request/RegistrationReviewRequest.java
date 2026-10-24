@@ -13,15 +13,15 @@ import mss301.providerservice.enums.RegistrationStatus;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RegistrationReviewRequest {
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     RegistrationStatus status;
 
-    @Size(max = 500)
+    @Size(max = 500, message = "INVALID_REQUEST")
     String reason;
 
-    @Size(max = 2000)
+    @Size(max = 2000, message = "INVALID_REQUEST")
     String scheduleNote;
 
-    @NotNull
+    @NotNull(message = "INVALID_REQUEST")
     Long version;
 }

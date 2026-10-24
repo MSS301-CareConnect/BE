@@ -14,6 +14,12 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.time.Instant;
+import java.util.UUID;
+import mss301.bookingservice.dto.request.CareTaskCreateRequest;
+import mss301.bookingservice.dto.request.SessionNoteRequest;
+import mss301.bookingservice.dto.response.SessionNoteResponse;
+import mss301.bookingservice.dto.response.SessionUpdateResponse;
+import mss301.bookingservice.entity.CareSessionNote;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -77,4 +83,16 @@ public interface CareSessionMapper {
     CareSessionResponse toResponse(CareSession session, List<CareTask> tasks);
 
     CareTaskResponse toTaskResponse(CareTask task);
+
+    @IgnoreServerManagedFields
+    @Mapping(target = "session", source = "session")
+    CareSessionNote toCareSessionNote(SessionNoteRequest request, CareSession session, UUID createdBy);
+
+    @Mapping(target = "sessionId", source = "session.id")
+    SessionNoteResponse toNoteResponse(CareSessionNote note);
+
+    List<SessionNoteResponse> toNoteResponseList(List<CareSessionNote> notes);
+
+    SessionUpdateResponse toSessionUpdateResponse(UUID sessionId, UUID taskId, CareTaskStatus status, UUID noteId);
+
 }

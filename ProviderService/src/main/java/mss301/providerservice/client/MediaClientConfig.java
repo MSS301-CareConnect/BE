@@ -7,8 +7,8 @@ import org.springframework.context.annotation.Bean;
 public class MediaClientConfig {
 
     @Bean
-    public RequestInterceptor mediaRequestInterceptor() {
-        return new FeignAuthForwardingInterceptor();
+    public RequestInterceptor mediaRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
+        return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
     @Bean

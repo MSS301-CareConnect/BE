@@ -63,6 +63,8 @@ public class IdentityProperties {
     @NotNull
     List<String> allowedOrigins;
 
+    List<String> trustedProxies = List.of("127.0.0.1", "::1");
+
     boolean cookieSecure = true;
 
     @Pattern(regexp = "Lax|Strict|None")

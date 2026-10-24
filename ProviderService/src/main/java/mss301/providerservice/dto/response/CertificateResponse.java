@@ -2,7 +2,7 @@ package mss301.providerservice.dto.response;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import mss301.providerservice.enums.VerificationStatus;
+import mss301.providerservice.enums.CertificateVerificationStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,7 +21,7 @@ public class CertificateResponse {
     String credentialNumber;
     LocalDate issuedDate;
     LocalDate expiryDate;
-    VerificationStatus verificationStatus;
+    CertificateVerificationStatus verificationStatus;
     String verificationReason;
     UUID verifiedBy;
     Instant verifiedAt;

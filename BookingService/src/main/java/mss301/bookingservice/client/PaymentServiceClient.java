@@ -7,6 +7,11 @@ import mss301.bookingservice.client.dto.RemoteApiResponse;
 import mss301.bookingservice.client.dto.RemainingInvoiceRequest;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import mss301.bookingservice.client.dto.ComplaintRefundRequest;
+import mss301.bookingservice.client.dto.PaymentPageResponse;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
@@ -18,6 +23,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
 @FeignClient(name = "payment", contextId = "paymentServiceClient", url = "${booking.payment.url}",
         configuration = PaymentServiceClientConfig.class)
 public interface PaymentServiceClient {
+
+    @GetMapping("/api/v1/payments")
+    RemoteApiResponse<PaymentPageResponse> listPayments(@RequestParam("bookingId") UUID bookingId,
+            @RequestParam("status") String status, @RequestParam("page") int page, @RequestParam("size") int size);
+
+    @PostMapping("/api/v1/refunds/complaints")
+    void createComplaintRefund(@RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody ComplaintRefundRequest request);
 
     String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 

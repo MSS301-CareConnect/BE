@@ -129,40 +129,42 @@ Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì
 
 ### [Người C] — Hậu mãi, chất lượng & bảo mật (74 SP · `docs/WORK_PLAN_C_AFTERCARE.md`)
 
+Đã triển khai và kiểm chứng 17/17 task; [kết quả, contract và SQL nâng cấp](2026-10-24-AFTERCARE_IMPLEMENTATION.md). Payment thật/VNPay và các mốc demo chung ngoài phạm vi C vẫn giữ trạng thái riêng.
+
 **Sprint 1**
 
-- [ ] **CR-01** — CareRecipient: chặn IDOR snapshot/access/batch (SEC-02) + INACTIVE · P0 · 5 SP
-- [ ] **IAM-02** — Refresh an toàn: kiểm `authz_version`, nguyên tử, thu hồi khi reuse / đổi mật khẩu / khóa (SEC-05) · P0 · 5 SP
-- [ ] **IAM-03** — Hủy phiên vô hiệu access, IP tin cậy, thu hồi role tăng version (SEC-06) · P0 · 3 SP
-- [ ] **IAM-04** — Phân quyền endpoint tra cứu user (SEC-04) · P0 · 3 SP
+- [x] **CR-01** — CareRecipient: chặn IDOR snapshot/access/batch (SEC-02) + INACTIVE · P0 · 5 SP · ✅ 2026-10-24
+- [x] **IAM-02** — Refresh an toàn: kiểm `authz_version`, nguyên tử, thu hồi khi reuse / đổi mật khẩu / khóa (SEC-05) · P0 · 5 SP · ✅ 2026-10-24
+- [x] **IAM-03** — Hủy phiên vô hiệu access, IP tin cậy, thu hồi role tăng version (SEC-06) · P0 · 3 SP · ✅ 2026-10-24
+- [x] **IAM-04** — Phân quyền endpoint tra cứu user (SEC-04) · P0 · 3 SP · ✅ 2026-10-24
 
 **Sprint 2**
 
-- [ ] **PRV-06** — Provider: sửa phạm vi + lách xác minh + quy ước (SEC-08) · P0 · 3 SP
-- [ ] **MED-01** — Media: quyền sở hữu qua service, đổi dải lỗi 7xxx (SEC-07) · P0 · 5 SP
-- [ ] **NTF-01** — Module thông báo: bảng, API, SSE, API cho service · P0 · 5 SP
+- [x] **PRV-06** — Provider: sửa phạm vi + lách xác minh + quy ước (SEC-08) · P0 · 3 SP · ✅ 2026-10-24
+- [x] **MED-01** — Media: quyền sở hữu qua service, đổi dải lỗi 7xxx (SEC-07) · P0 · 5 SP · ✅ 2026-10-24
+- [x] **NTF-01** — Module thông báo: bảng, API, SSE, API cho service · P0 · 5 SP · ✅ 2026-10-24
 
 **Sprint 3**
 
-- [ ] **OPS-03** — Cập nhật task, ghi chú tình trạng, theo dõi realtime · P0 · 3 SP
-- [ ] **NTF-02** — Gắn thông báo vào các sự kiện nghiệp vụ + nhắc ca · P1 · 3 SP
-- [ ] **PRV-05** — Xác minh chứng chỉ 2 bước + audit hồ sơ caregiver · P1 · 5 SP
+- [x] **OPS-03** — Cập nhật task, ghi chú tình trạng, theo dõi realtime · P0 · 3 SP · ✅ 2026-10-24
+- [x] **NTF-02** — Gắn thông báo vào các sự kiện nghiệp vụ + nhắc ca · P1 · 3 SP · ✅ 2026-10-24
+- [x] **PRV-05** — Xác minh chứng chỉ 2 bước + audit hồ sơ caregiver · P1 · 5 SP · ✅ 2026-10-24
 
 **Sprint 4**
 
-- [ ] **OPS-05** — Care report: nháp, ảnh, gửi, khách xem · P0 · 5 SP
-- [ ] **FB-01** — Đánh giá caregiver + phản hồi của trung tâm + cập nhật rating · P1 · 5 SP
+- [x] **OPS-05** — Care report: nháp, ảnh, gửi, khách xem · P0 · 5 SP · ✅ 2026-10-24
+- [x] **FB-01** — Đánh giá caregiver + phản hồi của trung tâm + cập nhật rating · P1 · 5 SP · ✅ 2026-10-24
 
 **Sprint 5**
 
-- [ ] **FB-02** — Khiếu nại cấp 1 / escalate / Admin quyết định hoàn tiền · P1 · 8 SP
-- [ ] **IAM-05** — Quản lý user cho Admin: lọc, tổng số, lý do khóa · P1 · 3 SP
+- [x] **FB-02** — Khiếu nại cấp 1 / escalate / Admin quyết định hoàn tiền · P1 · 8 SP · ✅ 2026-10-24
+- [x] **IAM-05** — Quản lý user cho Admin: lọc, tổng số, lý do khóa · P1 · 3 SP · ✅ 2026-10-24
 
 **Sprint 6**
 
-- [ ] **PRV-04** — Vòng đời trung tâm + khóa dây chuyền + manager sửa trung tâm · P1 · 5 SP
-- [ ] **IAM-06** — Khóa / mở tài khoản theo trung tâm · P1 · 3 SP
-- [ ] **STAT-01** — Thống kê vận hành trung tâm / hệ thống · P2 · 5 SP
+- [x] **PRV-04** — Vòng đời trung tâm + khóa dây chuyền + manager sửa trung tâm · P1 · 5 SP · ✅ 2026-10-24
+- [x] **IAM-06** — Khóa / mở tài khoản theo trung tâm · P1 · 3 SP · ✅ 2026-10-24
+- [x] **STAT-01** — Thống kê vận hành trung tâm / hệ thống · P2 · 5 SP · ✅ 2026-10-24
 
 ### Mốc demo chung cuối mỗi sprint
 

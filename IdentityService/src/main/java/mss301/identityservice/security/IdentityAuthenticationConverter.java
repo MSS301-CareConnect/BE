@@ -7,7 +7,9 @@ import mss301.identityservice.dto.response.UserResponse;
 import mss301.identityservice.enums.RoleCode;
 import mss301.identityservice.exception.AppException;
 import mss301.identityservice.service.CurrentIdentityService;
-import mss301.identityservice.service.IdentityStateService;
+import mss301.identityservice.service.SessionStore;
+import mss301.identityservice.config.RedisKeys;
+import java.util.Map;
 import mss301.identityservice.service.JwtService;
 import mss301.identityservice.service.ServiceClientService;
 import mss301.identityservice.service.TokenStore;
@@ -35,7 +37,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class IdentityAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
-    IdentityStateService identityStateService;
+    SessionStore sessionStore;
     TokenStore tokenStore;
     CurrentIdentityService currentIdentityService;
     JwtService jwtService;
@@ -44,11 +46,18 @@ public class IdentityAuthenticationConverter implements Converter<Jwt, AbstractA
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         try {
-            if (jwt.getId() == null || identityStateService.isBlacklisted(jwt.getId()) || tokenStore.isAccessTokenBlacklisted(jwt.getId())) {
+            if (jwt.getId() == null || tokenStore.isAccessTokenBlacklisted(jwt.getId())) {
                 throw new BadCredentialsException("Revoked token");
             }
             if (jwt.hasClaim(TokenClaims.CLIENT_ID)) {
                 return toServiceAuthentication(jwt);
+            }
+            String sid = jwtService.getSessionId(jwt);
+            if (sid != null) {
+                Map<String, String> session = sessionStore.getSession(sid);
+                if (!jwt.getSubject().equals(session.get(RedisKeys.FIELD_USER_ID))) {
+                    throw new BadCredentialsException("Revoked session");
+                }
             }
             UserResponse user = currentIdentityService.getActiveUser(jwtService.getUserId(jwt), jwtService.getAuthzVersion(jwt));
             return new JwtAuthenticationToken(jwt, toAuthorities(user), user.getId().toString());

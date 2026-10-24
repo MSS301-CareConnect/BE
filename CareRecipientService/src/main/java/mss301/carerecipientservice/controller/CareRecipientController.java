@@ -6,7 +6,16 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.carerecipientservice.dto.request.*;
-import mss301.carerecipientservice.dto.response.*;
+import mss301.carerecipientservice.dto.response.APIResponse;
+import mss301.carerecipientservice.dto.response.AccessCheckResponse;
+import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
+import mss301.carerecipientservice.dto.response.CareRecipientResponse;
+import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
+import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
+import mss301.carerecipientservice.dto.response.MedicationResponse;
+import mss301.carerecipientservice.dto.response.PageResponse;
+import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
+import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
 import mss301.carerecipientservice.enums.RecipientStatus;
 import mss301.carerecipientservice.enums.RoleCode;
@@ -58,9 +67,9 @@ public class CareRecipientController {
         return careRecipientService.get(actorId, roles, id);
     }
 
-    // Chỉ service khác (BookingService lúc đặt lịch) — người dùng xem hồ sơ qua GET /{id} theo quyền thành viên.
+    // Snapshot dành cho SERVICE/ADMIN hoặc CUSTOMER có quyền VIEWER trên hồ sơ.
     @GetMapping("/{id}/snapshot")
-    @PreAuthorize("hasRole('SERVICE')")
+    @PreAuthorize("hasAnyRole('SERVICE','CUSTOMER','ADMIN')")
     public APIResponse<RecipientSnapshotResponse> getSnapshot(@PathVariable UUID id) {
         return careRecipientService.getSnapshot(id);
     }
@@ -129,7 +138,7 @@ public class CareRecipientController {
     }
 
     @PostMapping("/batch")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('SERVICE','CUSTOMER','ADMIN')")
     public APIResponse<List<CareRecipientSummaryResponse>> listBatch(@Valid @RequestBody RecipientBatchRequest request) {
         return careRecipientService.listBatch(request);
     }

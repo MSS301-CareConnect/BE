@@ -38,11 +38,15 @@ import mss301.carerecipientservice.mapper.EmergencyContactMapper;
 import mss301.carerecipientservice.mapper.MedicationMapper;
 import mss301.carerecipientservice.mapper.RecipientManagerMapper;
 import mss301.carerecipientservice.repository.CareRecipientRepository;
-import mss301.carerecipientservice.repository.CareRecipientSpecifications;
+import mss301.carerecipientservice.util.CareRecipientSpecifications;
 import mss301.carerecipientservice.repository.EmergencyContactRepository;
 import mss301.carerecipientservice.repository.MedicationRepository;
 import mss301.carerecipientservice.repository.RecipientManagerRepository;
 import mss301.carerecipientservice.service.CareRecipientService;
+import mss301.carerecipientservice.service.RecipientManagerService;
+import mss301.carerecipientservice.service.EmergencyContactService;
+import mss301.carerecipientservice.service.MedicationService;
+import mss301.carerecipientservice.security.CurrentRequestIdentity;
 import mss301.carerecipientservice.service.RecipientAccessService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -73,13 +77,14 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     EmergencyContactRepository emergencyContactRepository;
     RecipientAccessService recipientAccessService;
     BookingClient bookingClient;
+    CurrentRequestIdentity currentRequestIdentity;
     CareRecipientMapper careRecipientMapper;
     RecipientManagerMapper recipientManagerMapper;
     MedicationMapper medicationMapper;
     EmergencyContactMapper emergencyContactMapper;
-    MedicationServiceImpl medicationServiceImpl;
-    EmergencyContactServiceImpl emergencyContactServiceImpl;
-    RecipientManagerServiceImpl recipientManagerServiceImpl;
+    MedicationService medicationService;
+    EmergencyContactService emergencyContactService;
+    RecipientManagerService recipientManagerService;
     TransactionTemplate transactionTemplate;
 
     @Override
@@ -149,6 +154,10 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     public APIResponse<CareRecipientResponse> update(UUID actorId, UUID id, CareRecipientUpdateRequest request) {
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.EDITOR);
         CareRecipient recipient = lockRecipient(id);
+        if (recipient.getStatus() == RecipientStatus.INACTIVE
+                && recipientAccessService.findAccessLevel(id, actorId).orElse(null) != RecipientAccessLevel.OWNER) {
+            throw new AppException(ErrorCode.RECIPIENT_INACTIVE);
+        }
         if (recipient.getVersion() != request.getVersion()) {
             throw new AppException(ErrorCode.RECIPIENT_VERSION_CONFLICT);
         }
@@ -193,6 +202,10 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<RecipientSnapshotResponse> getSnapshot(UUID id) {
+        if (!currentRequestIdentity.hasRole(RoleCode.SERVICE.name())
+                && !currentRequestIdentity.hasRole(RoleCode.ADMIN.name())) {
+            recipientAccessService.checkAccess(id, currentRequestIdentity.userId(), RecipientAccessLevel.VIEWER);
+        }
         RecipientSnapshotResponse snapshotResponse = buildSnapshot(id);
         return APIResponse.success("Lấy snapshot hồ sơ thành công", snapshotResponse);
     }
@@ -212,6 +225,12 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     public APIResponse<List<CareRecipientSummaryResponse>> listBatch(RecipientBatchRequest request) {
         List<CareRecipient> recipients = careRecipientRepository.findAllByIdInAndDeletedAtIsNull(
                 new LinkedHashSet<>(request.getRecipientIds()));
+        if (!currentRequestIdentity.hasRole(RoleCode.SERVICE.name())
+                && !currentRequestIdentity.hasRole(RoleCode.ADMIN.name())) {
+            UUID actorId = currentRequestIdentity.userId();
+            recipients = recipients.stream().filter(recipient ->
+                    recipientAccessService.findAccessLevel(recipient.getId(), actorId).isPresent()).toList();
+        }
         List<CareRecipientSummaryResponse> summaryResponses = careRecipientMapper.toSummaryResponseList(recipients);
         return APIResponse.success("Lấy danh sách hồ sơ thành công", summaryResponses);
     }
@@ -326,88 +345,88 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     // ===== Medication =====
     @Override
     public APIResponse<MedicationResponse> createMedication(UUID actorId, UUID recipientId, MedicationRequest request) {
-        return medicationServiceImpl.create(actorId, recipientId, request);
+        return medicationService.create(actorId, recipientId, request);
     }
 
     @Override
     public APIResponse<List<MedicationResponse>> listMedications(UUID actorId, UUID recipientId, Boolean active) {
-        return medicationServiceImpl.list(actorId, recipientId, active);
+        return medicationService.list(actorId, recipientId, active);
     }
 
     @Override
     public APIResponse<MedicationResponse> getMedication(UUID actorId, UUID recipientId, UUID medicationId) {
-        return medicationServiceImpl.get(actorId, recipientId, medicationId);
+        return medicationService.get(actorId, recipientId, medicationId);
     }
 
     @Override
     public APIResponse<MedicationResponse> updateMedication(UUID actorId, UUID recipientId, UUID medicationId, MedicationRequest request) {
-        return medicationServiceImpl.update(actorId, recipientId, medicationId, request);
+        return medicationService.update(actorId, recipientId, medicationId, request);
     }
 
     @Override
     public APIResponse<MedicationResponse> updateMedicationActive(UUID actorId, UUID recipientId, UUID medicationId, boolean active) {
-        return medicationServiceImpl.updateActive(actorId, recipientId, medicationId, active);
+        return medicationService.updateActive(actorId, recipientId, medicationId, active);
     }
 
     @Override
     public APIResponse<Void> deleteMedication(UUID actorId, UUID recipientId, UUID medicationId) {
-        return medicationServiceImpl.delete(actorId, recipientId, medicationId);
+        return medicationService.delete(actorId, recipientId, medicationId);
     }
 
     // ===== Emergency Contact =====
     @Override
     public APIResponse<EmergencyContactResponse> createEmergencyContact(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
-        return emergencyContactServiceImpl.create(actorId, recipientId, request);
+        return emergencyContactService.create(actorId, recipientId, request);
     }
 
     @Override
     public APIResponse<List<EmergencyContactResponse>> listEmergencyContacts(UUID actorId, UUID recipientId) {
-        return emergencyContactServiceImpl.list(actorId, recipientId);
+        return emergencyContactService.list(actorId, recipientId);
     }
 
     @Override
     public APIResponse<EmergencyContactResponse> getEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
-        return emergencyContactServiceImpl.get(actorId, recipientId, contactId);
+        return emergencyContactService.get(actorId, recipientId, contactId);
     }
 
     @Override
     public APIResponse<EmergencyContactResponse> updateEmergencyContact(UUID actorId, UUID recipientId, UUID contactId, EmergencyContactRequest request) {
-        return emergencyContactServiceImpl.update(actorId, recipientId, contactId, request);
+        return emergencyContactService.update(actorId, recipientId, contactId, request);
     }
 
     @Override
     public APIResponse<EmergencyContactResponse> assignPrimaryEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
-        return emergencyContactServiceImpl.assignPrimary(actorId, recipientId, contactId);
+        return emergencyContactService.assignPrimary(actorId, recipientId, contactId);
     }
 
     @Override
     public APIResponse<Void> deleteEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
-        return emergencyContactServiceImpl.delete(actorId, recipientId, contactId);
+        return emergencyContactService.delete(actorId, recipientId, contactId);
     }
 
     // ===== Recipient Manager =====
     @Override
     public APIResponse<List<RecipientManagerResponse>> listManagers(UUID actorId, UUID recipientId) {
-        return recipientManagerServiceImpl.list(actorId, recipientId);
+        return recipientManagerService.list(actorId, recipientId);
     }
 
     @Override
     public APIResponse<RecipientManagerResponse> createManager(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
-        return recipientManagerServiceImpl.create(actorId, recipientId, request);
+        return recipientManagerService.create(actorId, recipientId, request);
     }
 
     @Override
     public APIResponse<RecipientManagerResponse> updateManager(UUID actorId, UUID recipientId, UUID managerId, ManagerUpdateRequest request) {
-        return recipientManagerServiceImpl.update(actorId, recipientId, managerId, request);
+        return recipientManagerService.update(actorId, recipientId, managerId, request);
     }
 
     @Override
     public APIResponse<RecipientManagerResponse> assignPrimaryManager(UUID actorId, UUID recipientId, UUID managerId) {
-        return recipientManagerServiceImpl.assignPrimary(actorId, recipientId, managerId);
+        return recipientManagerService.assignPrimary(actorId, recipientId, managerId);
     }
 
     @Override
     public APIResponse<Void> deleteManager(UUID actorId, UUID recipientId, UUID managerId) {
-        return recipientManagerServiceImpl.delete(actorId, recipientId, managerId);
+        return recipientManagerService.delete(actorId, recipientId, managerId);
     }
 }

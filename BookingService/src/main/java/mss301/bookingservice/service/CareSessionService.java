@@ -4,6 +4,12 @@ import mss301.bookingservice.dto.request.CareSessionEndRequest;
 import mss301.bookingservice.dto.request.CareSessionForceEndRequest;
 import mss301.bookingservice.dto.request.CareSessionStartRequest;
 import mss301.bookingservice.dto.response.APIResponse;
+import mss301.bookingservice.dto.request.CareTaskCreateRequest;
+import mss301.bookingservice.dto.request.CareTaskUpdateRequest;
+import mss301.bookingservice.dto.request.SessionNoteRequest;
+import mss301.bookingservice.dto.response.CareTaskResponse;
+import mss301.bookingservice.dto.response.SessionNoteResponse;
+import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.dto.response.CareSessionResponse;
 import mss301.bookingservice.enums.RoleCode;
 
@@ -26,6 +32,14 @@ public interface CareSessionService {
 
     // OPS-04: manager trung tâm buộc kết thúc ca caregiver quên đóng — việc PENDING thành SKIPPED.
     APIResponse<CareSessionResponse> forceEnd(UUID actorId, UUID centerId, UUID id, CareSessionForceEndRequest request);
+
+    APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request);
+
+    APIResponse<CareTaskResponse> createTask(UUID actorId, UUID sessionId, CareTaskCreateRequest request);
+
+    APIResponse<SessionNoteResponse> createNote(UUID actorId, UUID sessionId, SessionNoteRequest request);
+
+    APIResponse<PageResponse<SessionNoteResponse>> listNotes(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id, int page, int size);
 
     // Job nhắc session còn mở quá giờ kết thúc buổi (một lần / session).
     List<UUID> findOverdueIds();

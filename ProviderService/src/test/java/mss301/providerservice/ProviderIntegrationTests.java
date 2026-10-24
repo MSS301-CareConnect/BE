@@ -7,6 +7,10 @@ import mss301.providerservice.dto.request.RegistrationReviewRequest;
 import mss301.providerservice.dto.request.ShiftRegistrationRequest;
 import mss301.providerservice.dto.response.ShiftRegistrationResponse;
 import mss301.providerservice.entity.CareCenter;
+import mss301.providerservice.entity.ProviderOutbox;
+import mss301.providerservice.repository.ProviderOutboxRepository;
+import mss301.providerservice.service.ProviderOutboxService;
+import mss301.providerservice.exception.AppException;
 import mss301.providerservice.entity.CaregiverProfile;
 import mss301.providerservice.entity.CaregiverSchedule;
 import mss301.providerservice.entity.CaregiverSkill;
@@ -21,7 +25,7 @@ import mss301.providerservice.enums.RegistrationStatus;
 import mss301.providerservice.enums.ScheduleStatus;
 import mss301.providerservice.enums.ShiftStatus;
 import mss301.providerservice.enums.VerificationStatus;
-import mss301.providerservice.exception.AppException;
+import mss301.providerservice.enums.CertificateVerificationStatus;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.repository.CareCenterRepository;
 import mss301.providerservice.repository.CaregiverProfileRepository;
@@ -37,6 +41,20 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import mss301.providerservice.client.CenterCascadeClient;
+import mss301.providerservice.client.BookingArchiveClient;
+import mss301.providerservice.client.dto.BookingCountResponse;
+import mss301.providerservice.client.dto.RemoteApiResponse;
+import mss301.providerservice.client.dto.CenterAccountsStatusRequest;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JCircuitBreakerFactory;
@@ -107,6 +125,12 @@ class ProviderIntegrationTests {
 
     @Autowired
     MockMvc mockMvc;
+
+    @MockitoBean
+    CenterCascadeClient centerCascadeClient;
+
+    @MockitoBean
+    BookingArchiveClient bookingArchiveClient;
 
     @Autowired
     CareCenterRepository careCenterRepository;
@@ -890,13 +914,13 @@ class ProviderIntegrationTests {
 
         // GET /caregivers/{id} (hồ sơ đầy đủ): ADMIN / manager trung tâm / chính caregiver / SERVICE.
         mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId()).with(user(UUID.randomUUID(), "CUSTOMER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId())
                         .with(user(UUID.randomUUID(), "CENTER_MANAGER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId())
                         .with(user(pending.getUserId(), "CAREGIVER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId())
                         .with(user(caregiver.getUserId(), "CAREGIVER")))
                 .andExpect(status().isOk());
@@ -983,6 +1007,101 @@ class ProviderIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(3))
                 .andExpect(jsonPath("$.result.items[0].minPrice").doesNotExist());
+    }
+
+
+    @Test
+    void managerCenterListAndCaregiverStatusAreScoped() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        saveCenter(UUID.randomUUID());
+        mockMvc.perform(get("/api/v1/care-centers").with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(center.getId().toString()));
+        mockMvc.perform(get("/api/v1/care-centers/" + center.getId()).with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.email").doesNotExist())
+                .andExpect(jsonPath("$.result.managerUserId").doesNotExist());
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+        caregiver.setVerificationStatus(VerificationStatus.PENDING);
+        caregiver.setCaregiverStatus(CaregiverStatus.INACTIVE);
+        caregiver = caregiverProfileRepository.saveAndFlush(caregiver);
+        mockMvc.perform(patch("/api/v1/caregivers/" + caregiver.getId() + "/status").with(user(managerId, "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACTIVE\",\"version\":" + caregiver.getVersion() + "}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_NOT_VERIFIED.getCode()));
+    }
+
+    @Test
+    void certificatesRequireManagerThenAdminAndRejectExpired() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CaregiverProfile caregiver = saveCaregiver(saveCenter(managerId), UUID.randomUUID());
+        Certificate certificate = certificateRepository.saveAndFlush(Certificate.builder().caregiver(caregiver)
+                .certificateName("Chứng chỉ").issuedBy("Cơ sở đào tạo").verificationStatus(CertificateVerificationStatus.PENDING)
+                .expiryDate(LocalDate.now(ProviderTime.ZONE).plusDays(30)).build());
+        String path = "/api/v1/certificates/" + certificate.getId();
+        mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isConflict());
+        mockMvc.perform(patch(path + "/center-verification").with(user(UUID.randomUUID(), "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch(path + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("CENTER_VERIFIED"));
+        mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("ADMIN_VERIFIED"));
+        Certificate expired = certificateRepository.saveAndFlush(Certificate.builder().caregiver(caregiver).certificateName("Hết hạn")
+                .issuedBy("Cơ sở").verificationStatus(CertificateVerificationStatus.PENDING)
+                .expiryDate(LocalDate.now(ProviderTime.ZONE).minusDays(1)).build());
+        mockMvc.perform(patch("/api/v1/certificates/" + expired.getId() + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CERTIFICATE_EXPIRED.getCode()));
+    }
+
+    @Test
+    void centerSuspensionUsesOrderedCascadeAndArchiveChecksBookings() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        String path = "/api/v1/care-centers/" + center.getId();
+        mockMvc.perform(patch(path + "/status").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"SUSPENDED\",\"reason\":\"Kiểm tra\",\"version\":0}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(path + "/status").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ACTIVE\",\"version\":1}"))
+                .andExpect(status().isOk());
+        ArgumentCaptor<CenterAccountsStatusRequest> requests = ArgumentCaptor.forClass(CenterAccountsStatusRequest.class);
+        verify(centerCascadeClient, times(2)).updateAccounts(eq(center.getId()), requests.capture());
+        assertThat(requests.getAllValues()).extracting(CenterAccountsStatusRequest::getStatus).containsExactly("LOCKED", "ACTIVE");
+        verify(centerCascadeClient).cancelBookings(any());
+        when(bookingArchiveClient.list(eq(center.getId()), any(), anyInt(), anyInt())).thenReturn(
+                RemoteApiResponse.<BookingCountResponse>builder().code(200).result(BookingCountResponse.builder().totalElements(1L).build()).build());
+        mockMvc.perform(delete(path).param("version", "2").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_HAS_ACTIVE_BOOKINGS.getCode()));
+        assertThat(careCenterRepository.findById(center.getId()).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Autowired
+    ProviderOutboxRepository providerOutboxRepository;
+
+    @Autowired
+    ProviderOutboxService providerOutboxService;
+
+    @Test
+    void permanentCascadeFailureStopsRetryImmediately() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        doThrow(new AppException(ErrorCode.REMOTE_COMMAND_REJECTED))
+                .when(centerCascadeClient).updateAccounts(eq(center.getId()), any());
+        mockMvc.perform(patch("/api/v1/care-centers/" + center.getId() + "/status")
+                        .with(user(UUID.randomUUID(), "ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SUSPENDED\",\"reason\":\"Kiểm tra\",\"version\":0}"))
+                .andExpect(status().isOk());
+        ProviderOutbox outbox = providerOutboxRepository.findAll().stream()
+                .filter(item -> item.getCenterId().equals(center.getId())).findFirst().orElseThrow();
+        assertThat(outbox.getStatus()).isEqualTo("FAILED");
+        assertThat(outbox.getAttempts()).isEqualTo(1);
+        providerOutboxService.dispatch(outbox.getId());
+        verify(centerCascadeClient, times(1)).updateAccounts(eq(center.getId()), any());
     }
 
     // ===== helpers =====
@@ -1103,7 +1222,8 @@ class ProviderIntegrationTests {
                 .certificateName(name)
                 .issuedBy("Bộ Y tế")
                 .credentialNumber("SECRET-" + name)
-                .verificationStatus(status)
+                .verificationStatus(status == VerificationStatus.VERIFIED ? CertificateVerificationStatus.ADMIN_VERIFIED
+                        : CertificateVerificationStatus.valueOf(status.name()))
                 .build());
     }
 

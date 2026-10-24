@@ -98,7 +98,7 @@ class ServiceTokenProviderTests {
         assertThatThrownBy(provider::getToken)
                 .isInstanceOf(AppException.class)
                 .extracting(exception -> ((AppException) exception).getErrorCode())
-                .isEqualTo(ErrorCode.SERVICE_TOKEN_UNAVAILABLE);
+                .isEqualTo(ErrorCode.REMOTE_COMMAND_REJECTED);
 
         int requestsBefore = requestBodies.size();
         ServiceTokenProvider unconfigured = provider(properties("", ""), Clock.systemUTC());

@@ -41,8 +41,8 @@
 6. `PageResponse.of(page, items)` và `APIResponse.success(...)` là wrapper chung (không qua MapStruct); mọi entity ↔ DTO
    qua mapper.
 7. Không còn `/internal/**` / `X-Internal-Secret`. API phục vụ service khác (`/{id}/snapshot`, `/{id}/access`, `/batch`)
-   nằm chung `CareRecipientController` dưới `/api/v1/care-recipients`. `/snapshot` và `/access` chỉ `hasRole('SERVICE')`
-   (nhận id / userId tùy ý nên không được mở cho người dùng); BookingService gọi bằng token SERVICE.
+   nằm chung `CareRecipientController` dưới `/api/v1/care-recipients`. `/access` chỉ `hasRole('SERVICE')`; `/snapshot` cho SERVICE/ADMIN hoặc CUSTOMER có quyền VIEWER trở lên;
+   batch CUSTOMER lọc theo membership, ngoài phạm vi không trả dữ liệu. BookingService gọi bằng token SERVICE.
 8. **Một API / aggregate, phạm vi theo role trong service (2026-10-22)**: `GET /care-recipients` (CUSTOMER, ADMIN) và
    `GET /care-recipients/{id}` (CUSTOMER, ADMIN, CAREGIVER) — không tạo path theo role (`/admin`, `/caregiver`). Controller
    nhận `@CurrentRoles Set<RoleCode>` (`security/CurrentRolesArgumentResolver`, ẩn khỏi Swagger), không so chuỗi `ROLE_*`.
@@ -54,8 +54,10 @@
 10. **Token SERVICE**: `caregiver-access` yêu cầu `hasRole('SERVICE')` → `BookingClientConfig` dùng
    `ServiceTokenInterceptor(serviceTokenProvider)`; `ServiceTokenProvider` xin token ở `POST /api/v1/auth/service-token` qua
    gateway (`care-recipient.identity.url`), cache tới 60s trước hạn. Env `CARE_RECIPIENT_SERVICE_CLIENT_ID/SECRET`,
-   `CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT/READ_TIMEOUT`. Client khác (Identity) vẫn chuyển tiếp token người dùng.
+   `CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT/READ_TIMEOUT`. IdentityClient cũng dùng SERVICE để tra cứu by-email/batch (IAM-04).
 
 ## TODO đã biết
 
-Đồng bộ người quản lý khi user bị khóa/xóa (event); audit; Flyway (đợt chung).
+Đồng bộ người quản lý khi user bị khóa/xóa (event); audit. Không dùng Flyway.
+
+INACTIVE: chỉ OWNER sửa thông tin hồ sơ; mọi ghi thuốc/liên hệ trả 409 RECIPIENT_INACTIVE (2701) tới khi ACTIVE.

@@ -16,6 +16,7 @@ import mss301.carerecipientservice.mapper.MedicationMapper;
 import mss301.carerecipientservice.repository.MedicationRepository;
 import mss301.carerecipientservice.service.RecipientAccessService;
 import org.springframework.stereotype.Service;
+import mss301.carerecipientservice.service.MedicationService;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -27,15 +28,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
-public class MedicationServiceImpl  {
+public class MedicationServiceImpl implements MedicationService {
 
     MedicationRepository medicationRepository;
     RecipientAccessService recipientAccessService;
     MedicationMapper medicationMapper;
 
     @Transactional
+    @Override
     public APIResponse<MedicationResponse> create(UUID actorId, UUID recipientId, MedicationRequest request) {
         RecipientManager membership = recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         checkDates(request);
         Medication medication = medicationMapper.toMedication(request, membership.getRecipient(), actorId);
         Medication savedMedication = medicationRepository.saveAndFlush(medication);
@@ -45,6 +48,7 @@ public class MedicationServiceImpl  {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public APIResponse<List<MedicationResponse>> list(UUID actorId, UUID recipientId, Boolean active) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         List<Medication> medications = active == null
@@ -55,6 +59,7 @@ public class MedicationServiceImpl  {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public APIResponse<MedicationResponse> get(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         Medication medication = findMedication(recipientId, id);
@@ -63,8 +68,10 @@ public class MedicationServiceImpl  {
     }
 
     @Transactional
+    @Override
     public APIResponse<MedicationResponse> update(UUID actorId, UUID recipientId, UUID id, MedicationRequest request) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         checkDates(request);
         Medication medication = findMedication(recipientId, id);
         medicationMapper.update(request, actorId, medication);
@@ -74,8 +81,10 @@ public class MedicationServiceImpl  {
     }
 
     @Transactional
+    @Override
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         Medication medication = findMedication(recipientId, id);
         medication.setDeletedAt(Instant.now());
         medication.setUpdatedBy(actorId);
@@ -84,8 +93,10 @@ public class MedicationServiceImpl  {
     }
 
     @Transactional
+    @Override
     public APIResponse<MedicationResponse> updateActive(UUID actorId, UUID recipientId, UUID id, boolean active) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         Medication medication = findMedication(recipientId, id);
         medication.setActive(active);
         medication.setUpdatedBy(actorId);

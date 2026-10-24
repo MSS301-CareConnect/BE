@@ -14,7 +14,14 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import java.util.function.Supplier;
 
 @Service
@@ -23,7 +30,46 @@ import java.util.function.Supplier;
 @Slf4j
 public class RedisSessionStore implements SessionStore {
 
+    static DefaultRedisScript<Long> UPDATE_SESSION = new DefaultRedisScript<>("""
+            if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+            redis.call('HSET', KEYS[1], ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+            redis.call('PEXPIRE', KEYS[1], ARGV[5])
+            local uid = redis.call('HGET', KEYS[1], ARGV[6])
+            redis.call('PEXPIRE', ARGV[7] .. uid, ARGV[5])
+            return 1
+            """, Long.class);
+    static DefaultRedisScript<Long> BIND_ACCESS = new DefaultRedisScript<>("""
+            if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+            redis.call('HSET', KEYS[1], ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6])
+            return 1
+            """, Long.class);
+
+    static DefaultRedisScript<Long> REMOVE_ALL = new DefaultRedisScript<>("""
+            local sessions = redis.call('SMEMBERS', KEYS[1])
+            for _, sid in ipairs(sessions) do
+                local sk = ARGV[1] .. sid
+                local hash = redis.call('HGET', sk, ARGV[2])
+                if hash then redis.call('DEL', ARGV[3] .. hash) end
+                redis.call('DEL', sk)
+            end
+            redis.call('DEL', KEYS[1])
+            return #sessions
+            """, Long.class);
+
     StringRedisTemplate stringRedisTemplate;
+
+    @Override
+    public void bindAccessToken(String sessionId, long authzVersion, String jti, Instant expiresAt) {
+        execute(() -> {
+            Long result = stringRedisTemplate.execute(BIND_ACCESS, List.of(RedisKeys.SESSION + sessionId),
+                    RedisKeys.FIELD_AUTHZ_VERSION, Long.toString(authzVersion), RedisKeys.FIELD_ACCESS_JTI, jti,
+                    RedisKeys.FIELD_ACCESS_EXPIRES_AT, expiresAt.toString());
+            if (!Long.valueOf(1).equals(result)) {
+                throw new AppException(ErrorCode.UNAUTHENTICATED);
+            }
+            return null;
+        });
+    }
 
     @Override
     public void createSession(String sessionId, UUID userId, String deviceId, String userAgent,
@@ -69,13 +115,13 @@ public class RedisSessionStore implements SessionStore {
     @Override
     public void updateSessionActivity(String sessionId, String newTokenHash, Duration ttl) {
         execute(() -> {
-            String sessionKey = RedisKeys.SESSION + sessionId;
-            Map<String, String> updates = new HashMap<>();
-            updates.put(RedisKeys.FIELD_REFRESH_TOKEN_HASH, newTokenHash);
-            updates.put(RedisKeys.FIELD_LAST_ACTIVE_AT, Instant.now().toString());
-
-            stringRedisTemplate.opsForHash().putAll(sessionKey, updates);
-            stringRedisTemplate.expire(sessionKey, ttl);
+            Long result = stringRedisTemplate.execute(UPDATE_SESSION, List.of(RedisKeys.SESSION + sessionId),
+                    RedisKeys.FIELD_REFRESH_TOKEN_HASH, newTokenHash, RedisKeys.FIELD_LAST_ACTIVE_AT,
+                    Instant.now().toString(), Long.toString(ttl.toMillis()), RedisKeys.FIELD_USER_ID,
+                    RedisKeys.USER_SESSIONS);
+            if (!Long.valueOf(1).equals(result)) {
+                throw new AppException(ErrorCode.UNAUTHENTICATED);
+            }
             return null;
         });
     }
@@ -93,10 +139,12 @@ public class RedisSessionStore implements SessionStore {
     public void removeSession(UUID userId, String sessionId) {
         execute(() -> {
             String sessionKey = RedisKeys.SESSION + sessionId;
-            String userSessionsKey = RedisKeys.USER_SESSIONS + userId;
-
+            Object hash = stringRedisTemplate.opsForHash().get(sessionKey, RedisKeys.FIELD_REFRESH_TOKEN_HASH);
+            if (hash != null) {
+                stringRedisTemplate.delete(RedisKeys.REFRESH + hash);
+            }
             stringRedisTemplate.delete(sessionKey);
-            stringRedisTemplate.opsForSet().remove(userSessionsKey, sessionId);
+            stringRedisTemplate.opsForSet().remove(RedisKeys.USER_SESSIONS + userId, sessionId);
             return null;
         });
     }
@@ -104,18 +152,8 @@ public class RedisSessionStore implements SessionStore {
     @Override
     public void removeAllUserSessions(UUID userId) {
         execute(() -> {
-            String userSessionsKey = RedisKeys.USER_SESSIONS + userId;
-            Set<String> sessionIds = stringRedisTemplate.opsForSet().members(userSessionsKey);
-            if (sessionIds != null && !sessionIds.isEmpty()) {
-                List<String> keysToDelete = new ArrayList<>();
-                for (String sid : sessionIds) {
-                    keysToDelete.add(RedisKeys.SESSION + sid);
-                }
-                keysToDelete.add(userSessionsKey);
-                stringRedisTemplate.delete(keysToDelete);
-            } else {
-                stringRedisTemplate.delete(userSessionsKey);
-            }
+            stringRedisTemplate.execute(REMOVE_ALL, List.of(RedisKeys.USER_SESSIONS + userId),
+                    RedisKeys.SESSION, RedisKeys.FIELD_REFRESH_TOKEN_HASH, RedisKeys.REFRESH);
             return null;
         });
     }

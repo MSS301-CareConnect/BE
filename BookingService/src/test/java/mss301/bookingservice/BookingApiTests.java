@@ -29,6 +29,20 @@ import mss301.bookingservice.support.TestPlatformServer.CaregiverIds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import mss301.bookingservice.client.MediaClient;
+import mss301.bookingservice.client.dto.MediaClientResponse;
+import mss301.bookingservice.client.dto.DownloadUrlClientResponse;
+import mss301.bookingservice.dto.response.APIResponse;
+import mss301.bookingservice.service.NotificationService;
+import mss301.bookingservice.enums.NotificationType;
+import org.springframework.mock.web.MockMultipartFile;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.cloud.circuitbreaker.resilience4j.Resilience4JCircuitBreakerFactory;
@@ -134,6 +148,12 @@ class BookingApiTests {
 
     @Autowired
     MockMvc mockMvc;
+
+    @Autowired
+    NotificationService notificationService;
+
+    @MockitoBean
+    MediaClient mediaClient;
 
     @Autowired
     ObjectMapper objectMapper;
@@ -1635,6 +1655,190 @@ class BookingApiTests {
         bookingOccurrenceRepository.save(occurrence);
     }
 
+
+    String createRunningAftercareSession(Scenario scenario) throws Exception {
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        moveIntoCheckInWindow(occurrenceId);
+        return readResult(startSession(bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER"), occurrenceId)
+                .andExpect(status().isOk()).andReturn()).get("sessionId").asText();
+    }
+
+    void endAftercareSession(Scenario scenario, String sessionId) throws Exception {
+        markAllTasksDone(UUID.fromString(sessionId));
+        mockMvc.perform(post("/api/v1/care-sessions/" + sessionId + "/end")
+                .header("Authorization", bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void notificationsArePrivateAndRollbackDoesNotPublish() throws Exception {
+        UUID customer = UUID.randomUUID();
+        String owner = bearer(customer, null, "CUSTOMER");
+        String body = json(Map.of("recipientUserIds", List.of(customer), "type", "REPORT_SUBMITTED", "title", "Báo cáo mới",
+                "body", "Có báo cáo chăm sóc", "refType", "CARE_REPORT", "refId", UUID.randomUUID()));
+        mockMvc.perform(post("/api/v1/notifications").header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/notifications").header("Authorization", serviceBearer()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.created").value(1));
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.count").value(1));
+        JsonNode list = readResult(mockMvc.perform(get("/api/v1/notifications").header("Authorization", owner)).andReturn());
+        String id = list.path("items").get(0).path("id").asText();
+        mockMvc.perform(patch("/api/v1/notifications/" + id + "/read").header("Authorization", bearer(UUID.randomUUID(), null, "CUSTOMER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/v1/notifications/" + id + "/read").header("Authorization", owner)).andExpect(status().isOk());
+        transactionTemplate.executeWithoutResult(status -> {
+            notificationService.notify(List.of(customer), NotificationType.REPORT_SUBMITTED, Map.of(), "CARE_REPORT", UUID.randomUUID());
+            status.setRollbackOnly();
+        });
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.totalElements").value(1));
+    }
+
+    @Test
+    void sessionTasksNotesAndReportsEnforceLifecycleAndScope() throws Exception {
+        Scenario scenario = newScenario();
+        String sessionId = createRunningAftercareSession(scenario);
+        String caregiver = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        String taskId = careTaskRepository.findAllBySession(UUID.fromString(sessionId)).getFirst().getId().toString();
+        mockMvc.perform(patch("/api/v1/care-sessions/" + sessionId + "/tasks/" + taskId).header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "SKIPPED"))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/v1/care-sessions/" + sessionId + "/tasks/" + taskId).header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "SKIPPED", "skipReason", "Người bệnh đang ngủ"))))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/care-sessions/" + sessionId + "/tasks/" + taskId).header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "DONE"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.skipReason").doesNotExist());
+        mockMvc.perform(post("/api/v1/care-sessions/" + sessionId + "/notes").header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("content", "Ổn định", "vitals", Map.of("temperature", 50)))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/care-sessions/" + sessionId + "/notes").header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("content", "Ổn định", "vitals", Map.of("temperature", 37, "spo2", 98)))))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/care-sessions/" + sessionId + "/notes").header("Authorization", customerBearer(newScenario())))
+                .andExpect(status().isNotFound());
+        Map<String, Object> report = new LinkedHashMap<>(Map.of("sessionId", sessionId, "overallCondition", "STABLE", "summary", "Buổi chăm sóc ổn định"));
+        String reportId = readResult(mockMvc.perform(post("/api/v1/care-reports").header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(report))).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mockMvc.perform(post("/api/v1/care-reports").header("Authorization", caregiver).contentType(MediaType.APPLICATION_JSON).content(json(report)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/care-reports/" + reportId + "/submit").header("Authorization", caregiver)).andExpect(status().isConflict());
+        endAftercareSession(scenario, sessionId);
+        mockMvc.perform(post("/api/v1/care-reports/" + reportId + "/submit").header("Authorization", caregiver))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("SUBMITTED"));
+        report.put("version", 1);
+        mockMvc.perform(put("/api/v1/care-reports/" + reportId).header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(report))).andExpect(status().isConflict());
+        mockMvc.perform(get("/api/v1/care-reports/" + reportId).header("Authorization", customerBearer(newScenario())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/care-reports/" + reportId).header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void reportPhotoLimitCompensatesUploadedFile() throws Exception {
+        Scenario scenario = newScenario();
+        String session = createRunningAftercareSession(scenario);
+        String caregiver = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        String id = readResult(mockMvc.perform(post("/api/v1/care-reports").header("Authorization", caregiver)
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("sessionId", session, "overallCondition", "STABLE", "summary", "Báo cáo"))))
+                .andExpect(status().isOk()).andReturn()).path("id").asText();
+        List<UUID> uploaded = new ArrayList<>();
+        when(mediaClient.upload(any(), eq("CARE_REPORT_IMAGE"), any(), eq("CARE_REPORT"), any())).thenAnswer(invocation -> {
+            UUID mediaId = UUID.randomUUID();
+            uploaded.add(mediaId);
+            return APIResponse.success("ok", MediaClientResponse.builder().mediaFileId(mediaId).build());
+        });
+        when(mediaClient.createDownloadUrl(any())).thenAnswer(invocation -> APIResponse.success("ok",
+                DownloadUrlClientResponse.builder().mediaFileId(invocation.getArgument(0)).downloadUrl("https://media.test/image")
+                        .expiresAt(Instant.now().plusSeconds(300)).build()));
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(multipart("/api/v1/care-reports/" + id + "/photos")
+                    .file(new MockMultipartFile("files", "photo.png", "image/png", new byte[]{1, 2, 3}))
+                    .header("Authorization", caregiver)).andExpect(status().isOk());
+        }
+        mockMvc.perform(multipart("/api/v1/care-reports/" + id + "/photos")
+                .file(new MockMultipartFile("files", "six.png", "image/png", new byte[]{1}))
+                .header("Authorization", caregiver)).andExpect(status().isBadRequest());
+        verify(mediaClient).delete(uploaded.get(5));
+    }
+
+    @Test
+    void reviewsAreUniqueModeratedAndScoped() throws Exception {
+        Scenario scenario = newScenario();
+        String session = createRunningAftercareSession(scenario);
+        endAftercareSession(scenario, session);
+        UUID bookingId = bookingOccurrenceRepository.findAll().stream().filter(o -> scenario.caregiver().caregiverId().equals(o.getCaregiverId()))
+                .findFirst().orElseThrow().getBooking().getId();
+        String request = json(Map.of("bookingId", bookingId, "caregiverId", scenario.caregiver().caregiverId(), "rating", 5, "comment", "Tận tâm"));
+        String id = readResult(mockMvc.perform(post("/api/v1/feedbacks").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mockMvc.perform(post("/api/v1/feedbacks").header("Authorization", customerBearer(scenario)).contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/feedbacks/" + id + "/reply").header("Authorization", managerBearer(newScenario()))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reply", "Cảm ơn")))).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/feedbacks/" + id + "/reply").header("Authorization", managerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reply", "Cảm ơn")))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/feedbacks/" + id + "/reply").header("Authorization", managerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reply", "Lần hai")))).andExpect(status().isConflict());
+        mockMvc.perform(patch("/api/v1/feedbacks/" + id + "/visibility").header("Authorization", adminBearer())
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("visible", false, "reason", "Ẩn kiểm thử")))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/feedbacks").param("caregiverId", scenario.caregiver().caregiverId().toString()).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.totalElements").value(0));
+    }
+
+    @Test
+    void complaintsEscalateAndRefundOnceWithoutChangingStateOnOverRefund() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        Map<String, Object> body = new LinkedHashMap<>(Map.of("bookingId", bookingId, "targetType", "CAREGIVER_SERVICE",
+                "category", "QUALITY", "title", "Chất lượng", "content", "Cần xem lại buổi chăm sóc"));
+        String id = readResult(mockMvc.perform(post("/api/v1/complaints").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(body))).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mockMvc.perform(patch("/api/v1/complaints/" + id + "/accept").header("Authorization", managerBearer(scenario))).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/complaints/" + id + "/resolve").header("Authorization", managerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("resolution", "Đã trao đổi")))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/complaints/" + id + "/escalate").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Chưa đồng ý")))).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/complaints/" + id + "/admin-resolve").header("Authorization", adminBearer())
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("resolution", "Hoàn tiền", "refundAmount", 1000001))))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/v1/complaints/" + id).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("ESCALATED"));
+        String resolve = json(Map.of("resolution", "Hoàn một phần", "refundAmount", 200000));
+        mockMvc.perform(patch("/api/v1/complaints/" + id + "/admin-resolve").header("Authorization", adminBearer())
+                .contentType(MediaType.APPLICATION_JSON).content(resolve)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("RESOLVED_BY_ADMIN")).andExpect(jsonPath("$.result.events.length()").value(5));
+        mockMvc.perform(patch("/api/v1/complaints/" + id + "/admin-resolve").header("Authorization", adminBearer())
+                .contentType(MediaType.APPLICATION_JSON).content(resolve)).andExpect(status().isConflict());
+        assertThat(PLATFORM.refundKeys().stream().filter(key -> key.equals("COMPLAINT_REFUND:" + id)).count()).isEqualTo(1);
+        body.put("targetType", "CENTER");
+        String centerComplaint = readResult(mockMvc.perform(post("/api/v1/complaints").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(body))).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mockMvc.perform(patch("/api/v1/complaints/" + centerComplaint + "/accept").header("Authorization", managerBearer(scenario)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void operationalStatisticsForceManagerScope() throws Exception {
+        Scenario scenario = newScenario();
+        String session = createRunningAftercareSession(scenario);
+        endAftercareSession(scenario, session);
+        mockMvc.perform(get("/api/v1/statistics/centers").header("Authorization", managerBearer(scenario))
+                .param("centerId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.occurrences.completed").value(1))
+                .andExpect(jsonPath("$.result.completionRate").value(100.0));
+        mockMvc.perform(get("/api/v1/statistics/system").header("Authorization", managerBearer(scenario))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/statistics/system").header("Authorization", adminBearer()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.byCenter.totalElements").isNumber());
+        mockMvc.perform(get("/api/v1/statistics/centers").header("Authorization", managerBearer(scenario))
+                .param("from", "2020-01-01").param("to", "2022-01-01")).andExpect(status().isBadRequest());
+    }
+
     ResultActions startSession(String bearer, UUID occurrenceId) throws Exception {
         return mockMvc.perform(post("/api/v1/care-sessions")
                 .header("Authorization", bearer)
@@ -1706,6 +1910,51 @@ class BookingApiTests {
                 Map.of("careServiceId", scenario.careServiceId().toString(), "pricePlanId", scenario.pricePlanId().toString()),
                 Map.of("careServiceId", dailyService.toString(), "pricePlanId", dailyPlan.toString())));
         return body;
+    }
+
+    @Test
+    void ssePublishesOnlyCommittedEventsToTheirRecipient() throws Exception {
+        UUID customer = UUID.randomUUID();
+        UUID outsider = UUID.randomUUID();
+        MvcResult ownStream = mockMvc.perform(get("/api/v1/notifications/stream")
+                        .header("Authorization", bearer(customer, null, "CUSTOMER")))
+                .andExpect(status().isOk()).andReturn();
+        MvcResult otherStream = mockMvc.perform(get("/api/v1/notifications/stream")
+                        .header("Authorization", bearer(outsider, null, "CUSTOMER")))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(ownStream.getRequest().isAsyncStarted()).isTrue();
+        assertThat(ownStream.getResponse().getContentAsString()).contains("event:heartbeat");
+        transactionTemplate.executeWithoutResult(status -> {
+            notificationService.notify(List.of(customer), NotificationType.REPORT_SUBMITTED, Map.of("body", "Rollback"), "CARE_REPORT", UUID.randomUUID());
+            status.setRollbackOnly();
+        });
+        assertThat(ownStream.getResponse().getContentAsString()).doesNotContain("event:notification");
+        notificationService.notify(List.of(customer), NotificationType.REPORT_SUBMITTED, Map.of("body", "Committed"), "CARE_REPORT", UUID.randomUUID());
+        assertThat(ownStream.getResponse().getContentAsString()).contains("event:notification", "Committed");
+        assertThat(otherStream.getResponse().getContentAsString()).doesNotContain("event:notification");
+        notificationService.publishSessionUpdate(customer, Map.of("sessionId", UUID.randomUUID()));
+        assertThat(ownStream.getResponse().getContentAsString()).contains("event:session-update");
+        ownStream.getRequest().getAsyncContext().complete();
+        otherStream.getRequest().getAsyncContext().complete();
+    }
+
+    @Test
+    void shiftReminderIsSentOnceForAnUpcomingAssignedOccurrence() throws Exception {
+        Scenario scenario = newScenario();
+        String createdId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, createdId, null);
+        UUID bookingId = UUID.fromString(createdId);
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findAllByBooking(bookingId).getFirst();
+        occurrence.setStartAt(Instant.now().plus(Duration.ofHours(1)));
+        occurrence.setEndAt(occurrence.getStartAt().plus(Duration.ofHours(2)));
+        bookingOccurrenceRepository.save(occurrence);
+        assertThat(bookingOccurrenceService.findShiftReminderIds()).contains(occurrence.getId());
+        bookingOccurrenceService.remindShift(occurrence.getId());
+        bookingOccurrenceService.remindShift(occurrence.getId());
+        assertThat(bookingOccurrenceService.findShiftReminderIds()).doesNotContain(occurrence.getId());
+        mockMvc.perform(get("/api/v1/notifications").param("type", "SHIFT_REMINDER")
+                        .header("Authorization", bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.totalElements").value(1));
     }
 
     // ===== helpers =====

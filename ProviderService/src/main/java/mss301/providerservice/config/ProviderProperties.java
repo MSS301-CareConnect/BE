@@ -3,6 +3,7 @@ package mss301.providerservice.config;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.ToString;
@@ -40,6 +41,22 @@ public class ProviderProperties {
     // SERVICE — lời gọi cần token sẽ trả 503 SERVICE_TOKEN_UNAVAILABLE.
     @Valid
     ServiceClient serviceClient = new ServiceClient();
+
+    @Valid
+    Outbox outbox = new Outbox();
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Outbox {
+        @Min(1)
+        int maxAttempts = 10;
+
+        @NotNull
+        Duration lease = Duration.ofSeconds(60);
+
+        @NotNull
+        Duration maxBackoff = Duration.ofHours(1);
+    }
 
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)

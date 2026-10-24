@@ -6,7 +6,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.providerservice.dto.request.CertificateRequest;
-import mss301.providerservice.dto.request.VerificationRequest;
+import mss301.providerservice.dto.request.CertificateVerificationRequest;
 import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.dto.response.CertificateResponse;
 import mss301.providerservice.security.CurrentUserId;
@@ -15,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import mss301.providerservice.dto.response.PageResponse;
 import java.util.UUID;
 
 @RestController
@@ -27,6 +28,14 @@ public class CertificateController {
     CertificateService certificateService;
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
+
+    @GetMapping("/pending-audit")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<PageResponse<CertificateResponse>> listPendingAudit(@RequestParam(required = false) UUID centerId,
+                                                                           @RequestParam(defaultValue = "0") int page,
+                                                                           @RequestParam(defaultValue = "20") int size) {
+        return certificateService.listPendingAudit(centerId, page, size);
+    }
 
     @GetMapping("/caregivers/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
@@ -63,11 +72,18 @@ public class CertificateController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    @PatchMapping("/{id}/center-verification")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<CertificateResponse> verifyCenter(@CurrentUserId UUID actorId, @PathVariable UUID id,
+                                                         @Valid @RequestBody CertificateVerificationRequest request) {
+        return certificateService.verifyCenter(actorId, id, request);
+    }
+
     @PatchMapping("/{id}/verification")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CertificateResponse> verify(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID id,
-                                                   @Valid @RequestBody VerificationRequest request) {
+                                                   @Valid @RequestBody CertificateVerificationRequest request) {
         return certificateService.verify(actorId, id, request);
     }
 

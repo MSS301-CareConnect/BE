@@ -28,15 +28,20 @@
 .EXAMPLE
   .\scripts\e2e\Run-E2E.ps1
   .\scripts\e2e\Run-E2E.ps1 -SkipBuild -KeepInfra
+  .\scripts\e2e\Run-E2E.ps1 -BasePort 18080 # tránh đụng service dev đang chạy
 #>
 param(
     [switch] $SkipBuild,
-    [switch] $KeepInfra
+    [switch] $KeepInfra,
+    [ValidateRange(1024, 65528)]
+    [int] $BasePort = 8080
 )
 $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $logDirectory = Join-Path ([System.IO.Path]::GetTempPath()) 'careconnect-e2e'
 New-Item -ItemType Directory -Force $logDirectory | Out-Null
+$composeEmptyEnv = Join-Path $logDirectory "compose-empty.env"
+[System.IO.File]::WriteAllText($composeEmptyEnv, "")
 
 $identityDir = Join-Path $root 'IdentityService'
 $careDir = Join-Path $root 'CareRecipientService'
@@ -58,12 +63,19 @@ $catalogDbPort = 55603
 $providerDbPort = 55604
 $bookingDbPort = 55605
 $mediaDbPort = 55606
-$paymentStubPort = 8087
+$gatewayPort = $BasePort
+$identityPort = $BasePort + 1
+$carePort = $BasePort + 2
+$catalogPort = $BasePort + 3
+$providerPort = $BasePort + 4
+$bookingPort = $BasePort + 5
+$mediaPort = $BasePort + 6
+$paymentStubPort = $BasePort + 7
 $adminEmail = 'e2e.admin@careconnect.test'
 $adminPassword = 'E2e-Admin#2026'
 $customerPassword = 'E2e-Pass#2026'
 # Every service reaches the others through ApiGateway (public /api/v1/** only); JWKS is read directly from Identity.
-$gatewayUrl = 'http://localhost:8080'
+$gatewayUrl = "http://localhost:$gatewayPort"
 
 # Fixed ids shared by the Identity seed (users.center_id, user_id), the Catalog seed (offering of the center) and the
 # Provider seed (care_centers, caregiver_profiles, caregiver_services).
@@ -107,7 +119,7 @@ function Read-EnvFile([string] $directory, [switch] $Optional) {
         $trimmed = $line.Trim()
         if ($trimmed -eq '' -or $trimmed.StartsWith('#')) { continue }
         $parts = $trimmed -split '=', 2
-        if ($parts.Count -eq 2) { $values[$parts[0]] = $parts[1].Trim() }
+        if ($parts.Count -eq 2 -and $parts[0] -match '^[A-Za-z_][A-Za-z0-9_]*$') { $values[$parts[0]] = $parts[1].Trim() }
     }
     return $values
 }
@@ -189,20 +201,27 @@ function Invoke-Psql([string] $container, [string] $sqlFile) {
 
 # docker compose reads <service>/.env for credentials; the given variables (ports, e2e credentials) apply to this call only.
 function Invoke-Compose([string] $directory, [string] $project, [hashtable] $variables, [string[]] $arguments) {
-    foreach ($key in $variables.Keys) { Set-Item "Env:$key" ([string] $variables[$key]) }
+    # Chuyển cấu hình hợp lệ qua process env; Compose không tự parse .env local lần nữa.
+    $composeValues = Read-EnvFile $directory -Optional
+    foreach ($key in $variables.Keys) { $composeValues[$key] = $variables[$key] }
+    $previousValues = @{}
+    foreach ($key in $composeValues.Keys) {
+        $previousValues[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+        Set-Item "Env:$key" ([string] $composeValues[$key])
+    }
     Push-Location $directory
     try {
-        Invoke-Native "docker compose $($arguments -join ' ')" { docker compose -p $project @arguments }
+        Invoke-Native "docker compose $($arguments -join ' ')" { docker compose --env-file $composeEmptyEnv -p $project @arguments }
     } finally {
         Pop-Location
-        foreach ($key in $variables.Keys) { Remove-Item "Env:$key" -ErrorAction SilentlyContinue }
+        foreach ($key in $previousValues.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $previousValues[$key], 'Process')
+        }
     }
 }
 
 function Get-ComposeContainer([string] $directory, [string] $project, [string] $service) {
-    $ErrorActionPreference = 'Continue'
-    Push-Location $directory
-    try { return (docker compose -p $project ps -q $service).Trim() } finally { Pop-Location }
+    return (docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$service").Trim()
 }
 
 function Find-M2Jar([string] $relativeDirectory, [string] $versionPrefix) {
@@ -229,11 +248,11 @@ $infrastructure = [ordered]@{
     booking  = @{ Dir = $bookingDir; Project = $bookingProject; Variables = $bookingVariables; Schema = 'schema\booking.sql' }
     media    = @{ Dir = $mediaDir; Project = $mediaProject; Variables = $mediaPorts; Schema = 'schema\media.sql' }
 }
-$servicePorts = 8080, 8081, 8082, 8083, 8084, 8085, 8086, $paymentStubPort
+$servicePorts = $gatewayPort, $identityPort, $carePort, $catalogPort, $providerPort, $bookingPort, $mediaPort, $paymentStubPort
 $databasePorts = $identityDbPort, $identityRedisPort, $careDbPort, $catalogDbPort, $providerDbPort, $bookingDbPort, $mediaDbPort
 # Variables read by e2e.py (set in this session only, removed in finally, never printed).
 $e2eVariables = 'E2E_CENTER_ID', 'E2E_CAREGIVER_ID', 'E2E_CAREGIVER_USER_ID', 'E2E_CARE_SERVICE_ID', 'E2E_CENTER_SERVICE_ID',
-    'E2E_PRICE_PLAN_ID', 'PAYMENT_SERVICE_CLIENT_ID', 'PAYMENT_SERVICE_CLIENT_SECRET'
+    'E2E_PRICE_PLAN_ID', 'PAYMENT_SERVICE_CLIENT_ID', 'PAYMENT_SERVICE_CLIENT_SECRET', 'E2E_GATEWAY_URL', 'E2E_IDENTITY_URL', 'E2E_CARE_RECIPIENT_URL'
 $failed = @()
 
 foreach ($port in $servicePorts + $databasePorts) { Assert-PortFree $port }
@@ -244,7 +263,7 @@ $providerEnv = Read-EnvFile $providerDir
 $mediaEnv = Read-EnvFile $mediaDir
 Read-EnvFile $gatewayDir | Out-Null
 $jwtIssuer = $identityEnv['IDENTITY_JWT_ISSUER']
-$jwksUri = 'http://localhost:8081/.well-known/jwks.json'
+$jwksUri = "http://localhost:$identityPort/.well-known/jwks.json"
 
 try {
     if (-not $SkipBuild) {
@@ -282,6 +301,7 @@ try {
     Write-Host '== Start services (+ PaymentService stub)'
     $keyDirectory = 'file:' + ((Join-Path $identityDir 'keys') -replace '\\', '/')
     Start-ServiceJar $identityDir 'IdentityService-0.0.1-SNAPSHOT.jar' 'identity.log' @{
+        IDENTITY_SERVER_PORT = "$identityPort"
         IDENTITY_DB_URL             = (Get-E2eDbUrl $identityEnv['IDENTITY_DB_URL'] $identityDbPort)
         IDENTITY_REDIS_PORT         = "$identityRedisPort"
         IDENTITY_JWT_PRIVATE_KEY    = "$keyDirectory/private.pem"
@@ -293,8 +313,9 @@ try {
         IDENTITY_BOOTSTRAP_PASSWORD = $adminPassword
         IDENTITY_SERVICE_CLIENTS    = ($serviceClientEntries -join ',')
     }
-    Wait-Healthy 'IdentityService' 8081
+    Wait-Healthy 'IdentityService' $identityPort
     Start-ServiceJar $careDir 'CareRecipientService-0.0.1-SNAPSHOT.jar' 'care-recipient.log' @{
+        CARE_RECIPIENT_SERVER_PORT = "$carePort"
         CARE_RECIPIENT_DB_URL                = (Get-E2eDbUrl $careEnv['CARE_RECIPIENT_DB_URL'] $careDbPort)
         CARE_RECIPIENT_OPENAPI_SERVER_URL    = '/api/v1'
         CARE_RECIPIENT_JWT_ISSUER            = $jwtIssuer
@@ -305,12 +326,14 @@ try {
         CARE_RECIPIENT_SERVICE_CLIENT_SECRET = $serviceClientSecrets['care-recipient']
     }
     Start-ServiceJar $catalogDir 'CareCatalogService-0.0.1-SNAPSHOT.jar' 'care-catalog.log' @{
+        CARE_CATALOG_SERVER_PORT = "$catalogPort"
         CARE_CATALOG_DB_URL             = (Get-E2eDbUrl $catalogEnv['CARE_CATALOG_DB_URL'] $catalogDbPort)
         CARE_CATALOG_OPENAPI_SERVER_URL = '/api/v1'
         CARE_CATALOG_JWT_ISSUER         = $jwtIssuer
         CARE_CATALOG_JWT_JWKS_URI       = $jwksUri
     }
     Start-ServiceJar $providerDir 'ProviderService-0.0.1-SNAPSHOT.jar' 'provider.log' @{
+        PROVIDER_SERVER_PORT = "$providerPort"
         PROVIDER_DB_URL                = (Get-E2eDbUrl $providerEnv['PROVIDER_DB_URL'] $providerDbPort)
         PROVIDER_OPENAPI_SERVER_URL    = '/api/v1'
         PROVIDER_JWT_ISSUER            = $jwtIssuer
@@ -323,6 +346,7 @@ try {
         PROVIDER_SERVICE_CLIENT_SECRET = $serviceClientSecrets['provider']
     }
     Start-ServiceJar $bookingDir 'BookingService-0.0.1-SNAPSHOT.jar' 'booking.log' @{
+        BOOKING_SERVER_PORT = "$bookingPort"
         BOOKING_DB_URL                      = "jdbc:postgresql://localhost:$bookingDbPort/CARECONNECT_BOOKING"
         BOOKING_DB_USERNAME                 = $bookingDbUser
         BOOKING_DB_PASSWORD                 = $bookingDbPassword
@@ -342,6 +366,7 @@ try {
         BOOKING_MISSED_SCAN_INTERVAL        = '1h'
     }
     $mediaOverrides = @{
+        MEDIA_SERVER_PORT = "$mediaPort"
         MEDIA_DB_URL       = (Get-E2eDbUrl $mediaEnv['MEDIA_DB_URL'] $mediaDbPort)
         MEDIA_JWT_ISSUER   = $jwtIssuer
         MEDIA_JWT_JWKS_URI = $jwksUri
@@ -362,23 +387,24 @@ try {
         -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logDirectory 'payment-stub.log') `
         -RedirectStandardError (Join-Path $logDirectory 'payment-stub.err.log') | Out-Null
     Start-ServiceJar $gatewayDir 'ApiGateway-0.0.1-SNAPSHOT.jar' 'gateway.log' @{
-        GATEWAY_IDENTITY_URL       = 'http://localhost:8081'
-        GATEWAY_CARE_RECIPIENT_URL = 'http://localhost:8082'
-        GATEWAY_CARE_CATALOG_URL   = 'http://localhost:8083'
-        GATEWAY_PROVIDER_URL       = 'http://localhost:8084'
-        GATEWAY_BOOKING_URL        = 'http://localhost:8085'
-        GATEWAY_MEDIA_URL          = 'http://localhost:8086'
+        GATEWAY_SERVER_PORT = "$gatewayPort"
+        GATEWAY_IDENTITY_URL       = "http://localhost:$identityPort"
+        GATEWAY_CARE_RECIPIENT_URL = "http://localhost:$carePort"
+        GATEWAY_CARE_CATALOG_URL   = "http://localhost:$catalogPort"
+        GATEWAY_PROVIDER_URL       = "http://localhost:$providerPort"
+        GATEWAY_BOOKING_URL        = "http://localhost:$bookingPort"
+        GATEWAY_MEDIA_URL          = "http://localhost:$mediaPort"
         GATEWAY_PAYMENT_URL        = "http://localhost:$paymentStubPort"
         GATEWAY_JWT_ISSUER         = $jwtIssuer
         GATEWAY_JWT_JWKS_URI       = $jwksUri
     }
-    Wait-Healthy 'CareRecipientService' 8082
-    Wait-Healthy 'CareCatalogService' 8083
-    Wait-Healthy 'ProviderService' 8084
-    Wait-Healthy 'BookingService' 8085
-    Wait-Healthy 'MediaService' 8086
+    Wait-Healthy 'CareRecipientService' $carePort
+    Wait-Healthy 'CareCatalogService' $catalogPort
+    Wait-Healthy 'ProviderService' $providerPort
+    Wait-Healthy 'BookingService' $bookingPort
+    Wait-Healthy 'MediaService' $mediaPort
     Wait-Healthy 'PaymentService stub' $paymentStubPort
-    Wait-Healthy 'ApiGateway' 8080
+    Wait-Healthy 'ApiGateway' $gatewayPort
 
     Write-Host '== Seed accounts (Identity), care service / offering / price plan (Catalog), center / caregivers (Provider)'
     $seedSql = Join-Path $logDirectory 'seed.sql'
@@ -416,6 +442,9 @@ try {
         'COMMIT;'))
     Invoke-Psql $containers['provider'] $providerSeedSql
 
+    $env:E2E_GATEWAY_URL = $gatewayUrl
+    $env:E2E_IDENTITY_URL = "http://localhost:$identityPort"
+    $env:E2E_CARE_RECIPIENT_URL = "http://localhost:$carePort"
     $env:E2E_CENTER_ID = $centerId
     $env:E2E_CAREGIVER_ID = $caregiverProfileId
     $env:E2E_CAREGIVER_USER_ID = $caregiverUserId
@@ -431,11 +460,11 @@ try {
         if ((Invoke-Phase $phase) -ne 0) { $failed += $phase }
     }
     Write-Host '== Phase d (IdentityService stopped)'
-    Stop-ByPort 8081
+    Stop-ByPort $identityPort
     Start-Sleep -Seconds 2
     if ((Invoke-Phase 'd') -ne 0) { $failed += 'd' }
     Write-Host '== Phase f (CareRecipientService stopped)'
-    Stop-ByPort 8082
+    Stop-ByPort $carePort
     Start-Sleep -Seconds 2
     if ((Invoke-Phase 'f') -ne 0) { $failed += 'f' }
 } finally {

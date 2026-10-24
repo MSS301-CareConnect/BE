@@ -102,6 +102,7 @@ public final class TestPlatformServer {
         server.createContext("/api/v1/payment-policies/effective", this::handlePaymentPolicy);
         server.createContext("/api/v1/remaining-invoices", this::handleRemainingInvoice);
         server.createContext("/api/v1/refunds", this::handleRefund);
+        server.createContext("/api/v1/payments", this::handlePayments);
         server.createContext("/api/v1/refund-quotes", this::handleRefundQuote);
         server.createContext("/api/v1/payments/me/outstanding", this::handleOutstanding);
         server.createContext("/api/v1/caregivers/availability-checks", this::handleAvailabilityCheck);
@@ -357,6 +358,11 @@ public final class TestPlatformServer {
         if (rejected(exchange, providerFailing)) {
             return;
         }
+        if (exchange.getRequestURI().getPath().endsWith("/rating")) {
+            objectMapper.readTree(exchange.getRequestBody());
+            writeSuccess(exchange, Map.of());
+            return;
+        }
         UUID caregiverId = UUID.fromString(exchange.getRequestURI().getPath().substring("/api/v1/caregivers/".length()));
         writeOrNotFound(exchange, caregivers.get(caregiverId), "{\"code\":4200,\"message\":\"Hồ sơ người chăm sóc không tồn tại\"}");
     }
@@ -398,6 +404,15 @@ public final class TestPlatformServer {
     }
 
     // PaymentService giả (C2.6): đọc sub của token khách để biết có nợ không.
+    private void handlePayments(HttpExchange exchange) throws IOException {
+        if (rejected(exchange, paymentFailing)) {
+            return;
+        }
+        String bookingId = parseQuery(exchange.getRequestURI().getRawQuery()).get("bookingId");
+        writeSuccess(exchange, Map.of("items", List.of(Map.of("id", UUID.randomUUID().toString(), "bookingId", bookingId,
+                "status", "SUCCESS", "amount", 1000000, "refundedAmount", 0)), "totalPages", 1));
+    }
+
     private void handleOutstanding(HttpExchange exchange) throws IOException {
         if (rejected(exchange, paymentFailing)) {
             return;
@@ -457,7 +472,10 @@ public final class TestPlatformServer {
         if (rejected(exchange, paymentFailing)) {
             return;
         }
-        refundKeys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+        String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+        if (!exchange.getRequestURI().getPath().endsWith("/complaints") || !refundKeys.contains(key)) {
+            refundKeys.add(key);
+        }
         objectMapper.readTree(exchange.getRequestBody());
         writeSuccess(exchange, Map.of("items", List.of(), "totalRefund", 0));
     }

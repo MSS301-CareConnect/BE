@@ -14,7 +14,7 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate.jdbc.time_zone: UTC
 
@@ -32,6 +32,10 @@ spring:
         enabled: true
       client:
         config:
+          media:
+            connect-timeout: ${PROVIDER_MEDIA_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${PROVIDER_MEDIA_READ_TIMEOUT_MS:10000}
+            logger-level: none
           identity:
             connect-timeout: ${PROVIDER_IDENTITY_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${PROVIDER_IDENTITY_READ_TIMEOUT_MS:3000}
@@ -79,6 +83,10 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 provider:
+  outbox:
+    max-attempts: ${PROVIDER_OUTBOX_MAX_ATTEMPTS:10}
+    lease: ${PROVIDER_OUTBOX_LEASE:60s}
+    max-backoff: ${PROVIDER_OUTBOX_MAX_BACKOFF:1h}
   open-api-server-url: ${PROVIDER_OPENAPI_SERVER_URL:}
 
   jwt:

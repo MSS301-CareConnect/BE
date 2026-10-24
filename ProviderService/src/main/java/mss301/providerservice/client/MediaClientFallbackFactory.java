@@ -18,7 +18,7 @@ public class MediaClientFallbackFactory implements FallbackFactory<MediaClient> 
         return new MediaClient() {
             @Override
             public APIResponse<MediaClientResponse> upload(MultipartFile file, String purpose, UUID uploadedBy,
-                                                           String sourceService, String referenceType,
+                                                           String referenceType,
                                                            UUID referenceId) {
                 throw resolveFailure(cause);
             }

@@ -15,6 +15,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Spy;
+import mss301.mediaservice.mapper.MediaMapperImpl;
+import mss301.mediaservice.security.CurrentRequestIdentity;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.TransactionStatus;
@@ -42,8 +45,11 @@ class MediaServiceTests {
     @Mock
     MediaFileRepository mediaFileRepository;
 
+    @Spy
+    MediaMapper mediaMapper = new MediaMapperImpl();
+
     @Mock
-    MediaMapper mediaMapper;
+    CurrentRequestIdentity currentRequestIdentity;
 
     @Mock
     R2StorageService r2StorageService;
@@ -73,7 +79,9 @@ class MediaServiceTests {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        lenient().when(currentRequestIdentity.clientId()).thenReturn("provider");
         mediaService = new MediaServiceImpl(
+                currentRequestIdentity,
                 mediaFileRepository,
                 mediaMapper,
                 r2StorageService,
@@ -109,7 +117,6 @@ class MediaServiceTests {
                 file,
                 MediaPurpose.CAREGIVER_AVATAR,
                 uploaderId,
-                "PROVIDER_SERVICE",
                 "CAREGIVER_PROFILE",
                 UUID.randomUUID());
 
@@ -128,7 +135,6 @@ class MediaServiceTests {
                 fakePng,
                 MediaPurpose.CAREGIVER_AVATAR,
                 UUID.randomUUID(),
-                "PROVIDER_SERVICE",
                 null,
                 null))
                 .isInstanceOf(AppException.class)
@@ -142,6 +148,7 @@ class MediaServiceTests {
     void deleteMarksMetadataAndDeletesR2Object() {
         UUID mediaId = UUID.randomUUID();
         MediaFile mediaFile = MediaFile.builder()
+                .sourceService("provider")
                 .objectKey("caregiver-avatar/2026/10/file.png")
                 .mediaStatus(MediaStatus.ACTIVE)
                 .build();
@@ -155,5 +162,18 @@ class MediaServiceTests {
         assertThat(mediaFile.getMediaStatus()).isEqualTo(MediaStatus.DELETED);
         assertThat(mediaFile.getDeletedAt()).isNotNull();
         verify(r2StorageService).delete(mediaFile.getObjectKey());
+    }
+
+    @Test
+    void anotherServiceCannotReadOrDeleteFile() {
+        UUID mediaId = UUID.randomUUID();
+        MediaFile file = MediaFile.builder().sourceService("booking").mediaStatus(MediaStatus.ACTIVE).build();
+        when(mediaFileRepository.findByIdAndDeletedAtIsNull(mediaId)).thenReturn(Optional.of(file));
+        assertThatThrownBy(() -> mediaService.get(mediaId)).isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode()).isEqualTo(ErrorCode.MEDIA_ACCESS_DENIED);
+        when(mediaFileRepository.findById(mediaId)).thenReturn(Optional.of(file));
+        assertThatThrownBy(() -> mediaService.delete(mediaId)).isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode()).isEqualTo(ErrorCode.MEDIA_ACCESS_DENIED);
+        verify(r2StorageService, never()).delete(any());
     }
 }

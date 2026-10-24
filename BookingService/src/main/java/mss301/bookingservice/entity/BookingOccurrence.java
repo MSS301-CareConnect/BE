@@ -117,6 +117,9 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "needs_reassignment", nullable = false)
     Boolean needsReassignment = false;
 
+    @Column(name = "reminder_sent_at")
+    Instant reminderSentAt;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;
@@ -129,6 +132,7 @@ public class BookingOccurrence extends BaseEntity {
         }
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;
+            reminderSentAt = null;
         }
         caregiverId = newCaregiverId;
         caregiverUserId = newCaregiverUserId;

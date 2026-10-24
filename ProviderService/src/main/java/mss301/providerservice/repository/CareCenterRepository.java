@@ -9,13 +9,21 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface CareCenterRepository extends JpaRepository<CareCenter, UUID>, JpaSpecificationExecutor<CareCenter> {
+
+    // Trạng thái và outbox của trung tâm phải được ghi tuần tự.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from CareCenter c where c.id = :id and c.deletedAt is null")
+    Optional<CareCenter> findForUpdate(@Param("id") UUID id);
 
     Optional<CareCenter> findByIdAndDeletedAtIsNull(UUID id);
 
@@ -59,4 +67,12 @@ public interface CareCenterRepository extends JpaRepository<CareCenter, UUID>, J
     boolean existsByManagerUserIdAndDeletedAtIsNull(UUID managerUserId);
 
     boolean existsByManagerUserIdAndIdNotAndDeletedAtIsNull(UUID managerUserId, UUID id);
+    @Query("select c.centerStatus as category, count(c) as count from CareCenter c where c.deletedAt is null group by c.centerStatus")
+    List<StatisticsCountView> countCentersByStatus();
+
+    @Query("select c.caregiverStatus as category, count(c) as count from CaregiverProfile c where c.deletedAt is null group by c.caregiverStatus")
+    List<StatisticsCountView> countCaregiversByStatus();
+
+    @Query("select c.verificationStatus as category, count(c) as count from CaregiverProfile c where c.deletedAt is null group by c.verificationStatus")
+    List<StatisticsCountView> countCaregiversByVerification();
 }

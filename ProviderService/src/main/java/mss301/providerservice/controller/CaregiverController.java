@@ -40,6 +40,13 @@ public class CaregiverController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    @GetMapping("/pending-verification")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(@RequestParam(required = false) UUID centerId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return caregiverService.listPendingVerification(centerId, page, size);
+    }
+
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public APIResponse<PageResponse<CaregiverResponse>> list(
@@ -86,7 +93,7 @@ public class CaregiverController {
 
     // Hồ sơ đầy đủ: ADMIN / manager của trung tâm / chính caregiver / SERVICE (Booking). Khách dùng /{id}/public.
     @GetMapping("/{caregiverId}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','SERVICE')")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','SERVICE','CUSTOMER')")
     public APIResponse<CaregiverResponse> get(@CurrentUserId UUID actorId, @PathVariable UUID caregiverId) {
         return caregiverService.get(actorId, caregiverId);
     }
@@ -122,7 +129,7 @@ public class CaregiverController {
     }
 
     @GetMapping("/by-user/{userId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','SERVICE','CUSTOMER')")
     public APIResponse<CaregiverResponse> getByUser(@PathVariable UUID userId) {
         return caregiverService.getByUser(userId);
     }
@@ -153,6 +160,12 @@ public class CaregiverController {
     }
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
+
+    @PutMapping("/{caregiverId}/rating")
+    @PreAuthorize("hasRole('SERVICE')")
+    public APIResponse<Void> updateRating(@PathVariable UUID caregiverId, @Valid @RequestBody CaregiverRatingRequest request) {
+        return caregiverService.updateRating(caregiverId, request);
+    }
 
     @PutMapping("/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
@@ -188,6 +201,14 @@ public class CaregiverController {
             @PathVariable UUID id,
             @Valid @RequestBody ScheduleStatusRequest request) {
         return caregiverScheduleService.updateStatus(actorId, id, request);
+    }
+
+    @PatchMapping("/{caregiverId}/status")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<CaregiverResponse> updateStatus(@CurrentUserId UUID actorId,
+                                                       @PathVariable UUID caregiverId,
+                                                       @Valid @RequestBody CaregiverStatusRequest request) {
+        return caregiverService.updateStatus(actorId, caregiverId, request);
     }
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────

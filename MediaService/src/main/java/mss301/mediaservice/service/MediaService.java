@@ -11,7 +11,7 @@ import java.util.UUID;
 public interface MediaService {
 
     APIResponse<MediaResponse> upload(MultipartFile file, MediaPurpose purpose, UUID uploadedBy,
-                                      String sourceService, String referenceType, UUID referenceId);
+                                      String referenceType, UUID referenceId);
 
     APIResponse<MediaResponse> get(UUID mediaFileId);
     APIResponse<DownloadUrlResponse> createDownloadUrl(UUID mediaFileId);

@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.UUID;
+import mss301.bookingservice.client.dto.ProviderCenterResponse;
+import mss301.bookingservice.client.dto.CaregiverRatingRequest;
+import org.springframework.web.bind.annotation.PutMapping;
 
 /**
  * API của ProviderService chỉ dành cho service khác (token SERVICE), khác ProviderClient (token người dùng).
@@ -19,6 +22,12 @@ import java.util.UUID;
 @FeignClient(name = "provider", contextId = "providerServiceClient", url = "${booking.provider.url}",
         configuration = ProviderServiceClientConfig.class)
 public interface ProviderServiceClient {
+    @GetMapping("/api/v1/care-centers/{centerId}")
+    RemoteApiResponse<ProviderCenterResponse> getCenter(@PathVariable("centerId") UUID centerId);
+
+    @PutMapping("/api/v1/caregivers/{caregiverId}/rating")
+    void updateRating(@PathVariable("caregiverId") UUID caregiverId, @RequestBody CaregiverRatingRequest request);
+
 
     // Hồ sơ caregiver (trung tâm, trạng thái, dịch vụ) — Provider chỉ cho ADMIN / manager / chính caregiver / SERVICE
     // (SEC-08), nên khách chọn caregiver lúc đặt lịch phải tra bằng token SERVICE của Booking.

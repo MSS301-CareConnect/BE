@@ -9,6 +9,8 @@ import mss301.bookingservice.client.dto.RefundCreateRequest;
 import mss301.bookingservice.client.dto.RemainingInvoiceRequest;
 import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.entity.BookingOutbox;
+import mss301.bookingservice.exception.AppException;
+import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.enums.OutboxEventType;
 import mss301.bookingservice.enums.OutboxStatus;
 import mss301.bookingservice.mapper.BookingOutboxMapper;
@@ -23,6 +25,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
+import mss301.bookingservice.client.dto.ComplaintRefundRequest;
+import mss301.bookingservice.client.ProviderServiceClient;
+import mss301.bookingservice.repository.FeedbackRepository;
+import mss301.bookingservice.mapper.FeedbackMapper;
+import mss301.bookingservice.enums.FeedbackVisibility;
+import mss301.bookingservice.repository.FeedbackRatingView;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -43,6 +53,9 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
     Clock clock;
+    ProviderServiceClient providerServiceClient;
+    FeedbackRepository feedbackRepository;
+    FeedbackMapper feedbackMapper;
 
     @Override
     public void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload) {
@@ -111,10 +124,32 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
         return outbox;
     }
 
+    private boolean isPermanentFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof AppException appException
+                    && appException.getErrorCode() == ErrorCode.REMOTE_COMMAND_REJECTED) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private void send(BookingOutbox outbox) {
         // Bên nhận khử trùng theo key cố định của việc (gửi lại sau timeout không tạo bản ghi thứ hai).
         String idempotencyKey = outbox.getIdempotencyKey();
         switch (outbox.getEventType()) {
+            case COMPLAINT_REFUND -> paymentServiceClient.createComplaintRefund(outbox.getIdempotencyKey(),
+                    objectMapper.readValue(outbox.getPayload(), ComplaintRefundRequest.class));
+            case RATING -> {
+                UUID caregiverId = objectMapper.readValue(outbox.getPayload(), UUID.class);
+                FeedbackRatingView summary = feedbackRepository.summarizeRating(caregiverId, FeedbackVisibility.VISIBLE);
+                BigDecimal average = summary.getRatingAverage() == null ? BigDecimal.ZERO
+                        : BigDecimal.valueOf(summary.getRatingAverage()).setScale(2, RoundingMode.HALF_UP);
+                providerServiceClient.updateRating(caregiverId, feedbackMapper.toRatingRequest(average,
+                        Math.toIntExact(summary.getRatingCount())));
+            }
             case REMAINING_INVOICE -> paymentServiceClient.createRemainingInvoice(idempotencyKey,
                     objectMapper.readValue(outbox.getPayload(), RemainingInvoiceRequest.class));
             case REFUND -> paymentServiceClient.createRefund(idempotencyKey,
@@ -139,7 +174,7 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
             outbox.setAttempts(attempts);
             outbox.setLastError(truncate(error.getClass().getSimpleName() + ": " + error.getMessage()));
             BookingProperties.Outbox settings = bookingProperties.getOutbox();
-            if (attempts >= settings.getMaxAttempts()) {
+            if (isPermanentFailure(error) || attempts >= settings.getMaxAttempts()) {
                 outbox.setStatus(OutboxStatus.FAILED);
                 log.error("Outbox {} failed permanently after {} attempts ({})", id, attempts, outbox.getEventType());
                 return;

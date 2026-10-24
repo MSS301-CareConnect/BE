@@ -20,6 +20,7 @@ import mss301.providerservice.enums.RegistrationStatus;
 import mss301.providerservice.enums.ScheduleStatus;
 import mss301.providerservice.enums.ShiftStatus;
 import mss301.providerservice.enums.VerificationStatus;
+import mss301.providerservice.enums.CertificateVerificationStatus;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -96,7 +97,7 @@ class ProviderMapperTests {
                 .credentialNumber("RED-CROSS-12345")
                 .issuedDate(LocalDate.of(2023, 1, 15))
                 .expiryDate(LocalDate.of(2026, 1, 15))
-                .verificationStatus(VerificationStatus.VERIFIED)
+                .verificationStatus(CertificateVerificationStatus.ADMIN_VERIFIED)
                 .version(0L)
                 .build();
         cert.setId(certId);
@@ -108,7 +109,7 @@ class ProviderMapperTests {
         assertEquals("Chứng chỉ sơ cấp cứu", response.getCertificateName());
         assertEquals("Hội Chữ Thập Đỏ", response.getIssuedBy());
         assertEquals("RED-CROSS-12345", response.getCredentialNumber());
-        assertEquals(VerificationStatus.VERIFIED, response.getVerificationStatus());
+        assertEquals(CertificateVerificationStatus.ADMIN_VERIFIED, response.getVerificationStatus());
     }
 
     @Test

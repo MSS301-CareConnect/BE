@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.mediaservice.dto.response.APIResponse;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,6 +16,11 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<APIResponse<Void>> handlingAccessDenied(AccessDeniedException exception) {
+        return toResponse(ErrorCode.UNAUTHORIZED);
+    }
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<APIResponse<Void>> handlingAppException(AppException exception) {

@@ -3,7 +3,9 @@ package mss301.providerservice.service;
 import mss301.providerservice.dto.request.CenterCreateRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
+import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.ProviderStatisticsResponse;
 import mss301.providerservice.dto.response.CenterCardResponse;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.dto.response.PageResponse;
@@ -28,7 +30,10 @@ public interface CareCenterService {
 
     APIResponse<CenterResponse> update(UUID actorId, UUID id, CenterUpdateRequest request);
 
+    APIResponse<CenterResponse> updateMine(UUID actorId, CenterSelfUpdateRequest request);
+
     APIResponse<CenterResponse> updateStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request);
 
     APIResponse<Void> delete(UUID actorId, UUID id, Long version);
+    APIResponse<ProviderStatisticsResponse> statistics();
 }

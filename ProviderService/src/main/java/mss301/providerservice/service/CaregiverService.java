@@ -5,6 +5,8 @@ import mss301.providerservice.dto.request.CaregiverCreateRequest;
 import mss301.providerservice.dto.request.CaregiverSearchRequest;
 import mss301.providerservice.dto.request.CaregiverSkillRequest;
 import mss301.providerservice.dto.request.CaregiverUpdateRequest;
+import mss301.providerservice.dto.request.CaregiverStatusRequest;
+import mss301.providerservice.dto.request.CaregiverRatingRequest;
 import mss301.providerservice.dto.request.TimeOffRequest;
 import mss301.providerservice.dto.request.VerificationRequest;
 import mss301.providerservice.dto.response.APIResponse;
@@ -46,6 +48,10 @@ public interface CaregiverService {
 
     APIResponse<CaregiverResponse> update(UUID actorId, UUID caregiverId, CaregiverUpdateRequest request);
 
+    APIResponse<Void> updateRating(UUID caregiverId, CaregiverRatingRequest request);
+
+    APIResponse<CaregiverResponse> updateStatus(UUID actorId, UUID caregiverId, CaregiverStatusRequest request);
+
     APIResponse<CaregiverResponse> verify(UUID actorId, UUID caregiverId, VerificationRequest request);
 
     APIResponse<Void> archive(UUID actorId, UUID caregiverId, Long version);
@@ -68,4 +74,5 @@ public interface CaregiverService {
     CaregiverProfile findActiveCaregiverByUser(UUID userId);
 
     CaregiverProfile findActiveCaregiver(UUID id);
+    APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(UUID centerId, int page, int size);
 }

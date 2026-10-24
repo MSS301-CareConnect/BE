@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.Arrays;
 
 /**
  * Lỗi khi gateway tự xử lý / chuyển tiếp (không phải phản hồi lỗi của service — phản hồi đó được chuyển nguyên).
@@ -41,7 +42,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<APIResponse<Void>> handlingRuntimeException(Exception exception) {
-        log.error("Unhandled ApiGateway error ({})", exception.getClass().getName());
+        // Chỉ ghi frame, không ghi message có thể chứa URL/header nhạy cảm từ dependency.
+        log.error("Unhandled ApiGateway error ({}), frames={}", exception.getClass().getName(),
+                Arrays.toString(exception.getStackTrace()));
         return toResponse(ErrorCode.UNCATEGORIZED_EXCEPTION);
     }
 

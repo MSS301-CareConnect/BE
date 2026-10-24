@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -92,6 +93,10 @@ public class ServiceTokenProvider {
         } catch (RestClientException e) {
             // Sai secret (401) hay Identity sập đều là lỗi hạ tầng với người dùng cuối → 503, chi tiết nằm ở log.
             log.error("Cannot obtain service token for client {}", serviceClient.getClientId(), e);
+            if (e instanceof RestClientResponseException responseException
+                    && (responseException.getStatusCode().value() == 401 || responseException.getStatusCode().value() == 403)) {
+                throw new AppException(ErrorCode.REMOTE_COMMAND_REJECTED);
+            }
             throw new AppException(ErrorCode.SERVICE_TOKEN_UNAVAILABLE);
         }
         if (response == null || response.getResult() == null || response.getResult().getAccessToken() == null) {

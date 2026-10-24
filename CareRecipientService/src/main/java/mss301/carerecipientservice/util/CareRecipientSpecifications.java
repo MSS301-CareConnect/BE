@@ -1,4 +1,4 @@
-package mss301.carerecipientservice.repository;
+package mss301.carerecipientservice.util;
 
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;

@@ -54,6 +54,7 @@ public interface CaregiverMapper {
     @IgnoreServerManagedCaregiverFields
     @Mapping(target = "userId", ignore = true)
     @Mapping(target = "center", ignore = true)
+    @Mapping(target = "caregiverStatus", ignore = true)
     void update(CaregiverUpdateRequest request, @MappingTarget CaregiverProfile caregiverProfile);
 
     // ─── Tìm kiếm / hồ sơ công khai (SRCH-01) — chỉ field khách được xem ───

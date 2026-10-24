@@ -12,15 +12,18 @@ import ipaddress
 import json
 import socket
 import sys
+from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 POLICY_ID = "00000000-0000-4000-8000-0000000000e2"
 GET_RESULTS = {
     "/actuator/health": None,
     "/api/v1/payments/me/outstanding": {"hasDebt": False},
+    "/api/v1/payments": {"items": [{"status": "SUCCESS", "amount": 1000000, "refundedAmount": 0}], "totalPages": 1},
     "/api/v1/payment-policies/effective": {"policyId": POLICY_ID, "depositPercent": 30},
 }
-ACCEPTED_POSTS = ("/api/v1/refunds", "/api/v1/remaining-invoices")
+COMPLAINT_REFUND_CALLS = {}
+ACCEPTED_POSTS = ("/api/v1/refunds", "/api/v1/remaining-invoices", "/api/v1/refunds/complaints")
 
 
 class PaymentStubHandler(BaseHTTPRequestHandler):
@@ -28,20 +31,44 @@ class PaymentStubHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/actuator/health":
             self.send_json(200, {"status": "UP"})
+        elif path.startswith("/api/v1/refunds/complaints/"):
+            complaint_id = path.rsplit("/", 1)[-1]
+            self.send_json(200, {"code": 200, "result": {"calls": COMPLAINT_REFUND_CALLS.get(complaint_id, 0)}})
+        elif path == "/api/v1/payments":
+            booking_id = parse_qs(urlsplit(self.path).query).get("bookingId", [None])[0]
+            self.send_json(200, {"code": 200, "message": "E2E stub", "result": {"items": [{
+                "bookingId": booking_id, "status": "SUCCESS", "amount": 1000000, "refundedAmount": 0}], "totalPages": 1}})
         elif path in GET_RESULTS:
             self.send_json(200, {"code": 200, "message": "E2E stub", "result": GET_RESULTS[path]})
         else:
             self.send_json(404, {"code": 404, "message": "E2E stub: không có API này"})
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
+        raw = self.read_body()
+        payload = json.loads(raw) if raw else {}
         path = self.path.split("?", 1)[0]
+        if path == "/api/v1/refunds/complaints":
+            complaint_id = payload.get("complaintId")
+            COMPLAINT_REFUND_CALLS[complaint_id] = COMPLAINT_REFUND_CALLS.get(complaint_id, 0) + 1
         if path in ACCEPTED_POSTS:
             self.send_json(200, {"code": 200, "message": "E2E stub"})
         else:
             self.send_json(404, {"code": 404, "message": "E2E stub: không có API này"})
+
+    def read_body(self):
+        # Gateway có thể stream request chunked thay vì Content-Length.
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            chunks = []
+            while True:
+                size = int(self.rfile.readline().split(b";", 1)[0].strip(), 16)
+                if size == 0:
+                    while self.rfile.readline().strip():
+                        pass
+                    return b"".join(chunks)
+                chunks.append(self.rfile.read(size))
+                self.rfile.read(2)
+        length = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(length) if length else b""
 
     def send_json(self, status, payload):
         body = json.dumps(payload).encode()

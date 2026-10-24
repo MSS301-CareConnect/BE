@@ -120,3 +120,5 @@ từ `/api/v1/bookings` (nay đã có route) sang `/api/v1/unknown-resources`.
 ## Chưa làm
 
 Rate limiting (chưa chốt); cache JWKS khi Identity tắt lâu hơn thời gian cache (token mới sẽ nhận 503).
+
+IAM-03 (2026-10-24): X-Forwarded-For được ghi đè từ remoteAddr tại HTTP header filter cuối; Forwarded do client gửi bị xóa. Identity chỉ tin XFF từ IP gateway được cấu hình trong IDENTITY_TRUSTED_PROXIES.

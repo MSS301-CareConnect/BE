@@ -18,7 +18,11 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
 @Service
@@ -39,17 +43,28 @@ public class R2StorageServiceImpl implements R2StorageService {
                 .contentType(contentType)
                 .contentLength(contentLength)
                 .build();
+        Path uploadFile = null;
         try {
+            // SDK cần đọc lại khi ký/retry; dùng file tạm để không giữ cả video lớn trong RAM.
+            uploadFile = Files.createTempFile("careconnect-media-", ".upload");
+            Files.copy(inputStream, uploadFile, StandardCopyOption.REPLACE_EXISTING);
             PutObjectResponse response = s3Client.putObject(
                     request,
-                    RequestBody.fromInputStream(inputStream, contentLength));
+                    RequestBody.fromFile(uploadFile));
             return response.eTag();
+        } catch (IOException exception) {
+            log.error("Không chuẩn bị được file upload ({})", exception.getClass().getSimpleName());
+            throw new AppException(ErrorCode.UPLOAD_FAILED);
         } catch (S3Exception exception) {
             log.error("R2 upload failed with status {}", exception.statusCode());
             throw new AppException(ErrorCode.UPLOAD_FAILED);
         } catch (RuntimeException exception) {
             log.error("R2 upload failed ({})", exception.getClass().getSimpleName());
             throw new AppException(ErrorCode.UPLOAD_FAILED);
+        } finally {
+            if (uploadFile != null) {
+                deleteTemporaryUpload(uploadFile);
+            }
         }
     }
 
@@ -84,6 +99,14 @@ public class R2StorageServiceImpl implements R2StorageService {
         } catch (RuntimeException exception) {
             log.error("R2 delete failed ({})", exception.getClass().getSimpleName());
             throw new AppException(ErrorCode.DELETE_FILE_FAILED);
+        }
+    }
+
+    private void deleteTemporaryUpload(Path uploadFile) {
+        try {
+            Files.deleteIfExists(uploadFile);
+        } catch (IOException exception) {
+            log.warn("Không dọn được file upload tạm ({})", exception.getClass().getSimpleName());
         }
     }
 }

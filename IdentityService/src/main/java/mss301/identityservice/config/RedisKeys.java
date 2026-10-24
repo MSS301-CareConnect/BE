@@ -31,6 +31,10 @@ public final class RedisKeys {
     public static final String FIELD_LAST_ACTIVE_AT = "lastActiveAt";
     public static final String FIELD_REFRESH_TOKEN_HASH = "refreshTokenHash";
 
+    public static final String FIELD_AUTHZ_VERSION = "authzVersion";
+    public static final String FIELD_ACCESS_JTI = "accessJti";
+    public static final String FIELD_ACCESS_EXPIRES_AT = "accessExpiresAt";
+
     private RedisKeys() {
     }
 }

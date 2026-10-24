@@ -27,7 +27,7 @@ public class ProviderMediaController {
     ProviderMediaService providerMediaService;
 
     @GetMapping("/{ownerType}/{ownerId}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','CUSTOMER')")
     public APIResponse<List<ProviderMediaResponse>> list(@CurrentUserId UUID actorId,
                                                          @PathVariable MediaOwnerType ownerType,
                                                          @PathVariable UUID ownerId) {

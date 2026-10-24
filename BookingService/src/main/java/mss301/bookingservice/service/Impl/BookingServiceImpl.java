@@ -91,6 +91,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import mss301.bookingservice.service.NotificationService;
+import mss301.bookingservice.service.BookingNotificationService;
+import mss301.bookingservice.enums.NotificationType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -155,6 +158,8 @@ public class BookingServiceImpl implements BookingService {
     BookingProperties bookingProperties;
     TransactionTemplate transactionTemplate;
     Clock clock;
+    NotificationService notificationService;
+    BookingNotificationService bookingNotificationService;
 
     // ─── MỌI ROLE (phạm vi theo role) ─────────────────────────────────────────
 
@@ -578,13 +583,19 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
-    // BK-05: mỗi buổi đổi người một dòng CAREGIVER_CHANGED (khác người mới ghi). TODO(NTF-01, Người C): thông báo
+    // BK-05: mỗi buổi đổi người một dòng CAREGIVER_CHANGED (khác người mới ghi).
     // caregiver cũ ("lịch bị hủy giao"), caregiver mới ("lịch mới") và khách.
     private void recordCaregiverChange(Booking booking, BookingOccurrence occurrence, AssignedCaregiver caregiver,
                                        UUID changedBy, Instant now) {
         if (Objects.equals(occurrence.getCaregiverId(), caregiver.getCaregiverId())) {
             return;
         }
+        if (occurrence.getCaregiverUserId() != null) {
+            notificationService.notify(List.of(occurrence.getCaregiverUserId()), NotificationType.CAREGIVER_UNASSIGNED,
+                    Map.of(), "BOOKING_OCCURRENCE", occurrence.getId());
+        }
+        notificationService.notify(List.of(booking.getCustomerId(), caregiver.getCaregiverUserId()), NotificationType.CAREGIVER_ASSIGNED,
+                Map.of(), "BOOKING_OCCURRENCE", occurrence.getId());
         bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(booking, occurrence.getId(),
                 occurrence.getCaregiverId(), caregiver.getCaregiverId(), changedBy, null, now));
     }
@@ -733,6 +744,7 @@ public class BookingServiceImpl implements BookingService {
         List<UUID> bookingIds = bookingRepository.findIdsByCenter(centerId, BookingStatus.SCHEDULE_HOLDING);
         int affectedBookings = 0;
         int affectedOccurrences = 0;
+        boolean failed = false;
         for (UUID bookingId : bookingIds) {
             try {
                 Integer cancelledOccurrences = transactionTemplate.execute(status ->
@@ -742,9 +754,14 @@ public class BookingServiceImpl implements BookingService {
                     affectedOccurrences += cancelledOccurrences;
                 }
             } catch (RuntimeException e) {
+                failed = true;
                 log.error("Failed to cancel booking {} of locked center {} ({})", bookingId, centerId,
                         e.getClass().getSimpleName(), e);
             }
+        }
+        if (failed) {
+            // Cho Provider retry các booking còn lỗi; booking đã hủy được bỏ qua ở lần sau.
+            throw new AppException(ErrorCode.SERVICE_UNAVAILABLE);
         }
         return SystemCancellationResponse.of(affectedBookings, affectedOccurrences);
     }
@@ -774,7 +791,6 @@ public class BookingServiceImpl implements BookingService {
         bookingLifecycleService.requestRefund(lockedBooking, targetIds, RefundReason.CENTER_LOCKED, CancelledBy.SYSTEM,
                 null, buildRefundKeySuffix(bookingId, targetIds));
         closeAfterCancellation(lockedBooking, BookingAction.CANCEL_BY_SYSTEM, null, note);
-        // TODO(NTF-02, Người C): thông báo khách + caregiver buổi bị hủy do trung tâm ngừng hoạt động.
         return targets.size();
     }
 
@@ -788,7 +804,13 @@ public class BookingServiceImpl implements BookingService {
             occurrence.setNeedsReassignment(true);
             bookingIds.add(occurrence.getBooking().getId());
         }
-        // TODO(NTF-01, Người C): thông báo manager trung tâm phải đổi caregiver các buổi đã đánh dấu.
+        for (UUID bookingId : bookingIds) {
+            Booking booking = occurrences.stream().map(BookingOccurrence::getBooking)
+                    .filter(candidate -> candidate.getId().equals(bookingId)).findFirst()
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+            bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CAREGIVER_UNASSIGNED,
+                    "BOOKING", bookingId);
+        }
         return SystemCancellationResponse.of(bookingIds.size(), occurrences.size());
     }
 

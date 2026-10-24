@@ -611,10 +611,10 @@ class CareRecipientApiTests {
         UUID recipientId = createRecipient(owner);
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot"))
                 .andExpect(status().isUnauthorized());
-        // Người dùng (kể cả chủ hồ sơ) không gọi được API liên service.
+        // Chủ hồ sơ được xem snapshot; access vẫn chỉ dành cho SERVICE.
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/snapshot")
                         .header("Authorization", bearer(owner, "CUSTOMER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/access")
                         .param("userId", owner.toString())
                         .header("Authorization", bearer(UUID.randomUUID(), "CUSTOMER")))
@@ -738,6 +738,52 @@ class CareRecipientApiTests {
         mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(caregiver, "CAREGIVER")))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(ErrorCode.BOOKING_UNAVAILABLE.getCode()));
+    }
+
+    @Test
+    void snapshotAndBatchOnlyExposeManagedRecipients() throws Exception {
+        UUID ownId = createRecipient(owner);
+        UUID otherId = createRecipient(relative);
+        mockMvc.perform(get("/api/v1/care-recipients/" + ownId + "/snapshot")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/care-recipients/" + ownId + "/snapshot")
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/care-recipients/" + ownId + "/access").param("userId", owner.toString())
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/care-recipients/batch")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("recipientIds", List.of(ownId, otherId)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].id").value(ownId.toString()));
+    }
+
+    @Test
+    void inactiveRecipientBlocksEditorAndAllChildWritesUntilOwnerReactivates() throws Exception {
+        UUID id = createRecipient(owner);
+        addManager(id, relativeEmail, "EDITOR");
+        JsonNode inactive = readResult(mockMvc.perform(patch("/api/v1/care-recipients/" + id + "/status")
+                        .param("status", "INACTIVE").header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk()).andReturn());
+        String update = objectMapper.writeValueAsString(Map.of("fullName", "Tên đã sửa", "version", inactive.path("version").asLong()));
+        mockMvc.perform(put("/api/v1/care-recipients/" + id).header("Authorization", bearer(relative, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_INACTIVE.getCode()));
+        mockMvc.perform(put("/api/v1/care-recipients/" + id).header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(update))
+                .andExpect(status().isOk());
+        String medication = "{\"medicationName\":\"Vitamin C\",\"route\":\"ORAL\",\"startDate\":\"2026-01-01\"}";
+        mockMvc.perform(post("/api/v1/care-recipients/" + id + "/medications").header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(medication))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_INACTIVE.getCode()));
+        mockMvc.perform(patch("/api/v1/care-recipients/" + id + "/status").param("status", "ACTIVE")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/care-recipients/" + id + "/medications").header("Authorization", bearer(relative, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(medication)).andExpect(status().isOk());
     }
 
     // ===== Helpers =====

@@ -27,35 +27,34 @@ import java.util.UUID;
 @RequestMapping("/api/v1/media")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Tag(name = "Media", description = "Metadata file và Cloudflare R2 storage. Service khác gọi qua ApiGateway bằng Bearer JWT chuyển tiếp.")
+@Tag(name = "Media", description = "Metadata file và Cloudflare R2 storage. Service khác gọi qua ApiGateway bằng token SERVICE; ownership lấy từ client_id.")
 public class MediaController {
     MediaService mediaService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<MediaResponse> upload(@RequestPart("file") MultipartFile file,
                                              @RequestParam MediaPurpose purpose,
                                              @RequestParam(required = false) UUID uploadedBy,
-                                             @RequestParam String sourceService,
                                              @RequestParam(required = false) String referenceType,
                                              @RequestParam(required = false) UUID referenceId) {
-        return mediaService.upload(file, purpose, uploadedBy, sourceService, referenceType, referenceId);
+        return mediaService.upload(file, purpose, uploadedBy, referenceType, referenceId);
     }
 
     @GetMapping("/{mediaFileId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<MediaResponse> get(@PathVariable UUID mediaFileId) {
         return mediaService.get(mediaFileId);
     }
 
     @GetMapping("/{mediaFileId}/download-url")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<DownloadUrlResponse> createDownloadUrl(@PathVariable UUID mediaFileId) {
         return mediaService.createDownloadUrl(mediaFileId);
     }
 
     @DeleteMapping("/{mediaFileId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<Void> delete(@PathVariable UUID mediaFileId) {
         return mediaService.delete(mediaFileId);
     }

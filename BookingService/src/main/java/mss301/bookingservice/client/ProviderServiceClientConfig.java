@@ -18,6 +18,12 @@ public class ProviderServiceClientConfig {
     @Bean
     public ErrorDecoder providerServiceErrorDecoder() {
         // 404 caregiver → CAREGIVER_NOT_FOUND, còn lại → PROVIDER_UNAVAILABLE (giống ProviderClient).
-        return new ProviderErrorDecoder();
+        return (methodKey, response) -> {
+            int status = response.status();
+            if (methodKey.contains("updateRating") && status >= 400 && status < 500 && status != 408 && status != 429) {
+                return new AppException(ErrorCode.REMOTE_COMMAND_REJECTED);
+            }
+            return new ProviderErrorDecoder().decode(methodKey, response);
+        };
     }
 }
