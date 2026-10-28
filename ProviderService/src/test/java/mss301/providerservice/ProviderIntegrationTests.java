@@ -912,6 +912,18 @@ class ProviderIntegrationTests {
                         .with(user(UUID.randomUUID(), "CUSTOMER")))
                 .andExpect(status().isNotFound());
 
+        // Danh mục cho khách chỉ trả thẻ công khai, không có field nội bộ (M-02).
+        mockMvc.perform(get("/api/v1/caregivers").param("centerId", center.getId().toString())
+                        .with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].caregiverId").value(caregiver.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].centerName").value(center.getCenterName()))
+                .andExpect(jsonPath("$.result.items[0].userId").doesNotExist())
+                .andExpect(jsonPath("$.result.items[0].dateOfBirth").doesNotExist())
+                .andExpect(jsonPath("$.result.items[0].verificationReason").doesNotExist())
+                .andExpect(jsonPath("$.result.items[0].createdBy").doesNotExist());
+
         // GET /caregivers/{id} (hồ sơ đầy đủ): ADMIN / manager trung tâm / chính caregiver / SERVICE.
         mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId()).with(user(UUID.randomUUID(), "CUSTOMER")))
                 .andExpect(status().isNotFound());

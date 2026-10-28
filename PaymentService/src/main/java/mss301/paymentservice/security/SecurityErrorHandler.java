@@ -35,6 +35,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
     private void write(HttpServletResponse response, ErrorCode code) throws IOException {
         response.setStatus(code.getStatusCode().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getWriter().write(objectMapper.writeValueAsString(APIResponse.error(code)));
+        APIResponse<Void> body = APIResponse.<Void>builder().code(code.getCode()).message(code.getMessage()).build();
+        response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }

@@ -187,17 +187,25 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy hồ sơ của tôi thành công", caregiverResponse);
     }
 
+    /**
+     * Danh mục cho khách: chỉ thẻ công khai (M-02) — không userId, ngày sinh, lý do xác minh hay người duyệt. Không đặt
+     * @Transactional: đọc trang trong transaction, lấy ảnh (Media, mạng) ngoài transaction, rồi dựng thẻ (rule #24).
+     */
     @Override
-    @Transactional(readOnly = true)
-    public APIResponse<PageResponse<CaregiverResponse>> list(UUID centerId, String keyword, int page, int size) {
+    public APIResponse<PageResponse<CaregiverCardResponse>> list(UUID centerId, String keyword, int page, int size) {
         validatePage(page, size);
         String normalizedKeyword = normalize(keyword);
         Sort sort = Sort.by(Sort.Direction.DESC, "ratingAverage")
                 .and(Sort.by(Sort.Direction.DESC, "experienceYears"));
-        Page<CaregiverProfile> caregiverPage = caregiverProfileRepository.catalog(VerificationStatus.VERIFIED, CaregiverStatus.ACTIVE, CenterStatus.ACTIVE, centerId, normalizedKeyword,
-                PageRequest.of(page, size, sort));
-        List<CaregiverResponse> items = caregiverMapper.toResponseList(caregiverPage.getContent());
-        PageResponse<CaregiverResponse> pageResponse = PageResponse.of(caregiverPage, items);
+        Page<UUID> idPage = transactionTemplate.execute(status -> caregiverProfileRepository.catalog(
+                        VerificationStatus.VERIFIED, CaregiverStatus.ACTIVE, CenterStatus.ACTIVE, centerId, normalizedKeyword,
+                        PageRequest.of(page, size, sort))
+                .map(CaregiverProfile::getId));
+        Map<UUID, List<String>> avatarUrls = providerMediaService.findImageUrls(
+                MediaOwnerType.CAREGIVER_PROFILE, idPage.getContent(), 1);
+        List<CaregiverCardResponse> items = transactionTemplate.execute(status ->
+                buildCards(idPage.getContent(), avatarUrls));
+        PageResponse<CaregiverCardResponse> pageResponse = PageResponse.of(idPage, items);
         return APIResponse.success("Lấy danh sách caregiver đang hoạt động thành công", pageResponse);
     }
 

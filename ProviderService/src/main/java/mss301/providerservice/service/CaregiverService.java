@@ -40,7 +40,7 @@ public interface CaregiverService {
 
     APIResponse<CaregiverResponse> getMe(UUID actorId);
 
-    APIResponse<PageResponse<CaregiverResponse>> list(UUID centerId, String keyword, int page, int size);
+    APIResponse<PageResponse<CaregiverCardResponse>> list(UUID centerId, String keyword, int page, int size);
 
     APIResponse<PageResponse<CaregiverCardResponse>> search(CaregiverSearchRequest request);
 

@@ -62,7 +62,7 @@ public class CareReportServiceImpl implements CareReportService {
     public APIResponse<CareReportResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id) {
         CareReportResponse response = transactionTemplate.execute(status -> {
             CareReport report = findReport(id);
-            if (!AftercareScope.canReadSession(actorId, roles, centerId, report.getSession())) {
+            if (!canReadReport(actorId, roles, centerId, report)) {
                 throw new AppException(ErrorCode.REPORT_NOT_FOUND);
             }
             return toResponseWithoutUrls(report);
@@ -84,16 +84,23 @@ public class CareReportServiceImpl implements CareReportService {
                 if (bookingId != null) {
                     predicates.add(builder.equal(root.get("bookingId"), bookingId));
                 }
-                if (!roles.contains(RoleCode.ADMIN)) {
+                // Bản nháp chỉ caregiver viết nó thấy; mọi người khác chỉ thấy report đã nộp (M-01).
+                Predicate submitted = builder.equal(root.get("status"), CareReportStatus.SUBMITTED);
+                Predicate ownDraft = builder.equal(root.get("caregiverUserId"), actorId);
+                if (roles.contains(RoleCode.ADMIN)) {
+                    predicates.add(builder.or(submitted, ownDraft));
+                } else {
                     List<Predicate> scope = new ArrayList<>();
                     if (roles.contains(RoleCode.CUSTOMER)) {
-                        scope.add(builder.equal(root.get("session").get("booking").get("customerId"), actorId));
+                        scope.add(builder.and(submitted,
+                                builder.equal(root.get("session").get("booking").get("customerId"), actorId)));
                     }
                     if (roles.contains(RoleCode.CENTER_MANAGER) && centerId != null) {
-                        scope.add(builder.equal(root.get("session").get("booking").get("centerId"), centerId));
+                        scope.add(builder.and(submitted,
+                                builder.equal(root.get("session").get("booking").get("centerId"), centerId)));
                     }
                     if (roles.contains(RoleCode.CAREGIVER)) {
-                        scope.add(builder.equal(root.get("caregiverUserId"), actorId));
+                        scope.add(ownDraft);
                     }
                     predicates.add(builder.or(scope.toArray(Predicate[]::new)));
                 }
@@ -213,6 +220,15 @@ public class CareReportServiceImpl implements CareReportService {
         });
         deleteMediaQuietly(mediaFileId);
         return APIResponse.success("Xóa ảnh báo cáo thành công");
+    }
+
+    // Bản nháp chưa phải thông tin chính thức gửi gia đình / trung tâm — chỉ caregiver viết nó được đọc.
+    private boolean canReadReport(UUID actorId, Set<RoleCode> roles, UUID centerId, CareReport report) {
+        if (actorId.equals(report.getCaregiverUserId())) {
+            return true;
+        }
+        return report.getStatus() == CareReportStatus.SUBMITTED
+                && AftercareScope.canReadSession(actorId, roles, centerId, report.getSession());
     }
 
     private CareReport findReport(UUID id) {

@@ -61,6 +61,8 @@ public interface CaregiverMapper {
 
     // avatarUrl (Media) và số chứng chỉ đã xác minh do service tra cứu rồi truyền vào.
     @Mapping(target = "caregiverId", source = "caregiver.id")
+    @Mapping(target = "centerId", source = "caregiver.center.id")
+    @Mapping(target = "centerName", source = "caregiver.center.centerName")
     @Mapping(target = "careServiceIds", source = "caregiver.skills", qualifiedByName = "toCareServiceIds")
     CaregiverCardResponse toCardResponse(CaregiverProfile caregiver, String avatarUrl, long verifiedCertificateCount);
 

@@ -84,7 +84,11 @@ trung tâm trong service.
 
 ### Caregiver — `/api/v1/caregivers`
 
-- `GET /` (catalog caregiver VERIFIED/ACTIVE) · `GET /by-user/{userId}` — mọi token hợp lệ, kể cả token SERVICE.
+- `GET /` (catalog caregiver VERIFIED/ACTIVE của trung tâm ACTIVE) — mọi token hợp lệ; trả **thẻ công khai**
+  `CaregiverCardResponse` (`caregiverId, centerId, centerName, fullName, gender, bio, experienceYears, ratingAverage,
+  ratingCount, avatarUrl, careServiceIds, verifiedCertificateCount`), không có `userId` / ngày sinh / thông tin duyệt
+  (M-02, 2026-10-28).
+- `GET /by-user/{userId}` — mọi token hợp lệ, kể cả token SERVICE.
 - `GET /{caregiverId}` (hồ sơ đầy đủ) — chỉ ADMIN / CENTER_MANAGER của trung tâm / chính caregiver / **SERVICE**
   (BookingService, C5.5); người khác 403 (SRCH-01 quy tắc 6).
 - `GET /centers/{centerId}` · `POST /centers/{centerId}` · `PUT /{caregiverId}` · `DELETE /{caregiverId}?version=`

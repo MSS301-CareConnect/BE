@@ -9,12 +9,12 @@ title CareConnect - start
 set "PAUSE_AT_END=1"
 if /i "%~1"=="--no-pause" set "PAUSE_AT_END=0"
 set "RC=1"
-set "SERVICES=IdentityService CareRecipientService CareCatalogService ProviderService BookingService MediaService ApiGateway"
+set "SERVICES=IdentityService CareRecipientService CareCatalogService ProviderService BookingService MediaService PaymentService ApiGateway"
 rem Project Compose riêng cũ của từng service (docker-compose.yml trong thư mục service) - dùng chung volume/port.
-set "LEGACY_PROJECTS=identityservice carerecipientservice carecatalogservice providerservice bookingservice mediaservice apigateway"
+set "LEGACY_PROJECTS=identityservice carerecipientservice carecatalogservice providerservice bookingservice mediaservice paymentservice apigateway"
 rem Volume dữ liệu dùng lại: <tên volume>:<project cũ>:<khóa volume trong compose cũ>.
 rem Không dùng "=" trong danh sách: lệnh for của cmd coi "=" là dấu phân tách phần tử.
-set "VOLUMES=identityservice_identity_postgres:identityservice:identity_postgres identityservice_identity_redis:identityservice:identity_redis carerecipientservice_care_recipient_postgres:carerecipientservice:care_recipient_postgres carecatalogservice_care_catalog_postgres:carecatalogservice:care_catalog_postgres providerservice_provider_postgres:providerservice:provider_postgres bookingservice_booking_postgres:bookingservice:booking_postgres mediaservice_media_postgres_data:mediaservice:media_postgres_data"
+set "VOLUMES=identityservice_identity_postgres:identityservice:identity_postgres identityservice_identity_redis:identityservice:identity_redis carerecipientservice_care_recipient_postgres:carerecipientservice:care_recipient_postgres carecatalogservice_care_catalog_postgres:carecatalogservice:care_catalog_postgres providerservice_provider_postgres:providerservice:provider_postgres bookingservice_booking_postgres:bookingservice:booking_postgres mediaservice_media_postgres_data:mediaservice:media_postgres_data paymentservice_payment_postgres:paymentservice:payment_postgres"
 
 echo ============================================================
 echo  CareConnect - khởi động toàn bộ Docker services
@@ -82,7 +82,7 @@ if defined MISSING (
     echo        Xem DOCKER.md.
     goto :done
 )
-echo [OK] Đủ .env của 7 service và khóa RSA của IdentityService.
+echo [OK] Đủ .env của 8 service và khóa RSA của IdentityService.
 
 rem ---- 5. Container cũ đang giữ volume/port của stack ---------------------------
 rem Hai PostgreSQL cùng mở một volume sẽ hỏng dữ liệu -> phải dừng container cũ trước (chỉ dừng, không xóa).
@@ -145,7 +145,7 @@ if errorlevel 1 (
     echo.
     echo Xem log service lỗi: docker compose logs --tail 200 ^<tên-service^>
     echo Lỗi "port is already allocated" / "address already in use": một app Spring hoặc container khác đang chiếm port
-    echo 8080-8086, 5441-5446 hoặc 6381 - tắt nó rồi chạy lại.
+    echo 8080-8087, 5441-5447 hoặc 6381 - tắt nó rồi chạy lại.
     goto :done
 )
 
@@ -161,6 +161,7 @@ echo   CareCatalog      http://localhost:8083
 echo   Provider         http://localhost:8084
 echo   Booking          http://localhost:8085
 echo   Media            http://localhost:8086
+echo   Payment          http://localhost:8087
 echo  Dừng: stop.bat     Log: docker compose logs -f ^<tên-service^>
 echo ============================================================
 set "RC=0"

@@ -2,7 +2,6 @@ package mss301.paymentservice.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
-import mss301.paymentservice.exception.ErrorCode;
 
 @Data
 @Builder
@@ -22,7 +21,4 @@ public class APIResponse<T> {
         return new APIResponse<>(200, message, null);
     }
 
-    public static APIResponse<Void> error(ErrorCode e) {
-        return new APIResponse<>(e.getCode(), e.getMessage(), null);
-    }
 }

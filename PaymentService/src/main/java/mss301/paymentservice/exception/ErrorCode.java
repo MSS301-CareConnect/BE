@@ -18,7 +18,10 @@ public enum ErrorCode {
     BOOKING_SERVICE_UNAVAILABLE(6010, "BookingService tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
     SERVICE_TOKEN_UNAVAILABLE(6011, "Không lấy được token dành cho service", HttpStatus.SERVICE_UNAVAILABLE),
     PAYMENT_GATEWAY_ERROR(6012, "Không tạo được phiên thanh toán", HttpStatus.BAD_GATEWAY),
-    PATH_NOT_FOUND(6013, "Đường dẫn không tồn tại", HttpStatus.NOT_FOUND);
+    PATH_NOT_FOUND(6013, "Đường dẫn không tồn tại", HttpStatus.NOT_FOUND),
+    CONCURRENT_UPDATE(6014, "Giao dịch vừa được cập nhật bởi thao tác khác, vui lòng thử lại", HttpStatus.CONFLICT),
+    SERVICE_UNAVAILABLE(6015, "Dịch vụ thanh toán tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+    INVALID_KEY(6016, "Mã lỗi validation không hợp lệ", HttpStatus.BAD_REQUEST);
 
     private final int code;
     private final String message;

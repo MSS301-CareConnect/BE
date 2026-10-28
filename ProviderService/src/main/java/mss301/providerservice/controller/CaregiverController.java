@@ -49,7 +49,7 @@ public class CaregiverController {
 
     @GetMapping
     @PreAuthorize("isAuthenticated()")
-    public APIResponse<PageResponse<CaregiverResponse>> list(
+    public APIResponse<PageResponse<CaregiverCardResponse>> list(
             @RequestParam(required = false) UUID centerId,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,

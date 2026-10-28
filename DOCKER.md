@@ -12,13 +12,14 @@ từng service:
 | `provider-service` | 8084 | |
 | `booking-service` | 8085 | |
 | `media-service` | 8086 | upload lên Cloudflare R2 (cần `MEDIA_R2_*` trong `.env`) |
-| `payment-service` | 8087 | **Dự kiến — chưa có trong repo** (chủ module khác); gateway đã trỏ tới `http://payment-service:8087`, xem §5 |
+| `payment-service` | 8087 | Đặt cọc VNPay, IPN; cần `PaymentService/.env` (xem `.env.example`) |
 | `identity-postgres` / `identity-redis` | 5441 / 6381 | |
 | `care-recipient-postgres` | 5442 | |
 | `care-catalog-postgres` | 5443 | |
 | `provider-postgres` | 5444 | |
 | `booking-postgres` | 5445 | |
 | `media-postgres` | 5446 | |
+| `payment-postgres` | 5447 | |
 
 Port host lấy từ `.env` của service (`*_SERVER_PORT`, `*_DB_PORT`, `IDENTITY_REDIS_PORT`), mặc định như bảng, chỉ
 bind `127.0.0.1`. Trong container, service gọi nhau **qua gateway** (`http://api-gateway:8080` cho mọi `*_URL` của
@@ -27,8 +28,7 @@ service (`GATEWAY_*_URL`). Các URL `localhost` trong `.env` được ghi đè t
 
 ## Cấu trúc
 
-- `compose.yaml` — chỉ `include` 7 file `<Service>/compose.stack.yaml` (dòng PaymentService để sẵn dạng comment, bỏ `#`
-  khi thư mục `PaymentService/` có `compose.stack.yaml` + `Dockerfile`). Compose đọc biến `${...}` của mỗi file từ
+- `compose.yaml` — chỉ `include` 8 file `<Service>/compose.stack.yaml` (PaymentService bật từ 2026-10-28). Compose đọc biến `${...}` của mỗi file từ
   `<Service>/.env` cạnh nó, nên **vẫn dùng `.env` riêng từng service như trước**, không có file secret chung.
 - `<Service>/Dockerfile` — build JAR bằng Maven Wrapper của service rồi chạy trên JRE 21 (user không phải root).
   `.dockerignore` chỉ gửi `.mvn/`, `mvnw`, `pom.xml`, `src/` — `.env` và `keys/` không bao giờ vào image.
@@ -124,10 +124,9 @@ Mở psql: `docker compose exec identity-postgres psql -U <IDENTITY_DB_USERNAME>
 
 - Chạy stack Docker thì không chạy cùng lúc các app bằng `Start-Dev.ps1` / IDE trên cùng port (8080–8087), và
   không chạy `scripts/e2e/Run-E2E.ps1` (cũng dùng 8080–8087).
-- **PaymentService chưa có trong stack** (dự kiến port 8087, dải lỗi 6xxx, chủ module khác). Tới lúc đó route Payment
-  của gateway trả 503 `9001`; BookingService kiểm nợ của khách ở Payment trước khi đặt nên **tạo booking mới trả 503
-  `5154`**, báo giá vẫn chạy (không có phần cọc dự kiến). E2E (`Run-E2E.ps1`) thay Payment bằng
-  `scripts/e2e/payment_stub.py` và xác nhận cọc qua `POST /api/v1/bookings/{id}/deposit-paid` bằng token SERVICE.
+- PaymentService có trong stack từ 2026-10-28 (volume `paymentservice_payment_postgres`, `start.bat` tự tạo khi
+  chưa có). Cần client SERVICE `payment` đăng ký trong `IDENTITY_SERVICE_CLIENTS`. E2E (`Run-E2E.ps1`) vẫn thay Payment
+  bằng `scripts/e2e/payment_stub.py`.
 - Port chỉ mở trên `127.0.0.1`. Thiết bị thật trong LAN (app mobile) không gọi được trực tiếp — dùng emulator
   (`10.0.2.2:8080`) hoặc đổi bind trong `compose.stack.yaml` khi cần.
 - Build image bỏ qua test (`-DskipTests`); test vẫn chạy bằng `.\mvnw.cmd test` trong từng service.

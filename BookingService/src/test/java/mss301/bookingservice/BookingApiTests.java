@@ -1726,6 +1726,13 @@ class BookingApiTests {
         mockMvc.perform(post("/api/v1/care-reports").header("Authorization", caregiver).contentType(MediaType.APPLICATION_JSON).content(json(report)))
                 .andExpect(status().isConflict());
         mockMvc.perform(post("/api/v1/care-reports/" + reportId + "/submit").header("Authorization", caregiver)).andExpect(status().isConflict());
+        // Bản nháp chỉ caregiver viết nó thấy (M-01).
+        mockMvc.perform(get("/api/v1/care-reports/" + reportId).header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/care-reports").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.items").isEmpty());
+        mockMvc.perform(get("/api/v1/care-reports/" + reportId).header("Authorization", caregiver))
+                .andExpect(status().isOk());
         endAftercareSession(scenario, sessionId);
         mockMvc.perform(post("/api/v1/care-reports/" + reportId + "/submit").header("Authorization", caregiver))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("SUBMITTED"));
@@ -1736,6 +1743,8 @@ class BookingApiTests {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/care-reports/" + reportId).header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/care-reports").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.items.length()").value(1));
     }
 
     @Test
