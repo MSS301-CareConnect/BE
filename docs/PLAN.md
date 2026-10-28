@@ -174,3 +174,19 @@ Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì
 - [ ] **S4** — Kiểm lịch rảnh / kỹ năng / nợ khi đặt; MISSED + khách vắng tự hoàn tiền; care report có ảnh; đánh giá caregiver; preview hoàn tiền đúng bảng 2.2.
 - [ ] **S5** — Tìm caregiver đủ dịch vụ / lịch trống; hủy từng buổi / cả booking có hoàn tiền; REMAINING + chặn nợ; khiếu nại có escalate.
 - [ ] **S6** — Khóa trung tâm dây chuyền; lịch sử booking; đối soát; dashboard doanh thu / vận hành; e2e toàn hệ thống PASSED.
+
+---
+
+## Triển khai sau khảo sát 2026-10-28 (`docs/2026-10-28-FULLSTACK_GAP_ANALYSIS.md`)
+
+Chi tiết từng đợt, mã vấn đề đã đóng và cách kiểm tay: `docs/IMPLEMENTATION_PROGRESS.md`. Quyết định D15…D30 ở §8.1.
+
+- [x] **Đợt 0** — Gỡ rủi ro nhanh: bản nháp care report chỉ caregiver viết thấy (M-01); `GET /caregivers` trả thẻ công khai (M-02); Payment trả 403/400 đúng thay vì 500 (H-14); PaymentService vào stack Docker; FE gỡ trang cọc giả, trang mock Caregiver, nút lịch luôn lỗi, nhãn mẫu dashboard admin, ẩn menu chưa có BE, link chết — hoàn thành 2026-10-28.
+- [ ] **Đợt 1a** — Payment: hợp đồng Booking đang gọi (refund-quotes, refunds, complaint refunds, remaining invoices, outstanding, deposit-confirmations).
+- [ ] **Đợt 1b** — Payment: an toàn thu tiền (một phiên hiệu lực, hết hạn, querydr, outbox, hoàn trả trễ / trùng).
+- [ ] **Đợt 1c** — FE thanh toán thật.
+- [ ] **Đợt 2** — Bảo mật & phân quyền dữ liệu.
+- [ ] **Đợt 3** — Hậu mãi trên FE (care report, đánh giá, khiếu nại, thông báo, duyệt công khai).
+- [ ] **Đợt 4** — Vận hành & toàn vẹn BE.
+- [ ] **Đợt 5** — Màn hình quản trị còn thiếu.
+- [ ] **Đợt 6** — Hoàn thiện & dọn nợ.
