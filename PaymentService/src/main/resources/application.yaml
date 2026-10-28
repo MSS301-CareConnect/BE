@@ -1,0 +1,51 @@
+server:
+  port: ${PAYMENT_SERVER_PORT:8087}
+
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: ${PAYMENT_DB_URL}
+    username: ${PAYMENT_DB_USERNAME}
+    password: ${PAYMENT_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+  jackson:
+    time-zone: UTC
+
+management:
+  endpoints.web.exposure.include: health,info
+
+payment:
+  jwt:
+    issuer: ${PAYMENT_JWT_ISSUER:careconnect-identity}
+    jwks-uri: ${PAYMENT_JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+  booking-url: ${PAYMENT_BOOKING_URL:http://localhost:8080}
+  identity-url: ${PAYMENT_IDENTITY_URL:http://localhost:8080}
+  service-client:
+    client-id: ${PAYMENT_SERVICE_CLIENT_ID:}
+    client-secret: ${PAYMENT_SERVICE_CLIENT_SECRET:}
+  checkout-expiry-minutes: ${PAYMENT_CHECKOUT_EXPIRY_MINUTES:30}
+  policy:
+    id: ${PAYMENT_POLICY_ID:00000000-0000-0000-0000-000000000001}
+    deposit-percent: ${PAYMENT_DEPOSIT_PERCENT:100}
+  vnpay:
+    enabled: ${VNPAY_ENABLED:false}
+    tmn-code: ${VNPAY_TMN_CODE:}
+    hash-secret: ${VNPAY_HASH_SECRET:}
+    pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+    return-url: ${VNPAY_RETURN_URL:http://localhost:8087/api/v1/payments/vnpay/return}
+  stripe:
+    enabled: ${STRIPE_ENABLED:false}
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    success-url: ${STRIPE_SUCCESS_URL:http://localhost:8087/api/v1/payments/stripe/return?session_id={CHECKOUT_SESSION_ID}}
+    cancel-url: ${STRIPE_CANCEL_URL:http://localhost:3000/payment/cancel}
+
+springdoc:
+  swagger-ui.path: /swagger-ui.html
