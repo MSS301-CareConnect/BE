@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:provider_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  sql:
+    init:
+      mode: never
+
+provider:
+  jwt:
+    issuer: http://identity.test
+    jwks-uri: http://identity.test/.well-known/jwks.json
+  identity:
+    url: http://identity.test
+  media:
+    url: http://media.test
+  care-catalog:
+    url: http://catalog.test
+  booking:
+    url: http://booking.test
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

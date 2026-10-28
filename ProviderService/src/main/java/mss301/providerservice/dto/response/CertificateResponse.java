@@ -1,0 +1,31 @@
+package mss301.providerservice.dto.response;
+
+import lombok.*;
+import lombok.experimental.FieldDefaults;
+import mss301.providerservice.enums.CertificateVerificationStatus;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@FieldDefaults(level = AccessLevel.PRIVATE)
+public class CertificateResponse {
+    UUID id;
+    UUID caregiverId;
+    String certificateName;
+    String issuedBy;
+    String credentialNumber;
+    LocalDate issuedDate;
+    LocalDate expiryDate;
+    CertificateVerificationStatus verificationStatus;
+    String verificationReason;
+    UUID verifiedBy;
+    Instant verifiedAt;
+    Long version;
+    Instant createdAt;
+    Instant updatedAt;
+}
