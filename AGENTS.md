@@ -46,14 +46,14 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá từng buổi lấy từ Catalog, BK-01) |
 | Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; start/end, checklist, care report: giai đoạn sau) |
 | Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | **Booking** (`BookingService` — review / complaint gắn với booking; route `/api/v1/feedbacks/**`, `/complaints/**`) |
-| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — **dự kiến**, chủ module khác, chưa có trong repo; gateway đã route, GW-01) |
+| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — cọc, REMAINING, hoàn tiền, hóa đơn / công nợ, chính sách chỉ đọc; xem `PaymentService/AGENTS.md`. Hoa hồng / đối soát chưa làm — D15) |
 | Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | **Booking** (`BookingService` — thông báo in-app + SSE `/api/v1/notifications/stream`) |
 | File / ảnh (chứng chỉ, ảnh care report…): upload, metadata, URL tải có hạn | **Media** (`MediaService`, Cloudflare R2) |
 | Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
 
 > ⚠️ **Phạm vi hiện tại: IdentityService, CareRecipientService, ApiGateway, CareCatalogService, ProviderService,
-> BookingService, MediaService** (BookingService 2026-10-09 — `docs/2026-10-09-PLAN_BOOKING.md`). **PaymentService** đã
-> chốt tên / port / dải lỗi nhưng do chủ module khác làm, **chưa có trong repo** — không tạo thay. Không tạo service hay
+> BookingService, MediaService, PaymentService** (BookingService 2026-10-09 — `docs/2026-10-09-PLAN_BOOKING.md`;
+> PaymentService viết lại theo quy ước 2026-10-29 — `docs/2026-10-29-PAYMENT_1A_SPEC.md`). Không tạo service hay
 > bảng của các domain khác khi chưa được yêu cầu. Thông số riêng từng service: `<Service>/AGENTS.md`.
 >
 > **Chưa chốt — hỏi trước khi code phần liên quan:** tỷ lệ đặt cọc / mốc & % hoàn tiền; ai được sửa giá dịch vụ
@@ -68,8 +68,8 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | CareCatalogService | 8083 | 5443 | `3000–3999` | |
 | ProviderService | 8084 | 5444 | `4000–4999` | |
 | BookingService | 8085 | 5445 | `5000–5999` | gồm ca chăm sóc, review / complaint, notification, thống kê |
-| MediaService | 8086 | 5446 | `7000–7999` | ⚠️ code hiện dùng `5xxx` (trùng Booking) — chủ module đổi sang `7xxx` |
-| PaymentService | 8087 | (dự kiến) | `6000–6999` | **dự kiến**, chưa có trong repo |
+| MediaService | 8086 | 5446 | `7000–7999` | |
+| PaymentService | 8087 | 5447 | `6000–6999` | VNPay; Stripe tắt sau cờ (D16) — xem `PaymentService/AGENTS.md` |
 
 ### IdentityService — thông số
 
@@ -124,7 +124,7 @@ CareConnect/
 ├── ProviderService/             — trung tâm, caregiver, ca làm việc, port 8084, PostgreSQL riêng 5444
 ├── BookingService/              — booking + buổi chăm sóc, port 8085, PostgreSQL riêng 5445 (xem BookingService/AGENTS.md)
 ├── MediaService/                — file / ảnh trên Cloudflare R2, port 8086, PostgreSQL riêng 5446
-├── (PaymentService/)            — DỰ KIẾN, chưa có: đặt cọc / hoàn tiền / đối soát, port 8087
+├── PaymentService/              — đặt cọc / REMAINING / hoàn tiền / hóa đơn, port 8087, PostgreSQL riêng 5447 (xem PaymentService/AGENTS.md)
 └── IdentityService/             — mỗi service là một Maven project độc lập
     ├── pom.xml, mvnw, mvnw.cmd
     ├── docker-compose.yml       — PostgreSQL + Redis RIÊNG của service (loopback)
@@ -820,8 +820,8 @@ Get-Content -Raw schema/identity.sql | docker compose exec -T postgres psql -U c
 ```
 
 - Spring Boot **không tự đọc `.env`** — chạy qua `Start-Dev.ps1` hoặc tự cấp env trong IDE.
-- Toàn bộ 7 app (6 service + gateway) + hạ tầng trong Docker: từ `BE/` chạy `start.bat` / `stop.bat` (xem `DOCKER.md`;
-  PaymentService chưa có — dòng `include` để sẵn dạng comment). Mỗi service khai báo phần của mình ở
+- Toàn bộ 8 app (7 service + gateway) + hạ tầng trong Docker: từ `BE/` chạy `start.bat` / `stop.bat` (xem `DOCKER.md`).
+  Mỗi service khai báo phần của mình ở
   `<Service>/compose.stack.yaml` (biến `${...}` đọc từ `.env` của service đó, `environment` chỉ ghi đè host/port
   container — mọi `*_URL` Feign trỏ `http://api-gateway:8080`, JWKS trỏ `http://identity-service:8081`, không
   `localhost`) và `<Service>/Dockerfile`. Service mới: thêm hai file này + một dòng `include` trong `compose.yaml`.
@@ -872,13 +872,13 @@ Health:   /actuator/health
 2. **Key `ErrorCode` chính là key message validation.** Mọi `@NotBlank(message = "KEY")` ánh xạ `ErrorCode.KEY`;
    validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
    riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, CareCatalogService
-   `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, PaymentService `6000–6999` (dự kiến),
+   `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, PaymentService `6000–6999`,
    MediaService `7000–7999`, ApiGateway `9000–9099`
    (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
 
 3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.
    *Ngoại lệ đã ghi nhận:* `JwksController.get` trả JWK Set nguyên dạng (giao thức JWKS yêu cầu
-   `{"keys":[...]}` ở top-level). *Ngoại lệ thứ hai (PaymentService, dự kiến — INF-01):* IPN VNPay
+   `{"keys":[...]}` ở top-level). *Ngoại lệ thứ hai (PaymentService — INF-01):* IPN VNPay
    `GET /api/v1/payments/vnpay/ipn` trả **JSON thô theo chuẩn VNPay** `{"RspCode":"00","Message":"Confirm Success"}`
    (mã `00/01/02/04/97/99`, không dùng `ErrorCode`), vì VNPay chỉ đọc đúng định dạng này để biết merchant đã nhận kết
    quả; endpoint public (chữ ký HMAC VNPay thay cho JWT). Return URL `GET /api/v1/payments/vnpay/return` vẫn trả

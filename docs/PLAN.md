@@ -50,38 +50,38 @@ Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì
 
 **Sprint 1**
 
-- [ ] **PAY-01** — Dựng PaymentService · P0 · 5 SP
-- [ ] **PAY-02** — PlatformPolicy có hiệu lực theo thời gian · P0 · 5 SP
+- [x] **PAY-01** — Dựng PaymentService · P0 · 5 SP · ✅ 2026-10-29 (Đợt 1a)
+- [x] **PAY-02** — PlatformPolicy có hiệu lực theo thời gian · P0 · 5 SP · ✅ 2026-10-29 (Đợt 1a): bản tối thiểu D15 (seed GLOBAL + `GET /payment-policies/effective`, chưa có API ghi)
 - [ ] **PAY-08 (bước 1)** — Hotfix `deposit-paid` chỉ cho ADMIN, sửa test (SEC-01) · P0 · tính trong 5 SP của PAY-08
 
 **Sprint 2**
 
-- [ ] **PAY-03** — Chính sách hiệu lực + snapshot vào booking · P0 · 3 SP
-- [ ] **PAY-04** — Phân bổ cọc theo buổi · P0 · 3 SP
-- [ ] **PAY-05** — Tạo phiên thanh toán cọc VNPay (15 phút) · P0 · 8 SP
+- [x] **PAY-03** — Chính sách hiệu lực + snapshot vào booking · P0 · 3 SP · ✅ 2026-10-29 (Đợt 1a): snapshot ở `booking_financials` phía Payment
+- [x] **PAY-04** — Phân bổ cọc theo buổi · P0 · 3 SP · ✅ 2026-10-29 (Đợt 1a)
+- [x] **PAY-05** — Tạo phiên thanh toán cọc VNPay (15 phút) · P0 · 8 SP · ✅ 2026-10-29 (Đợt 1a)
 
 **Sprint 3**
 
-- [ ] **PAY-06** — IPN + return URL, idempotency, đối chiếu tiền · P0 · 8 SP
-- [ ] **PAY-07** — Job hết hạn phiên + đối soát querydr · P1 · 3 SP
-- [ ] **PAY-08** — Thay stub `deposit-paid` bằng `deposit-confirmations` + `payment-context` (role SERVICE) · P0 · 5 SP
+- [x] **PAY-06** — IPN + return URL, idempotency, đối chiếu tiền · P0 · 8 SP · ✅ 2026-10-29 (Đợt 1a) (trả trễ / trùng ở Đợt 1b)
+- [x] **PAY-07** — Job hết hạn phiên + đối soát querydr · P1 · 3 SP · ✅ 2026-10-30 (Đợt 1b; querydr sau cờ, chưa kiểm sandbox)
+- [x] **PAY-08** — Thay stub `deposit-paid` bằng `deposit-confirmations` + `payment-context` (role SERVICE) · P0 · 5 SP · ✅ 2026-10-30: giữ path `deposit-paid` (SERVICE-only) theo quyết định Đợt 1a, gửi tin cậy qua outbox
 
 **Sprint 4**
 
-- [ ] **PAY-09** — Preview-cancel: bộ tính phí / hoàn theo bảng 2.2 · P0 · 8 SP
-- [ ] **PAY-10** — Thực hiện hoàn tiền + API refund VNPay · P0 · 8 SP
+- [x] **PAY-09** — Preview-cancel: bộ tính phí / hoàn theo bảng 2.2 · P0 · 8 SP · ✅ 2026-10-29 (Đợt 1a)
+- [x] **PAY-10** — Thực hiện hoàn tiền + API refund VNPay · P0 · 8 SP · ✅ 2026-10-29 (Đợt 1a) (adapter VNPay chưa kiểm sandbox)
 
 **Sprint 5**
 
-- [ ] **PAY-11** — Thanh toán REMAINING, hạn 48h, nợ · P1 · 8 SP
-- [ ] **PAY-12** — Phí CUSTOMER_NO_SHOW + hoàn tiền theo khiếu nại · P1 · 3 SP
+- [x] **PAY-11** — Thanh toán REMAINING, hạn 48h, nợ · P1 · 8 SP · ✅ 2026-10-29 (Đợt 1a)
+- [x] **PAY-12** — Phí CUSTOMER_NO_SHOW + hoàn tiền theo khiếu nại · P1 · 3 SP · ✅ 2026-10-29 (Đợt 1a)
 - [ ] **PAY-13** — Hoa hồng & sổ cái (ledger) · P1 · 5 SP
 
 **Sprint 6**
 
 - [ ] **PAY-14** — Đối soát (Settlement) theo kỳ · P2 · 8 SP
-- [ ] **PAY-15** — Thống kê doanh thu nền tảng / trung tâm · P2 · 5 SP
-- [ ] **PAY-16** — Lịch sử giao dịch · P1 · 3 SP
+- [ ] **PAY-15** — Thống kê doanh thu nền tảng / trung tâm · P2 · 5 SP · (D15: chỉ sửa cho đúng — doanh thu trừ tiền hoàn, ✅ 2026-10-29 (Đợt 1a))
+- [x] **PAY-16** — Lịch sử giao dịch · P1 · 3 SP · ✅ 2026-10-30 (FE `/customer/payments`) · BE xong (✅ 2026-10-29 (Đợt 1a): `GET /payments`, `/refunds`, `/remaining-invoices` theo phạm vi), FE ở Đợt 1c
 - [ ] **PAY-17** — Kiểm thử end-to-end Payment + tài liệu sandbox · P1 · 3 SP
 
 ### [Người B] — Luồng booking end-to-end, catalog & tìm kiếm (104 SP · `docs/WORK_PLAN_B_BOOKING.md`)
@@ -182,11 +182,11 @@ Mỗi task xong và đã kiểm chứng (DoD ở `docs/WORK_PLAN.md` §1.6) thì
 Chi tiết từng đợt, mã vấn đề đã đóng và cách kiểm tay: `docs/IMPLEMENTATION_PROGRESS.md`. Quyết định D15…D30 ở §8.1.
 
 - [x] **Đợt 0** — Gỡ rủi ro nhanh: bản nháp care report chỉ caregiver viết thấy (M-01); `GET /caregivers` trả thẻ công khai (M-02); Payment trả 403/400 đúng thay vì 500 (H-14); PaymentService vào stack Docker; FE gỡ trang cọc giả, trang mock Caregiver, nút lịch luôn lỗi, nhãn mẫu dashboard admin, ẩn menu chưa có BE, link chết — hoàn thành 2026-10-28.
-- [ ] **Đợt 1a** — Payment: hợp đồng Booking đang gọi (refund-quotes, refunds, complaint refunds, remaining invoices, outstanding, deposit-confirmations).
-- [ ] **Đợt 1b** — Payment: an toàn thu tiền (một phiên hiệu lực, hết hạn, querydr, outbox, hoàn trả trễ / trùng).
-- [ ] **Đợt 1c** — FE thanh toán thật.
-- [ ] **Đợt 2** — Bảo mật & phân quyền dữ liệu.
-- [ ] **Đợt 3** — Hậu mãi trên FE (care report, đánh giá, khiếu nại, thông báo, duyệt công khai).
-- [ ] **Đợt 4** — Vận hành & toàn vẹn BE.
-- [ ] **Đợt 5** — Màn hình quản trị còn thiếu.
-- [ ] **Đợt 6** — Hoàn thiện & dọn nợ.
+- [x] **Đợt 1a** — Payment: hợp đồng Booking đang gọi (refund-quotes, refunds + dispatcher, complaint refunds, remaining invoices + OVERDUE, outstanding, chính sách GLOBAL, nhật ký giao dịch; giữ `deposit-paid`) — hoàn thành 2026-10-29.
+- [x] **Đợt 1b** — Payment: an toàn thu tiền (một phiên hiệu lực, hết hạn, querydr, outbox, hoàn trả trễ / trùng) — hoàn thành 2026-10-30.
+- [x] **Đợt 1c** — FE thanh toán thật (checkout VNPay, kiểm return + poll, trang Thanh toán & hoàn tiền, gỡ demo) — hoàn thành 2026-10-30.
+- [x] **Đợt 2** — Bảo mật & phân quyền dữ liệu (C-04 lời mời người cùng quản lý, H-13 khóa service-token theo IP, H-12 kiểm khớp `center_id`; M-03 chưa làm) — hoàn thành 2026-10-30.
+- [x] **Đợt 3** — Hậu mãi trên FE (care report, ghi chú phiên, đánh giá, khiếu nại 3 cấp, chuông thông báo + SSE, 401 → refresh) — hoàn thành 2026-10-30.
+- [x] **Đợt 4** — Vận hành & toàn vẹn BE (D20 khiếu nại, D21 tự quyết báo vắng / tự đóng ca, D22 mốc check-in, outbox admin + `/admin/incidents`, cascade caregiver / trung tâm / người bệnh, trần hoàn khiếu nại, sửa loại & bão thông báo) — hoàn thành 2026-10-30.
+- [x] **Đợt 5** — Màn hình quản trị còn thiếu (admin Bookings + hủy thay nền tảng, hàng chờ xác minh, Customers thật; chứng chỉ 2 bước; manager trạng thái / ngày nghỉ caregiver, chọn người theo lịch trống; KPI toàn nền tảng) — hoàn thành 2026-10-30; còn kỹ năng caregiver, hồ sơ trung tâm phía manager.
+- [x] **Đợt 6** — Hoàn thiện & dọn nợ (catalog `@Version`, unique xóa mềm, L-03/06/07/08/09/10) — hoàn thành 2026-10-30; còn M-19 (N+1), L-05 (CSRF).
