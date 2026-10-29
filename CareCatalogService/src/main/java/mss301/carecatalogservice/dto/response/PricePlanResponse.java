@@ -20,4 +20,6 @@ public class PricePlanResponse {
     Integer durationMinutes;
     BigDecimal basePrice;
     Boolean isActive;
+
+    Long version;
 }

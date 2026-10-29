@@ -56,6 +56,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         checkDuration(request);
         PricePlan pricePlan = findActivePricePlan(id);
         checkCenterOwnership(pricePlan.getCenterOffering(), centerId);
+        checkVersion(request.getVersion(), pricePlan.getVersion());
 
         if (!pricePlan.getCenterOffering().getId().equals(request.getCenterOfferingId())) {
             CenterOffering newOffering = findActiveCenterOffering(request.getCenterOfferingId());
@@ -66,7 +67,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         if (request.getIsActive() != null) {
             pricePlan.setIsActive(request.getIsActive());
         }
-        PricePlan saved = pricePlanRepository.save(pricePlan);
+        PricePlan saved = pricePlanRepository.saveAndFlush(pricePlan);
         log.info("Updated price plan {} for center {}", id, centerId);
         PricePlanResponse pricePlanResponse = pricePlanMapper.toResponse(saved);
         return APIResponse.success("Cập nhật bảng giá thành công", pricePlanResponse);
@@ -121,5 +122,12 @@ public class PricePlanServiceImpl implements PricePlanService {
     private CenterOffering findActiveCenterOffering(UUID id) {
         return centerOfferingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_SERVICE_NOT_FOUND));
+    }
+
+    // M-04: form cũ (version khác bản đang lưu) không được ghi đè thay đổi của người khác.
+    private void checkVersion(Long expected, Long current) {
+        if (expected != null && !expected.equals(current)) {
+            throw new AppException(ErrorCode.CONCURRENT_UPDATE);
+        }
     }
 }

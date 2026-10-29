@@ -17,4 +17,6 @@ public class CatalogItemResponse {
     String description;
     String category;
     ServiceStatus status;
+
+    Long version;
 }

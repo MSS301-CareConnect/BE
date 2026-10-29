@@ -1,5 +1,6 @@
 package mss301.carecatalogservice.entity;
 
+import jakarta.persistence.Version;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -29,6 +30,11 @@ public abstract class BaseEntity {
 
     @Column(name = "deleted_at")
     Instant deletedAt;
+
+    // M-04: hai người cùng sửa một bản ghi → người sau nhận 409 thay vì ghi đè im lặng (vd mất cập nhật giá).
+    @Version
+    @Column(name = "version", nullable = false)
+    Long version;
 
     @PrePersist
     protected void onCreate() {

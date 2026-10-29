@@ -83,8 +83,9 @@ public class CatalogItemServiceImpl implements CatalogItemService {
     @Transactional
     public APIResponse<CatalogItemResponse> update(UUID id, CatalogItemRequest request) {
         CatalogItem item = findActiveCatalogItem(id);
+        checkVersion(request.getVersion(), item.getVersion());
         catalogItemMapper.updateEntityFromRequest(request, item);
-        CatalogItem saved = catalogItemRepository.save(item);
+        CatalogItem saved = catalogItemRepository.saveAndFlush(item);
         log.info("Updated catalog item: {}", id);
         CatalogItemResponse catalogItemResponse = catalogItemMapper.toResponse(saved);
         return APIResponse.success("Cập nhật dịch vụ chuẩn thành công", catalogItemResponse);
@@ -124,5 +125,12 @@ public class CatalogItemServiceImpl implements CatalogItemService {
     private CatalogItem findActiveCatalogItem(UUID id) {
         return catalogItemRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));
+    }
+
+    // M-04: form cũ (version khác bản đang lưu) không được ghi đè thay đổi của người khác.
+    private void checkVersion(Long expected, Long current) {
+        if (expected != null && !expected.equals(current)) {
+            throw new AppException(ErrorCode.CONCURRENT_UPDATE);
+        }
     }
 }

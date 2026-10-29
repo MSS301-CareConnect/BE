@@ -26,4 +26,7 @@ public class CenterOfferingRequest {
 
     @NotNull(message = "CARE_SERVICE_STATUS_REQUIRED")
     ServiceStatus status;
+
+    // M-04: version lúc người dùng mở form; có thì phải khớp bản đang lưu (khác → 409). Bỏ trống = client cũ, không kiểm.
+    Long version;
 }

@@ -37,4 +37,7 @@ public class PricePlanRequest {
     BigDecimal basePrice;
 
     Boolean isActive;
+
+    // M-04: version lúc người dùng mở form; có thì phải khớp bản đang lưu (khác → 409). Bỏ trống = client cũ, không kiểm.
+    Long version;
 }

@@ -1,5 +1,6 @@
 package mss301.carecatalogservice;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -90,6 +91,21 @@ class CatalogApiTests {
         mockMvc.perform(get("/api/v1/catalog-items").param("size", "101").with(user("ADMIN", null)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_PAGE.getCode()));
+    }
+
+    // M-04: sửa bằng form cũ (version khác) → 409, không ghi đè; version đúng → lưu và tăng version.
+    @Test
+    void staleCatalogUpdateIsRejectedWithConflict() throws Exception {
+        CatalogItem item = saveItem("kw" + UUID.randomUUID().toString().substring(0, 8), ServiceStatus.ACTIVE);
+        String body = "{\"name\":\"Tắm gội\",\"category\":\"PERSONAL_CARE\",\"status\":\"ACTIVE\",\"version\":%d}";
+        mockMvc.perform(put("/api/v1/catalog-items/" + item.getId()).with(user("ADMIN", null))
+                        .contentType(MediaType.APPLICATION_JSON).content(body.formatted(item.getVersion())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.version").value(item.getVersion() + 1));
+        mockMvc.perform(put("/api/v1/catalog-items/" + item.getId()).with(user("ADMIN", null))
+                        .contentType(MediaType.APPLICATION_JSON).content(body.formatted(item.getVersion())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CONCURRENT_UPDATE.getCode()));
     }
 
     @Test

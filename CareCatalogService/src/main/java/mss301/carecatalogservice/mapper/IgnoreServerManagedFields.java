@@ -17,5 +17,6 @@ import java.lang.annotation.Target;
 @Mapping(target = "createdAt", ignore = true)
 @Mapping(target = "updatedAt", ignore = true)
 @Mapping(target = "deletedAt", ignore = true)
+@Mapping(target = "version", ignore = true)
 public @interface IgnoreServerManagedFields {
 }

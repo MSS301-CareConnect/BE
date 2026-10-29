@@ -22,4 +22,6 @@ public class CenterOfferingResponse {
     ServiceStatus status;
     // Chỉ có khi duyệt dịch vụ của trung tâm (CAT-02); khách chỉ nhận gói đang active.
     List<PricePlanResponse> pricePlans;
+
+    Long version;
 }

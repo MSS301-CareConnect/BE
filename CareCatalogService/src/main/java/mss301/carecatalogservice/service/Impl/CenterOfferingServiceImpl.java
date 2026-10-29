@@ -150,6 +150,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     public APIResponse<CenterOfferingResponse> update(UUID centerId, UUID id, CenterOfferingRequest request) {
         CenterOffering offering = findActiveOffering(id);
         checkCenterOwnership(offering, centerId);
+        checkVersion(request.getVersion(), offering.getVersion());
         if (!offering.getCatalogItem().getId().equals(request.getCatalogItemId())) {
             CatalogItem newCatalogItem = findActiveCatalogItem(request.getCatalogItemId());
             if (centerOfferingRepository.existsByCenterIdAndCatalogItemIdAndDeletedAtIsNull(centerId, newCatalogItem.getId())) {
@@ -162,7 +163,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
             checkCatalogItemActive(offering.getCatalogItem());
         }
         centerOfferingMapper.updateEntityFromRequest(request, offering);
-        CenterOffering saved = centerOfferingRepository.save(offering);
+        CenterOffering saved = centerOfferingRepository.saveAndFlush(offering);
         log.info("Updated center offering {} for center {}", id, centerId);
         CenterOfferingResponse centerOfferingResponse = centerOfferingMapper.toResponse(saved);
         return APIResponse.success("Cập nhật dịch vụ trung tâm thành công", centerOfferingResponse);
@@ -253,5 +254,12 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     private CatalogItem findActiveCatalogItem(UUID id) {
         return catalogItemRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));
+    }
+
+    // M-04: form cũ (version khác bản đang lưu) không được ghi đè thay đổi của người khác.
+    private void checkVersion(Long expected, Long current) {
+        if (expected != null && !expected.equals(current)) {
+            throw new AppException(ErrorCode.CONCURRENT_UPDATE);
+        }
     }
 }

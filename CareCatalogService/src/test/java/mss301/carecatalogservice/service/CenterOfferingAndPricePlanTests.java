@@ -93,7 +93,7 @@ class CenterOfferingAndPricePlanTests {
                 .status(ServiceStatus.ACTIVE).build();
         offering.setId(offeringId);
         when(centerOfferingRepository.findByIdAndDeletedAtIsNull(offeringId)).thenReturn(Optional.of(offering));
-        when(centerOfferingRepository.save(any(CenterOffering.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(centerOfferingRepository.saveAndFlush(any(CenterOffering.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         assertThatThrownBy(() -> centerOfferingService.update(centerId, offeringId, CenterOfferingRequest.builder()
                 .catalogItemId(catalogItemId).status(ServiceStatus.ACTIVE).build()))
@@ -118,6 +118,7 @@ class CenterOfferingAndPricePlanTests {
         UUID planId = UUID.randomUUID();
         inactivePlan.setId(planId);
         when(pricePlanRepository.findByIdAndDeletedAtIsNull(planId)).thenReturn(Optional.of(inactivePlan));
+        when(pricePlanRepository.saveAndFlush(any(PricePlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
         APIResponse<PricePlanResponse> updated = pricePlanService.update(centerId, planId, planRequest(PricingUnit.DAY, 480, null));
         assertThat(updated.getResult().getIsActive()).isFalse();
         assertThat(updated.getResult().getPlanName()).isEqualTo("Gói");

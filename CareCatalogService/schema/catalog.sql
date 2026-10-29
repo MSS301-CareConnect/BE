@@ -16,7 +16,9 @@ CREATE TABLE care_services (
     status VARCHAR(50) NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    -- M-04: khóa lạc quan (@Version).
+    version BIGINT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_care_services_status ON care_services (status) WHERE deleted_at IS NULL;
@@ -31,7 +33,9 @@ CREATE TABLE center_services (
     status VARCHAR(50) NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    -- M-04: khóa lạc quan (@Version).
+    version BIGINT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_center_services_center ON center_services (center_id) WHERE deleted_at IS NULL;
@@ -53,6 +57,7 @@ CREATE TABLE price_plans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,
+    version BIGINT NOT NULL DEFAULT 0,
     -- Đơn giá theo giờ luôn trên 60 phút (CAT-01); DAY / SHIFT là thời lượng chuẩn của đơn vị.
     CONSTRAINT ck_price_plans_hour_duration CHECK (pricing_unit <> 'HOUR' OR duration_minutes = 60)
 );
