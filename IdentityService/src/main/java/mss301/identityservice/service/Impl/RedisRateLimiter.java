@@ -70,12 +70,12 @@ public class RedisRateLimiter implements RateLimiter {
     }
 
     @Override
-    public void checkServiceTokenRateLimit(String clientId) {
-        String key = buildServiceTokenKey(clientId);
+    public void checkServiceTokenRateLimit(String clientId, String ip) {
+        String key = buildServiceTokenKey(clientId, ip);
         try {
             String value = stringRedisTemplate.opsForValue().get(key);
             if (value != null && Integer.parseInt(value) >= MAX_LOGIN_ATTEMPTS) {
-                log.warn("Service token rate limit exceeded for clientId={}", clientId);
+                log.warn("Service token rate limit exceeded for clientId={} from {}", clientId, ip);
                 throw new AppException(ErrorCode.LOGIN_ATTEMPTS_EXCEEDED);
             }
         } catch (DataAccessException e) {
@@ -85,8 +85,8 @@ public class RedisRateLimiter implements RateLimiter {
     }
 
     @Override
-    public void recordServiceTokenFailure(String clientId) {
-        String key = buildServiceTokenKey(clientId);
+    public void recordServiceTokenFailure(String clientId, String ip) {
+        String key = buildServiceTokenKey(clientId, ip);
         try {
             Long count = stringRedisTemplate.opsForValue().increment(key);
             if (count != null && count == 1) {
@@ -99,17 +99,17 @@ public class RedisRateLimiter implements RateLimiter {
     }
 
     @Override
-    public void resetServiceTokenAttempts(String clientId) {
+    public void resetServiceTokenAttempts(String clientId, String ip) {
         try {
-            stringRedisTemplate.delete(buildServiceTokenKey(clientId));
+            stringRedisTemplate.delete(buildServiceTokenKey(clientId, ip));
         } catch (DataAccessException e) {
             log.error("Redis service token rate limit reset failed", e);
             throw new AppException(ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE);
         }
     }
 
-    private String buildServiceTokenKey(String clientId) {
-        return RedisKeys.RATE_LIMIT_SERVICE_TOKEN + sha256Hex(clientId.trim().toLowerCase());
+    private String buildServiceTokenKey(String clientId, String ip) {
+        return RedisKeys.RATE_LIMIT_SERVICE_TOKEN + sha256Hex(clientId.trim().toLowerCase() + ":" + ip);
     }
 
     private String rateLimitKey(String email, String ip) {

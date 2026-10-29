@@ -1,5 +1,6 @@
 package mss301.identityservice.service.Impl;
 
+import mss301.identityservice.security.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AccessLevel;
@@ -67,6 +68,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     RateLimiter rateLimiter;
     JwtService jwtService;
     IdentityProperties identityProperties;
+    ClientIpResolver clientIpResolver;
     TokenTransport tokenTransport;
     AuthenticationMapper authenticationMapper;
 
@@ -308,16 +310,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     }
 
     private String extractIp(HttpServletRequest request) {
-        if (request == null) {
-            return "unknown";
-        }
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (identityProperties.getTrustedProxies().contains(request.getRemoteAddr())
-                && forwarded != null && !forwarded.isBlank()) {
-            String[] addresses = forwarded.split(",");
-            return addresses[addresses.length - 1].trim();
-        }
-        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "unknown";
+        return clientIpResolver.resolve(request);
     }
 
     // Đăng xuất mọi phiên làm giảm quyền cả tài khoản (endpoint public) → chỉ nhận refresh còn trên Redis hoặc

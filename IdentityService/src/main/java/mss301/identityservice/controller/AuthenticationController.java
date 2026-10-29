@@ -131,8 +131,9 @@ public class AuthenticationController {
 
     @PostMapping("/service-token")
     @SecurityRequirements({})
-    public APIResponse<ServiceTokenResponse> issueServiceToken(@Valid @RequestBody ServiceTokenRequest request) {
-        return serviceClientService.issueToken(request);
+    public APIResponse<ServiceTokenResponse> issueServiceToken(@Valid @RequestBody ServiceTokenRequest request,
+                                                               HttpServletRequest httpServletRequest) {
+        return serviceClientService.issueToken(request, httpServletRequest);
     }
 
     // ===== Deprecated Endpoints (Backward Compatibility) =====

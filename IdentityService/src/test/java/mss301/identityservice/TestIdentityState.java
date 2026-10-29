@@ -294,20 +294,20 @@ public class TestIdentityState {
         }
 
         @Override
-        public synchronized void checkServiceTokenRateLimit(String clientId) {
-            if (attempts.getOrDefault("client:" + clientId, 0) >= 5) {
+        public synchronized void checkServiceTokenRateLimit(String clientId, String ip) {
+            if (attempts.getOrDefault("client:" + clientId + ":" + ip, 0) >= 5) {
                 throw new AppException(ErrorCode.LOGIN_ATTEMPTS_EXCEEDED);
             }
         }
 
         @Override
-        public synchronized void recordServiceTokenFailure(String clientId) {
-            attempts.merge("client:" + clientId, 1, Integer::sum);
+        public synchronized void recordServiceTokenFailure(String clientId, String ip) {
+            attempts.merge("client:" + clientId + ":" + ip, 1, Integer::sum);
         }
 
         @Override
-        public synchronized void resetServiceTokenAttempts(String clientId) {
-            attempts.remove("client:" + clientId);
+        public synchronized void resetServiceTokenAttempts(String clientId, String ip) {
+            attempts.remove("client:" + clientId + ":" + ip);
         }
     }
 }

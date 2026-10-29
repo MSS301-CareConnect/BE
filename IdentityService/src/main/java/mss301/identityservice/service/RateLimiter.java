@@ -7,9 +7,10 @@ public interface RateLimiter {
 
     void resetLoginAttempts(String email, String ip);
 
-    void checkServiceTokenRateLimit(String clientId);
+    // H-13: đếm theo (clientId, IP) — người ngoài sai secret chỉ khóa chính IP của họ, không khóa client của service.
+    void checkServiceTokenRateLimit(String clientId, String ip);
 
-    void recordServiceTokenFailure(String clientId);
+    void recordServiceTokenFailure(String clientId, String ip);
 
-    void resetServiceTokenAttempts(String clientId);
+    void resetServiceTokenAttempts(String clientId, String ip);
 }

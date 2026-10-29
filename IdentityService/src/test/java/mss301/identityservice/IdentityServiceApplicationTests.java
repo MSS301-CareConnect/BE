@@ -162,6 +162,25 @@ class IdentityServiceApplicationTests {
                 .andExpect(status().isTooManyRequests());
     }
 
+    // H-13: kẻ tấn công đoán sai secret từ IP khác không khóa được client của service thật.
+    @Test void serviceTokenLockoutIsPerIpSoOutsidersCannotBlockAService() throws Exception {
+        for (int i=0;i<6;i++) {
+            mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })
+                            .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","guess"+i))))
+                    .andExpect(status().is4xxClientError());
+        }
+        mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })
+                        .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isTooManyRequests());
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isOk());
+        // X-Forwarded-For chỉ được tin từ proxy tin cậy: client ngoài không giả IP của gateway để khóa hộ.
+        mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.10"); return request; })
+                        .header("X-Forwarded-For","127.0.0.1")
+                        .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","guess"))))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test void serviceTokenIsNotAUser() throws Exception {
         String token=serviceToken("booking",SERVICE_SECRET);
         int status=mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+token)).andReturn().getResponse().getStatus();

@@ -1,5 +1,7 @@
 package mss301.identityservice.service.Impl;
 
+import jakarta.servlet.http.HttpServletRequest;
+import mss301.identityservice.security.ClientIpResolver;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -39,18 +41,20 @@ public class ServiceClientServiceImpl implements ServiceClientService {
     JwtService jwtService;
     AuthenticationMapper authenticationMapper;
     IdentityProperties identityProperties;
+    ClientIpResolver clientIpResolver;
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<ServiceTokenResponse> issueToken(ServiceTokenRequest request) {
+    public APIResponse<ServiceTokenResponse> issueToken(ServiceTokenRequest request, HttpServletRequest httpServletRequest) {
         String clientId = request.getClientId().trim();
-        rateLimiter.checkServiceTokenRateLimit(clientId);
-        ServiceClient serviceClient = verifyCredentials(clientId, request.getClientSecret());
+        String ip = clientIpResolver.resolve(httpServletRequest);
+        rateLimiter.checkServiceTokenRateLimit(clientId, ip);
+        ServiceClient serviceClient = verifyCredentials(clientId, request.getClientSecret(), ip);
         if (!serviceClient.isActive()) {
             log.warn("Disabled service client {} requested a token", clientId);
             throw new AppException(ErrorCode.SERVICE_CLIENT_DISABLED);
         }
-        rateLimiter.resetServiceTokenAttempts(clientId);
+        rateLimiter.resetServiceTokenAttempts(clientId, ip);
         Jwt accessToken = jwtService.issueServiceAccess(serviceClient.getId(), serviceClient.getClientId());
         ServiceTokenResponse serviceTokenResponse = authenticationMapper.toServiceTokenResponse(
                 accessToken.getTokenValue(), identityProperties.getServiceTokenTtl().toSeconds());
@@ -65,13 +69,13 @@ public class ServiceClientServiceImpl implements ServiceClientService {
     }
 
     // Sai clientId hay sai secret đều trả cùng một lỗi.
-    private ServiceClient verifyCredentials(String clientId, String clientSecret) {
+    private ServiceClient verifyCredentials(String clientId, String clientSecret, String ip) {
         Optional<ServiceClient> serviceClient = serviceClientRepository.findByClientIdAndDeletedAtIsNull(clientId);
         String secretHash = serviceClient.map(ServiceClient::getSecretHash).orElse(DUMMY_SECRET_HASH);
         boolean matches = passwordEncoder.matches(clientSecret, secretHash);
         if (serviceClient.isEmpty() || !matches) {
-            rateLimiter.recordServiceTokenFailure(clientId);
-            log.warn("Invalid service client credentials for clientId={}", clientId);
+            rateLimiter.recordServiceTokenFailure(clientId, ip);
+            log.warn("Invalid service client credentials for clientId={} from {}", clientId, ip);
             throw new AppException(ErrorCode.INVALID_CLIENT_CREDENTIALS);
         }
         return serviceClient.get();
