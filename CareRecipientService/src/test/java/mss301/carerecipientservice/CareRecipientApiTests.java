@@ -1,5 +1,7 @@
 package mss301.carerecipientservice;
 
+import mss301.carerecipientservice.repository.ManagerInvitationRepository;
+import org.springframework.transaction.support.TransactionTemplate;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import jakarta.servlet.http.Cookie;
 import mss301.carerecipientservice.exception.ErrorCode;
@@ -22,6 +24,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.sql.Connection;
+import java.time.Instant;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -103,6 +106,12 @@ class CareRecipientApiTests {
 
     @Autowired
     Resilience4JCircuitBreakerFactory circuitBreakerFactory;
+
+    @Autowired
+    ManagerInvitationRepository managerInvitationRepository;
+
+    @Autowired
+    TransactionTemplate transactionTemplate;
 
     UUID owner;
     UUID relative;
@@ -265,6 +274,33 @@ class CareRecipientApiTests {
                         .content("{\"relationshipType\":\"CHILD\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.FULLNAME_REQUIRED.getCode()));
+    }
+
+    // M-07: còn booking chưa kết thúc → không tạm ngưng / lưu trữ hồ sơ; BookingService lỗi → 503.
+    @Test
+    void recipientWithUnfinishedBookingsCannotBeSuspendedOrArchived() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        BOOKING.setUnfinishedBookings(recipientId, 2);
+        try {
+            mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/status").param("status", "INACTIVE")
+                            .header("Authorization", bearer(owner, "CUSTOMER")))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_HAS_ACTIVE_BOOKINGS.getCode()));
+            mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_HAS_ACTIVE_BOOKINGS.getCode()));
+            BOOKING.setFailing(true);
+            mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+                    .andExpect(status().isServiceUnavailable());
+        } finally {
+            BOOKING.setFailing(false);
+            BOOKING.setUnfinishedBookings(recipientId, 0);
+        }
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(jsonPath("$.result.profile.status").value("ACTIVE"));
+        mockMvc.perform(patch("/api/v1/care-recipients/" + recipientId + "/status").param("status", "INACTIVE")
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -446,7 +482,7 @@ class CareRecipientApiTests {
         // EDITOR không quản lý danh sách người thân và không lưu trữ hồ sơ.
         mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                         .header("Authorization", bearer(relative, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + uniqueEmail() + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -489,8 +525,8 @@ class CareRecipientApiTests {
         boolean anyOpen = circuitBreakerFactory.getCircuitBreakerRegistry().getAllCircuitBreakers().stream()
                 .anyMatch(circuitBreaker -> circuitBreaker.getState() == CircuitBreaker.State.OPEN);
         assertThat(anyOpen).isTrue();
-        // Thêm người thân cần XÁC MINH qua Identity → không đoán, trả 503.
-        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+        // Mời người thân cần tra Identity → không đoán, trả 503.
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + uniqueEmail() + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
@@ -498,28 +534,136 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.IDENTITY_UNAVAILABLE.getCode()));
     }
 
+    // C-04: lời mời trả cùng một hình dạng cho mọi email — không lộ tài khoản tồn tại / bị khóa / không phải khách,
+    // không có tên hay SĐT của người được mời; người không đúng email không chấp nhận được.
     @Test
-    void addManagerRequiresActiveCustomerAccount() throws Exception {
+    void invitationNeverRevealsWhetherTheEmailBelongsToAnAccount() throws Exception {
         UUID recipientId = createRecipient(owner);
         String lockedEmail = uniqueEmail();
         IDENTITY.addUser(lockedEmail, "Bị khóa", "LOCKED", Set.of("CUSTOMER"));
         String caregiverEmail = uniqueEmail();
         IDENTITY.addUser(caregiverEmail, "Caregiver", "ACTIVE", Set.of("CAREGIVER"));
-        for (String email : List.of(lockedEmail, caregiverEmail, uniqueEmail())) {
-            mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+        for (String email : List.of(lockedEmail, caregiverEmail, uniqueEmail(), relativeEmail)) {
+            mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                             .header("Authorization", bearer(owner, "CUSTOMER"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"" + email + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value(ErrorCode.MANAGER_USER_INVALID.getCode()));
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.status").value("PENDING"))
+                    .andExpect(jsonPath("$.result.email").value(email.toLowerCase(Locale.ROOT)))
+                    .andExpect(jsonPath("$.result.fullName").doesNotExist())
+                    .andExpect(jsonPath("$.result.phoneNumber").doesNotExist())
+                    .andExpect(jsonPath("$.result.userId").doesNotExist());
         }
-        addManager(recipientId, relativeEmail, "VIEWER");
-        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+        // Chưa chấp nhận → người thân chưa thấy hồ sơ, chủ hồ sơ chưa thấy người thân trong danh sách quản lý.
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/managers").header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(jsonPath("$.result.length()").value(1));
+        // Lời mời đang chờ cho cùng email → 409, không tạo trùng.
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + relativeEmail.toUpperCase(Locale.ROOT) + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
                 .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVITATION_EXISTED.getCode()));
+        // Người được mời thấy đúng một lời mời của mình; người khác không thấy và không chấp nhận được.
+        JsonNode mine = readResult(mockMvc.perform(get("/api/v1/care-recipients/invitations/me")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].recipientFullName").exists())
+                .andReturn());
+        String invitationId = mine.get(0).get("id").asString();
+        UUID stranger = IDENTITY.addUser(uniqueEmail(), "Người lạ", "ACTIVE", Set.of("CUSTOMER"));
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/accept")
+                        .header("Authorization", bearer(stranger, "CUSTOMER")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVITATION_NOT_FOUND.getCode()));
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/accept")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessLevel").value("VIEWER"));
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/accept")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVITATION_NOT_PENDING.getCode()));
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId).header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isOk());
+        // Đã là người quản lý → mời lại email đó báo đã quản lý.
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + relativeEmail + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.MANAGER_EXISTED.getCode()));
+        // Booking chỉ được báo cho người có tài khoản (người thân), không cho email lạ / bị khóa.
+        assertThat(BOOKING.notifications()).anyMatch(body -> body.contains(relative.toString())
+                && body.contains("RECIPIENT_INVITATION"));
+    }
+
+    @Test
+    void directManagerAddIsGone() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + relativeEmail + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void invitationCanBeDeclinedRevokedAndExpires() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        String invitationId = invite(recipientId, relativeEmail, "EDITOR");
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/decline")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/care-recipients/invitations/me").header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(jsonPath("$.result.length()").value(0));
+
+        String second = invite(recipientId, relativeEmail, "EDITOR");
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/invitations/" + second)
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + second + "/accept")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isConflict());
+
+        // Hết hạn sau 7 ngày (giả lập bằng cách lùi hạn trong DB).
+        String third = invite(recipientId, relativeEmail, "EDITOR");
+        transactionTemplate.executeWithoutResult(status -> managerInvitationRepository.findById(UUID.fromString(third))
+                .orElseThrow().setExpiresAt(Instant.now().minusSeconds(60)));
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + third + "/accept")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVITATION_EXPIRED.getCode()));
+        mockMvc.perform(get("/api/v1/care-recipients/" + recipientId + "/invitations").header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result[0].status").value("EXPIRED"))
+                .andExpect(jsonPath("$.result[?(@.status == 'DECLINED')]").exists())
+                .andExpect(jsonPath("$.result[?(@.status == 'REVOKED')]").exists());
+        // Hết hạn thì mời lại được.
+        invite(recipientId, relativeEmail, "EDITOR");
+    }
+
+    @Test
+    void onlyPrimaryOwnerInvitesOrRemovesOthers() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        UUID relativeManagerId = addManager(recipientId, relativeEmail, "OWNER");
+        // OWNER không phải quản lý chính: không mời, không gỡ người khác (D19).
+        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
+                        .header("Authorization", bearer(relative, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + uniqueEmail() + "\",\"relationshipType\":\"CHILD\",\"accessLevel\":\"VIEWER\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRIMARY_OWNER_REQUIRED.getCode()));
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + findManagerId(recipientId, owner))
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/care-recipients/" + recipientId + "/managers/" + relativeManagerId)
+                        .header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -809,12 +953,22 @@ class CareRecipientApiTests {
         return UUID.fromString(result.get("profile").get("id").asString());
     }
 
-    UUID addManager(UUID recipientId, String email, String accessLevel) throws Exception {
-        JsonNode result = readResult(mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+    String invite(UUID recipientId, String email, String accessLevel) throws Exception {
+        JsonNode result = readResult(mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                         .header("Authorization", bearer(owner, "CUSTOMER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "email", email, "relationshipType", "CHILD", "accessLevel", accessLevel))))
+                .andExpect(status().isOk())
+                .andReturn());
+        return result.get("id").asString();
+    }
+
+    // Người thân (relative) được mời rồi tự chấp nhận — cách duy nhất để trở thành người quản lý (C-04).
+    UUID addManager(UUID recipientId, String email, String accessLevel) throws Exception {
+        String invitationId = invite(recipientId, email, accessLevel);
+        JsonNode result = readResult(mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/accept")
+                        .header("Authorization", bearer(relative, "CUSTOMER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.primary").value(false))
                 .andExpect(jsonPath("$.result.profileAvailable").value(true))

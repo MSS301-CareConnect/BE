@@ -1,5 +1,15 @@
 package mss301.carerecipientservice.service.Impl;
 
+import mss301.carerecipientservice.client.BookingClient;
+import mss301.carerecipientservice.dto.response.ManagerInvitationResponse;
+import mss301.carerecipientservice.dto.response.MyInvitationResponse;
+import mss301.carerecipientservice.entity.ManagerInvitation;
+import mss301.carerecipientservice.enums.InvitationStatus;
+import mss301.carerecipientservice.repository.ManagerInvitationRepository;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Locale;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -52,6 +62,12 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
     IdentityUserService identityUserService;
     RecipientManagerMapper recipientManagerMapper;
     TransactionTemplate transactionTemplate;
+    ManagerInvitationRepository managerInvitationRepository;
+    BookingClient bookingClient;
+    Clock clock;
+
+    // D19: lời mời hết hạn sau 7 ngày.
+    static Duration INVITATION_TTL = Duration.ofDays(7);
 
     // Không @Transactional: đọc DB (transaction ngắn của repository) rồi mới gọi Identity.
     @Override
@@ -68,25 +84,103 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
     }
 
     @Override
-    public APIResponse<RecipientManagerResponse> create(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
+    @Transactional
+    public APIResponse<List<ManagerInvitationResponse>> listInvitations(UUID actorId, UUID recipientId) {
+        checkPrimaryOwner(recipientId, actorId);
+        List<ManagerInvitation> invitations = managerInvitationRepository.findAllByRecipient(recipientId);
+        expireOverdue(invitations);
+        List<ManagerInvitationResponse> invitationResponses = recipientManagerMapper.toInvitationResponseList(invitations);
+        return APIResponse.success("Lấy danh sách lời mời thành công", invitationResponses);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<MyInvitationResponse>> listMyInvitations(UUID actorId) {
+        List<ManagerInvitation> invitations = managerInvitationRepository.findOpenForInvitee(actorId,
+                InvitationStatus.PENDING, clock.instant());
+        List<MyInvitationResponse> invitationResponses = recipientManagerMapper.toMyInvitationResponseList(invitations);
+        return APIResponse.success("Lấy lời mời của bạn thành công", invitationResponses);
+    }
+
+    // Không @Transactional: tra Identity (mạng) trước, ghi bằng TransactionTemplate, báo Booking sau commit.
+    @Override
+    public APIResponse<ManagerInvitationResponse> invite(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
         // Kiểm quyền trước khi gọi Identity: người ngoài không dùng được API này để dò email.
-        recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.OWNER);
-        IdentityUserResponse user = identityUserService.getActiveCustomer(request.getEmail());
-        RecipientManager savedManager = transactionTemplate.execute(status -> {
+        checkPrimaryOwner(recipientId, actorId);
+        String email = request.getEmail().strip().toLowerCase(Locale.ROOT);
+        UUID inviteeUserId = findInviteeUserId(email);
+        ManagerInvitation invitation = transactionTemplate.execute(status -> {
             CareRecipient recipient = lockRecipient(recipientId);
             // Kiểm lại sau khi khóa: quyền của actor có thể vừa bị đổi trong lúc gọi Identity.
-            recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.OWNER);
-            if (recipientManagerRepository.existsByRecipientAndUser(recipientId, user.getId())) {
+            checkPrimaryOwner(recipientId, actorId);
+            recipientAccessService.checkActiveForWrite(recipientId);
+            if (inviteeUserId != null && recipientManagerRepository.existsByRecipientAndUser(recipientId, inviteeUserId)) {
                 throw new AppException(ErrorCode.MANAGER_EXISTED);
             }
-            RecipientManager manager = recipientManagerMapper.toRecipientManager(recipient, user.getId(),
-                    request.getRelationshipType(), request.getAccessLevel(), false, actorId);
-            return recipientManagerRepository.saveAndFlush(manager);
+            Instant now = clock.instant();
+            expireOverdue(managerInvitationRepository.findAllByRecipient(recipientId));
+            if (managerInvitationRepository.existsOpen(recipientId, email, InvitationStatus.PENDING, now)) {
+                throw new AppException(ErrorCode.INVITATION_EXISTED);
+            }
+            return managerInvitationRepository.saveAndFlush(recipientManagerMapper.toInvitation(recipient, email,
+                    inviteeUserId, request.getRelationshipType(), request.getAccessLevel(), InvitationStatus.PENDING,
+                    actorId, now.plus(INVITATION_TTL)));
         });
-        log.info("User {} added as {} of care recipient {} by user {}", user.getId(), request.getAccessLevel(),
-                recipientId, actorId);
-        RecipientManagerResponse managerResponse = recipientManagerMapper.toResponse(savedManager, user);
-        return APIResponse.success("Thêm người thân quản lý hồ sơ thành công", managerResponse);
+        log.info("Invitation {} to manage care recipient {} created by user {}", invitation.getId(), recipientId, actorId);
+        notifyInvitee(invitation);
+        ManagerInvitationResponse invitationResponse = recipientManagerMapper.toInvitationResponse(invitation);
+        return APIResponse.success("Đã gửi lời mời", invitationResponse);
+    }
+
+    @Override
+    public APIResponse<RecipientManagerResponse> acceptInvitation(UUID actorId, UUID invitationId) {
+        RecipientManager manager = transactionTemplate.execute(status -> {
+            UUID recipientId = managerInvitationRepository.findById(invitationId)
+                    .filter(found -> actorId.equals(found.getInviteeUserId()))
+                    .map(found -> found.getRecipient().getId())
+                    .orElseThrow(() -> new AppException(ErrorCode.INVITATION_NOT_FOUND));
+            // Khóa hồ sơ trước rồi lời mời — cùng thứ tự với invite / revoke để không deadlock.
+            CareRecipient recipient = lockRecipient(recipientId);
+            ManagerInvitation invitation = lockOpenInvitation(invitationId, actorId);
+            if (recipientManagerRepository.existsByRecipientAndUser(recipientId, actorId)) {
+                throw new AppException(ErrorCode.MANAGER_EXISTED);
+            }
+            invitation.setStatus(InvitationStatus.ACCEPTED);
+            invitation.setRespondedAt(clock.instant());
+            return recipientManagerRepository.saveAndFlush(recipientManagerMapper.toRecipientManager(recipient, actorId,
+                    invitation.getRelationshipType(), invitation.getAccessLevel(), false, invitation.getInvitedBy()));
+        });
+        log.info("User {} accepted invitation {} and now manages care recipient {}", actorId, invitationId,
+                manager.getRecipient().getId());
+        RecipientManagerResponse managerResponse = toResponseWithProfile(manager);
+        return APIResponse.success("Đã chấp nhận lời mời", managerResponse);
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> declineInvitation(UUID actorId, UUID invitationId) {
+        ManagerInvitation invitation = lockOpenInvitation(invitationId, actorId);
+        invitation.setStatus(InvitationStatus.DECLINED);
+        invitation.setRespondedAt(clock.instant());
+        log.info("User {} declined invitation {}", actorId, invitationId);
+        return APIResponse.success("Đã từ chối lời mời");
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> revokeInvitation(UUID actorId, UUID recipientId, UUID invitationId) {
+        checkPrimaryOwner(recipientId, actorId);
+        lockRecipient(recipientId);
+        ManagerInvitation invitation = managerInvitationRepository.findForUpdate(invitationId)
+                .filter(found -> found.getRecipient().getId().equals(recipientId))
+                .orElseThrow(() -> new AppException(ErrorCode.INVITATION_NOT_FOUND));
+        if (invitation.getStatus() != InvitationStatus.PENDING) {
+            throw new AppException(ErrorCode.INVITATION_NOT_PENDING);
+        }
+        invitation.setStatus(InvitationStatus.REVOKED);
+        invitation.setRespondedAt(clock.instant());
+        log.info("Invitation {} of care recipient {} revoked by user {}", invitationId, recipientId, actorId);
+        return APIResponse.success("Đã thu hồi lời mời");
     }
 
     @Override
@@ -145,8 +239,8 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         lockRecipient(recipientId);
         RecipientManager target = findManager(recipientId, id);
         boolean leavingSelf = target.getUserId().equals(actorId);
-        // Gỡ người khác cần OWNER; tự rời thì không.
-        if (!leavingSelf && actorMembership.getAccessLevel() != RecipientAccessLevel.OWNER) {
+        // D19: chỉ người quản lý chính gỡ người khác; ai cũng tự rời được.
+        if (!leavingSelf && !actorMembership.isPrimary()) {
             throw new AppException(ErrorCode.RECIPIENT_ACCESS_DENIED);
         }
         checkCanLoseOwnership(recipientId, target);
@@ -154,6 +248,62 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         log.info("Manager {} removed from care recipient {} by user {}", id, recipientId, actorId);
         String message = leavingSelf ? "Bạn đã rời khỏi hồ sơ" : "Đã gỡ người thân khỏi hồ sơ";
         return APIResponse.success(message);
+    }
+
+    // D19: chỉ người quản lý chính (luôn là OWNER) được mời / gỡ người thân.
+    private void checkPrimaryOwner(UUID recipientId, UUID actorId) {
+        RecipientManager membership = recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.OWNER);
+        if (!membership.isPrimary()) {
+            throw new AppException(ErrorCode.PRIMARY_OWNER_REQUIRED);
+        }
+    }
+
+    // Email không thuộc CUSTOMER đang hoạt động → lời mời vẫn tạo bình thường nhưng không ai nhận được (không dò email).
+    private UUID findInviteeUserId(String email) {
+        try {
+            return identityUserService.getActiveCustomer(email).getId();
+        } catch (AppException e) {
+            if (e.getErrorCode() == ErrorCode.MANAGER_USER_INVALID) {
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    private ManagerInvitation lockOpenInvitation(UUID invitationId, UUID actorId) {
+        ManagerInvitation invitation = managerInvitationRepository.findForUpdate(invitationId)
+                .filter(found -> actorId.equals(found.getInviteeUserId()))
+                .orElseThrow(() -> new AppException(ErrorCode.INVITATION_NOT_FOUND));
+        if (invitation.getStatus() != InvitationStatus.PENDING) {
+            throw new AppException(ErrorCode.INVITATION_NOT_PENDING);
+        }
+        if (!invitation.getExpiresAt().isAfter(clock.instant())) {
+            throw new AppException(ErrorCode.INVITATION_EXPIRED);
+        }
+        return invitation;
+    }
+
+    // Hết hạn tính lười khi đọc / mời lại (không cần job) — partial unique index chỉ chặn lời mời PENDING.
+    private void expireOverdue(List<ManagerInvitation> invitations) {
+        Instant now = clock.instant();
+        for (ManagerInvitation invitation : invitations) {
+            if (invitation.getStatus() == InvitationStatus.PENDING && !invitation.getExpiresAt().isAfter(now)) {
+                invitation.setStatus(InvitationStatus.EXPIRED);
+            }
+        }
+        managerInvitationRepository.flush();
+    }
+
+    // Best-effort sau commit: Booking lỗi chỉ mất thông báo, lời mời vẫn hiện trong "Lời mời của tôi".
+    private void notifyInvitee(ManagerInvitation invitation) {
+        if (invitation.getInviteeUserId() == null) {
+            return;
+        }
+        try {
+            bookingClient.createNotification(recipientManagerMapper.toInvitationNotification(invitation));
+        } catch (RuntimeException e) {
+            log.warn("Invitation {} notification failed ({})", invitation.getId(), e.getClass().getSimpleName());
+        }
     }
 
     // Quản lý chính phải chuyển quyền trước; OWNER cuối cùng không được mất quyền.

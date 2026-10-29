@@ -69,6 +69,12 @@ public enum ErrorCode {
     EMAIL_REQUIRED(2407, "Email không được để trống", HttpStatus.BAD_REQUEST),
     INVALID_EMAIL_FORMAT(2408, "Email không đúng định dạng", HttpStatus.BAD_REQUEST),
     MANAGER_UPDATE_EMPTY(2409, "Cần ít nhất một thay đổi (accessLevel hoặc relationshipType)", HttpStatus.BAD_REQUEST),
+    INVITATION_NOT_FOUND(2410, "Lời mời không tồn tại", HttpStatus.NOT_FOUND),
+    INVITATION_NOT_PENDING(2411, "Lời mời đã được xử lý", HttpStatus.CONFLICT),
+    INVITATION_EXPIRED(2412, "Lời mời đã hết hạn", HttpStatus.CONFLICT),
+    INVITATION_EXISTED(2413, "Đã có lời mời đang chờ cho email này", HttpStatus.CONFLICT),
+    PRIMARY_OWNER_REQUIRED(2414, "Chỉ người quản lý chính được mời hoặc gỡ người thân", HttpStatus.FORBIDDEN),
+    RECIPIENT_HAS_ACTIVE_BOOKINGS(2415, "Người bệnh còn lịch chăm sóc chưa kết thúc, hãy hủy hoặc chờ hoàn tất trước", HttpStatus.CONFLICT),
 
     // TÍCH HỢP IDENTITY
     IDENTITY_UNAVAILABLE(2500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),

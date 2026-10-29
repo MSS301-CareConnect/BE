@@ -14,6 +14,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Locale;
@@ -57,6 +58,13 @@ public class GlobalExceptionHandler {
         } catch (IllegalArgumentException | NullPointerException e) {
             return toResponse(ErrorCode.INVALID_KEY);
         }
+    }
+
+    // Sai method trên path có thật (vd POST /{id}/managers đã thay bằng /invitations, C-04) — 404 như path không tồn tại,
+    // không rơi xuống handler chung thành 500.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<APIResponse<Void>> handlingMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
+        return toResponse(ErrorCode.PATH_NOT_FOUND);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

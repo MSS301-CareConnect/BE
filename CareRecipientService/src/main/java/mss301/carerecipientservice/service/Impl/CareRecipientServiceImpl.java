@@ -1,5 +1,6 @@
 package mss301.carerecipientservice.service.Impl;
 
+import mss301.carerecipientservice.client.dto.RecipientActivityResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -16,6 +17,8 @@ import mss301.carerecipientservice.dto.request.ManagerCreateRequest;
 import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
 import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
 import mss301.carerecipientservice.dto.response.MedicationResponse;
+import mss301.carerecipientservice.dto.response.ManagerInvitationResponse;
+import mss301.carerecipientservice.dto.response.MyInvitationResponse;
 import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
 import mss301.carerecipientservice.dto.response.APIResponse;
 import mss301.carerecipientservice.dto.response.AccessCheckResponse;
@@ -169,32 +172,51 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Cập nhật hồ sơ người bệnh thành công", careRecipientResponse);
     }
 
+    // Không @Transactional: tạm ngưng phải hỏi BookingService (gọi mạng) TRƯỚC transaction ghi (M-07).
     @Override
-    @Transactional
     public APIResponse<CareRecipientResponse> updateStatus(UUID actorId, UUID id, RecipientStatus status) {
         if (status != RecipientStatus.ACTIVE && status != RecipientStatus.INACTIVE) {
             throw new AppException(ErrorCode.INVALID_STATUS);
         }
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.OWNER);
-        CareRecipient recipient = lockRecipient(id);
-        recipient.setStatus(status);
-        recipient.setUpdatedBy(actorId);
-        careRecipientRepository.flush();
+        if (status == RecipientStatus.INACTIVE) {
+            checkNoUnfinishedBookings(id);
+        }
+        CareRecipientResponse careRecipientResponse = transactionTemplate.execute(tx -> {
+            CareRecipient recipient = lockRecipient(id);
+            recipient.setStatus(status);
+            recipient.setUpdatedBy(actorId);
+            careRecipientRepository.flush();
+            return careRecipientMapper.toResponse(recipient);
+        });
         log.info("Care recipient {} status changed to {} by user {}", id, status, actorId);
-        CareRecipientResponse careRecipientResponse = careRecipientMapper.toResponse(recipient);
         return APIResponse.success("Cập nhật trạng thái hồ sơ thành công", careRecipientResponse);
     }
 
     @Override
-    @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id) {
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.OWNER);
-        CareRecipient recipient = lockRecipient(id);
-        recipient.setStatus(RecipientStatus.ARCHIVED);
-        recipient.setDeletedAt(Instant.now());
-        recipient.setUpdatedBy(actorId);
+        checkNoUnfinishedBookings(id);
+        transactionTemplate.executeWithoutResult(tx -> {
+            CareRecipient recipient = lockRecipient(id);
+            recipient.setStatus(RecipientStatus.ARCHIVED);
+            recipient.setDeletedAt(Instant.now());
+            recipient.setUpdatedBy(actorId);
+        });
         log.info("Care recipient {} archived by user {}", id, actorId);
         return APIResponse.success("Đã lưu trữ hồ sơ người bệnh");
+    }
+
+    // M-07: còn booking chưa kết thúc → không tạm ngưng / lưu trữ (caregiver vẫn cần hồ sơ). Booking lỗi → 503 (fail-closed).
+    // Khe hở: booking mới tạo giữa lúc kiểm và lúc ghi vẫn lọt — BookingService chặn đặt lịch cho hồ sơ không ACTIVE.
+    private void checkNoUnfinishedBookings(UUID id) {
+        BookingApiResponse<RecipientActivityResponse> response = bookingClient.getRecipientActivity(id);
+        if (response == null || response.getResult() == null) {
+            throw new AppException(ErrorCode.BOOKING_UNAVAILABLE);
+        }
+        if (response.getResult().getUnfinishedBookings() > 0) {
+            throw new AppException(ErrorCode.RECIPIENT_HAS_ACTIVE_BOOKINGS);
+        }
     }
 
     // ===== Inter-Service =====
@@ -411,8 +433,34 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     }
 
     @Override
-    public APIResponse<RecipientManagerResponse> createManager(UUID actorId, UUID recipientId, ManagerCreateRequest request) {
-        return recipientManagerService.create(actorId, recipientId, request);
+    public APIResponse<List<ManagerInvitationResponse>> listInvitations(UUID actorId, UUID recipientId) {
+        return recipientManagerService.listInvitations(actorId, recipientId);
+    }
+
+    @Override
+    public APIResponse<List<MyInvitationResponse>> listMyInvitations(UUID actorId) {
+        return recipientManagerService.listMyInvitations(actorId);
+    }
+
+    @Override
+    public APIResponse<ManagerInvitationResponse> inviteManager(UUID actorId, UUID recipientId,
+                                                                ManagerCreateRequest request) {
+        return recipientManagerService.invite(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<RecipientManagerResponse> acceptInvitation(UUID actorId, UUID invitationId) {
+        return recipientManagerService.acceptInvitation(actorId, invitationId);
+    }
+
+    @Override
+    public APIResponse<Void> declineInvitation(UUID actorId, UUID invitationId) {
+        return recipientManagerService.declineInvitation(actorId, invitationId);
+    }
+
+    @Override
+    public APIResponse<Void> revokeInvitation(UUID actorId, UUID recipientId, UUID invitationId) {
+        return recipientManagerService.revokeInvitation(actorId, recipientId, invitationId);
     }
 
     @Override

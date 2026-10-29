@@ -63,7 +63,17 @@ public interface CareRecipientService {
     // ===== Recipient Manager =====
     APIResponse<List<RecipientManagerResponse>> listManagers(UUID actorId, UUID recipientId);
 
-    APIResponse<RecipientManagerResponse> createManager(UUID actorId, UUID recipientId, ManagerCreateRequest request);
+    APIResponse<List<ManagerInvitationResponse>> listInvitations(UUID actorId, UUID recipientId);
+
+    APIResponse<List<MyInvitationResponse>> listMyInvitations(UUID actorId);
+
+    APIResponse<ManagerInvitationResponse> inviteManager(UUID actorId, UUID recipientId, ManagerCreateRequest request);
+
+    APIResponse<RecipientManagerResponse> acceptInvitation(UUID actorId, UUID invitationId);
+
+    APIResponse<Void> declineInvitation(UUID actorId, UUID invitationId);
+
+    APIResponse<Void> revokeInvitation(UUID actorId, UUID recipientId, UUID invitationId);
 
     APIResponse<RecipientManagerResponse> updateManager(UUID actorId, UUID recipientId, UUID managerId, ManagerUpdateRequest request);
 

@@ -14,6 +14,8 @@ import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
 import mss301.carerecipientservice.dto.response.MedicationResponse;
 import mss301.carerecipientservice.dto.response.PageResponse;
+import mss301.carerecipientservice.dto.response.ManagerInvitationResponse;
+import mss301.carerecipientservice.dto.response.MyInvitationResponse;
 import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
 import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
@@ -127,6 +129,21 @@ public class CareRecipientController {
         return careRecipientService.listManagers(actorId, recipientId);
     }
 
+    // Lời mời gửi tới chính người gọi (C-04). Path literal, không trùng /{id}.
+    @GetMapping("/invitations/me")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<List<MyInvitationResponse>> listMyInvitations(@CurrentUserId UUID actorId) {
+        return careRecipientService.listMyInvitations(actorId);
+    }
+
+    @GetMapping("/{recipientId}/invitations")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<List<ManagerInvitationResponse>> listInvitations(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId) {
+        return careRecipientService.listInvitations(actorId, recipientId);
+    }
+
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
     @PostMapping
@@ -161,13 +178,30 @@ public class CareRecipientController {
         return careRecipientService.createEmergencyContact(actorId, recipientId, request);
     }
 
-    @PostMapping("/{recipientId}/managers")
+    // C-04: thay POST /{recipientId}/managers (thêm thẳng, lộ tên / SĐT người được thêm) bằng lời mời phải chấp nhận.
+    @PostMapping("/{recipientId}/invitations")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public APIResponse<RecipientManagerResponse> createManager(
+    public APIResponse<ManagerInvitationResponse> inviteManager(
             @CurrentUserId UUID actorId,
             @PathVariable UUID recipientId,
             @Valid @RequestBody ManagerCreateRequest request) {
-        return careRecipientService.createManager(actorId, recipientId, request);
+        return careRecipientService.inviteManager(actorId, recipientId, request);
+    }
+
+    @PostMapping("/invitations/{invitationId}/accept")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<RecipientManagerResponse> acceptInvitation(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID invitationId) {
+        return careRecipientService.acceptInvitation(actorId, invitationId);
+    }
+
+    @PostMapping("/invitations/{invitationId}/decline")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<Void> declineInvitation(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID invitationId) {
+        return careRecipientService.declineInvitation(actorId, invitationId);
     }
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
@@ -274,6 +308,15 @@ public class CareRecipientController {
             @PathVariable UUID recipientId,
             @PathVariable UUID contactId) {
         return careRecipientService.deleteEmergencyContact(actorId, recipientId, contactId);
+    }
+
+    @DeleteMapping("/{recipientId}/invitations/{invitationId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<Void> revokeInvitation(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId,
+            @PathVariable UUID invitationId) {
+        return careRecipientService.revokeInvitation(actorId, recipientId, invitationId);
     }
 
     @DeleteMapping("/{recipientId}/managers/{managerId}")

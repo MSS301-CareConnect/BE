@@ -1,5 +1,8 @@
 package mss301.carerecipientservice.service;
 
+import mss301.carerecipientservice.client.BookingClient;
+import mss301.carerecipientservice.repository.ManagerInvitationRepository;
+import java.time.Clock;
 import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
 import mss301.carerecipientservice.entity.CareRecipient;
 import mss301.carerecipientservice.entity.RecipientManager;
@@ -46,7 +49,8 @@ class RecipientAccessRulesTests {
     TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
     RecipientAccessService recipientAccessService = new RecipientAccessServiceImpl(recipientManagerRepository, careRecipientRepository);
     RecipientManagerServiceImpl recipientManagerService = new RecipientManagerServiceImpl(recipientManagerRepository,
-            careRecipientRepository, recipientAccessService, identityUserService, recipientManagerMapper, transactionTemplate);
+            careRecipientRepository, recipientAccessService, identityUserService, recipientManagerMapper, transactionTemplate,
+            mock(ManagerInvitationRepository.class), mock(BookingClient.class), Clock.systemUTC());
 
     @BeforeEach
     void setUp() {

@@ -339,9 +339,16 @@ class CareRecipientInterServiceEndpointsTests {
         String body = """
                 {"email":"%s","relationshipType":"CHILD","accessLevel":"%s"}
                 """.formatted(email, accessLevel);
-        mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/managers")
+        // C-04: người thân chỉ trở thành người quản lý khi tự chấp nhận lời mời.
+        MvcResult invitation = mockMvc.perform(post("/api/v1/care-recipients/" + recipientId + "/invitations")
                         .header("Authorization", callerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andReturn();
+        String invitationId = objectMapper.readTree(invitation.getResponse().getContentAsString())
+                .get("result").get("id").asString();
+        mockMvc.perform(post("/api/v1/care-recipients/invitations/" + invitationId + "/accept")
+                        .header("Authorization", "Bearer " + IDENTITY.accessToken(userId, "CUSTOMER")))
                 .andExpect(status().isOk());
         return userId;
     }

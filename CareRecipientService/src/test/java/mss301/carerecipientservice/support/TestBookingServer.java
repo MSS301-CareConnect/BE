@@ -11,7 +11,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,6 +27,8 @@ public final class TestBookingServer {
 
     private final Set<String> assignments = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean failing = new AtomicBoolean(false);
+    private final List<String> notifications = new CopyOnWriteArrayList<>();
+    private final Map<String, Long> unfinished = new ConcurrentHashMap<>();
     private final AtomicInteger rejectedUserTokens = new AtomicInteger();
     private final HttpServer server;
 
@@ -35,6 +39,8 @@ public final class TestBookingServer {
             throw new ExceptionInInitializerError(e);
         }
         server.createContext("/api/v1/bookings/caregiver-access", this::handleCaregiverAccess);
+        server.createContext("/api/v1/notifications", this::handleNotification);
+        server.createContext("/api/v1/bookings/recipient-activity", this::handleRecipientActivity);
         server.start();
     }
 
@@ -88,6 +94,41 @@ public final class TestBookingServer {
         boolean allowed = assignments.contains(caregiverUserId + ":" + recipientId);
         write(exchange, 200, "{\"code\":200,\"message\":\"OK\",\"result\":{\"caregiverUserId\":\"%s\",\"recipientId\":\"%s\",\"allowed\":%s}}"
                 .formatted(caregiverUserId, recipientId, allowed));
+    }
+
+    // POST /api/v1/notifications (token SERVICE) — ghi lại body để test kiểm người được mời nhận thông báo.
+    private void handleNotification(HttpExchange exchange) throws IOException {
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !TestIdentityServer.get().isServiceToken(authHeader.substring("Bearer ".length()))) {
+            write(exchange, 403, "{\"code\":403}");
+            return;
+        }
+        notifications.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        write(exchange, 200, "{\"code\":200,\"message\":\"OK\",\"result\":{}}");
+    }
+
+    // M-07: người bệnh còn booking chưa kết thúc (mặc định không có).
+    public void setUnfinishedBookings(UUID recipientId, long count) {
+        unfinished.put(recipientId.toString(), count);
+    }
+
+    private void handleRecipientActivity(HttpExchange exchange) throws IOException {
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !TestIdentityServer.get().isServiceToken(authHeader.substring("Bearer ".length()))) {
+            write(exchange, 403, "{\"code\":403}");
+            return;
+        }
+        if (failing.get()) {
+            write(exchange, 500, "{\"code\":9999,\"message\":\"Uncategorized error\"}");
+            return;
+        }
+        String recipientId = exchange.getRequestURI().getRawQuery().split("recipientId=", 2)[1].split("&")[0];
+        write(exchange, 200, "{\"code\":200,\"message\":\"OK\",\"result\":{\"recipientId\":\"%s\",\"unfinishedBookings\":%d}}"
+                .formatted(recipientId, unfinished.getOrDefault(recipientId, 0L)));
+    }
+
+    public List<String> notifications() {
+        return notifications;
     }
 
     private void write(HttpExchange exchange, int status, String body) throws IOException {

@@ -100,10 +100,13 @@ ADMIN → CUSTOMER → CAREGIVER.
 | `GET/PUT/DELETE .../emergency-contacts/{contactId}` | VIEWER / EDITOR / EDITOR | PUT: `primary` null = giữ nguyên |
 | `PATCH .../emergency-contacts/{contactId}/primary` | EDITOR | |
 | `GET /care-recipients/{id}/managers` | VIEWER | Kèm profile từ Identity (batch); Identity lỗi → `profileAvailable=false` |
-| `POST /care-recipients/{id}/managers` | OWNER | `{email, relationshipType, accessLevel}`; Identity lỗi → 503 `2500` |
+| `POST /care-recipients/{id}/invitations` | OWNER **chính** | C-04 / D19 (2026-10-30) — thay `POST .../managers` (đã gỡ). `{email, relationshipType, accessLevel}` → lời mời PENDING 7 ngày; cùng một phản hồi dù email có tài khoản hay không (không lộ tên / SĐT); có tài khoản CUSTOMER → thông báo in-app qua Booking; Identity lỗi → 503 `2500`; trùng → `2413` / `2402` |
+| `GET /care-recipients/{id}/invitations` · `DELETE .../invitations/{invitationId}` | OWNER chính | Danh sách (email + trạng thái) / thu hồi lời mời PENDING |
+| `GET /care-recipients/invitations/me` | CUSTOMER | Lời mời gửi tới chính mình (tên hồ sơ, quyền, hạn) |
+| `POST /care-recipients/invitations/{id}/accept` · `/decline` | Người được mời | Chấp nhận → thành người quản lý; hết hạn `2412`, đã xử lý `2411` |
 | `PATCH .../managers/{managerId}` | OWNER | `{accessLevel?, relationshipType?}`; bảo vệ quản lý chính / OWNER cuối |
 | `PATCH .../managers/{managerId}/primary` | OWNER | Người nhận phải là OWNER (`2404`) |
-| `DELETE .../managers/{managerId}` | OWNER (người khác) / chính mình | Tự rời: message "Bạn đã rời khỏi hồ sơ" |
+| `DELETE .../managers/{managerId}` | OWNER chính (người khác, D19) / chính mình | Tự rời: message "Bạn đã rời khỏi hồ sơ" |
 
 ### Phục vụ service khác (`/snapshot`, `/access`: chỉ `SERVICE` từ 2026-10-22 — token người dùng → 403; `/batch` vẫn `isAuthenticated()`, siết ở CR-01)
 
