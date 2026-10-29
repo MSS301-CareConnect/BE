@@ -9,6 +9,8 @@ public final class TokenClaims {
     public static final String API_AUDIENCE = "careconnect-api";
     public static final String ROLE_AUTHORITY_PREFIX = "ROLE_";
     public static final String BEARER_PREFIX = "Bearer ";
+    // Cookie access token do IdentityService đặt cho web (HttpOnly, Path=/).
+    public static final String ACCESS_COOKIE = "access_token";
 
     private TokenClaims() {
     }

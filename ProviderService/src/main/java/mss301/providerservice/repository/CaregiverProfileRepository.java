@@ -46,13 +46,13 @@ public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfi
               and c.center.centerStatus = :centerStatus
               and c.center.deletedAt is null
               and (:centerId is null or c.center.id = :centerId)
-              and (:keyword is null or lower(c.fullName) like lower(concat('%', :keyword, '%')))
+              and (:keywordPattern is null or lower(c.fullName) like :keywordPattern)
             """)
     Page<CaregiverProfile> catalog(@Param("verificationStatus") VerificationStatus verificationStatus,
                                    @Param("caregiverStatus") CaregiverStatus caregiverStatus,
                                    @Param("centerStatus") CenterStatus centerStatus,
                                    @Param("centerId") UUID centerId,
-                                   @Param("keyword") String keyword,
+                                   @Param("keywordPattern") String keywordPattern,
                                    Pageable pageable);
 
     /**

@@ -202,10 +202,12 @@ public class CaregiverServiceImpl implements CaregiverService {
     public APIResponse<PageResponse<CaregiverCardResponse>> list(UUID centerId, String keyword, int page, int size) {
         validatePage(page, size);
         String normalizedKeyword = normalize(keyword);
+        String keywordPattern = normalizedKeyword == null
+                ? null : "%" + normalizedKeyword.toLowerCase(Locale.ROOT) + "%";
         Sort sort = Sort.by(Sort.Direction.DESC, "ratingAverage")
                 .and(Sort.by(Sort.Direction.DESC, "experienceYears"));
         Page<UUID> idPage = transactionTemplate.execute(status -> caregiverProfileRepository.catalog(
-                        VerificationStatus.VERIFIED, CaregiverStatus.ACTIVE, CenterStatus.ACTIVE, centerId, normalizedKeyword,
+                        VerificationStatus.VERIFIED, CaregiverStatus.ACTIVE, CenterStatus.ACTIVE, centerId, keywordPattern,
                         PageRequest.of(page, size, sort))
                 .map(CaregiverProfile::getId));
         Map<UUID, List<String>> avatarUrls = providerMediaService.findImageUrls(
