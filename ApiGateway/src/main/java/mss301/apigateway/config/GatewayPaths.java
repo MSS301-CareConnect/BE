@@ -19,7 +19,9 @@ public final class GatewayPaths {
     public static final String[] BOOKING_ROUTES = {
             "/api/v1/bookings/**", "/api/v1/booking-occurrences/**",
             "/api/v1/notifications/**", "/api/v1/care-sessions/**", "/api/v1/care-reports/**",
-            "/api/v1/feedbacks/**", "/api/v1/complaints/**", "/api/v1/statistics/**"
+            "/api/v1/feedbacks/**", "/api/v1/complaints/**", "/api/v1/statistics/**",
+            // H-08: admin xử lý outbox FAILED.
+            "/api/v1/booking-outbox/**"
     };
 
     // SSE thông báo: route riêng không read timeout, không buffer (SseProxyHandler), xếp TRƯỚC route booking chung.
@@ -32,7 +34,7 @@ public final class GatewayPaths {
 
     public static final String[] PROVIDER_ROUTES = {
             "/api/v1/care-centers/**", "/api/v1/caregivers/**", "/api/v1/work-shifts/**",
-            "/api/v1/certificates/**", "/api/v1/provider-media/**"
+            "/api/v1/certificates/**", "/api/v1/provider-media/**", "/api/v1/provider-outbox/**"
     };
 
     public static final String[] CARE_CATALOG_ROUTES = {
