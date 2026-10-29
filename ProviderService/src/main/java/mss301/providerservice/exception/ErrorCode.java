@@ -20,6 +20,8 @@ public enum ErrorCode {
     INVALID_KEY(4001, "Invalid message key", HttpStatus.BAD_REQUEST),
     CSRF_INVALID(4002, "CSRF token bị thiếu hoặc không hợp lệ, hãy lấy token mới từ IdentityService", HttpStatus.FORBIDDEN),
     INVALID_PAGE(4003, "Phân trang không hợp lệ", HttpStatus.BAD_REQUEST),
+    OUTBOX_NOT_FOUND(4800, "Sự kiện outbox không tồn tại", HttpStatus.NOT_FOUND),
+    OUTBOX_NOT_FAILED(4801, "Chỉ xếp lại / bỏ qua được sự kiện outbox đang FAILED", HttpStatus.CONFLICT),
     SERVICE_UNAVAILABLE(4004, "Dịch vụ nhà cung cấp tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
     AUTH_DEPENDENCY_UNAVAILABLE(4005, "Dịch vụ xác thực tạm thời không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
     CONCURRENT_UPDATE(4006, "Dữ liệu vừa được thay đổi bởi người khác, vui lòng tải lại rồi thử lại", HttpStatus.CONFLICT),
@@ -110,6 +112,7 @@ public enum ErrorCode {
     IDENTITY_UNAVAILABLE(4500, "Dịch vụ tài khoản tạm thời không khả dụng, vui lòng thử lại", HttpStatus.SERVICE_UNAVAILABLE),
     IDENTITY_USER_NOT_FOUND(4501, "Tài khoản không tồn tại", HttpStatus.NOT_FOUND),
     IDENTITY_USER_INVALID(4502, "Tài khoản không hoạt động hoặc không có đúng vai trò yêu cầu", HttpStatus.CONFLICT),
+    IDENTITY_CENTER_MISMATCH(4503, "Tài khoản thuộc trung tâm khác. Hãy tạo tài khoản cho đúng trung tâm này trước", HttpStatus.CONFLICT),
 
     MEDIA_REQUIRED(4600, "Phải chọn ít nhất một file", HttpStatus.BAD_REQUEST),
     MEDIA_LIMIT_EXCEEDED(4601, "Mỗi lần chỉ được tải tối đa 10 file", HttpStatus.BAD_REQUEST),

@@ -35,7 +35,8 @@ public class CareCenter extends BaseEntity {
     @Column(name = "phone_number", length = 30)
     String phoneNumber;
 
-    @Column(name = "email", nullable = false, unique = true)
+    // Duy nhất giữa trung tâm chưa xóa mềm — partial unique index uk_care_centers_email_active (M-05).
+    @Column(name = "email", nullable = false)
     String email;
 
     @Column(name = "address", nullable = false, columnDefinition = "text")

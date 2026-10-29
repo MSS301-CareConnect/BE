@@ -1,5 +1,6 @@
 package mss301.providerservice.service.Impl;
 
+import mss301.providerservice.entity.CaregiverProfile;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -30,6 +31,8 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
 public class ProviderOutboxServiceImpl implements ProviderOutboxService {
+    static final String CAREGIVER_DEACTIVATED = "CAREGIVER_DEACTIVATED";
+
     ProviderOutboxRepository providerOutboxRepository;
     ProviderOutboxMapper providerOutboxMapper;
     CenterCascadeClient centerCascadeClient;
@@ -41,8 +44,20 @@ public class ProviderOutboxServiceImpl implements ProviderOutboxService {
     @Override
     public void enqueue(CareCenter center, String event, String reason) {
         CenterCascadeRequest request = providerOutboxMapper.toCascadeRequest(center, event, reason);
-        ProviderOutbox outbox = providerOutboxRepository.saveAndFlush(providerOutboxMapper.toProviderOutbox(center.getId(),
-                event, center.getVersion(), objectMapper.writeValueAsString(request), "PENDING", 0, clock.instant()));
+        save(center.getId(), event, center.getVersion(), request);
+    }
+
+    @Override
+    public void enqueueCaregiverDeactivated(CaregiverProfile caregiver, String reason) {
+        CenterCascadeRequest request = providerOutboxMapper.toCaregiverCascadeRequest(caregiver.getCenter().getId(),
+                caregiver.getId(), CAREGIVER_DEACTIVATED, reason);
+        // sequence_no chỉ cần duy nhất trong (center, event_type): mốc thời gian (ms) của lần đổi trạng thái.
+        save(caregiver.getCenter().getId(), CAREGIVER_DEACTIVATED, clock.millis(), request);
+    }
+
+    private void save(UUID centerId, String event, Long sequenceNo, CenterCascadeRequest request) {
+        ProviderOutbox outbox = providerOutboxRepository.saveAndFlush(providerOutboxMapper.toProviderOutbox(centerId,
+                event, sequenceNo, objectMapper.writeValueAsString(request), "PENDING", 0, clock.instant()));
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -67,8 +82,8 @@ public class ProviderOutboxServiceImpl implements ProviderOutboxService {
         ProviderOutbox claimed = write.execute(status -> {
             ProviderOutbox outbox = providerOutboxRepository.findForUpdate(id).orElse(null);
             if (outbox == null || !"PENDING".equals(outbox.getStatus()) || outbox.getNextAttemptAt().isAfter(clock.instant())
-                    || providerOutboxRepository.existsByCenterIdAndSequenceNoLessThanAndStatusNotAndEventTypeNotAndDeletedAtIsNull(
-                            outbox.getCenterId(), outbox.getSequenceNo(), "SENT", "ACTIVATE")) {
+                    || (!CAREGIVER_DEACTIVATED.equals(outbox.getEventType())
+                        && providerOutboxRepository.existsBlockingPredecessor(outbox.getCenterId(), outbox.getSequenceNo()))) {
                 return null;
             }
             outbox.setNextAttemptAt(clock.instant().plus(providerProperties.getOutbox().getLease()));
@@ -121,6 +136,9 @@ public class ProviderOutboxServiceImpl implements ProviderOutboxService {
             }
             case "RESUME" -> centerCascadeClient.updateAccounts(request.getCenterId(),
                     providerOutboxMapper.toAccountsStatusRequest("ACTIVE", request.getReason()));
+            case CAREGIVER_DEACTIVATED -> centerCascadeClient.cancelBookings(
+                    providerOutboxMapper.toCaregiverCancellationRequest(request.getCaregiverId(), CAREGIVER_DEACTIVATED,
+                            request.getReason()));
             case "ACTIVATE" -> {
                 if (request.getManagerUserId() != null) {
                     centerCascadeClient.notifyManager(providerOutboxMapper.toNotificationRequest(List.of(request.getManagerUserId()),

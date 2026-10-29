@@ -1,5 +1,6 @@
 package mss301.providerservice;
 
+import mss301.providerservice.client.dto.SystemCancellationRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -51,6 +52,7 @@ import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -1089,6 +1091,10 @@ class ProviderIntegrationTests {
                 RemoteApiResponse.<BookingCountResponse>builder().code(200).result(BookingCountResponse.builder().totalElements(1L).build()).build());
         mockMvc.perform(delete(path).param("version", "2").with(user(UUID.randomUUID(), "ADMIN")))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_HAS_ACTIVE_BOOKINGS.getCode()));
+        // M-06: ngưng hoạt động cũng bị chặn khi còn booking chưa kết thúc.
+        mockMvc.perform(patch(path + "/status").with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"INACTIVE\",\"reason\":\"Tạm nghỉ\",\"version\":2}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_HAS_ACTIVE_BOOKINGS.getCode()));
         assertThat(careCenterRepository.findById(center.getId()).orElseThrow().getDeletedAt()).isNull();
     }
 
@@ -1114,6 +1120,85 @@ class ProviderIntegrationTests {
         assertThat(outbox.getAttempts()).isEqualTo(1);
         providerOutboxService.dispatch(outbox.getId());
         verify(centerCascadeClient, times(1)).updateAccounts(eq(center.getId()), any());
+    }
+
+    // H-08: sự kiện FAILED chặn sự kiện sau của cùng trung tâm cho tới khi admin xếp lại hoặc bỏ qua.
+    @Test
+    void adminRequeuesOrSkipsFailedCascadeAndUnblocksLaterEvents() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        doThrow(new AppException(ErrorCode.REMOTE_COMMAND_REJECTED))
+                .when(centerCascadeClient).updateAccounts(eq(center.getId()), any());
+        mockMvc.perform(patch("/api/v1/care-centers/" + center.getId() + "/status")
+                        .with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SUSPENDED\",\"reason\":\"Kiểm tra\",\"version\":0}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/care-centers/" + center.getId() + "/status")
+                        .with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"ACTIVE\",\"reason\":\"Mở lại\",\"version\":1}"))
+                .andExpect(status().isOk());
+        List<ProviderOutbox> rows = providerOutboxRepository.findAll().stream()
+                .filter(item -> item.getCenterId().equals(center.getId()))
+                .sorted(java.util.Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
+        ProviderOutbox suspend = rows.getFirst();
+        ProviderOutbox resume = rows.getLast();
+        assertThat(suspend.getStatus()).isEqualTo("FAILED");
+        // RESUME bị chặn sau SUSPEND FAILED.
+        assertThat(resume.getStatus()).isEqualTo("PENDING");
+        assertThat(resume.getAttempts()).isZero();
+
+        mockMvc.perform(get("/api/v1/provider-outbox").param("status", "FAILED").with(user(UUID.randomUUID(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/provider-outbox").param("status", "FAILED").param("size", "100")
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[?(@.id == '" + suspend.getId() + "')]").isNotEmpty());
+        mockMvc.perform(post("/api/v1/provider-outbox/" + resume.getId() + "/requeue").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.OUTBOX_NOT_FAILED.getCode()));
+
+        // Admin khóa tài khoản tay rồi bỏ qua SUSPEND → RESUME được gửi.
+        mockMvc.perform(post("/api/v1/provider-outbox/" + suspend.getId() + "/skip").with(user(UUID.randomUUID(), "ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"note\":\"Đã khóa tay\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("SKIPPED"));
+        doNothing().when(centerCascadeClient).updateAccounts(eq(center.getId()), any());
+        providerOutboxService.dispatch(resume.getId());
+        assertThat(providerOutboxRepository.findById(resume.getId()).orElseThrow().getStatus()).isEqualTo("SENT");
+
+        // Xếp lại: FAILED → PENDING, đếm lại số lần thử.
+        ProviderOutbox failed = providerOutboxRepository.findById(suspend.getId()).orElseThrow();
+        failed.setStatus("FAILED");
+        providerOutboxRepository.save(failed);
+        mockMvc.perform(post("/api/v1/provider-outbox/" + suspend.getId() + "/requeue").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("PENDING"))
+                .andExpect(jsonPath("$.result.attempts").value(0));
+    }
+
+    // H-11: caregiver ACTIVE bị tạm khóa → Booking gắn cờ đổi người (system-cancellations CAREGIVER_DEACTIVATED) sau commit.
+    @Test
+    void suspendingAnActiveCaregiverFlagsTheirUpcomingVisitsInBooking() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+        mockMvc.perform(patch("/api/v1/caregivers/" + caregiver.getId() + "/status").with(user(managerId, "CENTER_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SUSPENDED\",\"version\":" + caregiver.getVersion() + "}"))
+                .andExpect(status().isOk());
+        ArgumentCaptor<SystemCancellationRequest> requests = ArgumentCaptor.forClass(SystemCancellationRequest.class);
+        verify(centerCascadeClient).cancelBookings(requests.capture());
+        assertThat(requests.getValue().getCaregiverId()).isEqualTo(caregiver.getId());
+        assertThat(requests.getValue().getCenterId()).isNull();
+        assertThat(requests.getValue().getReason()).isEqualTo("CAREGIVER_DEACTIVATED");
+        ProviderOutbox outbox = providerOutboxRepository.findAll().stream()
+                .filter(item -> item.getCenterId().equals(center.getId())).findFirst().orElseThrow();
+        assertThat(outbox.getEventType()).isEqualTo("CAREGIVER_DEACTIVATED");
+        assertThat(outbox.getStatus()).isEqualTo("SENT");
+
+        // SUSPENDED → INACTIVE: không còn ACTIVE trước đó → không cascade lần hai.
+        CaregiverProfile suspended = caregiverProfileRepository.findById(caregiver.getId()).orElseThrow();
+        mockMvc.perform(patch("/api/v1/caregivers/" + caregiver.getId() + "/status").with(user(managerId, "CENTER_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"INACTIVE\",\"version\":" + suspended.getVersion() + "}"))
+                .andExpect(status().isOk());
+        verify(centerCascadeClient, times(1)).cancelBookings(any());
     }
 
     // ===== helpers =====

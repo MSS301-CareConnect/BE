@@ -1,5 +1,6 @@
 package mss301.providerservice.service;
 
+import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.request.CaregiverCreateRequest;
 import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.entity.CaregiverProfile;
@@ -79,6 +80,8 @@ class CaregiverServiceFlowTests {
                 .experienceYears(3)
                 .build();
         runTransactionCallbacks();
+        when(identityAccountService.requireActiveRole(request.getUserId(), RoleCode.CAREGIVER))
+                .thenReturn(IdentityUserResponse.builder().id(request.getUserId()).centerId(centerId).build());
         when(careCenterRepository.findByIdAndDeletedAtIsNull(centerId)).thenReturn(Optional.of(center));
         when(caregiverProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -115,6 +118,24 @@ class CaregiverServiceFlowTests {
                 () -> caregiverService.create(UUID.randomUUID(), UUID.randomUUID(), request));
 
         assertEquals(ErrorCode.IDENTITY_USER_INVALID, error.getErrorCode());
+        verifyNoInteractions(transactionTemplate, careCenterRepository, caregiverProfileRepository);
+    }
+
+    // H-12: caregiver được tạo cho trung tâm khác ở Identity → không gắn vào trung tâm này.
+    @Test
+    void createRejectsAccountOfAnotherCenter() {
+        CaregiverCreateRequest request = CaregiverCreateRequest.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nguyễn An")
+                .experienceYears(3)
+                .build();
+        when(identityAccountService.requireActiveRole(request.getUserId(), RoleCode.CAREGIVER))
+                .thenReturn(IdentityUserResponse.builder().id(request.getUserId()).centerId(UUID.randomUUID()).build());
+
+        AppException error = assertThrows(AppException.class,
+                () -> caregiverService.create(UUID.randomUUID(), UUID.randomUUID(), request));
+
+        assertEquals(ErrorCode.IDENTITY_CENTER_MISMATCH, error.getErrorCode());
         verifyNoInteractions(transactionTemplate, careCenterRepository, caregiverProfileRepository);
     }
 

@@ -26,7 +26,6 @@ CREATE TABLE care_centers
     updated_at      timestamptz  NOT NULL,
     deleted_at      timestamptz,
 
-    CONSTRAINT uk_care_centers_email UNIQUE (email),
     CONSTRAINT care_centers_normalized_email
         CHECK (email = lower(btrim(email)))
 );
@@ -36,6 +35,10 @@ CREATE INDEX idx_care_centers_status
 
 CREATE INDEX idx_care_centers_name
     ON care_centers (lower(center_name)) WHERE deleted_at IS NULL;
+
+-- M-05: email chỉ duy nhất giữa các trung tâm chưa lưu trữ (trung tâm đã xóa mềm không giữ email).
+CREATE UNIQUE INDEX uk_care_centers_email_active
+    ON care_centers (email) WHERE deleted_at IS NULL;
 
 CREATE UNIQUE INDEX uk_care_centers_manager_active
     ON care_centers (manager_user_id) WHERE deleted_at IS NULL AND manager_user_id IS NOT NULL;
@@ -80,10 +83,12 @@ CREATE TABLE caregiver_profiles
 
     created_at          timestamptz   NOT NULL,
     updated_at          timestamptz   NOT NULL,
-    deleted_at          timestamptz,
-
-    CONSTRAINT uk_caregiver_profiles_user UNIQUE (user_id)
+    deleted_at          timestamptz
 );
+
+-- M-05: một hồ sơ đang hoạt động cho mỗi tài khoản; hồ sơ đã lưu trữ không chặn tạo lại.
+CREATE UNIQUE INDEX uk_caregiver_profiles_user_active
+    ON caregiver_profiles (user_id) WHERE deleted_at IS NULL;
 
 CREATE INDEX idx_caregiver_profiles_center
     ON caregiver_profiles (center_id) WHERE deleted_at IS NULL;
@@ -324,10 +329,10 @@ ALTER TABLE certificates ADD COLUMN center_verification_reason varchar(500);
 CREATE TABLE provider_outbox (
     id uuid PRIMARY KEY,
     center_id uuid NOT NULL,
-    event_type varchar(30) NOT NULL CHECK (event_type IN ('ACTIVATE', 'SUSPEND', 'RESUME')),
+    event_type varchar(30) NOT NULL CHECK (event_type IN ('ACTIVATE', 'SUSPEND', 'RESUME', 'CAREGIVER_DEACTIVATED')),
     sequence_no bigint NOT NULL,
     payload jsonb NOT NULL,
-    status varchar(20) NOT NULL CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
+    status varchar(20) NOT NULL CHECK (status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')),
     attempts integer NOT NULL,
     next_attempt_at timestamptz NOT NULL,
     last_error varchar(500),

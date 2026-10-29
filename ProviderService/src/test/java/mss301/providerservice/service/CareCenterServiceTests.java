@@ -1,5 +1,7 @@
 package mss301.providerservice.service;
 
+import mss301.providerservice.dto.request.CenterUpdateRequest;
+import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.client.BookingArchiveClient;
 import mss301.providerservice.client.dto.BookingCountResponse;
 import mss301.providerservice.client.dto.RemoteApiResponse;
@@ -109,6 +111,31 @@ class CareCenterServiceTests {
                 () -> careCenterService.create(UUID.randomUUID(), request));
 
         assertEquals(ErrorCode.IDENTITY_USER_INVALID, exception.getErrorCode());
+        verifyNoInteractions(transactionTemplate, careCenterRepository);
+    }
+
+    // H-12: tạo trung tâm không gán manager được (manager đã thuộc trung tâm khác ở Identity); cập nhật thì phải khớp.
+    @Test
+    void managerMustBelongToTheSameCenterInIdentity() {
+        UUID managerUserId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        CenterCreateRequest createRequest = CenterCreateRequest.builder()
+                .centerName("Trung tâm An Tâm")
+                .email("contact@antam.vn")
+                .address("Thành phố Hồ Chí Minh")
+                .managerUserId(managerUserId)
+                .build();
+        when(identityAccountService.requireActiveRole(managerUserId, RoleCode.CENTER_MANAGER))
+                .thenReturn(IdentityUserResponse.builder().id(managerUserId).centerId(UUID.randomUUID()).build());
+
+        AppException onCreate = assertThrows(AppException.class,
+                () -> careCenterService.create(UUID.randomUUID(), createRequest));
+        AppException onUpdate = assertThrows(AppException.class,
+                () -> careCenterService.update(UUID.randomUUID(), centerId,
+                        CenterUpdateRequest.builder().managerUserId(managerUserId).build()));
+
+        assertEquals(ErrorCode.IDENTITY_CENTER_MISMATCH, onCreate.getErrorCode());
+        assertEquals(ErrorCode.IDENTITY_CENTER_MISMATCH, onUpdate.getErrorCode());
         verifyNoInteractions(transactionTemplate, careCenterRepository);
     }
 

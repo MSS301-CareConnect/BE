@@ -1,5 +1,6 @@
 package mss301.providerservice.service.Impl;
 
+import mss301.providerservice.client.dto.IdentityUserResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -76,7 +77,8 @@ public class CareCenterServiceImpl implements CareCenterService {
      */
     @Override
     public APIResponse<CenterResponse> create(UUID actorId, CenterCreateRequest request) {
-        checkManagerAccount(request.getManagerUserId());
+        // Trung tâm chưa có id nên tài khoản manager (đã gắn một trung tâm ở Identity) không thể khớp — gán sau khi tạo.
+        checkManagerAccount(request.getManagerUserId(), null);
         CenterResponse response = transactionTemplate.execute(status -> createCenter(actorId, request));
         return APIResponse.success("Tạo trung tâm chăm sóc thành công", response);
     }
@@ -104,6 +106,12 @@ public class CareCenterServiceImpl implements CareCenterService {
     @Transactional(readOnly = true)
     public APIResponse<CenterResponse> get(UUID id) {
         CareCenter careCenter = findActiveCenter(id);
+        // L-07: khách chỉ xem được trung tâm đang hoạt động (giống /public/{id}); trung tâm chờ duyệt / khóa → 404.
+        if (careCenter.getCenterStatus() != CenterStatus.ACTIVE && providerAuthorization.hasRole(RoleCode.CUSTOMER)
+                && !providerAuthorization.isAdmin()
+                && !providerAuthorization.currentUserId().equals(careCenter.getManagerUserId())) {
+            throw new AppException(ErrorCode.CENTER_NOT_FOUND);
+        }
         CenterResponse response = careCenterMapper.toResponse(careCenter);
         if (!providerAuthorization.isAdmin() && !providerAuthorization.hasRole(RoleCode.SERVICE)
                 && !providerAuthorization.currentUserId().equals(careCenter.getManagerUserId())) {
@@ -175,7 +183,7 @@ public class CareCenterServiceImpl implements CareCenterService {
     /** Như create: kiểm manager ngoài transaction rồi mới ghi DB. */
     @Override
     public APIResponse<CenterResponse> update(UUID actorId, UUID id, CenterUpdateRequest request) {
-        checkManagerAccount(request.getManagerUserId());
+        checkManagerAccount(request.getManagerUserId(), id);
         CenterResponse response = transactionTemplate.execute(status -> updateCenter(actorId, id, request));
         return APIResponse.success("Cập nhật trung tâm chăm sóc thành công", response);
     }
@@ -188,9 +196,10 @@ public class CareCenterServiceImpl implements CareCenterService {
             if (snapshot.getManagerUserId() == null) {
                 throw new AppException(ErrorCode.CENTER_MANAGER_REQUIRED);
             }
-            checkManagerAccount(snapshot.getManagerUserId());
+            checkManagerAccount(snapshot.getManagerUserId(), id);
         }
-        if (request.getStatus() == CenterStatus.ARCHIVED) {
+        // M-06: ngưng hoạt động (INACTIVE) không hủy hộ booking như SUSPENDED → chỉ cho khi không còn booking chưa kết thúc.
+        if (request.getStatus() == CenterStatus.ARCHIVED || request.getStatus() == CenterStatus.INACTIVE) {
             checkNoActiveBookings(id);
         }
         CenterResponse response = transactionTemplate.execute(status -> changeStatus(actorId, id, request));
@@ -360,10 +369,15 @@ public class CareCenterServiceImpl implements CareCenterService {
         }
     }
 
-    // managerUserId là tùy chọn; có thì phải là tài khoản CENTER_MANAGER đang ACTIVE.
-    private void checkManagerAccount(UUID managerUserId) {
-        if (managerUserId != null) {
-            identityAccountService.requireActiveRole(managerUserId, RoleCode.CENTER_MANAGER);
+    // managerUserId là tùy chọn; có thì phải là tài khoản CENTER_MANAGER đang ACTIVE, thuộc ĐÚNG trung tâm này ở
+    // Identity (H-12: claim center_id của manager và care_centers.manager_user_id không được lệch nhau).
+    private void checkManagerAccount(UUID managerUserId, UUID centerId) {
+        if (managerUserId == null) {
+            return;
+        }
+        IdentityUserResponse manager = identityAccountService.requireActiveRole(managerUserId, RoleCode.CENTER_MANAGER);
+        if (centerId == null || !centerId.equals(manager.getCenterId())) {
+            throw new AppException(ErrorCode.IDENTITY_CENTER_MISMATCH);
         }
     }
 

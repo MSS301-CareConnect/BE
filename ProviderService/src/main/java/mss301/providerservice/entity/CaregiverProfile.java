@@ -25,7 +25,8 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 @AttributeOverride(name = "id", column = @Column(name = "caregiver_id"))
 public class CaregiverProfile extends BaseEntity {
-    @Column(name = "user_id", nullable = false, unique = true)
+    // Duy nhất giữa hồ sơ chưa xóa mềm — partial unique index uk_caregiver_profiles_user_active (M-05).
+    @Column(name = "user_id", nullable = false)
     UUID userId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

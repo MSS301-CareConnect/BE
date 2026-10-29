@@ -1,5 +1,7 @@
 package mss301.providerservice.service.Impl;
 
+import mss301.providerservice.service.ProviderOutboxService;
+import mss301.providerservice.client.dto.IdentityUserResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -120,6 +122,7 @@ public class CaregiverServiceImpl implements CaregiverService {
     BookingAvailabilityService bookingAvailabilityService;
     ProviderMediaService providerMediaService;
     Clock clock;
+    ProviderOutboxService providerOutboxService;
 
     /**
      * Không đặt @Transactional: kiểm tài khoản Identity là lời gọi mạng nên chạy TRƯỚC, ngoài transaction;
@@ -127,7 +130,11 @@ public class CaregiverServiceImpl implements CaregiverService {
      */
     @Override
     public APIResponse<CaregiverResponse> create(UUID actorId, UUID centerId, CaregiverCreateRequest request) {
-        identityAccountService.requireActiveRole(request.getUserId(), RoleCode.CAREGIVER);
+        IdentityUserResponse account = identityAccountService.requireActiveRole(request.getUserId(), RoleCode.CAREGIVER);
+        // H-12: tài khoản caregiver phải được tạo cho đúng trung tâm này (claim center_id) — không gắn chéo trung tâm.
+        if (!centerId.equals(account.getCenterId())) {
+            throw new AppException(ErrorCode.IDENTITY_CENTER_MISMATCH);
+        }
         CaregiverResponse caregiverResponse = transactionTemplate.execute(
                 status -> createProfile(actorId, centerId, request));
         return APIResponse.success("Tạo hồ sơ người chăm sóc thành công", caregiverResponse);
@@ -275,9 +282,11 @@ public class CaregiverServiceImpl implements CaregiverService {
         if (request.getStatus() == CaregiverStatus.ACTIVE && caregiver.getVerificationStatus() != VerificationStatus.VERIFIED) {
             throw new AppException(ErrorCode.CAREGIVER_NOT_VERIFIED);
         }
+        CaregiverStatus previous = caregiver.getCaregiverStatus();
         caregiver.setCaregiverStatus(request.getStatus());
         caregiver.setUpdatedBy(actorId);
         CaregiverResponse response = caregiverMapper.toResponse(caregiverProfileRepository.saveAndFlush(caregiver));
+        cascadeDeactivation(caregiver, previous, "Người chăm sóc chuyển sang " + request.getStatus());
         return APIResponse.success("Cập nhật trạng thái người chăm sóc thành công", response);
     }
 
@@ -297,6 +306,7 @@ public class CaregiverServiceImpl implements CaregiverService {
                 || caregiver.getCenter().getCenterStatus() != CenterStatus.ACTIVE) {
             throw new AppException(ErrorCode.CAREGIVER_INVALID_TRANSITION);
         }
+        CaregiverStatus previous = caregiver.getCaregiverStatus();
         caregiver.setVerificationStatus(request.getStatus());
         caregiver.setVerificationReason(normalize(request.getReason()));
         caregiver.setVerifiedBy(actorId);
@@ -305,6 +315,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         caregiver.setCaregiverStatus(request.getStatus() == VerificationStatus.VERIFIED
                 ? CaregiverStatus.ACTIVE : CaregiverStatus.INACTIVE);
         CaregiverProfile savedCaregiver = caregiverProfileRepository.save(caregiver);
+        cascadeDeactivation(savedCaregiver, previous, "Hồ sơ người chăm sóc bị từ chối xác minh");
         CaregiverResponse caregiverResponse = caregiverMapper.toResponse(savedCaregiver);
         return APIResponse.success("Xác minh hồ sơ người chăm sóc thành công", caregiverResponse);
     }
@@ -315,11 +326,21 @@ public class CaregiverServiceImpl implements CaregiverService {
         CaregiverProfile caregiver = findActiveCaregiver(caregiverId);
         providerAuthorization.requireCenterManagement(caregiver.getCenter(), actorId);
         checkVersion(caregiver, version);
+        CaregiverStatus previous = caregiver.getCaregiverStatus();
         caregiver.setCaregiverStatus(CaregiverStatus.ARCHIVED);
         caregiver.setDeletedAt(Instant.now());
         caregiver.setUpdatedBy(actorId);
         caregiverProfileRepository.save(caregiver);
+        cascadeDeactivation(caregiver, previous, "Hồ sơ người chăm sóc đã được lưu trữ");
         return APIResponse.success("Lưu trữ hồ sơ người chăm sóc thành công");
+    }
+
+    // H-11: caregiver đang ACTIVE ngừng hoạt động → BookingService gắn cờ đổi người cho các buổi sắp tới + báo manager / khách
+    // (qua provider_outbox, gửi sau commit, retry khi Booking lỗi).
+    private void cascadeDeactivation(CaregiverProfile caregiver, CaregiverStatus previous, String reason) {
+        if (previous == CaregiverStatus.ACTIVE && caregiver.getCaregiverStatus() != CaregiverStatus.ACTIVE) {
+            providerOutboxService.enqueueCaregiverDeactivated(caregiver, reason);
+        }
     }
 
     @Override

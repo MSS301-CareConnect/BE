@@ -20,4 +20,7 @@ public class IdentityUserResponse {
     String phoneNumber;
     String status;
     Set<String> roles;
+
+    // Trung tâm của CENTER_MANAGER / CAREGIVER theo Identity (claim center_id) — H-12 kiểm khớp với Provider.
+    UUID centerId;
 }
