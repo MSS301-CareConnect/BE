@@ -1,5 +1,8 @@
 package mss301.bookingservice.service.Impl;
 
+import java.util.Comparator;
+import java.time.Instant;
+import mss301.bookingservice.config.BookingProperties;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -69,6 +72,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     BookingOutboxService bookingOutboxService;
     PaymentServiceClient paymentServiceClient;
     TransactionTemplate transactionTemplate;
+    BookingProperties bookingProperties;
     Clock clock;
 
     @Override
@@ -120,7 +124,9 @@ public class ComplaintServiceImpl implements ComplaintService {
     @Override
     @Transactional
     public APIResponse<ComplaintResponse> create(UUID actorId, ComplaintRequest request) {
-        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(request.getBookingId())
+        // Khóa booking: hai yêu cầu cùng lúc không mở được hai khiếu nại cho cùng một buổi (D20).
+        Booking booking = bookingRepository.findForUpdate(request.getBookingId())
+                .filter(found -> found.getDeletedAt() == null)
                 .filter(found -> actorId.equals(found.getCustomerId()))
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         if (!Set.of(BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS, BookingStatus.COMPLETED, BookingStatus.CANCELLED)
@@ -133,6 +139,16 @@ public class ComplaintServiceImpl implements ComplaintService {
                     .filter(found -> found.getBooking().getId().equals(booking.getId()))
                     .orElseThrow(() -> new AppException(ErrorCode.COMPLAINT_BOOKING_INVALID));
             caregiverId = occurrence.getCaregiverId();
+            checkWindow(occurrence.getStartAt(), occurrence.getEndAt());
+            if (complaintRepository.existsByOccurrenceIdAndStatusInAndDeletedAtIsNull(occurrence.getId(), ComplaintStatus.ACTIVE)) {
+                throw new AppException(ErrorCode.COMPLAINT_ALREADY_OPEN);
+            }
+        } else {
+            checkBookingWindow(booking);
+            if (complaintRepository.existsByBookingIdAndOccurrenceIdIsNullAndStatusInAndDeletedAtIsNull(booking.getId(),
+                    ComplaintStatus.ACTIVE)) {
+                throw new AppException(ErrorCode.COMPLAINT_ALREADY_OPEN);
+            }
         }
         String code = generateCode();
         Complaint complaint = complaintMapper.toComplaint(request, booking, caregiverId, code);
@@ -145,6 +161,9 @@ public class ComplaintServiceImpl implements ComplaintService {
         }
         Complaint saved = complaintRepository.saveAndFlush(complaint);
         recordEvent(saved, actorId, ComplaintAction.CREATED, null, request.getContent());
+        if (centerTarget) {
+            bookingNotificationService.notifyAdmins(NotificationType.COMPLAINT_UPDATED, "COMPLAINT", saved.getId());
+        }
         ComplaintResponse response = toResponse(saved);
         return APIResponse.success("Gửi khiếu nại thành công", response);
     }
@@ -173,19 +192,32 @@ public class ComplaintServiceImpl implements ComplaintService {
                 complaint.setResolvedAt(clock.instant());
             }
             case ESCALATE -> {
-                checkTransition((manager && complaint.getLevel() == ComplaintLevel.CENTER
-                        && (from == ComplaintStatus.OPEN || from == ComplaintStatus.IN_PROGRESS))
-                        || (customer && from == ComplaintStatus.RESOLVED));
+                boolean pending = complaint.getLevel() == ComplaintLevel.CENTER
+                        && (from == ComplaintStatus.OPEN || from == ComplaintStatus.IN_PROGRESS);
+                checkTransition((manager && pending) || (customer && (pending || from == ComplaintStatus.RESOLVED)));
+                // D20: khách chỉ vượt cấp khiếu nại chưa giải quyết khi trung tâm đã để quá 48h.
+                if (customer && pending && clock.instant().isBefore(complaint.getCreatedAt()
+                        .plus(bookingProperties.getComplaint().getCustomerEscalateAfter()))) {
+                    throw new AppException(ErrorCode.COMPLAINT_ESCALATE_TOO_EARLY);
+                }
                 checkNote(note);
                 complaint.setStatus(ComplaintStatus.ESCALATED);
                 complaint.setLevel(ComplaintLevel.ADMIN);
                 complaint.setEscalatedAt(clock.instant());
                 complaint.setEscalateReason(note.trim());
             }
+            case WITHDRAW -> {
+                // D20: khách rút khi khiếu nại còn chờ xử lý (chưa RESOLVED / RESOLVED_BY_ADMIN).
+                checkTransition(customer && ComplaintStatus.ACTIVE.contains(from));
+                complaint.setStatus(ComplaintStatus.WITHDRAWN);
+            }
             default -> throw new AppException(ErrorCode.INVALID_COMPLAINT_TRANSITION);
         }
         complaintRepository.flush();
         recordEvent(complaint, actorId, action, from, note);
+        if (action == ComplaintAction.ESCALATE) {
+            bookingNotificationService.notifyAdmins(NotificationType.COMPLAINT_UPDATED, "COMPLAINT", complaint.getId());
+        }
         ComplaintResponse response = toResponse(complaint);
         return APIResponse.success("Cập nhật khiếu nại thành công", response);
     }
@@ -238,7 +270,9 @@ public class ComplaintServiceImpl implements ComplaintService {
                         || payment.getAmount() == null || payment.getRefundedAmount() == null) {
                     throw new AppException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
                 }
-                refundable = refundable.add(payment.getAmount()).subtract(payment.getRefundedAmount());
+                // M-09: trừ cả khoản hoàn đang chờ — Payment cũng chặn như vậy, tránh outbox COMPLAINT_REFUND FAILED.
+                BigDecimal reserved = payment.getReservedRefundAmount() == null ? BigDecimal.ZERO : payment.getReservedRefundAmount();
+                refundable = refundable.add(payment.getAmount()).subtract(payment.getRefundedAmount()).subtract(reserved);
             }
             totalPages = response.getResult().getTotalPages();
             page++;
@@ -264,6 +298,27 @@ public class ComplaintServiceImpl implements ComplaintService {
         return roles.contains(RoleCode.ADMIN)
                 || (roles.contains(RoleCode.CUSTOMER) && actorId.equals(complaint.getCustomerId()))
                 || (roles.contains(RoleCode.CENTER_MANAGER) && complaint.getCenterId().equals(centerId));
+    }
+
+    // D20: buổi đã bắt đầu và chưa quá 7 ngày sau giờ kết thúc.
+    private void checkWindow(Instant startAt, Instant endAt) {
+        Instant now = clock.instant();
+        if (startAt.isAfter(now) || now.isAfter(endAt.plus(bookingProperties.getComplaint().getOpenWindow()))) {
+            throw new AppException(ErrorCode.COMPLAINT_WINDOW_CLOSED);
+        }
+    }
+
+    // Khiếu nại cấp booking: tính theo buổi đã diễn ra gần nhất; booking hủy trước khi có buổi nào → tính từ lúc hủy.
+    private void checkBookingWindow(Booking booking) {
+        Instant now = clock.instant();
+        Instant lastEnd = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+                .filter(occurrence -> !occurrence.getStartAt().isAfter(now))
+                .map(BookingOccurrence::getEndAt)
+                .max(Comparator.naturalOrder())
+                .orElse(booking.getStatus() == BookingStatus.CANCELLED ? booking.getCancelledAt() : null);
+        if (lastEnd == null || now.isAfter(lastEnd.plus(bookingProperties.getComplaint().getOpenWindow()))) {
+            throw new AppException(ErrorCode.COMPLAINT_WINDOW_CLOSED);
+        }
     }
 
     private void checkTransition(boolean allowed) {

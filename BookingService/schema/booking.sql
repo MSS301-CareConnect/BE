@@ -240,6 +240,7 @@ CREATE TABLE care_sessions (
     ended_by             uuid,
     end_reason           text,
     overdue_reminded_at  timestamptz,
+    auto_closed          boolean       NOT NULL DEFAULT false,
     created_at           timestamptz   NOT NULL,
     updated_at           timestamptz   NOT NULL,
     deleted_at           timestamptz,
@@ -298,7 +299,7 @@ CREATE TABLE booking_outbox (
 
     CONSTRAINT uk_booking_outbox_idempotency_key UNIQUE (idempotency_key),
     CONSTRAINT ck_booking_outbox_event_type CHECK (event_type IN ('REMAINING_INVOICE', 'REFUND', 'RATING', 'COMPLAINT_REFUND')),
-    CONSTRAINT ck_booking_outbox_status CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
+    CONSTRAINT ck_booking_outbox_status CHECK (status IN ('PENDING', 'SENT', 'FAILED', 'SKIPPED')),
     CONSTRAINT ck_booking_outbox_attempts CHECK (attempts >= 0)
 );
 
@@ -313,7 +314,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),
@@ -390,7 +391,7 @@ CREATE TABLE complaints (
     category varchar(30) NOT NULL CHECK (category IN ('QUALITY','ATTITUDE','LATE','SAFETY','BILLING','OTHER')),
     title varchar(200) NOT NULL,
     content varchar(4000) NOT NULL,
-    status varchar(30) NOT NULL CHECK (status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN')),
+    status varchar(30) NOT NULL CHECK (status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN','WITHDRAWN')),
     level varchar(20) NOT NULL CHECK (level IN ('CENTER','ADMIN')),
     resolution varchar(4000),
     resolved_by uuid,
@@ -408,9 +409,9 @@ CREATE TABLE complaint_events (
     event_id uuid PRIMARY KEY,
     complaint_id uuid NOT NULL,
     actor_id uuid NOT NULL,
-    action varchar(30) NOT NULL CHECK (action IN ('CREATED','ACCEPT','RESOLVE','ESCALATE','ADMIN_RESOLVE')),
-    from_status varchar(30) CHECK (from_status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN')),
-    to_status varchar(30) NOT NULL CHECK (to_status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN')),
+    action varchar(30) NOT NULL CHECK (action IN ('CREATED','ACCEPT','RESOLVE','ESCALATE','ADMIN_RESOLVE','WITHDRAW')),
+    from_status varchar(30) CHECK (from_status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN','WITHDRAWN')),
+    to_status varchar(30) NOT NULL CHECK (to_status IN ('OPEN','IN_PROGRESS','RESOLVED','ESCALATED','RESOLVED_BY_ADMIN','WITHDRAWN')),
     note varchar(4000),
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
@@ -430,6 +431,9 @@ CREATE INDEX idx_reports_booking ON care_reports (booking_id, created_at DESC);
 CREATE INDEX idx_feedbacks_caregiver ON feedbacks (caregiver_id, created_at DESC);
 CREATE INDEX idx_feedbacks_center ON feedbacks (center_id);
 CREATE INDEX idx_complaints_scope ON complaints (center_id, customer_id, status);
+-- D20: mỗi buổi tối đa một khiếu nại đang mở (ứng dụng kiểm dưới khóa booking; index chặn lần cuối).
+CREATE UNIQUE INDEX uq_complaints_open_occurrence ON complaints (occurrence_id)
+    WHERE occurrence_id IS NOT NULL AND deleted_at IS NULL AND status IN ('OPEN','IN_PROGRESS','ESCALATED');
 CREATE INDEX idx_complaint_events ON complaint_events (complaint_id, created_at);
 ALTER TABLE complaints ADD CONSTRAINT fk_complaint_booking FOREIGN KEY (booking_id) REFERENCES bookings(booking_id);
 ALTER TABLE complaints ADD CONSTRAINT fk_complaint_occurrence FOREIGN KEY (occurrence_id) REFERENCES booking_occurrences(occurrence_id);

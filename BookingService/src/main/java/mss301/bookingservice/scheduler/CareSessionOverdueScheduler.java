@@ -20,6 +20,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
 public class CareSessionOverdueScheduler {
+    // D21: sau khi nhắc, ca vẫn quên check-out quá endAt + 4h thì hệ thống tự đóng (autoClose).
 
     CareSessionService careSessionService;
 
@@ -32,6 +33,18 @@ public class CareSessionOverdueScheduler {
                 careSessionService.remindOverdue(sessionId);
             } catch (RuntimeException e) {
                 log.error("Failed to remind overdue care session {} ({})", sessionId, e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${booking.session.overdue-scan-interval:5m}",
+            initialDelayString = "${booking.session.overdue-scan-interval:5m}")
+    public void autoCloseForgottenSessions() {
+        for (UUID sessionId : careSessionService.findAutoCloseIds()) {
+            try {
+                careSessionService.autoClose(sessionId);
+            } catch (RuntimeException e) {
+                log.error("Auto-close crashed for care session {} ({})", sessionId, e.getClass().getSimpleName(), e);
             }
         }
     }

@@ -115,9 +115,9 @@ class OccurrenceGeneratorTests {
     @Test
     void weeklyAcrossMonthAndYearBoundary() {
         List<OccurrenceSlot> slots = generator.generate(request(ScheduleType.WEEKLY, "2026-12-28", "2027-01-05",
-                "23:00", "23:30", List.of(4)));
-        // Thứ Năm 31/12/2026 23:00 VN = 16:00 UTC cùng ngày; ngày đầu năm vẫn đúng thứ tự
-        assertThat(slots).extracting(OccurrenceSlot::getStartAt).containsExactly(Instant.parse("2026-12-31T16:00:00Z"));
+                "22:30", "23:30", List.of(4)));
+        // Thứ Năm 31/12/2026 22:30 VN = 15:30 UTC cùng ngày; ngày đầu năm vẫn đúng thứ tự
+        assertThat(slots).extracting(OccurrenceSlot::getStartAt).containsExactly(Instant.parse("2026-12-31T15:30:00Z"));
     }
 
     @Test
@@ -174,6 +174,18 @@ class OccurrenceGeneratorTests {
         // đúng 60 buổi → hợp lệ
         assertThat(generator.generate(request(ScheduleType.DAILY, "2026-10-12", "2026-12-10", "08:00", "10:00", null)))
                 .hasSize(60);
+    }
+
+    // L-08: bắt đầu xa nhất 90 ngày tới (2026-10-09 + 90 = 2027-01-07); mỗi buổi ít nhất 1 giờ.
+    @Test
+    void startTooFarAndVisitTooShortAreRejected() {
+        assertError(request(ScheduleType.ONE_TIME, "2027-01-08", null, "08:00", "10:00", null), ErrorCode.START_TOO_FAR);
+        assertThat(generator.generate(request(ScheduleType.ONE_TIME, "2027-01-07", null, "08:00", "10:00", null)))
+                .hasSize(1);
+        assertError(request(ScheduleType.ONE_TIME, "2026-10-12", null, "08:00", "08:45", null),
+                ErrorCode.OCCURRENCE_TOO_SHORT);
+        assertThat(generator.generate(request(ScheduleType.ONE_TIME, "2026-10-12", null, "08:00", "09:00", null)))
+                .hasSize(1);
     }
 
     @Test

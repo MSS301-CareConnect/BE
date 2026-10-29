@@ -131,9 +131,15 @@ Xem `.env.example` (chỉ tên + chú thích): `BOOKING_SERVER_PORT`, `BOOKING_S
 `BOOKING_SERVICE_CLIENT_SECRET` · `BOOKING_TIMEZONE`, `BOOKING_MAX_OCCURRENCES`, `BOOKING_MAX_SPAN_DAYS`,
 `BOOKING_MIN_LEAD_TIME`, `BOOKING_ACCEPTANCE_TIMEOUT`, `BOOKING_DEPOSIT_TIMEOUT`, `BOOKING_EXPIRY_BATCH_SIZE`,
 `BOOKING_EXPIRY_SCAN_INTERVAL` · `BOOKING_MAX_PENDING_PER_CUSTOMER` · `BOOKING_SESSION_*`, `BOOKING_MISSED_GRACE`,
-`BOOKING_MISSED_SCAN_INTERVAL`, `BOOKING_NO_SHOW_REPORT_WINDOW`, `BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` ·
+`BOOKING_MISSED_SCAN_INTERVAL`, `BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` · `BOOKING_COMPLAINT_OPEN_WINDOW`,
+`BOOKING_COMPLAINT_CUSTOMER_ESCALATE_AFTER`, `BOOKING_ADMIN_USER_IDS` (admin nhận thông báo vận hành) ·
 `BOOKING_OUTBOX_*` · `BOOKING_CANCELLATION_PREVIEW_SECRET` (khóa HMAC chung cho mọi instance; trống = khóa ngẫu nhiên
-theo tiến trình, chỉ dùng dev), `BOOKING_CANCELLATION_PREVIEW_TTL`. `BOOKING_MAX_CAREGIVER_RANGE_DAYS` đã bỏ (BK-06).
+theo tiến trình, chỉ dùng dev), `BOOKING_CANCELLATION_PREVIEW_TTL`. `BOOKING_MAX_CAREGIVER_RANGE_DAYS` đã bỏ (BK-06);
+`BOOKING_NO_SHOW_REPORT_WINDOW` đã bỏ (D22: báo vắng dùng chung mốc `BOOKING_MISSED_GRACE`).
+
+Vận hành (Đợt 4): `GET /api/v1/booking-outbox` + `POST /{id}/requeue|skip` (ADMIN) xử lý việc gửi sang service khác
+đã FAILED; `GET /api/v1/bookings/recipient-activity` (SERVICE) cho CareRecipientService kiểm booking chưa kết thúc;
+`POST /api/v1/complaints/{id}/withdraw` (khách rút khiếu nại, D20).
 
 Swagger: `http://localhost:8085/swagger-ui.html` (hoặc tổng hợp ở gateway). Health: `/actuator/health`.
 Access token nên giữ 10–15 phút: service này xác minh offline, không nạp lại quyền theo thời gian thực.

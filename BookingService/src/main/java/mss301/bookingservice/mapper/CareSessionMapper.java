@@ -41,6 +41,7 @@ public interface CareSessionMapper {
     @Mapping(target = "endedBy", ignore = true)
     @Mapping(target = "endReason", ignore = true)
     @Mapping(target = "overdueRemindedAt", ignore = true)
+    @Mapping(target = "autoClosed", ignore = true)
     @Mapping(target = "version", ignore = true)
     CareSession toCareSession(CareSessionStartRequest request, BookingOccurrence occurrence, CareSessionStatus status,
                               Instant checkInAt);

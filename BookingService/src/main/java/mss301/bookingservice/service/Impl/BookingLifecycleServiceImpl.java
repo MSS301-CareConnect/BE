@@ -157,7 +157,12 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence,
                     BookingEventType.OCCURRENCE_STATUS_CHANGED, fromStatus, OccurrenceStatus.CANCELLED, changedBy,
                     reason, now));
-            bookingNotificationService.notifyOccurrence(occurrence, NotificationType.OCCURRENCE_CANCELLED);
+        }
+        // M-10: hủy nhiều buổi một lần → một thông báo gộp cho mỗi người, không bắn N thông báo.
+        if (occurrences.size() == 1) {
+            bookingNotificationService.notifyOccurrence(occurrences.getFirst(), NotificationType.OCCURRENCE_CANCELLED);
+        } else if (!occurrences.isEmpty()) {
+            bookingNotificationService.notifyOccurrencesCancelled(booking, occurrences);
         }
     }
 

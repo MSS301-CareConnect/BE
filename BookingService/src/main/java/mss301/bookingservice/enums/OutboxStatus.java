@@ -4,5 +4,7 @@ package mss301.bookingservice.enums;
 public enum OutboxStatus {
     PENDING,
     SENT,
-    FAILED
+    FAILED,
+    // H-08: admin đã xử lý tay việc FAILED ở service bên kia — không gửi nữa.
+    SKIPPED
 }

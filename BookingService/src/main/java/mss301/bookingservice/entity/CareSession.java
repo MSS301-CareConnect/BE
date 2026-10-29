@@ -72,6 +72,10 @@ public class CareSession extends BaseEntity {
     @Column(name = "overdue_reminded_at")
     Instant overdueRemindedAt;
 
+    // D21: hệ thống tự đóng ca quên check-out (không phải caregiver / manager kết thúc).
+    @Column(name = "auto_closed", nullable = false)
+    boolean autoClosed;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;

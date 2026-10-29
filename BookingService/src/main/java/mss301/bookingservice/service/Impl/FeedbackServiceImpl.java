@@ -93,7 +93,12 @@ public class FeedbackServiceImpl implements FeedbackService {
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         }, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-        PageResponse<FeedbackResponse> response = PageResponse.of(feedbacks, feedbackMapper.toResponseList(feedbacks.getContent()));
+        List<FeedbackResponse> items = feedbackMapper.toResponseList(feedbacks.getContent());
+        if (customerId == null) {
+            // L-07: danh sách đánh giá công khai không lộ mã booking của khách khác.
+            items.forEach(item -> item.setBookingId(null));
+        }
+        PageResponse<FeedbackResponse> response = PageResponse.of(feedbacks, items);
         return APIResponse.success("Lấy đánh giá thành công", response);
     }
 

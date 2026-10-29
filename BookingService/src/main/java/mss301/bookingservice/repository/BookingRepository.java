@@ -112,4 +112,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
             order by b.centerId
             """)
     Page<UUID> findCenterIds(@Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
+
+    // M-07: booking chưa kết thúc của người bệnh.
+    long countByRecipientIdAndStatusInAndDeletedAtIsNull(UUID recipientId, java.util.Collection<BookingStatus> statuses);
 }

@@ -60,6 +60,14 @@ public class ComplaintController {
         return complaintService.transition(actorId, roles, centerId, id, ComplaintAction.ESCALATE, request.getReason());
     }
 
+    // D20: khách rút khiếu nại chưa được giải quyết.
+    @PostMapping("/{id}/withdraw")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<ComplaintResponse> withdraw(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
+            @PathVariable UUID id) {
+        return complaintService.transition(actorId, roles, null, id, ComplaintAction.WITHDRAW, null);
+    }
+
     @PatchMapping("/{id}/accept")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<ComplaintResponse> accept(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,

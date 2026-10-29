@@ -48,6 +48,9 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         if (!endTime.isAfter(startTime)) {
             throw new AppException(ErrorCode.OVERNIGHT_NOT_SUPPORTED);
         }
+        if (Duration.between(startTime, endTime).compareTo(schedule.getMinOccurrenceDuration()) < 0) {
+            throw new AppException(ErrorCode.OCCURRENCE_TOO_SHORT);
+        }
         LocalDate endDate = resolveEndDate(request);
         Set<DayOfWeek> daysOfWeek = resolveDaysOfWeek(request);
         if (endDate.isBefore(startDate)) {
@@ -56,6 +59,9 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         Instant now = clock.instant();
         if (startDate.isBefore(LocalDate.ofInstant(now, zone))) {
             throw new AppException(ErrorCode.START_DATE_IN_PAST);
+        }
+        if (startDate.isAfter(LocalDate.ofInstant(now, zone).plusDays(schedule.getMaxAdvanceDays()))) {
+            throw new AppException(ErrorCode.START_TOO_FAR);
         }
         if (ChronoUnit.DAYS.between(startDate, endDate) + 1 > schedule.getMaxSpanDays()) {
             throw new AppException(ErrorCode.SCHEDULE_SPAN_TOO_LONG);

@@ -45,4 +45,9 @@ public interface CareSessionService {
     List<UUID> findOverdueIds();
 
     void remindOverdue(UUID id);
+
+    // D21 (H-10): ca còn IN_PROGRESS quá giờ kết thúc buổi + autoCloseAfter.
+    List<UUID> findAutoCloseIds();
+
+    void autoClose(UUID id);
 }

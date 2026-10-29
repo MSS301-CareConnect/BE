@@ -130,6 +130,9 @@ booking:
     timezone: ${BOOKING_TIMEZONE:Asia/Ho_Chi_Minh}
     max-occurrences: ${BOOKING_MAX_OCCURRENCES:60}
     max-span-days: ${BOOKING_MAX_SPAN_DAYS:90}
+    # L-08: buổi đầu bắt đầu trong vòng 90 ngày; mỗi buổi dài ít nhất 1 giờ.
+    max-advance-days: ${BOOKING_MAX_ADVANCE_DAYS:90}
+    min-occurrence-duration: ${BOOKING_MIN_OCCURRENCE_DURATION:1h}
     min-lead-time: ${BOOKING_MIN_LEAD_TIME:12h}
     acceptance-timeout: ${BOOKING_ACCEPTANCE_TIMEOUT:24h}
     deposit-timeout: ${BOOKING_DEPOSIT_TIMEOUT:24h}
@@ -144,16 +147,26 @@ booking:
     start-window: ${BOOKING_SESSION_START_WINDOW:30m}
     overdue-reminder-after: ${BOOKING_SESSION_OVERDUE_REMINDER_AFTER:60m}
     overdue-scan-interval: ${BOOKING_SESSION_OVERDUE_SCAN_INTERVAL:5m}
-    # OPS-06: chưa check-in sau giờ bắt đầu + 30 phút → MISSED (hoàn tiền); báo vắng tới giờ kết thúc + 60 phút.
+    # D21: ca quên check-out tự đóng sau giờ kết thúc buổi + 4h (COMPLETED, cờ auto_closed, báo trung tâm).
+    auto-close-after: ${BOOKING_SESSION_AUTO_CLOSE_AFTER:4h}
+    # D22 (M-08): check-in và báo khách vắng chỉ tới giờ bắt đầu + 30'; sau đó chưa check-in → MISSED (hoàn 100 % cọc buổi).
     missed-grace: ${BOOKING_MISSED_GRACE:30m}
     missed-scan-interval: ${BOOKING_MISSED_SCAN_INTERVAL:5m}
-    no-show-report-window: ${BOOKING_NO_SHOW_REPORT_WINDOW:60m}
     no-show-decision-reminder-after: ${BOOKING_NO_SHOW_DECISION_REMINDER_AFTER:24h}
 
   # BK-03: previewToken hủy booking ký HMAC, hạn 10 phút. Production phải đặt khóa chung cho mọi instance.
   cancellation:
     preview-secret: ${BOOKING_CANCELLATION_PREVIEW_SECRET:}
     preview-ttl: ${BOOKING_CANCELLATION_PREVIEW_TTL:10m}
+
+  # D20 (H-09): mở khiếu nại trong 7 ngày sau buổi; khách chuyển admin khi trung tâm chưa xử lý sau 48h.
+  complaint:
+    open-window: ${BOOKING_COMPLAINT_OPEN_WINDOW:7d}
+    customer-escalate-after: ${BOOKING_COMPLAINT_CUSTOMER_ESCALATE_AFTER:48h}
+
+  # Admin nhận thông báo khiếu nại chuyển cấp / outbox FAILED (UUID Identity, cách nhau dấu phẩy).
+  notification:
+    admin-user-ids: ${BOOKING_ADMIN_USER_IDS:}
 
   # booking_outbox: gửi lại việc sang service khác (hóa đơn REMAINING…) khi bên nhận lỗi.
   outbox:

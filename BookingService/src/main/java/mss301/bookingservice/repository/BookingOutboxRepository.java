@@ -5,6 +5,7 @@ import jakarta.persistence.QueryHint;
 import mss301.bookingservice.entity.BookingOutbox;
 import mss301.bookingservice.enums.OutboxStatus;
 import mss301.bookingservice.util.LockHints;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -38,4 +39,9 @@ public interface BookingOutboxRepository extends JpaRepository<BookingOutbox, UU
     List<BookingOutbox> findAllByAggregateIdAndDeletedAtIsNull(UUID aggregateId);
 
     boolean existsByIdempotencyKeyAndDeletedAtIsNull(String idempotencyKey);
+
+    // H-08: màn hình sự cố admin.
+    Page<BookingOutbox> findByStatusAndDeletedAtIsNull(OutboxStatus status, Pageable pageable);
+
+    Page<BookingOutbox> findByDeletedAtIsNull(Pageable pageable);
 }

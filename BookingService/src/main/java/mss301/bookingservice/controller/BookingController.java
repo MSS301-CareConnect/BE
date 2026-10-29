@@ -1,5 +1,6 @@
 package mss301.bookingservice.controller;
 
+import mss301.bookingservice.dto.response.RecipientActivityResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -94,6 +95,13 @@ public class BookingController {
         return bookingService.checkCaregiverAccess(caregiverUserId, recipientId);
     }
 
+    // M-07 (token SERVICE): CareRecipientService chặn tạm ngưng / lưu trữ hồ sơ khi người bệnh còn booking chưa kết thúc.
+    @GetMapping("/recipient-activity")
+    @PreAuthorize("hasRole('SERVICE')")
+    public APIResponse<RecipientActivityResponse> getRecipientActivity(@RequestParam UUID recipientId) {
+        return bookingService.getRecipientActivity(recipientId);
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<BookingDetailResponse> create(@CurrentUserId UUID actorId,
@@ -123,8 +131,9 @@ public class BookingController {
         return bookingService.previewCancellation(actorId, id, request);
     }
 
+    // M-11: admin hủy thay mặt nền tảng (hoàn 100 % như trung tâm hủy, ghi nhận bên hủy ADMIN).
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<BookingDetailResponse> cancel(@CurrentUserId UUID actorId,
                                                      @CurrentRoles Set<RoleCode> roles,
                                                      @CurrentCenterId(required = false) UUID scopeCenterId,

@@ -54,5 +54,6 @@ public interface BookingOccurrenceService {
     // Nhắc manager báo vắng chưa quyết định (một lần mỗi buổi).
     List<UUID> findUndecidedNoShowIds();
 
-    void remindNoShowDecision(UUID id);
+    // D21 (H-10): báo vắng không được quyết sau giờ kết thúc + 24h → hệ thống tự chấp nhận, báo khách + trung tâm.
+    void autoAcceptNoShow(UUID id);
 }

@@ -1,5 +1,7 @@
 package mss301.bookingservice.service.Impl;
 
+import mss301.bookingservice.enums.NotificationType;
+import mss301.bookingservice.service.BookingNotificationService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -56,6 +58,7 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
     ProviderServiceClient providerServiceClient;
     FeedbackRepository feedbackRepository;
     FeedbackMapper feedbackMapper;
+    BookingNotificationService bookingNotificationService;
 
     @Override
     public void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload) {
@@ -177,6 +180,8 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
             if (isPermanentFailure(error) || attempts >= settings.getMaxAttempts()) {
                 outbox.setStatus(OutboxStatus.FAILED);
                 log.error("Outbox {} failed permanently after {} attempts ({})", id, attempts, outbox.getEventType());
+                // H-08: admin xem / xếp lại ở /api/v1/booking-outbox.
+                bookingNotificationService.notifyAdmins(NotificationType.OUTBOX_FAILED, "BOOKING_OUTBOX", id);
                 return;
             }
             Duration backoff = settings.getBaseBackoff().multipliedBy(1L << Math.min(attempts - 1, 10));

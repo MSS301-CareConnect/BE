@@ -66,6 +66,30 @@ public class BookingProperties {
     @Valid
     Cancellation cancellation = new Cancellation();
 
+    @Valid
+    Complaint complaint = new Complaint();
+
+    @Valid
+    Notification notification = new Notification();
+
+    // D20 (H-09): hạn mở khiếu nại và hạn khách tự chuyển admin.
+    @Data
+    public static class Complaint {
+        // Chỉ mở khiếu nại trong khoảng này sau giờ kết thúc buổi (hoặc sau khi booking bị hủy).
+        @NotNull
+        Duration openWindow = Duration.ofDays(7);
+
+        // Trung tâm chưa giải quyết sau khoảng này kể từ lúc mở → khách được chuyển admin.
+        @NotNull
+        Duration customerEscalateAfter = Duration.ofHours(48);
+    }
+
+    // H-08 / H-09: Identity chưa có API tra người dùng theo vai trò → cấu hình danh sách admin nhận thông báo vận hành.
+    @Data
+    public static class Notification {
+        java.util.List<java.util.UUID> adminUserIds = new java.util.ArrayList<>();
+    }
+
     // BK-03: previewToken hủy booking. Khóa trống = khóa ngẫu nhiên theo tiến trình (chỉ dev, một instance).
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -132,6 +156,10 @@ public class BookingProperties {
         @NotNull
         Duration overdueScanInterval = Duration.ofMinutes(5);
 
+        // D21 (H-10): ca quên check-out quá giờ kết thúc buổi + autoCloseAfter → hệ thống tự đóng, tính COMPLETED.
+        @NotNull
+        Duration autoCloseAfter = Duration.ofHours(4);
+
         // OPS-06: buổi chưa check-in sau giờ bắt đầu + missedGrace (và không có báo vắng) → MISSED, hoàn tiền khách.
         @NotNull
         Duration missedGrace = Duration.ofMinutes(30);
@@ -139,11 +167,7 @@ public class BookingProperties {
         @NotNull
         Duration missedScanInterval = Duration.ofMinutes(5);
 
-        // Caregiver báo khách vắng được tới giờ kết thúc buổi + noShowReportWindow.
-        @NotNull
-        Duration noShowReportWindow = Duration.ofMinutes(60);
-
-        // Báo vắng chưa được quyết định sau giờ kết thúc + noShowDecisionReminderAfter → nhắc manager (không tự quyết).
+        // D21: báo vắng chưa được quyết định sau giờ kết thúc + noShowDecisionReminderAfter → hệ thống tự chấp nhận.
         @NotNull
         Duration noShowDecisionReminderAfter = Duration.ofHours(24);
     }
@@ -192,6 +216,14 @@ public class BookingProperties {
         // Buổi đầu phải bắt đầu sau thời điểm đặt ít nhất khoảng này.
         @NotNull
         Duration minLeadTime = Duration.ofHours(12);
+
+        // L-08: không đặt lịch bắt đầu quá xa (giá / lịch làm việc chưa có), mỗi buổi tối thiểu một khoảng.
+        @Min(1)
+        @Max(366)
+        int maxAdvanceDays = 90;
+
+        @NotNull
+        Duration minOccurrenceDuration = Duration.ofHours(1);
 
         // Hạn trung tâm duyệt booking PENDING (không quá giờ buổi đầu).
         @NotNull

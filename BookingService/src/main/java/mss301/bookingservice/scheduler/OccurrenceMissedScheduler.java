@@ -42,7 +42,7 @@ public class OccurrenceMissedScheduler {
         List<UUID> occurrenceIds = bookingOccurrenceService.findUndecidedNoShowIds();
         for (UUID occurrenceId : occurrenceIds) {
             try {
-                bookingOccurrenceService.remindNoShowDecision(occurrenceId);
+                bookingOccurrenceService.autoAcceptNoShow(occurrenceId);
             } catch (RuntimeException e) {
                 log.error("Failed to remind no-show decision for occurrence {} ({})", occurrenceId,
                         e.getClass().getSimpleName(), e);

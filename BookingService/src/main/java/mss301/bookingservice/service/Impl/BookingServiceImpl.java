@@ -1,5 +1,6 @@
 package mss301.bookingservice.service.Impl;
 
+import mss301.bookingservice.dto.response.RecipientActivityResponse;
 import lombok.AccessLevel;
 import java.util.Map;
 import java.util.Comparator;
@@ -348,17 +349,23 @@ public class BookingServiceImpl implements BookingService {
         String reason = request.getReason().strip();
         Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        boolean byCenter = isManagerOf(roles, scopeCenterId, booking);
-        if (!byCenter && !(roles.contains(RoleCode.CUSTOMER) && booking.getCustomerId().equals(actorId))) {
+        CancelledBy party;
+        if (isManagerOf(roles, scopeCenterId, booking)) {
+            party = CancelledBy.CENTER;
+        } else if (roles.contains(RoleCode.CUSTOMER) && booking.getCustomerId().equals(actorId)) {
+            party = CancelledBy.CUSTOMER;
+        } else if (roles.contains(RoleCode.ADMIN)) {
+            party = CancelledBy.ADMIN;
+        } else {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
         // Khách gửi kèm token: số tiền tính lại phải khớp lúc preview (vd chưa qua mốc 24h), khác → hỏi lại khách.
-        BigDecimal verifiedRefund = byCenter || request.getPreviewToken() == null
+        BigDecimal verifiedRefund = party != CancelledBy.CUSTOMER || request.getPreviewToken() == null
                 ? null
                 : verifyPreview(booking, request, clock.instant());
         CancellationRefundResponse refundResponse = transactionTemplate.execute(status ->
-                cancelInTransaction(actorId, byCenter, id, reason, request, verifiedRefund));
-        log.info("Booking {} cancelled by {} ({})", id, actorId, byCenter ? CancelledBy.CENTER : CancelledBy.CUSTOMER);
+                cancelInTransaction(actorId, party, id, reason, request, verifiedRefund));
+        log.info("Booking {} cancelled by {} ({})", id, actorId, party);
         Booking cancelledBooking = bookingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         BookingDetailResponse bookingDetailResponse = toDetailResponse(cancelledBooking, !isCustomerScope(roles));
@@ -490,6 +497,16 @@ public class BookingServiceImpl implements BookingService {
         CaregiverAccessResponse caregiverAccessResponse = bookingMapper.toCaregiverAccessResponse(caregiverUserId,
                 recipientId, allowed);
         return APIResponse.success("Kiểm tra phân công thành công", caregiverAccessResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<RecipientActivityResponse> getRecipientActivity(UUID recipientId) {
+        long unfinished = bookingRepository.countByRecipientIdAndStatusInAndDeletedAtIsNull(recipientId,
+                BookingStatus.SCHEDULE_HOLDING);
+        RecipientActivityResponse response = RecipientActivityResponse.builder()
+                .recipientId(recipientId).unfinishedBookings(unfinished).build();
+        return APIResponse.success("Kiểm tra booking của người bệnh thành công", response);
     }
 
     @Override
@@ -710,11 +727,11 @@ public class BookingServiceImpl implements BookingService {
 
     // Chạy trong transaction, booking đã khóa: kiểm lại phạm vi hủy (trạng thái có thể vừa đổi), hủy buổi, xếp hoàn tiền,
     // đóng booking khi không còn buổi nào. Trả null khi booking chưa đặt cọc (không có tiền để hoàn).
-    private CancellationRefundResponse cancelInTransaction(UUID actorId, boolean byCenter, UUID id, String reason,
+    private CancellationRefundResponse cancelInTransaction(UUID actorId, CancelledBy party, UUID id, String reason,
                                                            BookingCancelRequest request, BigDecimal verifiedRefund) {
         Booking lockedBooking = bookingRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        if (byCenter && lockedBooking.getStatus() == BookingStatus.PENDING) {
+        if (party == CancelledBy.CENTER && lockedBooking.getStatus() == BookingStatus.PENDING) {
             // Booking chưa duyệt thì trung tâm từ chối (reject), không "hủy".
             throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
         }
@@ -725,13 +742,19 @@ public class BookingServiceImpl implements BookingService {
             // Buổi hủy được có thể đã đổi trong lúc chờ khóa → token không còn khớp.
             cancellationTokenService.verify(request.getPreviewToken(), id, targetIds, verifiedRefund, now);
         }
-        BookingAction cancelAction = byCenter ? BookingAction.CANCEL_BY_CENTER : BookingAction.CANCEL_BY_CUSTOMER;
+        BookingAction cancelAction = switch (party) {
+            case CENTER -> BookingAction.CANCEL_BY_CENTER;
+            case CUSTOMER -> BookingAction.CANCEL_BY_CUSTOMER;
+            // M-11: admin can thiệp được cả booking PENDING (CANCEL_BY_SYSTEM cho phép mọi trạng thái còn giữ lịch).
+            case ADMIN, SYSTEM -> BookingAction.CANCEL_BY_SYSTEM;
+        };
         if (!BookingStatus.DEPOSIT_PAID.contains(lockedBooking.getStatus())) {
             bookingLifecycleService.apply(lockedBooking, cancelAction, actorId, reason);
             return null;
         }
-        CancelledBy cancelledBy = byCenter ? CancelledBy.CENTER : CancelledBy.CUSTOMER;
-        RefundReason refundReason = byCenter ? RefundReason.CENTER_CANCEL : RefundReason.CUSTOMER_CANCEL;
+        CancelledBy cancelledBy = party;
+        // Admin hủy: khách không có lỗi → hoàn theo chính sách trung tâm hủy (100 % phần đã trả cho buổi bị hủy).
+        RefundReason refundReason = party == CancelledBy.CUSTOMER ? RefundReason.CUSTOMER_CANCEL : RefundReason.CENTER_CANCEL;
         bookingLifecycleService.cancelOccurrences(lockedBooking, targets, cancelledBy, actorId, reason);
         // Ghi outbox cùng transaction: Payment lỗi thì dispatcher gửi lại, không rollback việc hủy.
         bookingLifecycleService.requestRefund(lockedBooking, targetIds, refundReason, cancelledBy, actorId,
@@ -810,6 +833,9 @@ public class BookingServiceImpl implements BookingService {
                     .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
             bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CAREGIVER_UNASSIGNED,
                     "BOOKING", bookingId);
+            // H-11: khách biết buổi sắp tới đang chờ trung tâm đổi người chăm sóc.
+            notificationService.notify(List.of(booking.getCustomerId()), NotificationType.CAREGIVER_UNASSIGNED,
+                    Map.of(), "BOOKING", bookingId);
         }
         return SystemCancellationResponse.of(bookingIds.size(), occurrences.size());
     }

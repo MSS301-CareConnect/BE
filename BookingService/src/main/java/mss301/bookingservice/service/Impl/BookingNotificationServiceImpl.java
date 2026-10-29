@@ -1,5 +1,6 @@
 package mss301.bookingservice.service.Impl;
 
+import mss301.bookingservice.config.BookingProperties;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -36,6 +37,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     NotificationService notificationService;
     Clock clock;
     TransactionTemplate transactionTemplate;
+    BookingProperties bookingProperties;
     ConcurrentHashMap<UUID, UUID> managerIds = new ConcurrentHashMap<>();
     ConcurrentHashMap<UUID, Instant> expiresAt = new ConcurrentHashMap<>();
 
@@ -43,7 +45,8 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     public void notifyLifecycle(Booking booking, List<BookingOccurrence> occurrences, BookingAction action) {
         NotificationType type = switch (action) {
             case ACCEPT -> NotificationType.BOOKING_ACCEPTED;
-            case REJECT, EXPIRE -> NotificationType.BOOKING_REJECTED;
+            case REJECT -> NotificationType.BOOKING_REJECTED;
+            case EXPIRE -> NotificationType.BOOKING_EXPIRED;
             case PAY_DEPOSIT -> NotificationType.BOOKING_CONFIRMED;
             case CANCEL_BY_CUSTOMER, CANCEL_BY_CENTER, CANCEL_BY_SYSTEM, FINALIZE_CANCELLED -> NotificationType.BOOKING_CANCELLED;
             case FINALIZE -> NotificationType.BOOKING_COMPLETED;
@@ -77,6 +80,28 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         }
         notificationService.notify(recipients, type, Map.of(), "BOOKING_OCCURRENCE", occurrence.getId());
         notifyCenter(occurrence.getBooking().getCenterId(), type, "BOOKING_OCCURRENCE", occurrence.getId());
+    }
+
+    @Override
+    public void notifyOccurrencesCancelled(Booking booking, List<BookingOccurrence> occurrences) {
+        List<UUID> recipients = new ArrayList<>();
+        recipients.add(booking.getCustomerId());
+        occurrences.stream().map(BookingOccurrence::getCaregiverUserId).filter(Objects::nonNull)
+                .distinct().forEach(recipients::add);
+        String body = occurrences.size() + " buổi của lịch " + booking.getBookingCode() + " đã bị hủy";
+        notificationService.notify(recipients, NotificationType.OCCURRENCE_CANCELLED, Map.of("body", body),
+                "BOOKING", booking.getId());
+        notifyCenter(booking.getCenterId(), NotificationType.OCCURRENCE_CANCELLED, "BOOKING", booking.getId());
+    }
+
+    @Override
+    public void notifyAdmins(NotificationType type, String refType, UUID refId) {
+        List<UUID> adminIds = bookingProperties.getNotification().getAdminUserIds();
+        if (adminIds.isEmpty()) {
+            log.warn("Chưa cấu hình BOOKING_ADMIN_USER_IDS — bỏ qua thông báo admin {} {}", type, refId);
+            return;
+        }
+        notificationService.notify(adminIds, type, Map.of(), refType, refId);
     }
 
     @Override

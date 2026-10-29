@@ -1,5 +1,6 @@
 package mss301.bookingservice;
 
+import mss301.bookingservice.service.CareSessionService;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import jakarta.servlet.http.Cookie;
 import mss301.bookingservice.entity.Booking;
@@ -13,6 +14,7 @@ import mss301.bookingservice.entity.CareTask;
 import mss301.bookingservice.enums.CareTaskStatus;
 import mss301.bookingservice.enums.MissedReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
+import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.OutboxEventType;
 import mss301.bookingservice.enums.OutboxStatus;
 import mss301.bookingservice.repository.BookingEventRepository;
@@ -135,7 +137,11 @@ class BookingApiTests {
         registry.add("booking.service-client.client-secret", () -> "booking-test-secret");
         // Scheduler không chạy trong lúc test; test gọi BookingService trực tiếp.
         registry.add("booking.schedule.expiry-scan-interval", () -> "1h");
+        registry.add("booking.notification.admin-user-ids", ADMIN_USER_ID::toString);
     }
+
+    // Admin cấu hình nhận thông báo vận hành (khiếu nại chuyển cấp, outbox FAILED).
+    static final UUID ADMIN_USER_ID = UUID.randomUUID();
 
     static void createSchema(String schema) {
         try (Connection connection = DriverManager.getConnection(PG_URL, PG_USER, PG_PASSWORD);
@@ -187,6 +193,15 @@ class BookingApiTests {
 
     @Autowired
     BookingOccurrenceService bookingOccurrenceService;
+
+    @Autowired
+    CareSessionService careSessionService;
+
+    @Autowired
+    mss301.bookingservice.config.BookingProperties bookingProperties;
+
+    @Autowired
+    org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Autowired
     TransactionTemplate transactionTemplate;
@@ -918,6 +933,30 @@ class BookingApiTests {
                                 PLATFORM.addActiveCaregiver(second.centerId()).caregiverId().toString()))))
                 .andExpect(status().isOk());
         assertThat(bookingOccurrenceRepository.findById(firstOccurrence).orElseThrow().getNeedsReassignment()).isFalse();
+        // H-11: caregiver cũ không check-in được buổi còn chờ đổi người; khách được báo.
+        UUID secondOccurrence = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getLast().getId();
+        moveIntoCheckInWindow(secondOccurrence);
+        startSession(bearer(second.caregiver().userId(), second.centerId(), "CAREGIVER"), secondOccurrence)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.OCCURRENCE_NEEDS_REASSIGNMENT.getCode()));
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", customerBearer(second)).param("size", "100"))
+                .andExpect(jsonPath("$.result.items[?(@.type == 'CAREGIVER_UNASSIGNED')]").isNotEmpty());
+    }
+
+    // M-07: CareRecipientService hỏi số booking chưa kết thúc của người bệnh (chỉ token SERVICE).
+    @Test
+    void recipientActivityCountsUnfinishedBookingsForServiceTokensOnly() throws Exception {
+        Scenario scenario = newScenario();
+        createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        mockMvc.perform(get("/api/v1/bookings/recipient-activity").param("recipientId", scenario.recipientId().toString())
+                        .header("Authorization", serviceBearer()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.unfinishedBookings").value(1));
+        mockMvc.perform(get("/api/v1/bookings/recipient-activity").param("recipientId", UUID.randomUUID().toString())
+                        .header("Authorization", serviceBearer()))
+                .andExpect(jsonPath("$.result.unfinishedBookings").value(0));
+        mockMvc.perform(get("/api/v1/bookings/recipient-activity").param("recipientId", scenario.recipientId().toString())
+                        .header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isForbidden());
     }
 
     ResultActions systemCancel(String bearer, Map<String, Object> body) throws Exception {
@@ -1170,6 +1209,29 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.bookingStatus").value("CANCELLED"))
                 .andExpect(jsonPath("$.result.recipientSnapshot").doesNotExist());
         assertCaregiverAccess(scenario.caregiver().userId(), scenario.recipientId(), false);
+    }
+
+    // M-11: admin hủy thay nền tảng — booking đã cọc hoàn như trung tâm hủy, booking PENDING hủy được (không hoàn).
+    @Test
+    void adminCancelsAnyBookingWithCenterCancelRefund() throws Exception {
+        Scenario scenario = newScenario();
+        String confirmedId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, confirmedId, null);
+        mockMvc.perform(post("/api/v1/bookings/" + confirmedId + "/cancel").header("Authorization", adminBearer())
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Khiếu nại an toàn"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("CANCELLED"));
+        assertThat(PLATFORM.refundKeys()).filteredOn(key -> key.startsWith("REFUND:CENTER_CANCEL:" + confirmedId)).hasSize(1);
+        assertThat(bookingOccurrenceRepository.findAllByBooking(UUID.fromString(confirmedId)).getFirst().getCancelledByParty())
+                .isEqualTo(CancelledBy.ADMIN);
+
+        Scenario other = newScenario();
+        String pendingId = createAndGetId(other, dailyBody(other, other.caregiver().caregiverId(), 1));
+        mockMvc.perform(post("/api/v1/bookings/" + pendingId + "/cancel").header("Authorization", adminBearer())
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Đặt trùng"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("CANCELLED"));
+        mockMvc.perform(post("/api/v1/bookings/" + pendingId + "/cancel").header("Authorization", adminBearer())
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Lần hai"))))
+                .andExpect(status().isConflict());
     }
 
     @Test
@@ -1552,7 +1614,12 @@ class BookingApiTests {
         reportNoShow(caregiverBearer, first, note)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.NO_SHOW_WINDOW_INVALID.getCode()));
+        // D22: quá mốc start + 30' (mốc MISSED) → hết hạn báo vắng.
         moveStartAgo(first, 40);
+        reportNoShow(caregiverBearer, first, note)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.NO_SHOW_WINDOW_INVALID.getCode()));
+        moveStartAgo(first, 20);
         reportNoShow(caregiverBearer, first, "ngắn")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.NO_SHOW_NOTE_REQUIRED.getCode()));
@@ -1612,17 +1679,8 @@ class BookingApiTests {
         moveStartAgo(occurrenceId, 10);
         reportNoShow(caregiverBearer, occurrenceId, "Khách không có nhà, đã gọi ba lần").andExpect(status().isOk());
 
-        // Quá giờ kết thúc + 24h chưa quyết định → nhắc manager đúng một lần (không tự quyết).
-        BookingOccurrence occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
-        occurrence.setStartAt(Instant.now().minus(Duration.ofHours(27)));
-        occurrence.setEndAt(Instant.now().minus(Duration.ofHours(25)));
-        bookingOccurrenceRepository.save(occurrence);
-        assertThat(bookingOccurrenceService.findUndecidedNoShowIds()).contains(occurrenceId);
-        bookingOccurrenceService.remindNoShowDecision(occurrenceId);
+        // Trong 24h sau giờ kết thúc: chưa tới hạn tự quyết, manager còn quyết được.
         assertThat(bookingOccurrenceService.findUndecidedNoShowIds()).doesNotContain(occurrenceId);
-        assertThat(bookingOccurrenceRepository.findById(occurrenceId).orElseThrow().getStatus())
-                .isEqualTo(OccurrenceStatus.SCHEDULED);
-
         decideNoShow(managerBearer(scenario), occurrenceId, false)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("MISSED"))
@@ -1631,6 +1689,89 @@ class BookingApiTests {
         mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
                 .andExpect(jsonPath("$.result.status").value("CANCELLED"));
         assertThat(PLATFORM.remainingInvoiceKeys()).noneMatch(("REMAINING_INVOICE:" + bookingId)::equals);
+    }
+
+    // D22 (M-08): quá start + 30' chưa check-in → không check-in được nữa, buổi thuộc diện MISSED.
+    @Test
+    void checkInClosesThirtyMinutesAfterTheVisitStarts() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        moveStartAgo(occurrenceId, 40);
+        startSession(caregiverBearer, occurrenceId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SESSION_WINDOW_NOT_OPEN.getCode()));
+        assertThat(bookingOccurrenceService.findMissedIds()).contains(occurrenceId);
+        moveStartAgo(occurrenceId, 25);
+        startSession(caregiverBearer, occurrenceId).andExpect(status().isOk());
+    }
+
+    // D21 (H-10): báo vắng không ai quyết sau giờ kết thúc + 24h → hệ thống tự chấp nhận (khách chịu phí buổi).
+    @Test
+    void undecidedNoShowReportIsAutoAcceptedAfter24Hours() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        moveStartAgo(occurrenceId, 10);
+        reportNoShow(caregiverBearer, occurrenceId, "Khách không có nhà, đã gọi ba lần").andExpect(status().isOk());
+
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setStartAt(Instant.now().minus(Duration.ofHours(27)));
+        occurrence.setEndAt(Instant.now().minus(Duration.ofHours(25)));
+        bookingOccurrenceRepository.save(occurrence);
+        assertThat(bookingOccurrenceService.findUndecidedNoShowIds()).contains(occurrenceId);
+        bookingOccurrenceService.autoAcceptNoShow(occurrenceId);
+        bookingOccurrenceService.autoAcceptNoShow(occurrenceId);
+
+        BookingOccurrence decided = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        assertThat(decided.getStatus()).isEqualTo(OccurrenceStatus.CUSTOMER_NO_SHOW);
+        assertThat(decided.getNoShowDecidedAt()).isNotNull();
+        assertThat(decided.getNoShowDecidedBy()).isNull();
+        assertThat(bookingOccurrenceService.findUndecidedNoShowIds()).doesNotContain(occurrenceId);
+        // Buổi duy nhất là khách vắng (tính phí) → booking COMPLETED + hóa đơn phần còn lại, manager không quyết lại được.
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("COMPLETED"));
+        assertThat(PLATFORM.remainingInvoiceKeys()).filteredOn(("REMAINING_INVOICE:" + bookingId)::equals).hasSize(1);
+        decideNoShow(managerBearer(scenario), occurrenceId, false).andExpect(status().isConflict());
+    }
+
+    // D21 (H-10): ca quên check-out quá giờ kết thúc + 4h → hệ thống tự đóng, buổi COMPLETED, cờ autoClosed.
+    @Test
+    void forgottenCareSessionIsAutoClosedFourHoursAfterTheVisitEnds() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        moveIntoCheckInWindow(occurrenceId);
+        String sessionId = readResult(startSession(caregiverBearer, occurrenceId)
+                .andExpect(status().isOk()).andReturn()).get("sessionId").asString();
+
+        // Mới quá giờ kết thúc 3h → chưa tự đóng.
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setEndAt(Instant.now().minus(Duration.ofHours(3)));
+        bookingOccurrenceRepository.save(occurrence);
+        assertThat(careSessionService.findAutoCloseIds()).doesNotContain(UUID.fromString(sessionId));
+
+        occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setEndAt(Instant.now().minus(Duration.ofHours(5)));
+        bookingOccurrenceRepository.save(occurrence);
+        assertThat(careSessionService.findAutoCloseIds()).contains(UUID.fromString(sessionId));
+        careSessionService.autoClose(UUID.fromString(sessionId));
+        careSessionService.autoClose(UUID.fromString(sessionId));
+
+        mockMvc.perform(get("/api/v1/care-sessions/" + sessionId).header("Authorization", caregiverBearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("ENDED"))
+                .andExpect(jsonPath("$.result.autoClosed").value(true));
+        assertThat(bookingOccurrenceRepository.findById(occurrenceId).orElseThrow().getStatus())
+                .isEqualTo(OccurrenceStatus.COMPLETED);
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("COMPLETED"));
     }
 
     ResultActions reportNoShow(String bearer, UUID occurrenceId, String note) throws Exception {
@@ -1804,6 +1945,8 @@ class BookingApiTests {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
         acceptAndConfirm(scenario, bookingId, null);
+        // D20: chỉ khiếu nại buổi đã diễn ra.
+        moveStartAgo(bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId(), 10);
         Map<String, Object> body = new LinkedHashMap<>(Map.of("bookingId", bookingId, "targetType", "CAREGIVER_SERVICE",
                 "category", "QUALITY", "title", "Chất lượng", "content", "Cần xem lại buổi chăm sóc"));
         String id = readResult(mockMvc.perform(post("/api/v1/complaints").header("Authorization", customerBearer(scenario))
@@ -1830,6 +1973,136 @@ class BookingApiTests {
                 .contentType(MediaType.APPLICATION_JSON).content(json(body))).andExpect(status().isOk()).andReturn()).path("id").asText();
         mockMvc.perform(patch("/api/v1/complaints/" + centerComplaint + "/accept").header("Authorization", managerBearer(scenario)))
                 .andExpect(status().isConflict());
+    }
+
+    // D20 (H-09): hạn 7 ngày, một khiếu nại đang mở mỗi buổi, rút khiếu nại, khách chuyển admin sau 48h.
+    @Test
+    void complaintRulesFollowTheWindowOneOpenPerVisitWithdrawAndEscalation() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        Map<String, Object> body = new LinkedHashMap<>(Map.of("bookingId", bookingId, "occurrenceId", occurrenceId.toString(),
+                "targetType", "CAREGIVER_SERVICE", "category", "LATE", "title", "Đến muộn", "content", "Đến muộn 20 phút"));
+
+        // Buổi chưa diễn ra → không khiếu nại được (cả cấp buổi lẫn cấp booking).
+        complain(scenario, body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5926));
+        complain(scenario, Map.of("bookingId", bookingId, "targetType", "CAREGIVER_SERVICE", "category", "LATE",
+                "title", "Đến muộn", "content", "Đến muộn")).andExpect(jsonPath("$.code").value(5926));
+
+        moveStartAgo(occurrenceId, 10);
+        String first = readResult(complain(scenario, body).andExpect(status().isOk()).andReturn()).path("id").asText();
+        complain(scenario, body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5927));
+
+        // Khách chưa được vượt cấp khi trung tâm còn trong 48h; quá 48h thì được.
+        escalateAsCustomer(scenario, first).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5928));
+        jdbcTemplate.update("update complaints set created_at = ? where complaint_id = ?",
+                java.sql.Timestamp.from(Instant.now().minus(Duration.ofHours(49))), UUID.fromString(first));
+        escalateAsCustomer(scenario, first).andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("ESCALATED")).andExpect(jsonPath("$.result.level").value("ADMIN"));
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(ADMIN_USER_ID, null, "ADMIN"))
+                        .param("size", "100"))
+                .andExpect(jsonPath("$.result.items[?(@.refId == '" + first + "')]").isNotEmpty());
+
+        // Rút khiếu nại chưa giải quyết → WITHDRAWN, buổi được mở khiếu nại mới; rút lần hai bị chặn.
+        mockMvc.perform(post("/api/v1/complaints/" + first + "/withdraw").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("WITHDRAWN"));
+        mockMvc.perform(post("/api/v1/complaints/" + first + "/withdraw").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isConflict());
+        String second = readResult(complain(scenario, body).andExpect(status().isOk()).andReturn()).path("id").asText();
+        mockMvc.perform(post("/api/v1/complaints/" + second + "/withdraw").header("Authorization", managerBearer(scenario)))
+                .andExpect(status().isForbidden());
+
+        // Quá 7 ngày sau giờ kết thúc buổi → hết hạn khiếu nại.
+        mockMvc.perform(post("/api/v1/complaints/" + second + "/withdraw").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk());
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setStartAt(Instant.now().minus(Duration.ofDays(8)));
+        occurrence.setEndAt(Instant.now().minus(Duration.ofDays(8)).plus(Duration.ofHours(2)));
+        bookingOccurrenceRepository.save(occurrence);
+        complain(scenario, body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5926));
+    }
+
+    // M-09: trần hoàn khiếu nại trừ cả khoản hoàn Payment đang giữ chỗ.
+    @Test
+    void complaintRefundCapSubtractsRefundsStillPending() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        moveStartAgo(bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId(), 10);
+        String id = readResult(complain(scenario, Map.of("bookingId", bookingId, "targetType", "CENTER", "category", "BILLING",
+                "title", "Thu sai", "content", "Trung tâm thu sai")).andExpect(status().isOk()).andReturn()).path("id").asText();
+        PLATFORM.setReservedRefundAmount(900000);
+        try {
+            mockMvc.perform(patch("/api/v1/complaints/" + id + "/admin-resolve").header("Authorization", adminBearer())
+                    .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("resolution", "Hoàn", "refundAmount", 200000))))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5923));
+            mockMvc.perform(patch("/api/v1/complaints/" + id + "/admin-resolve").header("Authorization", adminBearer())
+                    .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("resolution", "Hoàn", "refundAmount", 100000))))
+                    .andExpect(status().isOk());
+        } finally {
+            PLATFORM.setReservedRefundAmount(0);
+        }
+    }
+
+    // H-08: admin xem / xếp lại / bỏ qua việc outbox FAILED; hết lượt retry thì admin được báo.
+    @Test
+    void adminRequeuesAndSkipsFailedOutboxEvents() throws Exception {
+        String key = "REFUND:TEST:" + UUID.randomUUID();
+        bookingOutboxService.enqueue(OutboxEventType.REFUND, UUID.randomUUID(), key, Map.of());
+        UUID id = bookingOutboxRepository.findAll().stream().filter(row -> key.equals(row.getIdempotencyKey()))
+                .findFirst().orElseThrow().getId();
+        String admin = bearer(ADMIN_USER_ID, null, "ADMIN");
+        PLATFORM.setPaymentFailing(true);
+        try {
+            // Lượt cuối cùng còn được thử (một lỗi duy nhất, không làm mở circuit breaker của các test khác).
+            BookingOutbox row = bookingOutboxRepository.findById(id).orElseThrow();
+            row.setAttempts(bookingProperties.getOutbox().getMaxAttempts() - 1);
+            row.setNextAttemptAt(Instant.now().minusSeconds(1));
+            bookingOutboxRepository.save(row);
+            bookingOutboxService.dispatch(id);
+        } finally {
+            PLATFORM.setPaymentFailing(false);
+        }
+        assertThat(bookingOutboxRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OutboxStatus.FAILED);
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", admin).param("size", "100"))
+                .andExpect(jsonPath("$.result.items[?(@.refId == '" + id + "')].type").value(org.hamcrest.Matchers.hasItem("OUTBOX_FAILED")));
+
+        mockMvc.perform(get("/api/v1/booking-outbox").param("status", "FAILED").param("size", "100")
+                        .header("Authorization", bearer(UUID.randomUUID(), UUID.randomUUID(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/booking-outbox").param("status", "FAILED").param("size", "100").header("Authorization", admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[?(@.id == '" + id + "')].lastError").isNotEmpty());
+
+        mockMvc.perform(post("/api/v1/booking-outbox/" + id + "/requeue").header("Authorization", admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("PENDING"))
+                .andExpect(jsonPath("$.result.attempts").value(0));
+        mockMvc.perform(post("/api/v1/booking-outbox/" + id + "/requeue").header("Authorization", admin))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(5961));
+        bookingOutboxService.dispatch(id);
+        assertThat(bookingOutboxRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OutboxStatus.SENT);
+        assertThat(PLATFORM.refundKeys()).contains(key);
+
+        BookingOutbox failed = bookingOutboxRepository.findById(id).orElseThrow();
+        failed.setStatus(OutboxStatus.FAILED);
+        bookingOutboxRepository.save(failed);
+        mockMvc.perform(post("/api/v1/booking-outbox/" + id + "/skip").header("Authorization", admin)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("note", "Đã hoàn tay trên VNPay"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.status").value("SKIPPED"))
+                .andExpect(jsonPath("$.result.lastError").value("Admin xử lý tay: Đã hoàn tay trên VNPay"));
+        mockMvc.perform(post("/api/v1/booking-outbox/" + UUID.randomUUID() + "/requeue").header("Authorization", admin))
+                .andExpect(status().isNotFound());
+    }
+
+    ResultActions complain(Scenario scenario, Map<String, Object> body) throws Exception {
+        return mockMvc.perform(post("/api/v1/complaints").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(body)));
+    }
+
+    ResultActions escalateAsCustomer(Scenario scenario, String complaintId) throws Exception {
+        return mockMvc.perform(post("/api/v1/complaints/" + complaintId + "/escalate").header("Authorization", customerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Trung tâm chưa xử lý"))));
     }
 
     @Test

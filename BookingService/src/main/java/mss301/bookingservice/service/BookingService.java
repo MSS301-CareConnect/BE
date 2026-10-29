@@ -1,5 +1,6 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.dto.response.RecipientActivityResponse;
 import mss301.bookingservice.dto.request.AcceptRequest;
 import mss301.bookingservice.dto.request.BookingCancelRequest;
 import mss301.bookingservice.dto.request.CancellationPreviewRequest;
@@ -79,6 +80,8 @@ public interface BookingService {
 
     // SERVICE (CareRecipientService): caregiver có được xem hồ sơ người bệnh không — tính theo từng buổi.
     APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId);
+
+    APIResponse<RecipientActivityResponse> getRecipientActivity(UUID recipientId);
 
     APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request);
 

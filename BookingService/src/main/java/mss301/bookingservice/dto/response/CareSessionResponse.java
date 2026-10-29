@@ -35,5 +35,7 @@ public class CareSessionResponse {
 
     String endReason;
 
+    boolean autoClosed;
+
     List<CareTaskResponse> tasks;
 }

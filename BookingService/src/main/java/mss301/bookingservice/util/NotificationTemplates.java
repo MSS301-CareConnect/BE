@@ -32,6 +32,11 @@ public final class NotificationTemplates {
             case SETTLEMENT_UPDATED -> "Đối soát vừa được cập nhật";
             case CENTER_ACTIVATED -> "Trung tâm đã được kích hoạt";
             case SHIFT_REMINDER -> "Nhắc lịch chăm sóc trong hai giờ tới";
+            case RECIPIENT_INVITATION -> "Lời mời cùng quản lý hồ sơ người thân";
+            case BOOKING_EXPIRED -> "Lịch chăm sóc đã hết hạn";
+            case OUTBOX_FAILED -> "Có việc đồng bộ giữa các dịch vụ bị lỗi cần xử lý";
+            case NO_SHOW_AUTO_ACCEPTED -> "Hệ thống đã xác nhận khách vắng mặt";
+            case SESSION_AUTO_CLOSED -> "Hệ thống đã tự đóng ca chăm sóc quên check-out";
         };
     }
 }

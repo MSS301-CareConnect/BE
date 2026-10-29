@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "occurrenceId": "22222222-2222-4222-8222-222222222222",
+      "priceAmount": 1000000,
+      "paidAmount": 300000,
+      "feeAmount": 0,
+      "refundAmount": 300000,
+      "rule": "TIER_72_INF"
+    }
+  ],
+  "totalPaid": 300000,
+  "totalFee": 0,
+  "totalRefund": 300000,
+  "policyId": "00000000-0000-0000-0000-000000000001"
+}

@@ -18,4 +18,6 @@ public class PaymentSummaryResponse {
     String status;
     BigDecimal amount;
     BigDecimal refundedAmount;
+    // M-09: hoàn tiền Payment đang giữ chỗ (chưa chuyển xong); null khi Payment cũ chưa trả trường này.
+    BigDecimal reservedRefundAmount;
 }

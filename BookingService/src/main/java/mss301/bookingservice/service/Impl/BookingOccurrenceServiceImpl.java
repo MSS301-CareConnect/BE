@@ -67,6 +67,8 @@ import java.util.UUID;
 @Slf4j
 public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
 
+    static String AUTO_NO_SHOW_REASON = "Tự xác nhận khách vắng: trung tâm không quyết định trong 24 giờ";
+
     // Caregiver chỉ thấy đủ SĐT khách khi buổi sắp diễn ra (OPS-01); trước đó chỉ cần biết có liên hệ được.
     static Duration PHONE_REVEAL_WINDOW = Duration.ofHours(24);
     static int PHONE_VISIBLE_DIGITS = 2;
@@ -217,7 +219,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             throw new AppException(ErrorCode.NO_SHOW_ALREADY_REPORTED);
         }
         Instant now = clock.instant();
-        Instant reportDeadline = lockedOccurrence.getEndAt().plus(bookingProperties.getSession().getNoShowReportWindow());
+        // D22 (M-08): báo vắng trước mốc MISSED (start + 30'), cùng mốc với hạn check-in.
+        Instant reportDeadline = lockedOccurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace());
         if (now.isBefore(lockedOccurrence.getStartAt()) || !now.isBefore(reportDeadline)) {
             throw new AppException(ErrorCode.NO_SHOW_WINDOW_INVALID);
         }
@@ -315,17 +318,31 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
 
     @Override
     @Transactional
-    public void remindNoShowDecision(UUID id) {
-        bookingOccurrenceRepository.findForUpdate(id)
-                .filter(occurrence -> occurrence.getNoShowReportedAt() != null)
-                .filter(occurrence -> occurrence.getNoShowDecidedAt() == null)
-                .filter(occurrence -> occurrence.getNoShowRemindedAt() == null)
-                .ifPresent(occurrence -> {
-                    occurrence.setNoShowRemindedAt(clock.instant());
-                    bookingNotificationService.notifyCenter(occurrence.getBooking().getCenterId(), NotificationType.NO_SHOW_REPORTED,
-                            "BOOKING_OCCURRENCE", id);
-                    log.warn("Occurrence {} has an undecided no-show report — reminder recorded", id);
-                });
+    public void autoAcceptNoShow(UUID id) {
+        BookingOccurrence snapshot = bookingOccurrenceRepository.findWithBooking(id).orElse(null);
+        if (snapshot == null) {
+            return;
+        }
+        // Khóa booking trước (cùng thứ tự với decideNoShow) để manager quyết cùng lúc không bị ghi đè.
+        Booking booking = lockBooking(snapshot);
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(id).orElse(null);
+        boolean undecided = occurrence != null
+                && occurrence.getNoShowReportedAt() != null
+                && occurrence.getNoShowDecidedAt() == null
+                && OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus());
+        if (!undecided) {
+            return;
+        }
+        Instant now = clock.instant();
+        occurrence.setNoShowRemindedAt(now);
+        occurrence.setNoShowDecidedAt(now);
+        changeStatus(occurrence, OccurrenceStatus.CUSTOMER_NO_SHOW, null, AUTO_NO_SHOW_REASON, now);
+        bookingLifecycleService.finalizeIfDone(booking, null);
+        // Khách phản đối qua khiếu nại (D21); trung tâm biết hệ thống đã tự quyết.
+        bookingNotificationService.notifyOccurrence(occurrence, NotificationType.NO_SHOW_AUTO_ACCEPTED);
+        bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.NO_SHOW_AUTO_ACCEPTED,
+                "BOOKING_OCCURRENCE", id);
+        log.warn("Occurrence {} no-show report auto-accepted after the decision window", id);
     }
 
     @Override

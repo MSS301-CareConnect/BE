@@ -1,5 +1,6 @@
 package mss301.bookingservice.mapper;
 
+import mss301.bookingservice.dto.response.OutboxEventResponse;
 import mss301.bookingservice.entity.BookingOutbox;
 import mss301.bookingservice.enums.OutboxEventType;
 import mss301.bookingservice.enums.OutboxStatus;
@@ -18,4 +19,6 @@ public interface BookingOutboxMapper {
     @Mapping(target = "sentAt", ignore = true)
     BookingOutbox toOutbox(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, String payload,
                            OutboxStatus status, Integer attempts, Instant nextAttemptAt);
+
+    OutboxEventResponse toResponse(BookingOutbox outbox);
 }

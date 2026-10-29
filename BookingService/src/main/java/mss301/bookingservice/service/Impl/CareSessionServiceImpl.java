@@ -76,6 +76,8 @@ import java.util.UUID;
 @Slf4j
 public class CareSessionServiceImpl implements CareSessionService {
 
+    static String AUTO_CLOSE_REASON = "Hệ thống tự đóng ca: quá 4 giờ sau giờ kết thúc mà chưa check-out";
+
     static String FORCE_END_SKIP_REASON = "Buộc kết thúc bởi trung tâm";
     static DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     static int OVERDUE_BATCH_SIZE = 100;
@@ -197,6 +199,45 @@ public class CareSessionServiceImpl implements CareSessionService {
                 });
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findAutoCloseIds() {
+        Instant endedBefore = clock.instant().minus(bookingProperties.getSession().getAutoCloseAfter());
+        return careSessionRepository.findOverdueIds(CareSessionStatus.IN_PROGRESS, endedBefore,
+                PageRequest.of(0, OVERDUE_BATCH_SIZE));
+    }
+
+    @Override
+    public void autoClose(UUID id) {
+        CareSession snapshot = careSessionRepository.findWithBooking(id).orElse(null);
+        // Ca đã được caregiver/manager hoặc lượt quét trước kết thúc → không làm gì (gọi lại an toàn).
+        if (snapshot == null || snapshot.getStatus() != CareSessionStatus.IN_PROGRESS) {
+            return;
+        }
+        Boolean closed = transactionTemplate.execute(status -> {
+            CareSession session = lockSession(snapshot);
+            Instant endedBefore = clock.instant().minus(bookingProperties.getSession().getAutoCloseAfter());
+            if (session.getStatus() != CareSessionStatus.IN_PROGRESS
+                    || session.getOccurrence().getEndAt().isAfter(endedBefore)) {
+                return false;
+            }
+            for (CareTask task : careTaskRepository.findAllBySession(id)) {
+                if (task.getStatus() == CareTaskStatus.PENDING) {
+                    task.setStatus(CareTaskStatus.SKIPPED);
+                    task.setSkipReason(AUTO_CLOSE_REASON);
+                }
+            }
+            session.setAutoClosed(true);
+            closeSession(session, null, AUTO_CLOSE_REASON);
+            bookingNotificationService.notifyCenter(session.getBooking().getCenterId(), NotificationType.SESSION_AUTO_CLOSED,
+                    "CARE_SESSION", id);
+            return true;
+        });
+        if (Boolean.TRUE.equals(closed)) {
+            log.warn("Care session {} auto-closed: caregiver never checked out", id);
+        }
+    }
+
     private CareSessionResponse startInTransaction(UUID actorId, CareSessionStartRequest request, UUID bookingId) {
         // Khóa booking rồi tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
         Booking booking = bookingRepository.findForUpdate(bookingId)
@@ -213,9 +254,15 @@ public class CareSessionServiceImpl implements CareSessionService {
         if (!OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
         }
+        // H-11: caregiver bị khóa / lưu trữ → buổi chờ đổi người, không cho check-in bằng tài khoản cũ.
+        if (Boolean.TRUE.equals(occurrence.getNeedsReassignment())) {
+            throw new AppException(ErrorCode.OCCURRENCE_NEEDS_REASSIGNMENT);
+        }
         Instant now = clock.instant();
         Instant earliestCheckIn = occurrence.getStartAt().minus(bookingProperties.getSession().getStartWindow());
-        if (now.isBefore(earliestCheckIn) || !now.isBefore(occurrence.getEndAt())) {
+        // D22 (M-08): check-in muộn nhất start + 30' — sau mốc đó buổi bị đánh MISSED (hoàn 100 % cọc buổi).
+        Instant latestCheckIn = occurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace());
+        if (now.isBefore(earliestCheckIn) || !now.isBefore(latestCheckIn) || !now.isBefore(occurrence.getEndAt())) {
             throw new AppException(ErrorCode.SESSION_WINDOW_NOT_OPEN);
         }
         CareSession session = careSessionRepository.saveAndFlush(careSessionMapper.toCareSession(request, occurrence,

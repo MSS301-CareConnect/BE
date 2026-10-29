@@ -404,13 +404,21 @@ public final class TestPlatformServer {
     }
 
     // PaymentService giả (C2.6): đọc sub của token khách để biết có nợ không.
+    private volatile long reservedRefundAmount;
+
     private void handlePayments(HttpExchange exchange) throws IOException {
         if (rejected(exchange, paymentFailing)) {
             return;
         }
         String bookingId = parseQuery(exchange.getRequestURI().getRawQuery()).get("bookingId");
         writeSuccess(exchange, Map.of("items", List.of(Map.of("id", UUID.randomUUID().toString(), "bookingId", bookingId,
-                "status", "SUCCESS", "amount", 1000000, "refundedAmount", 0)), "totalPages", 1));
+                "status", "SUCCESS", "amount", 1000000, "refundedAmount", 0,
+                "reservedRefundAmount", reservedRefundAmount)), "totalPages", 1));
+    }
+
+    // M-09: tiền hoàn Payment đang giữ chỗ trên payment giả.
+    public void setReservedRefundAmount(long amount) {
+        reservedRefundAmount = amount;
     }
 
     private void handleOutstanding(HttpExchange exchange) throws IOException {
