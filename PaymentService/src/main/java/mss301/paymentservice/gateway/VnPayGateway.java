@@ -1,21 +1,29 @@
 package mss301.paymentservice.gateway;
 
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.enums.PaymentProvider;
-import mss301.paymentservice.exception.*;
+import mss301.paymentservice.util.VndMoney;
 import org.springframework.stereotype.Component;
 
-import java.math.RoundingMode;
-import java.time.*;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
+// Tạo URL thanh toán VNPay 2.1.0 (vnp_Command=pay) và kiểm chữ ký callback (IPN / return).
 @Component
 @RequiredArgsConstructor
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class VnPayGateway implements PaymentGateway {
-    private static final DateTimeFormatter FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private final PaymentProperties properties;
+    public static final ZoneId VNPAY_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    public static final DateTimeFormatter VNPAY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    public static final String VERSION = "2.1.0";
+    static String CURRENCY = "VND";
+
+    PaymentProperties paymentProperties;
 
     @Override
     public PaymentProvider provider() {
@@ -23,34 +31,37 @@ public class VnPayGateway implements PaymentGateway {
     }
 
     @Override
-    public CheckoutResult createCheckout(CheckoutCommand c) {
-        var p = properties.getVnpay();
-        if (!p.isEnabled() || blank(p.getTmnCode()) || blank(p.getHashSecret()))
-            throw new AppException(ErrorCode.PAYMENT_PROVIDER_DISABLED);
-        ZoneId zone = ZoneId.of("Asia/Ho_Chi_Minh");
+    public boolean isEnabled() {
+        PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
+        return vnpay.isEnabled() && isPresent(vnpay.getTmnCode()) && isPresent(vnpay.getHashSecret());
+    }
+
+    @Override
+    public CheckoutResult createCheckout(CheckoutCommand command) {
+        PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
         Map<String, String> params = new HashMap<>();
-        params.put("vnp_Version", "2.1.0");
+        params.put("vnp_Version", VERSION);
         params.put("vnp_Command", "pay");
-        params.put("vnp_TmnCode", p.getTmnCode());
-        params.put("vnp_Amount", c.amount().movePointRight(2).setScale(0, RoundingMode.UNNECESSARY).toPlainString());
-        params.put("vnp_CurrCode", "VND");
-        params.put("vnp_TxnRef", c.reference());
-        params.put("vnp_OrderInfo", "Thanh toan booking " + c.bookingCode());
+        params.put("vnp_TmnCode", vnpay.getTmnCode());
+        params.put("vnp_Amount", VndMoney.toVnPayAmount(command.amount()));
+        params.put("vnp_CurrCode", CURRENCY);
+        params.put("vnp_TxnRef", command.reference());
+        params.put("vnp_OrderInfo", "Thanh toan " + command.orderLabel());
         params.put("vnp_OrderType", "other");
         params.put("vnp_Locale", "vn");
-        params.put("vnp_ReturnUrl", p.getReturnUrl());
-        params.put("vnp_IpAddr", c.clientIp());
-        params.put("vnp_CreateDate", FORMAT.format(ZonedDateTime.now(zone)));
-        params.put("vnp_ExpireDate", FORMAT.format(c.expiresAt().atZone(zone)));
-        return new CheckoutResult(c.reference(), p.getPayUrl() + "?" + VnPaySigner.signedQuery(params, p.getHashSecret()));
+        params.put("vnp_ReturnUrl", vnpay.getReturnUrl());
+        params.put("vnp_IpAddr", command.clientIp());
+        params.put("vnp_CreateDate", VNPAY_DATE_FORMAT.format(command.createdAt().atZone(VNPAY_ZONE)));
+        params.put("vnp_ExpireDate", VNPAY_DATE_FORMAT.format(command.expiresAt().atZone(VNPAY_ZONE)));
+        String checkoutUrl = vnpay.getPayUrl() + "?" + VnPaySigner.signedQuery(params, vnpay.getHashSecret());
+        return new CheckoutResult(command.reference(), checkoutUrl);
     }
 
-    public boolean validSignature(Map<String, String> params) {
-        return properties.getVnpay().isEnabled() && !blank(properties.getVnpay().getHashSecret())
-                && VnPaySigner.verify(params, properties.getVnpay().getHashSecret());
+    public boolean isValidSignature(Map<String, String> params) {
+        return isEnabled() && VnPaySigner.verify(params, paymentProperties.getVnpay().getHashSecret());
     }
 
-    private boolean blank(String s) {
-        return s == null || s.isBlank();
+    private boolean isPresent(String value) {
+        return value != null && !value.isBlank();
     }
 }

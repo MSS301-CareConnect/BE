@@ -1,0 +1,16 @@
+{
+  "bookingId": "11111111-1111-4111-8111-111111111111",
+  "bookingStatus": "CONFIRMED",
+  "cancelledBy": "CUSTOMER",
+  "reason": "CUSTOMER_CANCEL",
+  "cancelledAt": "2026-11-02T03:00:00Z",
+  "firstUpcomingStartAt": "2026-11-07T01:00:00Z",
+  "occurrences": [
+    {
+      "occurrenceId": "22222222-2222-4222-8222-222222222222",
+      "startAt": "2026-11-07T01:00:00Z",
+      "status": "SCHEDULED",
+      "hasSession": false
+    }
+  ]
+}

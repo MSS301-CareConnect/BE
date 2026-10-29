@@ -1,6 +1,7 @@
 package mss301.paymentservice.security;
 
-import jakarta.servlet.http.*;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -15,7 +16,9 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
+// 401 / 403 ở tầng filter (chưa tới @ControllerAdvice) — serialize APIResponse bằng ObjectMapper (rule #20).
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -23,19 +26,25 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
     ObjectMapper objectMapper;
 
     @Override
-    public void commence(HttpServletRequest req, HttpServletResponse res, AuthenticationException ex) throws IOException {
-        write(res, ErrorCode.UNAUTHENTICATED);
+    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception)
+            throws IOException {
+        write(response, ErrorCode.UNAUTHENTICATED);
     }
 
     @Override
-    public void handle(HttpServletRequest req, HttpServletResponse res, AccessDeniedException ex) throws IOException {
-        write(res, ErrorCode.UNAUTHORIZED);
+    public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException exception)
+            throws IOException {
+        write(response, ErrorCode.UNAUTHORIZED);
     }
 
-    private void write(HttpServletResponse response, ErrorCode code) throws IOException {
-        response.setStatus(code.getStatusCode().value());
+    private void write(HttpServletResponse response, ErrorCode errorCode) throws IOException {
+        response.setStatus(errorCode.getStatusCode().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        APIResponse<Void> body = APIResponse.<Void>builder().code(code.getCode()).message(code.getMessage()).build();
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        APIResponse<Void> body = APIResponse.<Void>builder()
+                .code(errorCode.getCode())
+                .message(errorCode.getMessage())
+                .build();
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }

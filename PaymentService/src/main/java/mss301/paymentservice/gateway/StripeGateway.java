@@ -7,18 +7,24 @@ import com.stripe.param.checkout.SessionCreateParams;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.enums.PaymentProvider;
-import mss301.paymentservice.exception.*;
+import mss301.paymentservice.exception.AppException;
+import mss301.paymentservice.exception.ErrorCode;
 import org.springframework.stereotype.Component;
 
 import java.math.RoundingMode;
 
+// D16: giữ code Stripe nhưng chỉ chạy khi STRIPE_ENABLED=true; không hoàn tiền qua Stripe.
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
+@Slf4j
 public class StripeGateway implements PaymentGateway {
-    PaymentProperties properties;
+    static String STRIPE_CURRENCY = "vnd";
+
+    PaymentProperties paymentProperties;
 
     @Override
     public PaymentProvider provider() {
@@ -26,28 +32,39 @@ public class StripeGateway implements PaymentGateway {
     }
 
     @Override
-    public CheckoutResult createCheckout(CheckoutCommand c) {
-        var config = properties.getStripe();
-        if (!config.isEnabled() || blank(config.getSecretKey()))
-            throw new AppException(ErrorCode.PAYMENT_PROVIDER_DISABLED);
-        try {
-            long unitAmount = c.amount().setScale(0, RoundingMode.UNNECESSARY).longValueExact();
-            SessionCreateParams params = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.PAYMENT).setSuccessUrl(config.getSuccessUrl()).setCancelUrl(config.getCancelUrl())
-                    .setClientReferenceId(c.reference()).setExpiresAt(c.expiresAt().getEpochSecond())
-                    .putMetadata("paymentReference", c.reference())
-                    .addLineItem(SessionCreateParams.LineItem.builder().setQuantity(1L)
-                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder().setCurrency("vnd").setUnitAmount(unitAmount)
-                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                            .setName("CareConnect booking " + c.bookingCode()).build()).build()).build()).build();
-            Session session = Session.create(params, RequestOptions.builder().setApiKey(config.getSecretKey()).build());
-            return new CheckoutResult(session.getId(), session.getUrl());
-        } catch (StripeException | ArithmeticException e) {
-            throw new AppException(ErrorCode.PAYMENT_GATEWAY_ERROR);
-        }
+    public boolean isEnabled() {
+        PaymentProperties.Stripe stripe = paymentProperties.getStripe();
+        return stripe.isEnabled() && stripe.getSecretKey() != null && !stripe.getSecretKey().isBlank();
     }
 
-    private boolean blank(String s) {
-        return s == null || s.isBlank();
+    @Override
+    public CheckoutResult createCheckout(CheckoutCommand command) {
+        PaymentProperties.Stripe stripe = paymentProperties.getStripe();
+        try {
+            long unitAmount = command.amount().setScale(0, RoundingMode.UNNECESSARY).longValueExact();
+            SessionCreateParams.LineItem.PriceData.ProductData productData =
+                    SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                            .setName("CareConnect " + command.orderLabel())
+                            .build();
+            SessionCreateParams.LineItem.PriceData priceData = SessionCreateParams.LineItem.PriceData.builder()
+                    .setCurrency(STRIPE_CURRENCY)
+                    .setUnitAmount(unitAmount)
+                    .setProductData(productData)
+                    .build();
+            SessionCreateParams params = SessionCreateParams.builder()
+                    .setMode(SessionCreateParams.Mode.PAYMENT)
+                    .setSuccessUrl(stripe.getSuccessUrl())
+                    .setCancelUrl(stripe.getCancelUrl())
+                    .setClientReferenceId(command.reference())
+                    .setExpiresAt(command.expiresAt().getEpochSecond())
+                    .putMetadata("paymentReference", command.reference())
+                    .addLineItem(SessionCreateParams.LineItem.builder().setQuantity(1L).setPriceData(priceData).build())
+                    .build();
+            Session session = Session.create(params, RequestOptions.builder().setApiKey(stripe.getSecretKey()).build());
+            return new CheckoutResult(session.getId(), session.getUrl());
+        } catch (StripeException | ArithmeticException e) {
+            log.error("Stripe checkout failed ({})", e.getClass().getSimpleName());
+            throw new AppException(ErrorCode.PAYMENT_GATEWAY_ERROR);
+        }
     }
 }

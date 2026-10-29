@@ -1,22 +1,42 @@
 package mss301.paymentservice.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import lombok.experimental.FieldDefaults;
-import mss301.paymentservice.enums.*;
+import mss301.paymentservice.enums.PaymentProvider;
+import mss301.paymentservice.enums.PaymentStatus;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+// Một phiên thanh toán trên cổng; mỗi payment chỉ có tối đa một phiên PENDING (phiên cũ → EXPIRED khi mở phiên mới).
 @Entity
 @Table(name = "payment_attempts")
 @Getter
 @Setter
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PaymentAttempt extends BaseEntity {
     @Id
+    @UuidGenerator
     @Column(name = "attempt_id")
     UUID id;
 
@@ -61,5 +81,5 @@ public class PaymentAttempt extends BaseEntity {
 
     @Version
     @Column(nullable = false)
-    long version;
+    Long version;
 }

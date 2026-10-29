@@ -1,30 +1,55 @@
 package mss301.paymentservice.repository;
 
+import jakarta.persistence.LockModeType;
 import mss301.paymentservice.entity.Payment;
 import mss301.paymentservice.enums.PaymentStatus;
-import org.springframework.data.domain.*;
-import org.springframework.data.jpa.repository.*;
+import mss301.paymentservice.enums.PaymentType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
-public interface PaymentRepository extends JpaRepository<Payment, UUID> {
-    Optional<Payment> findByBookingId(UUID bookingId);
+@Repository
+public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpecificationExecutor<Payment> {
 
-    Page<Payment> findByBookingIdAndStatus(UUID bookingId, PaymentStatus status, Pageable pageable);
+    Optional<Payment> findByBookingIdAndPaymentType(UUID bookingId, PaymentType paymentType);
 
-    Page<Payment> findByBookingId(UUID bookingId, Pageable pageable);
+    List<Payment> findAllByBookingIdAndStatus(UUID bookingId, PaymentStatus status);
 
-    Page<Payment> findByStatus(PaymentStatus status, Pageable pageable);
+    // Khóa payment khi cộng refundedAmount (dispatcher) — hai lượt hoàn cùng payment không ghi đè nhau.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payment p where p.id = :id")
+    Optional<Payment> findForUpdate(@Param("id") UUID id);
 
-    @Query("select count(p) from Payment p where p.status=mss301.paymentservice.enums.PaymentStatus.SUCCESS " +
-            "and p.paidAt between :from and :to and (:centerId is null or p.centerId=:centerId)")
-    long successfulCount(@Param("from") Instant from, @Param("to") Instant to, @Param("centerId") UUID centerId);
+    @Query("""
+            select count(p) from Payment p
+            where p.status = :status and p.paidAt >= :from and p.paidAt <= :to
+              and (:centerId is null or p.centerId = :centerId)
+            """)
+    long countPaid(@Param("status") PaymentStatus status, @Param("from") Instant from, @Param("to") Instant to,
+                   @Param("centerId") UUID centerId);
 
-    @Query("select coalesce(sum(p.amount),0) from Payment p " +
-            "where p.status=mss301.paymentservice.enums.PaymentStatus.SUCCESS and p.paidAt between :from and :to " +
-            "and (:centerId is null or p.centerId=:centerId)")
-    BigDecimal totalRevenue(@Param("from") Instant from, @Param("to") Instant to, @Param("centerId") UUID centerId);
+    @Query("""
+            select coalesce(sum(p.amount), 0) from Payment p
+            where p.status = :status and p.paidAt >= :from and p.paidAt <= :to
+              and (:centerId is null or p.centerId = :centerId)
+            """)
+    BigDecimal sumPaid(@Param("status") PaymentStatus status, @Param("from") Instant from, @Param("to") Instant to,
+                       @Param("centerId") UUID centerId);
+
+    @Query("""
+            select coalesce(sum(p.refundedAmount), 0) from Payment p
+            where p.status = :status and p.paidAt >= :from and p.paidAt <= :to
+              and (:centerId is null or p.centerId = :centerId)
+            """)
+    BigDecimal sumRefunded(@Param("status") PaymentStatus status, @Param("from") Instant from, @Param("to") Instant to,
+                           @Param("centerId") UUID centerId);
 }

@@ -1,8 +1,10 @@
 package mss301.paymentservice.mapper;
 
-import org.mapstruct.*;
+import org.mapstruct.Builder;
+import org.mapstruct.InjectionStrategy;
 import org.mapstruct.MapperConfig;
-
+import org.mapstruct.MappingConstants;
+import org.mapstruct.ReportingPolicy;
 
 @MapperConfig(
         componentModel = MappingConstants.ComponentModel.SPRING,

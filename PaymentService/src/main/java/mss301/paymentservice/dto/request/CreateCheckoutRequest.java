@@ -1,7 +1,11 @@
 package mss301.paymentservice.dto.request;
 
 import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.enums.PaymentProvider;
 
@@ -11,6 +15,6 @@ import mss301.paymentservice.enums.PaymentProvider;
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CreateCheckoutRequest {
-    @NotNull
+    @NotNull(message = "PROVIDER_REQUIRED")
     PaymentProvider provider;
 }

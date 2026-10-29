@@ -8,19 +8,27 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
+// roles[] → ROLE_<code>, permissions[] giữ nguyên mã (AGENTS §4).
 @Component
 public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticationToken> {
+
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
-        read(jwt, TokenClaims.ROLES).forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
-        read(jwt, TokenClaims.PERMISSIONS).forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission)));
+        for (String role : readClaim(jwt, TokenClaims.ROLES)) {
+            authorities.add(new SimpleGrantedAuthority(TokenClaims.ROLE_AUTHORITY_PREFIX + role));
+        }
+        for (String permission : readClaim(jwt, TokenClaims.PERMISSIONS)) {
+            authorities.add(new SimpleGrantedAuthority(permission));
+        }
         return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
     }
 
-    private List<String> read(Jwt jwt, String claim) {
+    private List<String> readClaim(Jwt jwt, String claim) {
         List<String> values = jwt.getClaimAsStringList(claim);
         return values == null ? List.of() : values;
     }
