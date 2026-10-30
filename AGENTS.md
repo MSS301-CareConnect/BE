@@ -360,7 +360,7 @@ entity thiếu hay trùng lặp đi tiếp âm thầm.**
    - Trạng thái nghiệp vụ (tài khoản LOCKED, OTP hết hạn, sai mật khẩu hiện tại, ngoài phạm vi trung tâm…) →
      `ErrorCode` riêng.
 3. Service ném `new AppException(ErrorCode.X)`; điều kiện mới chưa có code → **thêm vào `ErrorCode`** (code +
-   message tiếng Việt thân thiện + `HttpStatus`). `AppException` truyền message của `ErrorCode` lên `super(...)`
+   message **tiếng Anh** ngắn gọn, thân thiện — chuẩn từ 2026-10-30 cho mọi service + `HttpStatus`). `AppException` truyền message của `ErrorCode` lên `super(...)`
    nên `e.getMessage()` luôn có nghĩa trong log.
 4. `GlobalExceptionHandler` bắt và trả `APIResponse` với `code`/`message` từ `ErrorCode` + đúng HTTP status.
 5. **Không** ném raw exception ra controller, **không** tự dựng `APIResponse` lỗi (kể cả `APIResponse.error(...)`).
