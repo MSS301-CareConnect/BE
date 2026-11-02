@@ -15,6 +15,8 @@ import org.springframework.validation.annotation.Validated;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 
 // booking.* trong application.yaml — URL/issuer bắt buộc cấu hình qua env, app fail khi khởi động nếu thiếu.
 @Data
@@ -56,6 +58,9 @@ public class BookingProperties {
 
     @Valid
     Schedule schedule = new Schedule();
+
+    @Valid
+    PolicyDefaults policyDefaults = new PolicyDefaults();
 
     @Valid
     Session session = new Session();
@@ -198,6 +203,57 @@ public class BookingProperties {
         Duration claimLease = Duration.ofMinutes(2);
     }
 
+    // Center booking policy mặc định (spec §8) — áp cho trung tâm chưa cấu hình riêng (center_booking_policies). Tên field
+    // trùng CenterBookingPolicy để mapper chép thẳng; ràng buộc giữa các giá trị kiểm ở CenterBookingPolicyServiceImpl.
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class PolicyDefaults {
+        @Min(0)
+        Integer shiftMinAdvanceMinutes = 120;
+
+        @Min(0)
+        Integer recurringMinAdvanceMinutes = 2880;
+
+        @Min(0)
+        Integer customMinAdvanceMinutes = 2880;
+
+        @Min(1)
+        Integer confirmationTimeoutMinutes = 1440;
+
+        @Min(1)
+        Integer assignmentTimeoutMinutes = 1440;
+
+        @Min(1)
+        Integer initialPaymentTimeoutMinutes = 1440;
+
+        @Min(0)
+        Integer remainingPaymentDueBeforeMinutes = 1440;
+
+        @NotNull
+        List<Integer> remainingPaymentReminderMinutes = new ArrayList<>(List.of(4320, 2880));
+
+        @NotNull
+        BigDecimal depositPercent = BigDecimal.valueOf(30);
+
+        @Min(0)
+        Integer checkInEarlyMinutes = 30;
+
+        @Min(0)
+        Integer checkInLateMinutes = 30;
+
+        @Min(0)
+        Integer refundThresholdMinutes = 1440;
+
+        @NotNull
+        BigDecimal refundPercentBeforeThreshold = BigDecimal.valueOf(100);
+
+        @NotNull
+        BigDecimal refundPercentAfterThreshold = BigDecimal.valueOf(70);
+
+        @NotNull
+        BigDecimal overduePaymentForfeitPercent = BigDecimal.valueOf(100);
+    }
+
     // Quy tắc lịch đã chốt (docs/2026-10-09-PLAN_BOOKING.md §9) — đổi qua env, không hardcode trong code.
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -213,10 +269,6 @@ public class BookingProperties {
         @Max(366)
         int maxSpanDays = 90;
 
-        // Buổi đầu phải bắt đầu sau thời điểm đặt ít nhất khoảng này.
-        @NotNull
-        Duration minLeadTime = Duration.ofHours(12);
-
         // L-08: không đặt lịch bắt đầu quá xa (giá / lịch làm việc chưa có), mỗi buổi tối thiểu một khoảng.
         @Min(1)
         @Max(366)
@@ -224,14 +276,6 @@ public class BookingProperties {
 
         @NotNull
         Duration minOccurrenceDuration = Duration.ofHours(1);
-
-        // Hạn trung tâm duyệt booking PENDING (không quá giờ buổi đầu).
-        @NotNull
-        Duration acceptanceTimeout = Duration.ofHours(24);
-
-        // Hạn khách đặt cọc sau khi trung tâm chấp nhận (không quá giờ buổi đầu).
-        @NotNull
-        Duration depositTimeout = Duration.ofHours(24);
 
         // Caregiver còn được xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (D5, SEC-09).
         @NotNull

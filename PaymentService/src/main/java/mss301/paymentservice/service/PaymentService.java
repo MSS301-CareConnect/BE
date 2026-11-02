@@ -28,7 +28,8 @@ public interface PaymentService {
     APIResponse<PageResponse<PaymentResponse>> list(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId,
                                                     PaymentStatus status, PaymentType paymentType, int page, int size);
 
-    APIResponse<RevenueResponse> getRevenue(Instant from, Instant to, UUID centerId);
+    APIResponse<RevenueResponse> getRevenue(Set<RoleCode> roles, UUID claimCenterId, Instant from, Instant to,
+                                            UUID centerId);
 
     APIResponse<CheckoutResponse> createCheckout(UUID customerId, UUID bookingId, CreateCheckoutRequest request,
                                                  HttpServletRequest httpServletRequest);

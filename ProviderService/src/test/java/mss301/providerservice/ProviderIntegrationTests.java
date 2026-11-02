@@ -512,6 +512,63 @@ class ProviderIntegrationTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_NOT_FOUND.getCode()));
     }
 
+    // Spec booking §3 / §5.1 / §6: khách xem lịch SCHEDULED của caregiver đặt được; Booking (SERVICE) tra một lịch cho SHIFT;
+    // caregiver / trung tâm không còn nhận booking thì không có lịch rảnh.
+    @Test
+    void bookableSchedulesAndScheduleLookupForShiftBooking() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+        LocalDate day = futureDay();
+        CaregiverSchedule morning = saveSchedule(caregiver, day, 8, 12);
+        CaregiverSchedule afternoon = saveSchedule(caregiver, day, 13, 17);
+        afternoon.setScheduleStatus(ScheduleStatus.CANCELLED);
+        caregiverScheduleRepository.save(afternoon);
+
+        mockMvc.perform(get("/api/v1/caregivers/{id}/schedules", caregiver.getId())
+                        .param("from", day.toString())
+                        .param("to", day.plusDays(1).toString())
+                        .with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].id").value(morning.getId().toString()))
+                .andExpect(jsonPath("$.result[0].centerId").value(center.getId().toString()))
+                .andExpect(jsonPath("$.result[0].startTime").value("08:00:00"))
+                .andExpect(jsonPath("$.result[0].note").doesNotExist());
+        mockMvc.perform(get("/api/v1/caregivers/{id}/schedules", caregiver.getId())
+                        .param("from", day.toString())
+                        .param("to", day.plusDays(40).toString())
+                        .with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AVAILABILITY_RANGE_TOO_LONG.getCode()));
+
+        mockMvc.perform(get("/api/v1/caregivers/schedules/{id}", morning.getId())
+                        .with(user(UUID.randomUUID(), "SERVICE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.caregiverId").value(caregiver.getId().toString()))
+                .andExpect(jsonPath("$.result.workDate").value(day.toString()))
+                .andExpect(jsonPath("$.result.scheduleStatus").value("SCHEDULED"));
+        mockMvc.perform(get("/api/v1/caregivers/schedules/{id}", morning.getId())
+                        .with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/caregivers/schedules/{id}", UUID.randomUUID())
+                        .with(user(UUID.randomUUID(), "SERVICE")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SCHEDULE_NOT_FOUND.getCode()));
+
+        // Caregiver bị tạm ngưng: không còn lịch để khách chọn, availability-check báo không tồn tại.
+        caregiver.setCaregiverStatus(CaregiverStatus.SUSPENDED);
+        caregiverProfileRepository.save(caregiver);
+        mockMvc.perform(get("/api/v1/caregivers/{id}/schedules", caregiver.getId())
+                        .with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/caregivers/availability-checks")
+                        .with(user(UUID.randomUUID(), "SERVICE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checkBody(caregiver.getId(), slot(day, 9, 10))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_NOT_FOUND.getCode()));
+    }
+
     @Test
     void caregiverTimeOffOverlappingAssignedBookingIs409() throws Exception {
         UUID managerId = UUID.randomUUID();

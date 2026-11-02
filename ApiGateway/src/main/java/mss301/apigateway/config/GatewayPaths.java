@@ -20,6 +20,8 @@ public final class GatewayPaths {
             "/api/v1/bookings/**", "/api/v1/booking-occurrences/**",
             "/api/v1/notifications/**", "/api/v1/care-sessions/**", "/api/v1/care-reports/**",
             "/api/v1/feedbacks/**", "/api/v1/complaints/**", "/api/v1/statistics/**",
+            // Center booking policy (spec booking v1.0 §8).
+            "/api/v1/center-booking-policies/**",
             // H-08: admin xử lý outbox FAILED.
             "/api/v1/booking-outbox/**"
     };

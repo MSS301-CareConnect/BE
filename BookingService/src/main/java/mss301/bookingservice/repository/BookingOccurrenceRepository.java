@@ -21,6 +21,10 @@ import java.util.UUID;
 @Repository
 public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurrence, UUID> {
 
+    // SHIFT: lịch caregiver đã bị một buổi đang giữ (spec §6).
+    boolean existsByCaregiverScheduleIdAndStatusInAndDeletedAtIsNull(UUID caregiverScheduleId,
+                                                                    Collection<OccurrenceStatus> statuses);
+
     @Query("select o from BookingOccurrence o where o.booking.id = :bookingId and o.deletedAt is null order by o.occurrenceNo")
     List<BookingOccurrence> findAllByBooking(@Param("bookingId") UUID bookingId);
 

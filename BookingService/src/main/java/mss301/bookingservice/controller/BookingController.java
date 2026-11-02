@@ -14,6 +14,7 @@ import mss301.bookingservice.dto.response.BookingQuoteResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.dto.response.PaymentContextResponse;
@@ -25,9 +26,11 @@ import mss301.bookingservice.security.CurrentRoles;
 import mss301.bookingservice.security.CurrentUserId;
 import mss301.bookingservice.service.BookingService;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 
@@ -47,6 +50,16 @@ public class BookingController {
                                                                   @CurrentCenterId(required = false) UUID scopeCenterId,
                                                                   @ParameterObject BookingSearchRequest request) {
         return bookingService.list(actorId, roles, scopeCenterId, request);
+    }
+
+    // Spec §3: khách chọn lịch SHIFT — lịch Provider đã bị booking giữ thì giao diện khóa lựa chọn.
+    @GetMapping("/held-schedules")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<CaregiverHeldScheduleResponse> listHeldSchedules(
+            @RequestParam UUID caregiverId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return bookingService.listHeldSchedules(caregiverId, from, to);
     }
 
     @GetMapping("/{id}")
@@ -166,6 +179,21 @@ public class BookingController {
     public APIResponse<BookingDetailResponse> markDepositPaid(@PathVariable UUID id,
                                                               @Valid @RequestBody(required = false) DepositPaidRequest request) {
         return bookingService.markDepositPaid(id, request);
+    }
+
+    // PaymentService báo khách đã trả xong phần còn lại trước buổi đầu (spec §9.1).
+    @PostMapping("/{id}/remaining-paid")
+    @PreAuthorize("hasRole('SERVICE')")
+    public APIResponse<BookingDetailResponse> markRemainingPaid(@PathVariable UUID id,
+                                                                @Valid @RequestBody(required = false) DepositPaidRequest request) {
+        return bookingService.markRemainingPaid(id, request);
+    }
+
+    // PaymentService báo quá hạn trả phần còn lại → booking EXPIRED (spec §11.1, §15).
+    @PostMapping("/{id}/payment-overdue")
+    @PreAuthorize("hasRole('SERVICE')")
+    public APIResponse<BookingDetailResponse> markPaymentOverdue(@PathVariable UUID id) {
+        return bookingService.markPaymentOverdue(id);
     }
 
     @PatchMapping("/{id}/caregiver")

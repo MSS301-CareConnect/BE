@@ -1,5 +1,6 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.RecipientActivityResponse;
 import mss301.bookingservice.dto.request.AcceptRequest;
 import mss301.bookingservice.dto.request.BookingCancelRequest;
@@ -25,6 +26,7 @@ import mss301.bookingservice.dto.response.PaymentContextResponse;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -83,11 +85,24 @@ public interface BookingService {
 
     APIResponse<RecipientActivityResponse> getRecipientActivity(UUID recipientId);
 
+    // Spec §3: lịch caregiver đã bị booking giữ trong khoảng ngày (mặc định 31 ngày từ hôm nay).
+    APIResponse<CaregiverHeldScheduleResponse> listHeldSchedules(UUID caregiverId, LocalDate from, LocalDate to);
+
     APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request);
+
+    // SERVICE (PaymentService): khách đã trả xong phần còn lại (spec §9.1).
+    APIResponse<BookingDetailResponse> markRemainingPaid(UUID id, DepositPaidRequest request);
+
+    // SERVICE (PaymentService): quá hạn trả phần còn lại → EXPIRED (M1); Payment đã giữ cọc theo policy (M3).
+    APIResponse<BookingDetailResponse> markPaymentOverdue(UUID id);
 
     // ─── SCHEDULER ───────────────────────────────────────────────────────────
 
     List<UUID> findExpirableIds();
 
     void expire(UUID id);
+
+    List<UUID> findRemainingReminderIds();
+
+    void remindRemainingPayment(UUID id);
 }

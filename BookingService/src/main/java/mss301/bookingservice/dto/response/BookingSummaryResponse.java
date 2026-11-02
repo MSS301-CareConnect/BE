@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.BookingStatus;
-import mss301.bookingservice.enums.ScheduleType;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,7 +40,9 @@ public class BookingSummaryResponse {
 
     UUID caregiverId;
 
-    ScheduleType scheduleType;
+    BookingType bookingType;
+
+    RecurrenceFrequency recurrenceFrequency;
 
     LocalDate startDate;
 

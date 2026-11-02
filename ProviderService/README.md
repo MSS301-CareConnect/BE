@@ -112,6 +112,12 @@ trung tâm trong service.
     được tạo (phải tự đổi người cho buổi bị ảnh hưởng). Booking lỗi → 503 `BOOKING_SERVICE_UNAVAILABLE` 4702.
   - `GET /{caregiverId}/availability?from=&to=` (mọi user đã đăng nhập, `to − from ≤ 31 ngày` → 4409) →
     `[{startAt, endAt}]` = hợp lịch `SCHEDULED` (giờ VN, ca liền kề được ghép) trừ ngày nghỉ. Chưa trừ buổi đã đặt.
+    Caregiver không còn nhận booking (chưa VERIFIED / không ACTIVE / trung tâm không ACTIVE) → 404 như không tồn tại
+    (spec booking §6); áp cả cho `availability-checks`.
+  - `GET /{caregiverId}/schedules?from=&to=` (mọi user đã đăng nhập; mặc định từ hôm nay, tối đa 31 ngày → 4409) → lịch
+    `SCHEDULED` để khách đặt booking SHIFT `[{id, caregiverId, centerId, workShiftId, workDate, startTime, endTime}]` (giờ
+    VN). Lịch nào đã bị booking giữ do BookingService `GET /bookings/held-schedules` cho biết.
+  - `GET /schedules/{id}` (**SERVICE**, ADMIN) → `ScheduleResponse` — Booking xác minh lịch của booking SHIFT; không có → 404 4400.
   - `POST /availability-checks` (**SERVICE**, C5.2) body `{caregiverId, slots[{startAt, endAt}] (1..60)}` →
     `{available, violations[{startAt, endAt, reason: TIME_OFF | NO_SCHEDULE}]}` — slot hợp lệ khi nằm trọn trong lịch
     rảnh và không giao ngày nghỉ (ưu tiên báo `TIME_OFF`). Không xét buổi đã đặt (Booking tự kiểm).

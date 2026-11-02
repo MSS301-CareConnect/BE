@@ -17,7 +17,8 @@ import mss301.bookingservice.entity.BookingDetail;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.OccurrenceStatus;
-import mss301.bookingservice.enums.ScheduleType;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -61,7 +62,8 @@ class BookingMapperTests {
                 .recipientId(recipientId)
                 .centerId(UUID.randomUUID())
                 .caregiverId(requestedCaregiverId)
-                .scheduleType(ScheduleType.WEEKLY)
+                .bookingType(BookingType.RECURRING)
+                .frequency(RecurrenceFrequency.WEEKLY)
                 .startDate(LocalDate.parse("2026-10-12"))
                 .endDate(LocalDate.parse("2026-10-25"))
                 .startTime(LocalTime.parse("08:00"))
@@ -85,7 +87,7 @@ class BookingMapperTests {
         RecipientSnapshot recipientSnapshot = snapshot(recipientId);
 
         Booking booking = bookingMapper.toBooking(request(recipientId, requestedCaregiverId), customerId,
-                recipientSnapshot, caregiver, quote);
+                recipientSnapshot, caregiver, quote, LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
 
         assertThat(booking.getCustomerId()).isEqualTo(customerId);
         assertThat(booking.getRecipientId()).isEqualTo(recipientId);
@@ -97,6 +99,11 @@ class BookingMapperTests {
         // Thứ trong tuần: sắp xếp, bỏ trùng
         assertThat(booking.getDaysOfWeek()).containsExactly((short) 1, (short) 3, (short) 5);
         assertThat(booking.getSubtotal()).isEqualByComparingTo("100.00");
+        assertThat(booking.getBookingType()).isEqualTo(BookingType.RECURRING);
+        assertThat(booking.getRecurrenceFrequency()).isEqualTo(RecurrenceFrequency.WEEKLY);
+        assertThat(booking.getStartDate()).isEqualTo(LocalDate.parse("2026-10-12"));
+        assertThat(booking.getEndDate()).isEqualTo(LocalDate.parse("2026-10-23"));
+        assertThat(booking.getInitialPaymentPercent()).isEqualByComparingTo("30");
         // Field server quản lý không được map
         assertThat(booking.getId()).isNull();
         assertThat(booking.getStatus()).isNull();
@@ -109,22 +116,29 @@ class BookingMapperTests {
     void toBookingWithoutCaregiverLeavesBothIdsNullEvenIfRequestHasOne() {
         UUID recipientId = UUID.randomUUID();
         Booking booking = bookingMapper.toBooking(request(recipientId, UUID.randomUUID()), UUID.randomUUID(),
-                snapshot(recipientId), null, BookingQuote.builder().build());
+                snapshot(recipientId), null, BookingQuote.builder().build(), LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
         // Không bao giờ lấy caregiver từ request khi chưa xác minh qua Provider
         assertThat(booking.getCaregiverId()).isNull();
         assertThat(booking.getCaregiverUserId()).isNull();
     }
 
     @Test
-    void oneTimeWithoutEndDateUsesStartDateAndEmptyDaysBecomeNull() {
+    void customTakesDatesFromOccurrencesAndEmptyDaysBecomeNull() {
         UUID recipientId = UUID.randomUUID();
         BookingCreateRequest oneTime = request(recipientId, null);
-        oneTime.setScheduleType(ScheduleType.ONE_TIME);
+        oneTime.setBookingType(BookingType.CUSTOM);
+        oneTime.setFrequency(null);
+        oneTime.setStartDate(null);
         oneTime.setEndDate(null);
+        oneTime.setStartTime(null);
+        oneTime.setEndTime(null);
         oneTime.setDaysOfWeek(List.of());
         Booking booking = bookingMapper.toBooking(oneTime, UUID.randomUUID(), snapshot(recipientId), null,
-                BookingQuote.builder().build());
-        assertThat(booking.getEndDate()).isEqualTo(booking.getStartDate());
+                BookingQuote.builder().build(), LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
+        assertThat(booking.getStartDate()).isEqualTo(LocalDate.parse("2026-10-12"));
+        assertThat(booking.getEndDate()).isEqualTo(LocalDate.parse("2026-10-23"));
+        assertThat(booking.getRecurrenceFrequency()).isNull();
+        assertThat(booking.getStartTime()).isNull();
         assertThat(booking.getDaysOfWeek()).isNull();
     }
 
@@ -148,7 +162,7 @@ class BookingMapperTests {
         assertThat(occurrence.getCaregiverUserId()).isEqualTo(booking.getCaregiverUserId());
         assertThat(occurrence.getStatus()).isEqualTo(OccurrenceStatus.SCHEDULED);
         assertThat(occurrence.getId()).isNull();
-        assertThat(occurrence.getAvailabilitySlotId()).isNull();
+        assertThat(occurrence.getCaregiverScheduleId()).isNull();
         assertThat(occurrenceMapper.toOccurrenceList(null, booking, OccurrenceStatus.SCHEDULED)).isEmpty();
     }
 
@@ -188,9 +202,9 @@ class BookingMapperTests {
     void responsesPickBookingIdAndStatusAndOptionalCustomer() {
         UUID recipientId = UUID.randomUUID();
         Booking booking = bookingMapper.toBooking(request(recipientId, null), UUID.randomUUID(), snapshot(recipientId),
-                null, BookingQuote.builder().build());
+                null, BookingQuote.builder().build(), LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
         booking.setId(UUID.randomUUID());
-        booking.setStatus(BookingStatus.PENDING);
+        booking.setStatus(BookingStatus.PENDING_CENTER_CONFIRMATION);
         IdentityUserResponse customer = IdentityUserResponse.builder()
                 .id(booking.getCustomerId())
                 .fullName("Khách Hàng")
@@ -201,7 +215,7 @@ class BookingMapperTests {
 
         BookingDetailResponse detail = bookingMapper.toDetailResponse(booking, List.of(), List.of(), customer);
         assertThat(detail.getId()).isEqualTo(booking.getId());
-        assertThat(detail.getStatus()).isEqualTo(BookingStatus.PENDING);
+        assertThat(detail.getStatus()).isEqualTo(BookingStatus.PENDING_CENTER_CONFIRMATION);
         assertThat(detail.getCustomer().getFullName()).isEqualTo("Khách Hàng");
         assertThat(detail.getDaysOfWeek()).containsExactly(1, 3, 5);
         assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null).getCustomer()).isNull();
@@ -220,7 +234,7 @@ class BookingMapperTests {
     void caregiverListOmitsSnapshotButDetailIncludesIt() {
         UUID recipientId = UUID.randomUUID();
         Booking booking = bookingMapper.toBooking(request(recipientId, null), UUID.randomUUID(), snapshot(recipientId),
-                null, BookingQuote.builder().build());
+                null, BookingQuote.builder().build(), LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
         booking.setId(UUID.randomUUID());
         BookingOccurrence occurrence = new BookingOccurrence();
         occurrence.setId(UUID.randomUUID());

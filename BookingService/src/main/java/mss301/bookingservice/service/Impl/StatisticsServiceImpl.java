@@ -9,6 +9,7 @@ import mss301.bookingservice.dto.response.OccurrenceStatisticsResponse;
 import mss301.bookingservice.dto.response.ComplaintStatisticsResponse;
 import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
 import mss301.bookingservice.dto.response.PageResponse;
+import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.enums.FeedbackVisibility;
 import mss301.bookingservice.enums.CareSessionStatus;
@@ -86,7 +87,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         Map<String, Long> complaints = toCounts(bookingRepository.countComplaints(centerId, from, to));
         long completed = occurrences.getOrDefault("COMPLETED", 0L);
         long cancelled = occurrences.getOrDefault("CANCELLED", 0L);
-        long missed = occurrences.getOrDefault("MISSED", 0L);
+        long missed = occurrences.getOrDefault(OccurrenceStatus.CAREGIVER_MISSED.name(), 0L);
         long noShow = occurrences.getOrDefault("CUSTOMER_NO_SHOW", 0L);
         long ended = completed + cancelled + missed + noShow;
         double rate = ended == 0 ? 0 : BigDecimal.valueOf(completed * 100L)

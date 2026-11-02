@@ -211,8 +211,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())) {
             throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
         }
-        // Đã check-in thì buổi không còn NOT_STARTED — khách có mặt, không báo vắng được.
-        if (!OccurrenceStatus.NOT_STARTED.contains(lockedOccurrence.getStatus())) {
+        // Đã check-in thì buổi không còn SCHEDULED / ACKNOWLEDGED — khách có mặt, không báo vắng được.
+        if (!OccurrenceStatus.WORKABLE.contains(lockedOccurrence.getStatus())) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
         }
         if (lockedOccurrence.getNoShowReportedAt() != null) {
@@ -251,7 +251,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
         // Đã quyết định rồi (hoặc buổi bị hủy cùng booking) → không mở lại.
         if (lockedOccurrence.getNoShowDecidedAt() != null
-                || !OccurrenceStatus.NOT_STARTED.contains(lockedOccurrence.getStatus())) {
+                || !OccurrenceStatus.WORKABLE.contains(lockedOccurrence.getStatus())) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
         }
         Instant now = clock.instant();
@@ -275,7 +275,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     @Transactional(readOnly = true)
     public List<UUID> findMissedIds() {
         Instant startedBefore = clock.instant().minus(bookingProperties.getSession().getMissedGrace());
-        return bookingOccurrenceRepository.findMissedIds(OccurrenceStatus.NOT_STARTED,
+        return bookingOccurrenceRepository.findMissedIds(OccurrenceStatus.WORKABLE,
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, startedBefore, PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
@@ -295,7 +295,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         Instant now = clock.instant();
         // Kiểm lại sau khi khóa: caregiver có thể vừa check-in / báo vắng, booking vừa bị hủy.
         boolean stillMissed = BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())
-                && OccurrenceStatus.NOT_STARTED.contains(lockedOccurrence.getStatus())
+                && OccurrenceStatus.WORKABLE.contains(lockedOccurrence.getStatus())
                 && lockedOccurrence.getNoShowReportedAt() == null
                 && !careSessionRepository.existsByOccurrenceIdAndDeletedAtIsNull(id)
                 && !lockedOccurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace()).isAfter(now);
@@ -312,7 +312,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     @Transactional(readOnly = true)
     public List<UUID> findUndecidedNoShowIds() {
         Instant endedBefore = clock.instant().minus(bookingProperties.getSession().getNoShowDecisionReminderAfter());
-        return bookingOccurrenceRepository.findUndecidedNoShowIds(OccurrenceStatus.NOT_STARTED, endedBefore,
+        return bookingOccurrenceRepository.findUndecidedNoShowIds(OccurrenceStatus.WORKABLE, endedBefore,
                 PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
@@ -329,7 +329,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         boolean undecided = occurrence != null
                 && occurrence.getNoShowReportedAt() != null
                 && occurrence.getNoShowDecidedAt() == null
-                && OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus());
+                && OccurrenceStatus.WORKABLE.contains(occurrence.getStatus());
         if (!undecided) {
             return;
         }
@@ -349,7 +349,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     @Transactional(readOnly = true)
     public List<UUID> findShiftReminderIds() {
         Instant now = clock.instant();
-        return bookingOccurrenceRepository.findShiftReminderIds(OccurrenceStatus.NOT_STARTED,
+        return bookingOccurrenceRepository.findShiftReminderIds(OccurrenceStatus.WORKABLE,
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, now, now.plusSeconds(7200), PageRequest.of(0, 100));
     }
 
@@ -363,7 +363,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
         Instant now = clock.instant();
         if (occurrence.getReminderSentAt() != null || occurrence.getCaregiverUserId() == null
-                || !OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())
+                || !OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())
                 || !BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())
                 || !occurrence.getStartAt().isAfter(now) || occurrence.getStartAt().isAfter(now.plusSeconds(7200))) {
             return;
@@ -382,7 +382,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     // MISSED do caregiver → hoàn 100% cọc buổi qua outbox; khóa theo id buổi nên job và manager không hoàn hai lần.
     private void markMissedByCaregiver(Booking booking, BookingOccurrence occurrence, CancelledBy cancelledBy,
                                        UUID changedBy, String reason, Instant now) {
-        changeStatus(occurrence, OccurrenceStatus.MISSED, changedBy, reason, now);
+        changeStatus(occurrence, OccurrenceStatus.CAREGIVER_MISSED, changedBy, reason, now);
         occurrence.setMissedReason(MissedReason.CAREGIVER);
         bookingLifecycleService.requestRefund(booking, List.of(occurrence.getId()), RefundReason.CAREGIVER_MISSED,
                 cancelledBy, changedBy, occurrence.getId().toString());

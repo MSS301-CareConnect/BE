@@ -31,7 +31,8 @@ public interface OccurrenceMapper {
 
     List<OccurrenceResponse> toResponseList(List<BookingOccurrence> occurrences);
 
-    // Buổi sinh cùng booking: caregiver mặc định theo booking; trạng thái ban đầu do service truyền vào.
+    // Buổi sinh cùng booking: caregiver mặc định theo booking; trạng thái ban đầu do service truyền vào (có caregiver →
+    // RESERVED, chưa có → PENDING_ASSIGNMENT). caregiverScheduleId (SHIFT) lấy từ slot.
     @IterableMapping(nullValueMappingStrategy = NullValueMappingStrategy.RETURN_DEFAULT)
     List<BookingOccurrence> toOccurrenceList(List<OccurrenceSlot> slots, @Context Booking booking,
                                              @Context OccurrenceStatus initialStatus);
@@ -42,11 +43,10 @@ public interface OccurrenceMapper {
     @Mapping(target = "caregiverId", expression = "java(booking.getCaregiverId())")
     @Mapping(target = "caregiverUserId", expression = "java(booking.getCaregiverUserId())")
     @Mapping(target = "status", expression = "java(initialStatus)")
-    // Giờ thực tế do caregiver ghi ở giai đoạn ca chăm sóc; slot Provider chưa nối (TODO) → để trống
+    // Giờ thực tế do caregiver ghi ở giai đoạn ca chăm sóc → để trống
     @Mapping(target = "acknowledgedAt", ignore = true)
     @Mapping(target = "actualStartAt", ignore = true)
     @Mapping(target = "actualEndAt", ignore = true)
-    @Mapping(target = "availabilitySlotId", ignore = true)
     @Mapping(target = "cancelReason", ignore = true)
     @Mapping(target = "note", ignore = true)
     @Mapping(target = "version", ignore = true)

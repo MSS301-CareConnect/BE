@@ -53,6 +53,9 @@ public final class PaymentTestServer {
     private final ObjectMapper objectMapper = JsonMapper.builder().build();
     private final Map<UUID, Map<String, Object>> bookings = new ConcurrentHashMap<>();
     private final List<UUID> depositPaidCalls = new CopyOnWriteArrayList<>();
+    private final List<JsonNode> depositPaidBodies = new CopyOnWriteArrayList<>();
+    private final List<UUID> remainingPaidCalls = new CopyOnWriteArrayList<>();
+    private final List<UUID> paymentOverdueCalls = new CopyOnWriteArrayList<>();
     private final AtomicInteger depositPaidStatus = new AtomicInteger(200);
     private final AtomicReference<String> vnPayResponseCode = new AtomicReference<>("00");
     private final AtomicInteger vnPayHttpStatus = new AtomicInteger(200);
@@ -97,6 +100,9 @@ public final class PaymentTestServer {
 
     public void reset() {
         depositPaidCalls.clear();
+        depositPaidBodies.clear();
+        remainingPaidCalls.clear();
+        paymentOverdueCalls.clear();
         depositPaidStatus.set(200);
         vnPayResponseCode.set("00");
         vnPayHttpStatus.set(200);
@@ -121,11 +127,29 @@ public final class PaymentTestServer {
         booking.put("centerId", centerId.toString());
         booking.put("status", status);
         booking.put("totalAmount", 0);
+        // Mặc định center booking policy (spec §8 / Q5 / M3) như BookingService gửi trong payment-context.
+        booking.put("refundThresholdMinutes", 1440);
+        booking.put("refundPercentBeforeThreshold", 100);
+        booking.put("refundPercentAfterThreshold", 70);
+        booking.put("overduePaymentForfeitPercent", 100);
         if (depositDueAt != null) {
             booking.put("depositDueAt", depositDueAt.toString());
         }
         booking.put("occurrences", occurrences);
         bookings.put(bookingId, booking);
+    }
+
+    // Spec v1 §9.1: % khoản đầu (SHIFT 100) và hạn trả phần còn lại (RECURRING / CUSTOM); không gọi = booking cũ.
+    public void setPaymentTerms(UUID bookingId, int initialPaymentPercent, Instant remainingPaymentDueAt) {
+        Map<String, Object> booking = bookings.get(bookingId);
+        booking.put("initialPaymentPercent", initialPaymentPercent);
+        if (remainingPaymentDueAt != null) {
+            booking.put("remainingPaymentDueAt", remainingPaymentDueAt.toString());
+        }
+    }
+
+    public void setPolicyValue(UUID bookingId, String field, Object value) {
+        bookings.get(bookingId).put(field, value);
     }
 
     public static Map<String, Object> occurrence(UUID occurrenceId, int occurrenceNo, Instant startAt, String status,
@@ -145,6 +169,18 @@ public final class PaymentTestServer {
 
     public List<UUID> depositPaidCalls() {
         return depositPaidCalls;
+    }
+
+    public List<JsonNode> depositPaidBodies() {
+        return depositPaidBodies;
+    }
+
+    public List<UUID> remainingPaidCalls() {
+        return remainingPaidCalls;
+    }
+
+    public List<UUID> paymentOverdueCalls() {
+        return paymentOverdueCalls;
     }
 
     public void setDepositPaidStatus(int status) {
@@ -221,14 +257,21 @@ public final class PaymentTestServer {
             writeSuccess(exchange, booking);
             return;
         }
-        if ("deposit-paid".equals(action)) {
-            exchange.getRequestBody().readAllBytes();
+        if ("deposit-paid".equals(action) || "remaining-paid".equals(action) || "payment-overdue".equals(action)) {
+            byte[] body = exchange.getRequestBody().readAllBytes();
             int status = depositPaidStatus.get();
             if (status != 200) {
                 write(exchange, status, "{\"code\":5999,\"message\":\"fail\"}");
                 return;
             }
-            depositPaidCalls.add(bookingId);
+            switch (action) {
+                case "deposit-paid" -> {
+                    depositPaidCalls.add(bookingId);
+                    depositPaidBodies.add(objectMapper.readTree(body));
+                }
+                case "remaining-paid" -> remainingPaidCalls.add(bookingId);
+                default -> paymentOverdueCalls.add(bookingId);
+            }
             writeSuccess(exchange, Map.of("id", bookingId.toString()));
             return;
         }

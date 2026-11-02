@@ -3,6 +3,7 @@ package mss301.bookingservice.client;
 import mss301.bookingservice.client.dto.AvailabilityCheckRequest;
 import mss301.bookingservice.client.dto.AvailabilityCheckResponse;
 import mss301.bookingservice.client.dto.ProviderCaregiverResponse;
+import mss301.bookingservice.client.dto.ProviderScheduleResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +34,10 @@ public interface ProviderServiceClient {
     // (SEC-08), nên khách chọn caregiver lúc đặt lịch phải tra bằng token SERVICE của Booking.
     @GetMapping("/api/v1/caregivers/{caregiverId}")
     RemoteApiResponse<ProviderCaregiverResponse> getCaregiver(@PathVariable("caregiverId") UUID caregiverId);
+
+    // SHIFT (spec §6): lịch caregiver khách chọn — trung tâm, caregiver, ngày giờ ca, trạng thái.
+    @GetMapping("/api/v1/caregivers/schedules/{scheduleId}")
+    RemoteApiResponse<ProviderScheduleResponse> getSchedule(@PathVariable("scheduleId") UUID scheduleId);
 
     @PostMapping("/api/v1/caregivers/availability-checks")
     RemoteApiResponse<AvailabilityCheckResponse> checkAvailability(@RequestBody AvailabilityCheckRequest request);

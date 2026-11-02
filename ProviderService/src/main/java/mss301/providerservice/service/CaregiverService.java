@@ -74,5 +74,9 @@ public interface CaregiverService {
     CaregiverProfile findActiveCaregiverByUser(UUID userId);
 
     CaregiverProfile findActiveCaregiver(UUID id);
+
+    // Caregiver khách đặt được (spec booking §5.1 / §6): VERIFIED + ACTIVE, trung tâm ACTIVE; ngược lại 404 như không tồn
+    // tại (không lộ trạng thái nội bộ).
+    CaregiverProfile findBookableCaregiver(UUID id);
     APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(UUID centerId, int page, int size);
 }

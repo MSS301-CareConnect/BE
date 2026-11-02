@@ -25,6 +25,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -61,6 +62,8 @@ public final class TestPlatformServer {
     private final Map<UUID, Map<UUID, String>> recipientManagers = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Object>> centers = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Object>> caregivers = new ConcurrentHashMap<>();
+    // Lịch caregiver (caregiver_schedules) của ProviderService giả — SHIFT.
+    private final Map<UUID, Map<String, Object>> schedules = new ConcurrentHashMap<>();
     private final AtomicBoolean identityFailing = new AtomicBoolean(false);
     private final AtomicBoolean careRecipientFailing = new AtomicBoolean(false);
     private final AtomicBoolean providerFailing = new AtomicBoolean(false);
@@ -206,6 +209,22 @@ public final class TestPlatformServer {
         }
         caregivers.put(caregiverId, caregiver);
         return new CaregiverIds(caregiverId, userId);
+    }
+
+    // Lịch caregiver theo giờ Việt Nam như work_shifts của Provider; status SCHEDULED / CANCELLED.
+    public UUID addSchedule(UUID centerId, UUID caregiverId, LocalDate workDate, String startTime, String endTime,
+                            String status) {
+        UUID id = UUID.randomUUID();
+        Map<String, Object> schedule = new LinkedHashMap<>();
+        schedule.put("id", id.toString());
+        schedule.put("caregiverId", caregiverId.toString());
+        schedule.put("centerId", centerId.toString());
+        schedule.put("workDate", workDate.toString());
+        schedule.put("startTime", startTime);
+        schedule.put("endTime", endTime);
+        schedule.put("scheduleStatus", status);
+        schedules.put(id, schedule);
+        return id;
     }
 
     // Caregiver đủ điều kiện, làm được dịch vụ mặc định của mọi scenario test.
@@ -363,7 +382,13 @@ public final class TestPlatformServer {
             writeSuccess(exchange, Map.of());
             return;
         }
-        UUID caregiverId = UUID.fromString(exchange.getRequestURI().getPath().substring("/api/v1/caregivers/".length()));
+        String path = exchange.getRequestURI().getPath();
+        if (path.startsWith("/api/v1/caregivers/schedules/")) {
+            UUID scheduleId = UUID.fromString(path.substring("/api/v1/caregivers/schedules/".length()));
+            writeOrNotFound(exchange, schedules.get(scheduleId), "{\"code\":4420,\"message\":\"Schedule not found\"}");
+            return;
+        }
+        UUID caregiverId = UUID.fromString(path.substring("/api/v1/caregivers/".length()));
         writeOrNotFound(exchange, caregivers.get(caregiverId), "{\"code\":4200,\"message\":\"Hồ sơ người chăm sóc không tồn tại\"}");
     }
 

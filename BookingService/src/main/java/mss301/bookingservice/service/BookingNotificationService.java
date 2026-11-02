@@ -15,6 +15,9 @@ public interface BookingNotificationService {
     void notifyOccurrencesCancelled(Booking booking, List<BookingOccurrence> occurrences);
     void notifyCenter(UUID centerId, NotificationType type, String refType, UUID refId);
 
+    // Nhắc khách trả phần còn lại trước hạn (spec §9.1, M6).
+    void notifyRemainingDue(Booking booking);
+
     // H-08 / H-09: báo các admin cấu hình ở booking.notification.admin-user-ids (không gọi mạng).
     void notifyAdmins(NotificationType type, String refType, UUID refId);
 }

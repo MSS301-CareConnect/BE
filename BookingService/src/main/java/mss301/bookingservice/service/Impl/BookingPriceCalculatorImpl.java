@@ -25,13 +25,19 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
             service.setTotalPrice(BigDecimal.ZERO);
         }
         BigDecimal totalAmount = BigDecimal.ZERO;
-        for (OccurrenceSlot slot : slots) {
+        for (int index = 0; index < slots.size(); index++) {
+            OccurrenceSlot slot = slots.get(index);
             BigDecimal priceAmount = BigDecimal.ZERO;
             for (ServiceQuote service : services) {
                 int units = calculateUnits(service, slot.getDurationMinutes());
                 BigDecimal linePrice = service.getUnitPrice().multiply(BigDecimal.valueOf(units));
-                // Mọi buổi cùng khung giờ nên số đơn vị mỗi buổi như nhau; lưu giá trị của buổi đang tính.
-                service.setUnitsPerOccurrence(units);
+                // SHIFT / RECURRING: mọi buổi cùng số đơn vị. CUSTOM mỗi buổi một khung giờ → số đơn vị khác nhau thì để
+                // null (quantity vẫn là tổng đúng).
+                if (index == 0) {
+                    service.setUnitsPerOccurrence(units);
+                } else if (service.getUnitsPerOccurrence() != null && service.getUnitsPerOccurrence() != units) {
+                    service.setUnitsPerOccurrence(null);
+                }
                 service.setQuantity(service.getQuantity() + units);
                 service.setTotalPrice(service.getTotalPrice().add(linePrice));
                 priceAmount = priceAmount.add(linePrice);

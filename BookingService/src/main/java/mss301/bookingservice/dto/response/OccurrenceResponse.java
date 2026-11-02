@@ -33,6 +33,9 @@ public class OccurrenceResponse {
 
     UUID caregiverId;
 
+    // SHIFT: lịch caregiver mà buổi giữ.
+    UUID caregiverScheduleId;
+
     OccurrenceStatus status;
 
     String cancelReason;

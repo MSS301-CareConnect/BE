@@ -31,4 +31,12 @@ public class CenterPortImpl implements CenterPort {
             throw new AppException(ErrorCode.CENTER_NOT_ACTIVE);
         }
     }
+
+    @Override
+    public void checkExists(UUID centerId) {
+        RemoteApiResponse<ProviderCenterResponse> response = providerClient.getCenter(centerId);
+        if (response == null || response.getResult() == null) {
+            throw new AppException(ErrorCode.PROVIDER_UNAVAILABLE);
+        }
+    }
 }

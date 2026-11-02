@@ -6,7 +6,7 @@
       "paidAmount": 300000,
       "feeAmount": 0,
       "refundAmount": 300000,
-      "rule": "TIER_72_INF"
+      "rule": "BEFORE_THRESHOLD"
     }
   ],
   "totalPaid": 300000,

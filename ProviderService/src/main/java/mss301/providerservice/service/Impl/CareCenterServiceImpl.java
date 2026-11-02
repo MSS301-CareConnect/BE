@@ -285,7 +285,9 @@ public class CareCenterServiceImpl implements CareCenterService {
     }
 
     private void checkNoActiveBookings(UUID id) {
-        for (String state : List.of("PENDING", "AWAITING_DEPOSIT", "CONFIRMED", "IN_PROGRESS")) {
+        // Trạng thái booking còn giữ chỗ (BookingService, spec booking v1.0 §11.1).
+        for (String state : List.of("PENDING_CENTER_CONFIRMATION", "PENDING_CAREGIVER_ASSIGNMENT", "AWAITING_INITIAL_PAYMENT",
+                "CONFIRMED", "IN_PROGRESS")) {
             RemoteApiResponse<BookingCountResponse> response = bookingArchiveClient.list(id, state, 0, 1);
             if (response == null || response.getResult() == null || response.getResult().getTotalElements() == null) {
                 throw new AppException(ErrorCode.BOOKING_SERVICE_UNAVAILABLE);

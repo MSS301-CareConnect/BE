@@ -171,12 +171,18 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Lấy danh sách giao dịch thành công", pageResponse);
     }
 
-    // PAY-15 tối thiểu (D15): doanh thu thuần = đã thu − đã hoàn.
+    // PAY-15 tối thiểu (D15): doanh thu thuần = đã thu − đã hoàn. Spec §9.3: manager chỉ xem trung tâm mình (theo token,
+    // bỏ qua centerId truyền lên); admin xem toàn nền tảng hoặc một trung tâm.
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<RevenueResponse> getRevenue(Instant from, Instant to, UUID centerId) {
+    public APIResponse<RevenueResponse> getRevenue(Set<RoleCode> roles, UUID claimCenterId, Instant from, Instant to,
+                                                   UUID centerId) {
         if (from.isAfter(to)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+        if (!roles.contains(RoleCode.ADMIN)) {
+            checkCenterClaim(claimCenterId);
+            centerId = claimCenterId;
         }
         long count = paymentRepository.countPaid(PaymentStatus.SUCCESS, from, to, centerId);
         BigDecimal gross = paymentRepository.sumPaid(PaymentStatus.SUCCESS, from, to, centerId);
@@ -201,16 +207,20 @@ public class PaymentServiceImpl implements PaymentService {
         }
         Instant now = clock.instant();
         boolean pastDue = context.getDepositDueAt() != null && !now.isBefore(context.getDepositDueAt());
-        if (context.getStatus() != BookingStatus.AWAITING_DEPOSIT || pastDue) {
+        if (context.getStatus() != BookingStatus.AWAITING_INITIAL_PAYMENT || pastDue) {
             throw new AppException(ErrorCode.BOOKING_NOT_PAYABLE);
         }
         List<DepositAllocator.Line> lines = toAllocationLines(context);
         PlatformPolicy policy = paymentPolicyService.findEffective(context.getCenterId(), now);
-        DepositAllocator.Result allocation = DepositAllocator.allocate(lines, policy.getDepositPercent());
+        // Spec §9.1 (Q4a): % khoản đầu do Booking chốt từ center policy (SHIFT 100); booking cũ chưa có → platform_policies.
+        BigDecimal initialPercent = context.getInitialPaymentPercent() != null
+                ? context.getInitialPaymentPercent()
+                : policy.getDepositPercent();
+        DepositAllocator.Result allocation = DepositAllocator.allocate(lines, initialPercent);
         if (allocation.totalDeposit().signum() <= 0) {
             throw new AppException(ErrorCode.BOOKING_NOT_PAYABLE);
         }
-        PolicySnapshot policySnapshot = paymentPolicyMapper.toSnapshot(policy);
+        PolicySnapshot policySnapshot = paymentPolicyMapper.toSnapshot(policy, context, initialPercent);
         Instant expiresAt = now.plus(Duration.ofMinutes(policy.getPaymentSessionTtlMinutes()));
         if (context.getDepositDueAt() != null && context.getDepositDueAt().isBefore(expiresAt)) {
             expiresAt = context.getDepositDueAt();
@@ -364,7 +374,7 @@ public class PaymentServiceImpl implements PaymentService {
         return response.getResult();
     }
 
-    // Chỉ buổi chưa bắt đầu (SCHEDULED / ACKNOWLEDGED) được tính cọc; mọi buổi đó phải có giá.
+    // Chỉ buổi chưa bắt đầu (OccurrenceStatus.NOT_STARTED) được tính cọc; mọi buổi đó phải có giá.
     private List<DepositAllocator.Line> toAllocationLines(BookingPaymentContextResponse context) {
         List<DepositAllocator.Line> lines = new ArrayList<>();
         if (context.getOccurrences() != null) {
@@ -396,7 +406,8 @@ public class PaymentServiceImpl implements PaymentService {
             throw new AppException(ErrorCode.PAYMENT_ALREADY_SUCCESS);
         } else {
             // Giá / chính sách có thể đổi giữa hai lần mở phiên trước khi khách trả — chụp lại.
-            financialMapper.updatePricing(policySnapshot, allocation.totalPrice(), allocation.totalDeposit(), financial);
+            financialMapper.updatePricing(policySnapshot, allocation.totalPrice(), allocation.totalDeposit(),
+                    context.getRemainingPaymentDueAt(), financial);
         }
         upsertOccurrenceFinancials(financial, allocation);
         Payment payment = paymentRepository.findByBookingIdAndPaymentType(bookingId, PaymentType.DEPOSIT).orElse(null);
@@ -522,10 +533,11 @@ public class PaymentServiceImpl implements PaymentService {
                     financial.setStatus(BookingFinancialStatus.DEPOSIT_PAID);
                     financial.setDepositPaymentId(payment.getId());
                     financial.setDepositPaidAt(now);
+                    remainingInvoiceService.openBeforeService(financial);
                 }
             });
             paymentOutboxService.enqueueDepositConfirmation(payment, attempt.getReference());
-        } else if (!remainingInvoiceService.markPaid(payment)) {
+        } else if (!remainingInvoiceService.markPaid(payment, attempt.getReference())) {
             refundService.refundWholePayment(payment.getId(), RefundReason.DUPLICATE);
         }
         log.info("Payment {} {} succeeded ({})", payment.getId(), payment.getPaymentType(), payment.getAmount());

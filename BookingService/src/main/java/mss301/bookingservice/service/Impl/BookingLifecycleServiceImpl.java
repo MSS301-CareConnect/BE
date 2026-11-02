@@ -4,9 +4,9 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingOccurrence;
+import mss301.bookingservice.entity.CenterBookingPolicy;
 import mss301.bookingservice.enums.BookingAction;
 import mss301.bookingservice.enums.BookingEventType;
 import mss301.bookingservice.enums.BookingStatus;
@@ -24,15 +24,19 @@ import mss301.bookingservice.repository.BookingOccurrenceRepository;
 import mss301.bookingservice.repository.BookingStatusHistoryRepository;
 import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingOutboxService;
+import mss301.bookingservice.service.CenterBookingPolicyService;
 import mss301.bookingservice.service.BookingNotificationService;
 import mss301.bookingservice.enums.NotificationType;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,7 +46,7 @@ import java.util.UUID;
 @Slf4j
 public class BookingLifecycleServiceImpl implements BookingLifecycleService {
 
-    static String EXPIRED_REASON = "Quá hạn duyệt hoặc quá hạn đặt cọc";
+    static String EXPIRED_REASON = "Quá hạn xác nhận, phân công hoặc thanh toán";
     static String KEY_SEPARATOR = ":";
     static String REJECTED_OCCURRENCE_REASON = "Trung tâm từ chối booking";
     static String NOTHING_SERVED_REASON = "Không còn buổi nào được thực hiện";
@@ -56,7 +60,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     BookingEventMapper bookingEventMapper;
     BookingMapper bookingMapper;
     BookingOutboxService bookingOutboxService;
-    BookingProperties bookingProperties;
+    CenterBookingPolicyService centerBookingPolicyService;
     Clock clock;
     BookingNotificationService bookingNotificationService;
 
@@ -79,15 +83,32 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             case ACCEPT -> {
                 booking.setAcceptedBy(changedBy);
                 booking.setAcceptedAt(now);
-                booking.setDepositDueAt(calculateDepositDueAt(now, occurrences));
+                booking.setDepositDueAt(calculateDueAt(booking, occurrences, now,
+                        findPolicy(booking).getInitialPaymentTimeoutMinutes()));
             }
+            case ACCEPT_WITHOUT_CAREGIVER -> {
+                booking.setAcceptedBy(changedBy);
+                booking.setAcceptedAt(now);
+                booking.setAssignmentDueAt(calculateDueAt(booking, occurrences, now,
+                        findPolicy(booking).getAssignmentTimeoutMinutes()));
+            }
+            case ASSIGN_CAREGIVER -> booking.setDepositDueAt(calculateDueAt(booking, occurrences, now,
+                    findPolicy(booking).getInitialPaymentTimeoutMinutes()));
             case REJECT -> {
                 booking.setRejectedBy(changedBy);
                 booking.setRejectedAt(now);
                 booking.setRejectedReason(reason);
                 cancelScheduledOccurrences(booking, occurrences, CancelledBy.CENTER, changedBy, REJECTED_OCCURRENCE_REASON);
             }
-            case PAY_DEPOSIT -> booking.setConfirmedAt(now);
+            case PAY_INITIAL_PAYMENT -> {
+                booking.setConfirmedAt(now);
+                // Spec §11.2 (M2): trả khoản đầu → buổi đang giữ được lên lịch chính thức.
+                scheduleReservedOccurrences(occurrences, changedBy, now);
+                // M6: mốc nhắc đã qua lúc trả khoản đầu (booking đặt sát giờ) thì bỏ qua, không nhắc dồn.
+                if (booking.getRemainingPaymentDueAt() != null) {
+                    booking.setRemainingReminderMinutes(findPassedReminder(booking, now));
+                }
+            }
             case CANCEL_BY_CUSTOMER, CANCEL_BY_CENTER, CANCEL_BY_SYSTEM -> {
                 booking.setCancelledAt(now);
                 booking.setCancelledBy(changedBy);
@@ -96,17 +117,21 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 cancelScheduledOccurrences(booking, occurrences, resolveCancelledBy(action), changedBy, reason);
             }
             case EXPIRE -> {
-                // Chỉ PENDING / AWAITING_DEPOSIT hết hạn — chưa có tiền nên không hoàn.
+                // Không xếp hoàn tiền ở đây: chưa trả khoản đầu thì chưa có tiền; quá hạn phần còn lại (CONFIRMED) thì
+                // PaymentService đã giữ cọc theo policy và hoàn phần dư trước khi báo. Buổi chưa bắt đầu → EXPIRED.
                 historyReason = reason == null ? EXPIRED_REASON : reason;
-                cancelScheduledOccurrences(booking, occurrences, CancelledBy.SYSTEM, changedBy, historyReason);
+                expireOccurrences(occurrences, changedBy, historyReason, now);
             }
             case START -> booking.setStartedAt(now);
             case FINALIZE -> {
                 booking.setCompletedAt(now);
-                // Hóa đơn phần còn lại do PaymentService tính (PAY-11); ghi outbox cùng transaction để không bao giờ mất.
-                bookingOutboxService.enqueue(OutboxEventType.REMAINING_INVOICE, booking.getId(),
-                        OutboxEventType.REMAINING_INVOICE.name() + KEY_SEPARATOR + booking.getId(),
-                        bookingMapper.toRemainingInvoiceRequest(booking.getId(), occurrences));
+                // Spec §9.1: booking mới trả đủ trước buổi đầu, không thu sau. Chỉ booking cũ (trước spec v1, chưa có hạn
+                // phần còn lại) còn hóa đơn sau hoàn tất do PaymentService tính (PAY-11) — outbox cùng transaction.
+                if (booking.getRemainingPaymentDueAt() == null && booking.getFullyPaidAt() == null) {
+                    bookingOutboxService.enqueue(OutboxEventType.REMAINING_INVOICE, booking.getId(),
+                            OutboxEventType.REMAINING_INVOICE.name() + KEY_SEPARATOR + booking.getId(),
+                            bookingMapper.toRemainingInvoiceRequest(booking.getId(), occurrences));
+                }
             }
             case FINALIZE_CANCELLED -> {
                 booking.setCancelledAt(now);
@@ -118,6 +143,25 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 changedBy, historyReason, now));
         bookingNotificationService.notifyLifecycle(booking, occurrences, action);
         log.info("Booking {} {} -> {} ({})", booking.getId(), fromStatus, toStatus, action);
+    }
+
+    @Override
+    public boolean remindRemainingPayment(Booking booking) {
+        Instant now = clock.instant();
+        boolean awaitingRemaining = booking.getStatus() == BookingStatus.CONFIRMED && booking.getFullyPaidAt() == null
+                && booking.getRemainingPaymentDueAt() != null && now.isBefore(booking.getRemainingPaymentDueAt());
+        if (!awaitingRemaining) {
+            return false;
+        }
+        Integer passed = findPassedReminder(booking, now);
+        Integer sent = booking.getRemainingReminderMinutes();
+        if (passed == null || (sent != null && sent <= passed)) {
+            return false;
+        }
+        booking.setRemainingReminderMinutes(passed);
+        bookingNotificationService.notifyRemainingDue(booking);
+        log.info("Booking {} reminded to pay the remaining amount ({} minutes before due)", booking.getId(), passed);
+        return true;
     }
 
     @Override
@@ -184,15 +228,64 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                         firstUpcomingStartAt, requestedBy, idempotencyKey));
     }
 
-    // Hạn đặt cọc = accept + depositTimeout, nhưng không quá giờ buổi đầu.
-    private Instant calculateDepositDueAt(Instant now, List<BookingOccurrence> occurrences) {
-        Instant dueAt = now.plus(bookingProperties.getSchedule().getDepositTimeout());
+    // Hạn = bây giờ + timeout của policy, nhưng không quá mốc chốt thanh toán: hạn trả phần còn lại (RECURRING / CUSTOM)
+    // hoặc giờ buổi đầu (SHIFT) — spec §8.
+    private Instant calculateDueAt(Booking booking, List<BookingOccurrence> occurrences, Instant now, int timeoutMinutes) {
+        Instant dueAt = now.plus(Duration.ofMinutes(timeoutMinutes));
+        Instant cutoff = booking.getRemainingPaymentDueAt();
+        if (cutoff == null) {
+            cutoff = occurrences.stream()
+                    .map(BookingOccurrence::getStartAt)
+                    .min(Comparator.naturalOrder())
+                    .orElse(dueAt);
+        }
+        return cutoff.isBefore(dueAt) ? cutoff : dueAt;
+    }
+
+    private CenterBookingPolicy findPolicy(Booking booking) {
+        return centerBookingPolicyService.findEffective(booking.getCenterId());
+    }
+
+    // Mốc nhắc (phút trước hạn phần còn lại) gần hạn nhất đã tới; chưa tới mốc nào → null.
+    private Integer findPassedReminder(Booking booking, Instant now) {
+        Integer[] reminders = findPolicy(booking).getRemainingPaymentReminderMinutes();
+        if (reminders == null) {
+            return null;
+        }
+        Instant dueAt = booking.getRemainingPaymentDueAt();
+        return Arrays.stream(reminders)
+                .filter(Objects::nonNull)
+                .filter(minutes -> !now.isBefore(dueAt.minus(Duration.ofMinutes(minutes))))
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private void scheduleReservedOccurrences(List<BookingOccurrence> occurrences, UUID changedBy, Instant now) {
         for (BookingOccurrence occurrence : occurrences) {
-            if (occurrence.getStartAt().isBefore(dueAt)) {
-                dueAt = occurrence.getStartAt();
+            if (occurrence.getStatus() == OccurrenceStatus.RESERVED) {
+                changeOccurrenceStatus(occurrence, OccurrenceStatus.SCHEDULED, changedBy, null, now);
             }
         }
-        return dueAt;
+    }
+
+    // Booking hết hạn: buổi chưa bắt đầu không còn hiệu lực (spec §11.2 EXPIRED), giải phóng lịch caregiver.
+    private void expireOccurrences(List<BookingOccurrence> occurrences, UUID changedBy, String reason, Instant now) {
+        for (BookingOccurrence occurrence : occurrences) {
+            if (OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())) {
+                changeOccurrenceStatus(occurrence, OccurrenceStatus.EXPIRED, changedBy, reason, now);
+            }
+        }
+    }
+
+    private void changeOccurrenceStatus(BookingOccurrence occurrence, OccurrenceStatus toStatus, UUID changedBy,
+                                        String reason, Instant now) {
+        OccurrenceStatus fromStatus = occurrence.getStatus();
+        if (!fromStatus.canTransitionTo(toStatus)) {
+            throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
+        }
+        occurrence.setStatus(toStatus);
+        bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence,
+                BookingEventType.OCCURRENCE_STATUS_CHANGED, fromStatus, toStatus, changedBy, reason, now));
     }
 
     private CancelledBy resolveCancelledBy(BookingAction action) {

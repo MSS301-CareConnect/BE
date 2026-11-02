@@ -248,10 +248,14 @@ public class CareSessionServiceImpl implements CareSessionService {
         if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())) {
             throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
         }
+        // Spec §9.1, §14: RECURRING / CUSTOM phải trả đủ trước khi chăm sóc (SHIFT / booking cũ không có hạn phần còn lại).
+        if (booking.getRemainingPaymentDueAt() != null && booking.getFullyPaidAt() == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FULLY_PAID);
+        }
         if (careSessionRepository.existsByOccurrenceIdAndDeletedAtIsNull(occurrence.getId())) {
             throw new AppException(ErrorCode.SESSION_ALREADY_EXISTS);
         }
-        if (!OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())) {
+        if (!OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
         }
         // H-11: caregiver bị khóa / lưu trữ → buổi chờ đổi người, không cho check-in bằng tài khoản cũ.

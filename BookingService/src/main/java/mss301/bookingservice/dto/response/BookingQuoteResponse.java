@@ -8,7 +8,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
-// Báo giá tạm tính trước khi đặt (BK-01). Phần cọc chỉ để hiển thị; null khi PaymentService chưa trả chính sách.
+// Báo giá tạm tính trước khi đặt (BK-01). depositPercent = tỷ lệ khoản thanh toán đầu theo center policy (SHIFT 100,
+// RECURRING / CUSTOM = cọc %); estimatedDepositAmount = khoản thanh toán đầu dự kiến; policyId null khi trung tâm dùng
+// policy mặc định.
 @Data
 @Builder
 @AllArgsConstructor

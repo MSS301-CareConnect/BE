@@ -36,12 +36,13 @@
 ## Quy tắc nghiệp vụ (bắt buộc giữ)
 
 1. **Làm tròn VND một chỗ:** `util/VndMoney` (scale 0, HALF_UP). Không `setScale` / chia % rải rác.
-2. **Chính sách:** số liệu (% cọc, mốc phí hủy, cooling-off, % vắng mặt, hạn REMAINING, TTL phiên) lấy từ
-   `platform_policies` (CENTER mới nhất có `effective_from ≤ at`, không có thì GLOBAL), chụp vào
-   `booking_financials.policy_snapshot` lúc mở phiên cọc. Hoàn tiền / hóa đơn **luôn** dùng snapshot, không đọc lại
-   chính sách hiện hành. Chưa có API ghi chính sách (D15) — đổi bằng SQL.
-3. **Phân bổ cọc** chỉ ở `util/DepositAllocator`; **phí hủy / tiền hoàn** chỉ ở `util/RefundCalculator` (bảng
-   `GAP_ANALYSIS.md` §1.2). Preview (`refund-quotes`) và lệnh thật (`refunds`) dùng cùng hàm — Payment không tin số
+2. **Chính sách:** % khoản đầu, hạn phần còn lại, mốc / % hoàn (100 / 70) và % giữ cọc khi quá hạn đến từ center booking
+   policy của BookingService qua `payment-context` (spec booking v1.0, Q4a); `platform_policies` chỉ còn TTL phiên, %
+   vắng mặt / hạn REMAINING của booking cũ và % cọc dự phòng cho booking cũ (CENTER mới nhất có `effective_from ≤ at`,
+   không có thì GLOBAL). Tất cả chụp vào `booking_financials.policy_snapshot` lúc mở phiên thanh toán đầu; hoàn tiền /
+   hóa đơn **luôn** dùng snapshot, không đọc lại chính sách hiện hành.
+3. **Phân bổ cọc** chỉ ở `util/DepositAllocator`; **phí hủy / tiền hoàn / giữ cọc khi quá hạn** chỉ ở
+   `util/RefundCalculator` (spec booking v1.0 §10.2). Preview (`refund-quotes`) và lệnh thật (`refunds`) dùng cùng hàm — Payment không tin số
    tiền Booking gửi.
 4. **Khóa:** mọi lệnh tiền của một booking khóa `booking_financials` (`findForUpdate`) trước. Bất biến
    `payment.refunded_amount + Σ refund (REFUND_PENDING, FAILED) + mới ≤ payment.amount` → vi phạm 409

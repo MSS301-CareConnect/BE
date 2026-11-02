@@ -41,4 +41,17 @@ public class BookingExpiryScheduler {
             log.info("Expiry scan processed {} overdue bookings ({} ok)", bookingIds.size(), expired);
         }
     }
+
+    // Nhắc trả phần còn lại theo mốc của center policy (mặc định 72h, 48h trước hạn — M6), cùng chu kỳ quét.
+    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:5m}",
+            initialDelayString = "${booking.schedule.expiry-scan-interval:5m}")
+    public void remindRemainingPayments() {
+        for (UUID bookingId : bookingService.findRemainingReminderIds()) {
+            try {
+                bookingService.remindRemainingPayment(bookingId);
+            } catch (RuntimeException e) {
+                log.error("Failed to remind booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
+            }
+        }
+    }
 }

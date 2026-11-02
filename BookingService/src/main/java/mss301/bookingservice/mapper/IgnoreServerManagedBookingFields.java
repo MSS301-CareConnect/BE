@@ -19,7 +19,11 @@ import java.lang.annotation.Target;
 @Mapping(target = "acceptanceDueAt", ignore = true)
 @Mapping(target = "acceptedBy", ignore = true)
 @Mapping(target = "acceptedAt", ignore = true)
+@Mapping(target = "assignmentDueAt", ignore = true)
 @Mapping(target = "depositDueAt", ignore = true)
+@Mapping(target = "remainingPaymentDueAt", ignore = true)
+@Mapping(target = "fullyPaidAt", ignore = true)
+@Mapping(target = "remainingReminderMinutes", ignore = true)
 @Mapping(target = "confirmedAt", ignore = true)
 @Mapping(target = "startedAt", ignore = true)
 @Mapping(target = "completedAt", ignore = true)
@@ -32,7 +36,7 @@ import java.lang.annotation.Target;
 @Mapping(target = "idempotencyKey", ignore = true)
 @Mapping(target = "idempotencyHash", ignore = true)
 @Mapping(target = "version", ignore = true)
-// Tiền cọc do PaymentService quyết định theo chính sách hiệu lực và ghi khi xác nhận cọc (PAY-08), không tính ở Booking.
+// Số tiền thanh toán đầu do PaymentService ghi khi xác nhận (PAY-08); tỷ lệ chụp từ center policy truyền qua tham số.
 @Mapping(target = "depositAmount", ignore = true)
 public @interface IgnoreServerManagedBookingFields {
 }

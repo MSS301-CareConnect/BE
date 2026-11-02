@@ -8,6 +8,7 @@ import mss301.paymentservice.dto.response.PageResponse;
 import mss301.paymentservice.dto.response.RefundCreateResponse;
 import mss301.paymentservice.dto.response.RefundQuoteResponse;
 import mss301.paymentservice.dto.response.RefundResponse;
+import mss301.paymentservice.entity.BookingFinancial;
 import mss301.paymentservice.entity.PaymentAttempt;
 import mss301.paymentservice.enums.RefundReason;
 import mss301.paymentservice.enums.RefundStatus;
@@ -37,4 +38,8 @@ public interface RefundService {
 
     // Trong transaction của caller: hoàn nguyên số tiền của MỘT phiên trả trễ / trả trùng (tiền ngoài payment.amount).
     void refundSeparateAttempt(PaymentAttempt attempt, RefundReason reason);
+
+    // Trong transaction của job quá hạn (financial đã khóa): giữ overduePaymentForfeitPercent số đã trả mỗi buổi còn
+    // hiệu lực, hoàn phần dư (M3), đóng tài chính booking. Idempotent theo booking.
+    void refundOverdueForfeit(BookingFinancial financial);
 }

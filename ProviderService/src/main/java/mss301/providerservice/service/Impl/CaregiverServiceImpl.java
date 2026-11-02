@@ -434,7 +434,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         if (!to.isAfter(from) || Duration.between(from, to).compareTo(MAX_AVAILABILITY_RANGE) > 0) {
             throw new AppException(ErrorCode.AVAILABILITY_RANGE_TOO_LONG);
         }
-        findActiveCaregiver(caregiverId);
+        findBookableCaregiver(caregiverId);
         List<UUID> caregiverIds = List.of(caregiverId);
         List<TimeWindow> scheduleWindows = loadScheduleWindows(caregiverIds, from, to)
                 .getOrDefault(caregiverId, List.of());
@@ -457,7 +457,8 @@ public class CaregiverServiceImpl implements CaregiverService {
         List<TimeWindow> slots = caregiverMapper.toTimeWindowList(request.getSlots());
         validateSlots(slots);
         UUID caregiverId = request.getCaregiverId();
-        findActiveCaregiver(caregiverId);
+        // Spec booking §6: kiểm cả ở Provider — caregiver / trung tâm không còn nhận booking thì không rảnh.
+        findBookableCaregiver(caregiverId);
         Instant from = findEarliestStart(slots);
         Instant to = findLatestEnd(slots);
         List<UUID> caregiverIds = List.of(caregiverId);
@@ -487,6 +488,19 @@ public class CaregiverServiceImpl implements CaregiverService {
     public CaregiverProfile findActiveCaregiver(UUID id) {
         return caregiverProfileRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
+    }
+
+    @Override
+    public CaregiverProfile findBookableCaregiver(UUID id) {
+        CaregiverProfile caregiver = findActiveCaregiver(id);
+        boolean bookable = caregiver.getVerificationStatus() == VerificationStatus.VERIFIED
+                && caregiver.getCaregiverStatus() == CaregiverStatus.ACTIVE
+                && caregiver.getCenter().getCenterStatus() == CenterStatus.ACTIVE
+                && caregiver.getCenter().getDeletedAt() == null;
+        if (!bookable) {
+            throw new AppException(ErrorCode.CAREGIVER_NOT_FOUND);
+        }
+        return caregiver;
     }
 
     // Chạy trong transactionTemplate của create — không gọi mạng ở đây.

@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.BookingStatus;
-import mss301.bookingservice.enums.ScheduleType;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,7 +40,9 @@ public class BookingDetailResponse {
 
     UUID caregiverUserId;
 
-    ScheduleType scheduleType;
+    BookingType bookingType;
+
+    RecurrenceFrequency recurrenceFrequency;
 
     LocalDate startDate;
 
@@ -64,13 +67,26 @@ public class BookingDetailResponse {
 
     BigDecimal depositAmount;
 
+    // Tỷ lệ khoản thanh toán đầu (SHIFT 100, RECURRING / CUSTOM = cọc %) chụp từ center policy lúc tạo.
+    BigDecimal initialPaymentPercent;
+
     BigDecimal totalAmount;
 
     Instant acceptanceDueAt;
 
     Instant acceptedAt;
 
+    // Hạn phân caregiver (PENDING_CAREGIVER_ASSIGNMENT).
+    Instant assignmentDueAt;
+
+    // Hạn thanh toán khoản đầu (AWAITING_INITIAL_PAYMENT).
     Instant depositDueAt;
+
+    // RECURRING / CUSTOM: hạn trả xong phần còn lại trước buổi đầu.
+    Instant remainingPaymentDueAt;
+
+    // Đã trả đủ (spec §9.1); NULL khi còn phần chưa trả.
+    Instant fullyPaidAt;
 
     Instant confirmedAt;
 

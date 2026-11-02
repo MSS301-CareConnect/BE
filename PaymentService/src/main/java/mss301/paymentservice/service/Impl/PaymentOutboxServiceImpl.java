@@ -16,6 +16,7 @@ import mss301.paymentservice.enums.TransactionEventType;
 import mss301.paymentservice.exception.AppException;
 import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.PaymentOutboxMapper;
+import mss301.paymentservice.repository.BookingFinancialRepository;
 import mss301.paymentservice.repository.PaymentOutboxRepository;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.service.PaymentOutboxService;
@@ -37,9 +38,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Gửi xác nhận cọc sang Booking ({@code POST /bookings/{id}/deposit-paid}, Booking trả 200 khi đã CONFIRMED nên gửi lại
- * an toàn). Booking từ chối (4xx — hết hạn / đã hủy / không tồn tại) → FAILED và hoàn toàn bộ cọc
- * {@code BOOKING_NOT_CONFIRMABLE}; lỗi tạm thời → backoff tới maxAttempts rồi FAILED để admin xử lý (Đợt 4).
+ * Báo Booking theo loại sự kiện (Booking idempotent nên gửi lại an toàn): xác nhận khoản đầu ({@code /deposit-paid}), đã
+ * trả xong phần còn lại ({@code /remaining-paid}), quá hạn trả phần còn lại ({@code /payment-overdue}). Booking từ chối
+ * (4xx — hết hạn / đã hủy / không tồn tại) → FAILED; khoản vừa thu được hoàn toàn bộ {@code BOOKING_NOT_CONFIRMABLE}
+ * (quá hạn thì không có khoản mới). Lỗi tạm thời → backoff tới maxAttempts rồi FAILED để admin xử lý.
  */
 @Service
 @RequiredArgsConstructor
@@ -48,9 +50,11 @@ import java.util.UUID;
 public class PaymentOutboxServiceImpl implements PaymentOutboxService {
     static int MAX_ERROR_LENGTH = 500;
     static int MAX_BACKOFF_SHIFT = 20;
+    static String OVERDUE_REFERENCE_PREFIX = "invoice=";
 
     PaymentOutboxRepository paymentOutboxRepository;
     PaymentRepository paymentRepository;
+    BookingFinancialRepository bookingFinancialRepository;
     BookingClient bookingClient;
     RefundService refundService;
     PaymentTransactionService paymentTransactionService;
@@ -62,12 +66,27 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueueDepositConfirmation(Payment payment, String paymentReference) {
-        if (paymentOutboxRepository.existsByEventTypeAndPaymentId(OutboxEventType.DEPOSIT_CONFIRMATION, payment.getId())) {
+        enqueue(OutboxEventType.DEPOSIT_CONFIRMATION, payment, paymentReference);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueueRemainingConfirmation(Payment payment, String paymentReference) {
+        enqueue(OutboxEventType.REMAINING_CONFIRMATION, payment, paymentReference);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueuePaymentOverdue(Payment depositPayment, UUID invoiceId) {
+        enqueue(OutboxEventType.PAYMENT_OVERDUE, depositPayment, OVERDUE_REFERENCE_PREFIX + invoiceId);
+    }
+
+    private void enqueue(OutboxEventType eventType, Payment payment, String paymentReference) {
+        if (paymentOutboxRepository.existsByEventTypeAndPaymentId(eventType, payment.getId())) {
             return;
         }
-        PaymentOutbox outbox = paymentOutboxRepository.save(paymentOutboxMapper.toOutbox(
-                OutboxEventType.DEPOSIT_CONFIRMATION, payment.getBookingId(), payment.getId(), paymentReference,
-                OutboxStatus.PENDING, clock.instant()));
+        PaymentOutbox outbox = paymentOutboxRepository.save(paymentOutboxMapper.toOutbox(eventType,
+                payment.getBookingId(), payment.getId(), paymentReference, OutboxStatus.PENDING, clock.instant()));
         UUID outboxId = outbox.getId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -101,7 +120,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         Outcome outcome;
         String error = null;
         try {
-            bookingClient.markDepositPaid(claimed.getBookingId(), new DepositPaidRequest(claimed.getPaymentReference()));
+            send(claimed);
             outcome = Outcome.SENT;
         } catch (AppException e) {
             boolean rejected = e.getErrorCode() == ErrorCode.BOOKING_COMMAND_REJECTED
@@ -115,6 +134,27 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         Outcome finalOutcome = outcome;
         String finalError = error;
         newTransaction.executeWithoutResult(status -> recordResult(outboxId, finalOutcome, finalError));
+    }
+
+    private void send(PaymentOutbox outbox) {
+        UUID bookingId = outbox.getBookingId();
+        switch (outbox.getEventType()) {
+            case DEPOSIT_CONFIRMATION -> bookingClient.markDepositPaid(bookingId, DepositPaidRequest.builder()
+                    .paymentReference(outbox.getPaymentReference())
+                    .fullyPaid(isFullyPaidByDeposit(bookingId))
+                    .build());
+            case REMAINING_CONFIRMATION -> bookingClient.markRemainingPaid(bookingId, DepositPaidRequest.builder()
+                    .paymentReference(outbox.getPaymentReference())
+                    .build());
+            case PAYMENT_OVERDUE -> bookingClient.markPaymentOverdue(bookingId);
+        }
+    }
+
+    // Khoản đầu phủ toàn bộ tiền booking (SHIFT 100 %) → Booking đánh dấu đã trả đủ ngay.
+    private boolean isFullyPaidByDeposit(UUID bookingId) {
+        return bookingFinancialRepository.findById(bookingId)
+                .map(financial -> financial.getDepositAmount().compareTo(financial.getTotalAmount()) >= 0)
+                .orElse(false);
     }
 
     private PaymentOutbox claim(UUID outboxId) {
@@ -139,22 +179,30 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                 outbox.setStatus(OutboxStatus.SENT);
                 outbox.setSentAt(now);
                 outbox.setLastError(null);
-                paymentRepository.findById(outbox.getPaymentId())
-                        .ifPresent(payment -> payment.setBookingNotifiedAt(now));
+                if (outbox.getEventType() != OutboxEventType.PAYMENT_OVERDUE) {
+                    paymentRepository.findById(outbox.getPaymentId())
+                            .ifPresent(payment -> payment.setBookingNotifiedAt(now));
+                }
                 paymentTransactionService.record(outbox.getBookingId(), outbox.getPaymentId(), null, null,
-                        TransactionEventType.BOOKING_CONFIRMED, null, null, "reference=" + outbox.getPaymentReference(),
-                        null);
-                log.info("Booking {} confirmed deposit payment {}", outbox.getBookingId(), outbox.getPaymentId());
+                        TransactionEventType.BOOKING_CONFIRMED, null, null, outbox.getEventType()
+                                + " reference=" + outbox.getPaymentReference(), null);
+                log.info("Booking {} accepted {} ({})", outbox.getBookingId(), outbox.getEventType(),
+                        outbox.getPaymentId());
             }
             case REJECTED -> {
                 outbox.setStatus(OutboxStatus.FAILED);
                 outbox.setLastError(truncate("Booking rejected: " + error));
                 paymentTransactionService.record(outbox.getBookingId(), outbox.getPaymentId(), null, null,
-                        TransactionEventType.BOOKING_REJECTED, null, null, error, null);
-                // Tiền đã thu nhưng booking không còn nhận cọc (hết hạn / hủy) — hoàn toàn bộ.
+                        TransactionEventType.BOOKING_REJECTED, null, null, outbox.getEventType() + " " + error, null);
+                if (outbox.getEventType() == OutboxEventType.PAYMENT_OVERDUE) {
+                    // Booking đã hủy / đã chạy trước khi nhận báo quá hạn — tiền đã xử lý ở Payment, chỉ để admin xem.
+                    log.error("Booking {} rejected payment overdue ({})", outbox.getBookingId(), error);
+                    return;
+                }
+                // Tiền đã thu nhưng booking không còn nhận khoản này (hết hạn / hủy) — hoàn toàn bộ.
                 refundService.refundWholePayment(outbox.getPaymentId(), RefundReason.BOOKING_NOT_CONFIRMABLE);
-                log.error("Booking {} rejected deposit confirmation ({}), deposit {} queued for refund",
-                        outbox.getBookingId(), error, outbox.getPaymentId());
+                log.error("Booking {} rejected {} ({}), payment {} queued for refund", outbox.getBookingId(),
+                        outbox.getEventType(), error, outbox.getPaymentId());
             }
             case RETRY -> scheduleRetry(outbox, error, now);
         }
@@ -165,7 +213,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         outbox.setLastError(truncate(error));
         if (outbox.getAttempts() >= outboxProperties.getMaxAttempts()) {
             outbox.setStatus(OutboxStatus.FAILED);
-            log.error("Deposit confirmation for booking {} FAILED after {} attempts ({})", outbox.getBookingId(),
+            log.error("{} for booking {} FAILED after {} attempts ({})", outbox.getEventType(), outbox.getBookingId(),
                     outbox.getAttempts(), error);
             return;
         }
@@ -175,7 +223,8 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
             backoff = outboxProperties.getBackoffMax();
         }
         outbox.setNextAttemptAt(now.plus(backoff));
-        log.warn("Deposit confirmation for booking {} failed ({}), retry in {}", outbox.getBookingId(), error, backoff);
+        log.warn("{} for booking {} failed ({}), retry in {}", outbox.getEventType(), outbox.getBookingId(), error,
+                backoff);
     }
 
     private String truncate(String message) {

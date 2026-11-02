@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.providerservice.dto.request.ScheduleStatusRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.BookableScheduleResponse;
 import mss301.providerservice.dto.response.PageResponse;
 import mss301.providerservice.dto.response.ScheduleResponse;
 import mss301.providerservice.entity.CareCenter;
@@ -35,6 +36,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +50,7 @@ import java.util.UUID;
 public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
 
     static int MAX_PAGE_SIZE = 100;
+    static int MAX_BOOKABLE_RANGE_DAYS = 31;
 
     CaregiverScheduleRepository caregiverScheduleRepository;
     CareCenterRepository careCenterRepository;
@@ -80,6 +85,35 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         List<ScheduleResponse> items = caregiverScheduleMapper.toResponseList(schedulePage.getContent());
         PageResponse<ScheduleResponse> pageResponse = PageResponse.of(schedulePage, items);
         return APIResponse.success("Lấy lịch người chăm sóc của trung tâm thành công", pageResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<ScheduleResponse> get(UUID id) {
+        CaregiverSchedule schedule = caregiverScheduleRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.SCHEDULE_NOT_FOUND));
+        ScheduleResponse scheduleResponse = caregiverScheduleMapper.toResponse(schedule);
+        return APIResponse.success("Lấy lịch người chăm sóc thành công", scheduleResponse);
+    }
+
+    // Chỉ lịch SCHEDULED từ hôm nay (giờ VN), tối đa 31 ngày; caregiver / trung tâm không nhận booking → 404.
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<BookableScheduleResponse>> listBookable(UUID caregiverId, LocalDate from, LocalDate to) {
+        LocalDate today = LocalDate.now(clock.withZone(ProviderTime.ZONE));
+        LocalDate fromDate = from == null || from.isBefore(today) ? today : from;
+        LocalDate toDate = to == null ? fromDate.plusDays(MAX_BOOKABLE_RANGE_DAYS - 1L) : to;
+        if (toDate.isBefore(fromDate) || ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_BOOKABLE_RANGE_DAYS) {
+            throw new AppException(ErrorCode.AVAILABILITY_RANGE_TOO_LONG);
+        }
+        caregiverService.findBookableCaregiver(caregiverId);
+        List<CaregiverSchedule> schedules = caregiverScheduleRepository.findByCaregiversAndWorkDateRange(
+                List.of(caregiverId), ScheduleStatus.SCHEDULED, fromDate, toDate).stream()
+                .sorted(Comparator.comparing((CaregiverSchedule schedule) -> schedule.getWorkShift().getWorkDate())
+                        .thenComparing(schedule -> schedule.getWorkShift().getStartTime()))
+                .toList();
+        List<BookableScheduleResponse> scheduleResponses = caregiverScheduleMapper.toBookableResponseList(schedules);
+        return APIResponse.success("Lấy lịch có thể đặt của người chăm sóc thành công", scheduleResponses);
     }
 
     /**

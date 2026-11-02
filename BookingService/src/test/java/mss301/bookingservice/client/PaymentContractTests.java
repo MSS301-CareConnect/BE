@@ -46,7 +46,7 @@ class PaymentContractTests {
     void responseFixturesDeserializeIntoClientDtos() throws IOException {
         RefundQuoteResponse quote = strictMapper.readValue(read("refund-quote-response.json"), RefundQuoteResponse.class);
         assertThat(quote.getItems()).hasSize(1);
-        assertThat(quote.getItems().getFirst().getRule()).isEqualTo("TIER_72_INF");
+        assertThat(quote.getItems().getFirst().getRule()).isEqualTo("BEFORE_THRESHOLD");
         assertThat(quote.getItems().getFirst().getRefundAmount()).isEqualByComparingTo("300000");
         assertThat(quote.getTotalRefund()).isEqualByComparingTo("300000");
         assertThat(quote.getPolicyId()).isNotNull();

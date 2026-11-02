@@ -5,7 +5,8 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.response.RecipientSnapshot;
 import mss301.bookingservice.enums.BookingStatus;
-import mss301.bookingservice.enums.ScheduleType;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -52,22 +53,29 @@ public class Booking extends BaseEntity {
     UUID caregiverUserId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "schedule_type", nullable = false, length = 20)
-    ScheduleType scheduleType;
+    @Column(name = "booking_type", nullable = false, length = 20)
+    BookingType bookingType;
 
+    // Chỉ RECURRING.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "recurrence_frequency", length = 20)
+    RecurrenceFrequency recurrenceFrequency;
+
+    // Ngày (theo timezone) của buổi đầu / buổi cuối — mọi loại booking.
     @Column(name = "start_date", nullable = false)
     LocalDate startDate;
 
     @Column(name = "end_date", nullable = false)
     LocalDate endDate;
 
-    @Column(name = "start_time", nullable = false)
+    // Khung giờ lặp — chỉ RECURRING (SHIFT theo lịch caregiver, CUSTOM mỗi buổi một giờ).
+    @Column(name = "start_time")
     LocalTime startTime;
 
-    @Column(name = "end_time", nullable = false)
+    @Column(name = "end_time")
     LocalTime endTime;
 
-    // ISO 1 = Thứ Hai … 7 = Chủ Nhật, tăng dần; chỉ có ở lịch WEEKLY.
+    // ISO 1 = Thứ Hai … 7 = Chủ Nhật, tăng dần; chỉ có ở RECURRING WEEKLY.
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "days_of_week")
     Short[] daysOfWeek;
@@ -93,13 +101,18 @@ public class Booking extends BaseEntity {
     @Column(name = "subtotal", precision = 14, scale = 2)
     BigDecimal subtotal;
 
+    // Khoản thanh toán đầu — PaymentService ghi khi xác nhận (PAY-08); tới đợt 4 vẫn do Payment tính.
     @Column(name = "deposit_amount", precision = 14, scale = 2)
     BigDecimal depositAmount;
+
+    // Tỷ lệ khoản thanh toán đầu chụp từ center policy lúc tạo: SHIFT 100, RECURRING / CUSTOM = cọc % (spec §4, §9.1).
+    @Column(name = "initial_payment_percent", nullable = false, precision = 5, scale = 2)
+    BigDecimal initialPaymentPercent;
 
     @Column(name = "total_amount", precision = 14, scale = 2)
     BigDecimal totalAmount;
 
-    // Hạn trung tâm duyệt (PENDING); quá hạn → EXPIRED.
+    // Hạn trung tâm xác nhận (PENDING_CENTER_CONFIRMATION); quá hạn → EXPIRED.
     @Column(name = "acceptance_due_at")
     Instant acceptanceDueAt;
 
@@ -109,9 +122,26 @@ public class Booking extends BaseEntity {
     @Column(name = "accepted_at")
     Instant acceptedAt;
 
-    // Hạn đặt cọc (AWAITING_DEPOSIT); quá hạn → EXPIRED.
+    // Hạn phân caregiver (PENDING_CAREGIVER_ASSIGNMENT); quá hạn → EXPIRED.
+    @Column(name = "assignment_due_at")
+    Instant assignmentDueAt;
+
+    // Hạn thanh toán khoản đầu (AWAITING_INITIAL_PAYMENT); quá hạn → EXPIRED.
     @Column(name = "deposit_due_at")
     Instant depositDueAt;
+
+    // RECURRING / CUSTOM: hạn trả xong phần còn lại = buổi đầu − remainingPaymentDueBefore của policy (spec §9.1); SHIFT
+    // trả đủ 100 % nên NULL. Quá hạn: PaymentService báo /payment-overdue → EXPIRED.
+    @Column(name = "remaining_payment_due_at")
+    Instant remainingPaymentDueAt;
+
+    // PaymentService báo đã trả đủ (khoản đầu 100 % hoặc phần còn lại). Check-in cần đã trả đủ khi có remainingPaymentDueAt.
+    @Column(name = "fully_paid_at")
+    Instant fullyPaidAt;
+
+    // Mốc nhắc trả phần còn lại (phút trước hạn) nhỏ nhất đã gửi hoặc đã qua lúc trả khoản đầu — mỗi mốc nhắc một lần.
+    @Column(name = "remaining_reminder_minutes")
+    Integer remainingReminderMinutes;
 
     // Buổi đầu tiên check-in (OPS-02).
     @Column(name = "started_at")

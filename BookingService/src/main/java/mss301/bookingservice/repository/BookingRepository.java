@@ -60,18 +60,30 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("select b from Booking b where b.id = :id and b.deletedAt is null")
     Optional<Booking> findForUpdateSkipLocked(@Param("id") UUID id);
 
-    // Booking PENDING quá hạn duyệt hoặc AWAITING_DEPOSIT quá hạn cọc (scheduler xử lý theo lô).
+    // Booking quá hạn xác nhận, quá hạn phân caregiver hoặc quá hạn thanh toán khoản đầu (scheduler xử lý theo lô).
     @Query("""
             select b.id from Booking b
             where b.deletedAt is null
-              and ((b.status = :pendingStatus and b.acceptanceDueAt <= :now)
-                or (b.status = :awaitingDepositStatus and b.depositDueAt <= :now))
+              and ((b.status = :confirmationStatus and b.acceptanceDueAt <= :now)
+                or (b.status = :assignmentStatus and b.assignmentDueAt <= :now)
+                or (b.status = :paymentStatus and b.depositDueAt <= :now))
             order by b.createdAt
             """)
-    List<UUID> findExpirableIds(@Param("pendingStatus") BookingStatus pendingStatus,
-                                @Param("awaitingDepositStatus") BookingStatus awaitingDepositStatus,
+    List<UUID> findExpirableIds(@Param("confirmationStatus") BookingStatus confirmationStatus,
+                                @Param("assignmentStatus") BookingStatus assignmentStatus,
+                                @Param("paymentStatus") BookingStatus paymentStatus,
                                 @Param("now") Instant now,
                                 Pageable pageable);
+
+    // Booking đã trả khoản đầu, chưa trả đủ, chưa tới hạn phần còn lại — hạn gần nhất trước (nhắc 72h / 48h, M6).
+    @Query("""
+            select b.id from Booking b
+            where b.deletedAt is null and b.status = :status and b.fullyPaidAt is null
+              and b.remainingPaymentDueAt > :now
+            order by b.remainingPaymentDueAt
+            """)
+    List<UUID> findRemainingPaymentReminderIds(@Param("status") BookingStatus status, @Param("now") Instant now,
+                                               Pageable pageable);
 
     // Khóa tư vấn PostgreSQL trong transaction hiện tại (tự nhả khi commit/rollback): tuần tự hóa kiểm trùng lịch của
     // cùng caregiver / người bệnh giữa các request song song (bước kiểm ở service không tự chống race).

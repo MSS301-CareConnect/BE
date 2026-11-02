@@ -39,7 +39,9 @@ import mss301.paymentservice.repository.OccurrenceFinancialRepository;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RemainingInvoiceRepository;
 import mss301.paymentservice.service.PaymentCheckoutService;
+import mss301.paymentservice.service.PaymentOutboxService;
 import mss301.paymentservice.service.PaymentTransactionService;
+import mss301.paymentservice.service.RefundService;
 import mss301.paymentservice.service.RemainingInvoiceService;
 import mss301.paymentservice.util.VndMoney;
 import org.springframework.data.domain.Page;
@@ -56,6 +58,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -79,6 +82,8 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
     PaymentRepository paymentRepository;
     PaymentCheckoutService paymentCheckoutService;
     PaymentTransactionService paymentTransactionService;
+    PaymentOutboxService paymentOutboxService;
+    RefundService refundService;
     RemainingInvoiceMapper remainingInvoiceMapper;
     PaymentMapper paymentMapper;
     PaymentProperties paymentProperties;
@@ -127,6 +132,10 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         BookingFinancial financial = bookingFinancialRepository.findForUpdate(bookingId).orElse(null);
         if (financial == null || financial.getStatus() == BookingFinancialStatus.AWAITING_DEPOSIT) {
             log.warn("Remaining invoice for booking {} not required: deposit never paid", bookingId);
+            return notRequired(bookingId);
+        }
+        if (financial.getRemainingDueAt() != null) {
+            // Spec v1 §9.1: booking mới trả đủ trước buổi đầu (openBeforeService), không thu sau hoàn tất.
             return notRequired(bookingId);
         }
         RemainingInvoice existing = remainingInvoiceRepository.findByBookingId(bookingId).orElse(null);
@@ -204,7 +213,25 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public boolean markPaid(Payment payment) {
+    public void openBeforeService(BookingFinancial financial) {
+        UUID bookingId = financial.getBookingId();
+        if (financial.getRemainingDueAt() == null || remainingInvoiceRepository.findByBookingId(bookingId).isPresent()) {
+            return;
+        }
+        BigDecimal remaining = unpaidBeforeService(occurrenceFinancialRepository.findAllByBookingId(bookingId));
+        if (remaining.signum() <= 0) {
+            return;
+        }
+        RemainingInvoice invoice = remainingInvoiceRepository.save(remainingInvoiceMapper.toInvoice(financial, remaining,
+                financial.getRemainingDueAt(), InvoiceStatus.PENDING));
+        paymentTransactionService.record(bookingId, null, null, invoice.getId(), TransactionEventType.INVOICE_CREATED,
+                remaining, null, "dueAt=" + invoice.getDueAt() + " beforeService=true", null);
+        log.info("Remaining invoice {} for booking {} due before the first visit: {}", invoice.getId(), bookingId, remaining);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean markPaid(Payment payment, String paymentReference) {
         RemainingInvoice invoice = payment.getInvoiceId() == null
                 ? null
                 : remainingInvoiceRepository.findForUpdate(payment.getInvoiceId()).orElse(null);
@@ -221,11 +248,23 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
                 TransactionEventType.INVOICE_PAID, payment.getAmount(), null, null, null);
         bookingFinancialRepository.findForUpdate(invoice.getBookingId()).ifPresent(financial -> {
             financial.setStatus(BookingFinancialStatus.CLOSED);
+            boolean beforeService = financial.getRemainingDueAt() != null;
             for (OccurrenceFinancial occurrenceFinancial : occurrenceFinancialRepository.findAllByBookingId(
                     invoice.getBookingId())) {
+                if (beforeService) {
+                    // Trả trước buổi đầu: mỗi buổi còn hiệu lực đã trả đủ giá (buổi đã hủy giữ nguyên).
+                    if (occurrenceFinancial.getFinalStatus() == null) {
+                        occurrenceFinancial.setChargedAmount(unpaidOf(occurrenceFinancial)
+                                .add(occurrenceFinancial.getChargedAmount()));
+                    }
+                    continue;
+                }
                 BigDecimal extra = chargeOf(occurrenceFinancial, financial.getPolicySnapshot())
                         .subtract(occurrenceFinancial.getDepositAmount());
                 occurrenceFinancial.setChargedAmount(VndMoney.nonNegative(extra));
+            }
+            if (beforeService) {
+                paymentOutboxService.enqueueRemainingConfirmation(payment, paymentReference);
             }
         });
         return true;
@@ -244,10 +283,32 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         if (invoice == null || invoice.getStatus() != InvoiceStatus.PENDING || invoice.getDueAt().isAfter(clock.instant())) {
             return;
         }
+        BookingFinancial financial = bookingFinancialRepository.findForUpdate(invoice.getBookingId()).orElse(null);
+        if (financial != null && financial.getRemainingDueAt() != null) {
+            expireBeforeService(invoice, financial);
+            return;
+        }
         invoice.setStatus(InvoiceStatus.OVERDUE);
         paymentTransactionService.record(invoice.getBookingId(), null, null, invoice.getId(),
                 TransactionEventType.INVOICE_OVERDUE, invoice.getAmount(), null, null, null);
         log.info("Remaining invoice {} of customer {} is overdue", invoice.getId(), invoice.getCustomerId());
+    }
+
+    /**
+     * M1, M3: quá hạn trả phần còn lại trước buổi đầu → hóa đơn EXPIRED (không phải nợ), giữ cọc theo policy đã snapshot,
+     * hoàn phần dư, báo Booking chuyển EXPIRED. Hóa đơn đã khóa — IPN trả phần còn lại khóa cùng dòng nên không đua: trả
+     * trước thì không quá hạn, trả sau thì hóa đơn không còn mở → hoàn lại khoản vừa thu.
+     */
+    private void expireBeforeService(RemainingInvoice invoice, BookingFinancial financial) {
+        invoice.setStatus(InvoiceStatus.EXPIRED);
+        paymentTransactionService.record(invoice.getBookingId(), null, null, invoice.getId(),
+                TransactionEventType.INVOICE_OVERDUE, invoice.getAmount(), null, "beforeService=true", null);
+        refundService.refundOverdueForfeit(financial);
+        paymentRepository.findByBookingIdAndPaymentType(invoice.getBookingId(), PaymentType.DEPOSIT)
+                .filter(deposit -> deposit.getStatus() == PaymentStatus.SUCCESS)
+                .ifPresent(deposit -> paymentOutboxService.enqueuePaymentOverdue(deposit, invoice.getId()));
+        log.info("Remaining invoice {} expired before service, booking {} expires", invoice.getId(),
+                invoice.getBookingId());
     }
 
     private PaymentAttempt openRemainingAttempt(UUID customerId, UUID invoiceId, CreateCheckoutRequest request) {
@@ -255,6 +316,14 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
                 .filter(found -> found.getCustomerId().equals(customerId))
                 .orElseThrow(() -> new AppException(ErrorCode.INVOICE_NOT_FOUND));
         if (!OPEN_STATUSES.contains(invoice.getStatus()) || invoice.getAmount().signum() <= 0) {
+            throw new AppException(ErrorCode.INVOICE_NOT_PAYABLE);
+        }
+        BookingFinancial financial = bookingFinancialRepository.findById(invoice.getBookingId())
+                .orElseThrow(() -> new AppException(ErrorCode.INVOICE_NOT_PAYABLE));
+        Instant now = clock.instant();
+        // Hóa đơn trước buổi đầu chỉ trả được tới hạn (job quá hạn có thể chưa chạy tới).
+        boolean beforeService = financial.getRemainingDueAt() != null;
+        if (beforeService && !now.isBefore(invoice.getDueAt())) {
             throw new AppException(ErrorCode.INVOICE_NOT_PAYABLE);
         }
         Payment payment = paymentRepository.findByBookingIdAndPaymentType(invoice.getBookingId(), PaymentType.REMAINING)
@@ -271,11 +340,28 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
             payment.setStatus(PaymentStatus.PENDING);
         }
         invoice.setPaymentId(payment.getId());
-        int ttlMinutes = bookingFinancialRepository.findById(invoice.getBookingId())
-                .map(financial -> financial.getPolicySnapshot().getPaymentSessionTtlMinutes())
-                .orElseThrow(() -> new AppException(ErrorCode.INVOICE_NOT_PAYABLE));
-        Instant expiresAt = clock.instant().plus(Duration.ofMinutes(ttlMinutes));
+        Instant expiresAt = now.plus(Duration.ofMinutes(financial.getPolicySnapshot().getPaymentSessionTtlMinutes()));
+        if (beforeService && invoice.getDueAt().isBefore(expiresAt)) {
+            expiresAt = invoice.getDueAt();
+        }
         return paymentCheckoutService.openAttempt(payment, request.getProvider(), expiresAt);
+    }
+
+    // Phần chưa trả trước buổi đầu = Σ (giá − cọc − đã thu thêm) của buổi còn hiệu lực (chưa có kết cục).
+    static BigDecimal unpaidBeforeService(Collection<OccurrenceFinancial> occurrenceFinancials) {
+        BigDecimal unpaid = BigDecimal.ZERO;
+        for (OccurrenceFinancial occurrenceFinancial : occurrenceFinancials) {
+            if (occurrenceFinancial.getFinalStatus() == null) {
+                unpaid = unpaid.add(unpaidOf(occurrenceFinancial));
+            }
+        }
+        return unpaid;
+    }
+
+    private static BigDecimal unpaidOf(OccurrenceFinancial occurrenceFinancial) {
+        return VndMoney.nonNegative(occurrenceFinancial.getPriceAmount()
+                .subtract(occurrenceFinancial.getDepositAmount())
+                .subtract(occurrenceFinancial.getChargedAmount()));
     }
 
     // COMPLETED tính đủ giá, khách vắng tính % theo snapshot; buổi hủy / MISSED không tính tiền.
@@ -292,10 +378,12 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
     private OccurrenceFinalStatus toFinalStatus(OccurrenceStatus status) {
         return switch (status) {
             case COMPLETED -> OccurrenceFinalStatus.COMPLETED;
-            case CANCELLED -> OccurrenceFinalStatus.CANCELLED;
-            case MISSED -> OccurrenceFinalStatus.MISSED;
+            // Buổi hết hạn (booking chưa thanh toán xong) cũng không tính tiền như buổi hủy.
+            case CANCELLED, EXPIRED -> OccurrenceFinalStatus.CANCELLED;
+            // OccurrenceFinalStatus là dữ liệu riêng của Payment (occurrence_financials) — giữ tên MISSED.
+            case CAREGIVER_MISSED -> OccurrenceFinalStatus.MISSED;
             case CUSTOMER_NO_SHOW -> OccurrenceFinalStatus.CUSTOMER_NO_SHOW;
-            case SCHEDULED, ACKNOWLEDGED, IN_PROGRESS -> null;
+            case PENDING_ASSIGNMENT, RESERVED, SCHEDULED, ACKNOWLEDGED, IN_PROGRESS -> null;
         };
     }
 

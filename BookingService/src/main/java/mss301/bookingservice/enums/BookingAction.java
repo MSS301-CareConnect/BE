@@ -10,33 +10,40 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * State machine của booking — NGUỒN DUY NHẤT về chuyển trạng thái hợp lệ (docs/2026-10-09-PLAN_BOOKING.md §4).
+ * State machine của booking — NGUỒN DUY NHẤT về chuyển trạng thái hợp lệ (spec §11.1).
  * Mỗi hành động có tập trạng thái nguồn và đúng một trạng thái đích. "Ai được làm" kiểm ở service (role + phạm vi).
  */
 @Getter
 public enum BookingAction {
-    // Trung tâm chấp nhận (cần đã có caregiver).
-    ACCEPT(BookingStatus.AWAITING_DEPOSIT, BookingStatus.PENDING),
-    // Trung tâm từ chối.
-    REJECT(BookingStatus.REJECTED, BookingStatus.PENDING),
-    // Payment báo đã đặt cọc (TODO(Payment): hiện qua /internal/bookings/{id}/deposit-paid).
-    PAY_DEPOSIT(BookingStatus.CONFIRMED, BookingStatus.AWAITING_DEPOSIT),
+    // Trung tâm xác nhận booking đã có caregiver → chờ thanh toán khoản đầu.
+    ACCEPT(BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.PENDING_CENTER_CONFIRMATION),
+    // Trung tâm xác nhận RECURRING / CUSTOM chưa có caregiver → phải phân caregiver trong hạn policy (spec §5.2).
+    ACCEPT_WITHOUT_CAREGIVER(BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.PENDING_CENTER_CONFIRMATION),
+    // Trung tâm phân caregiver cho booking đã xác nhận → chờ thanh toán khoản đầu (spec §5.3).
+    ASSIGN_CAREGIVER(BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT),
+    // Trung tâm từ chối trước khi cung cấp dịch vụ (kể cả khi không tìm được caregiver, spec §5.3).
+    REJECT(BookingStatus.REJECTED, BookingStatus.PENDING_CENTER_CONFIRMATION, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT),
+    // PaymentService báo khoản thanh toán đầu thành công (SHIFT 100 %, RECURRING / CUSTOM tiền cọc).
+    PAY_INITIAL_PAYMENT(BookingStatus.CONFIRMED, BookingStatus.AWAITING_INITIAL_PAYMENT),
     // Khách hủy trước giờ buổi đầu.
-    CANCEL_BY_CUSTOMER(BookingStatus.CANCELLED,
-            BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED),
-    // Trung tâm hủy trường hợp đặc biệt (PENDING thì dùng REJECT).
+    CANCEL_BY_CUSTOMER(BookingStatus.CANCELLED, BookingStatus.PENDING_CENTER_CONFIRMATION,
+            BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED),
+    // Trung tâm hủy trường hợp đặc biệt (chưa thanh toán thì dùng REJECT).
     CANCEL_BY_CENTER(BookingStatus.CANCELLED,
-            BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
-    // Hệ thống hủy (BK-04: trung tâm bị khóa) — mọi trạng thái còn giữ chỗ; IN_PROGRESS chỉ khi không còn buổi nào.
-    CANCEL_BY_SYSTEM(BookingStatus.CANCELLED,
-            BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
-    // Scheduler: quá hạn duyệt (PENDING) hoặc quá hạn đặt cọc (AWAITING_DEPOSIT).
-    EXPIRE(BookingStatus.EXPIRED, BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT),
+            BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
+    // Hệ thống / admin hủy (BK-04: trung tâm bị khóa) — mọi trạng thái còn giữ chỗ; IN_PROGRESS chỉ khi không còn buổi nào.
+    CANCEL_BY_SYSTEM(BookingStatus.CANCELLED, BookingStatus.PENDING_CENTER_CONFIRMATION,
+            BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED,
+            BookingStatus.IN_PROGRESS),
+    // Scheduler: quá hạn xác nhận, quá hạn phân caregiver hoặc quá hạn thanh toán khoản đầu. CONFIRMED: PaymentService
+    // báo quá hạn trả phần còn lại trước buổi đầu (spec §11.1, §15; M1).
+    EXPIRE(BookingStatus.EXPIRED, BookingStatus.PENDING_CENTER_CONFIRMATION, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT,
+            BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED),
     // Caregiver check-in buổi đầu tiên (OPS-02).
     START(BookingStatus.IN_PROGRESS, BookingStatus.CONFIRMED),
     // Không còn buổi nào chưa kết thúc và ít nhất một buổi đã được phục vụ (COMPLETED / CUSTOMER_NO_SHOW) — OPS-04.
     FINALIZE(BookingStatus.COMPLETED, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS),
-    // Không còn buổi nào chưa kết thúc và không buổi nào được phục vụ (mọi buổi bị hủy / MISSED) — OPS-04.
+    // Không còn buổi nào chưa kết thúc và không buổi nào được phục vụ (mọi buổi bị hủy / CAREGIVER_MISSED) — OPS-04.
     FINALIZE_CANCELLED(BookingStatus.CANCELLED, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
 
     private final BookingStatus targetStatus;

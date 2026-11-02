@@ -1,5 +1,6 @@
 package mss301.providerservice.mapper;
 
+import mss301.providerservice.dto.response.BookableScheduleResponse;
 import mss301.providerservice.dto.response.ScheduleResponse;
 import mss301.providerservice.entity.CaregiverSchedule;
 import mss301.providerservice.entity.ShiftRegistration;
@@ -24,6 +25,16 @@ public interface CaregiverScheduleMapper {
     ScheduleResponse toResponse(CaregiverSchedule caregiverSchedule);
 
     List<ScheduleResponse> toResponseList(List<CaregiverSchedule> caregiverSchedules);
+
+    @Mapping(target = "caregiverId", source = "caregiver.id")
+    @Mapping(target = "workShiftId", source = "workShift.id")
+    @Mapping(target = "centerId", source = "workShift.center.id")
+    @Mapping(target = "workDate", source = "workShift.workDate")
+    @Mapping(target = "startTime", source = "workShift.startTime")
+    @Mapping(target = "endTime", source = "workShift.endTime")
+    BookableScheduleResponse toBookableResponse(CaregiverSchedule caregiverSchedule);
+
+    List<BookableScheduleResponse> toBookableResponseList(List<CaregiverSchedule> caregiverSchedules);
 
     // Lịch sinh ra từ đăng ký vừa duyệt: caregiver lấy từ registration; workShift là bản đã khóa dòng do service
     // truyền vào (chỉ rõ nguồn vì registration cũng có workShift); note chỉ rõ nguồn vì WorkShift cũng có note.

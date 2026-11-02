@@ -1,7 +1,6 @@
 package mss301.bookingservice.mapper;
 
 import mss301.bookingservice.client.dto.IdentityUserResponse;
-import mss301.bookingservice.client.dto.PaymentPolicyResponse;
 import mss301.bookingservice.client.dto.RefundCreateRequest;
 import mss301.bookingservice.client.dto.RefundQuoteRequest;
 import mss301.bookingservice.client.dto.RefundQuoteResponse;
@@ -23,9 +22,11 @@ import mss301.bookingservice.dto.response.QuoteOccurrenceResponse;
 import mss301.bookingservice.dto.response.ServiceQuote;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.CustomerProfileResponse;
 import mss301.bookingservice.dto.response.RecipientSnapshot;
 import mss301.bookingservice.entity.Booking;
+import mss301.bookingservice.entity.CenterBookingPolicy;
 import mss301.bookingservice.entity.BookingDetail;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.repository.OccurrenceStatsView;
@@ -40,6 +41,7 @@ import org.mapstruct.NullValueMappingStrategy;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -63,20 +65,24 @@ public interface BookingMapper {
     @Mapping(target = "caregiverId", source = "caregiver.caregiverId")
     @Mapping(target = "caregiverUserId", source = "caregiver.caregiverUserId")
     @Mapping(target = "recipientSnapshot", source = "recipientSnapshot")
-    // Lịch một lần không gửi endDate → cùng ngày với startDate (cột NOT NULL)
-    @Mapping(target = "endDate", source = "request.endDate", defaultExpression = "java(request.getStartDate())")
+    @Mapping(target = "recurrenceFrequency", source = "request.frequency")
+    // Ngày buổi đầu / buổi cuối do service tính từ các buổi đã sinh (mọi loại booking); request chỉ có ở RECURRING.
+    @Mapping(target = "startDate", source = "startDate")
+    @Mapping(target = "endDate", source = "endDate")
     @Mapping(target = "serviceAddress", source = "recipientSnapshot", qualifiedByName = "toServiceAddress")
     Booking toBooking(BookingCreateRequest request, UUID customerId, RecipientSnapshot recipientSnapshot,
-                      AssignedCaregiver caregiver, BookingQuote quote);
+                      AssignedCaregiver caregiver, BookingQuote quote, LocalDate startDate, LocalDate endDate,
+                      BigDecimal initialPaymentPercent);
 
-    // Báo giá tạm tính (BK-01): policy null (PaymentService chưa trả) → không có phần cọc.
+    // Báo giá tạm tính (BK-01): tỷ lệ + khoản thanh toán đầu theo center policy (policy mặc định → policyId null).
     @Mapping(target = "occurrenceCount", expression = "java(quote.getOccurrences().size())")
     @Mapping(target = "lines", source = "quote.items")
     @Mapping(target = "occurrences", source = "quote.occurrences")
     @Mapping(target = "totalAmount", source = "quote.totalAmount")
-    @Mapping(target = "depositPercent", source = "policy.depositPercent")
-    @Mapping(target = "policyId", source = "policy.policyId")
-    BookingQuoteResponse toQuoteResponse(BookingQuote quote, PaymentPolicyResponse policy, BigDecimal estimatedDepositAmount);
+    @Mapping(target = "depositPercent", source = "initialPaymentPercent")
+    @Mapping(target = "policyId", source = "policy.id")
+    BookingQuoteResponse toQuoteResponse(BookingQuote quote, CenterBookingPolicy policy, BigDecimal initialPaymentPercent,
+                                         BigDecimal estimatedDepositAmount);
 
     @Mapping(target = "pricingUnit", source = "unitType")
     @Mapping(target = "lineTotal", source = "totalPrice")
@@ -86,11 +92,16 @@ public interface BookingMapper {
 
     // payment-context (C3.2, PaymentService gọi bằng token SERVICE). Ngày cọc thật = confirmedAt.
     @Mapping(target = "bookingId", source = "booking.id")
+    @Mapping(target = "centerId", source = "booking.centerId")
     @Mapping(target = "status", source = "booking.status")
     @Mapping(target = "depositPaidAt", source = "booking.confirmedAt")
     @Mapping(target = "occurrences", source = "occurrences")
+    @Mapping(target = "refundThresholdMinutes", source = "policy.refundThresholdMinutes")
+    @Mapping(target = "refundPercentBeforeThreshold", source = "policy.refundPercentBeforeThreshold")
+    @Mapping(target = "refundPercentAfterThreshold", source = "policy.refundPercentAfterThreshold")
+    @Mapping(target = "overduePaymentForfeitPercent", source = "policy.overduePaymentForfeitPercent")
     PaymentContextResponse toPaymentContextResponse(Booking booking, List<BookingOccurrence> occurrences,
-                                                    Instant firstStartAt,
+                                                    Instant firstStartAt, CenterBookingPolicy policy,
                                                     @Context Set<UUID> occurrenceIdsWithSession);
 
     // depositAmount từng buổi do PaymentService ghi khi xác nhận cọc (PAY-08) — chưa có cột ở Booking.
@@ -193,7 +204,14 @@ public interface BookingMapper {
     @Mapping(target = "finalStatus", source = "status")
     RemainingInvoiceRequest.Occurrence toRemainingInvoiceOccurrence(BookingOccurrence occurrence);
 
-    // Phục vụ API nội bộ /internal/bookings/caregiver-access (CareRecipientService gọi).
+    // Spec §3: lịch đã bị giữ + khoảng bận của caregiver (không kèm booking / khách).
+    @Mapping(target = "busySlots", source = "occurrences")
+    CaregiverHeldScheduleResponse toHeldScheduleResponse(UUID caregiverId, List<UUID> heldScheduleIds,
+                                                         List<BookingOccurrence> occurrences);
+
+    CaregiverHeldScheduleResponse.BusySlot toBusySlot(BookingOccurrence occurrence);
+
+    // Phục vụ GET /api/v1/bookings/caregiver-access (CareRecipientService gọi bằng token SERVICE).
     CaregiverAccessResponse toCaregiverAccessResponse(UUID caregiverUserId, UUID recipientId, boolean allowed);
 
     // Địa chỉ chăm sóc = địa chỉ trong snapshot lúc đặt (bỏ phần trống).

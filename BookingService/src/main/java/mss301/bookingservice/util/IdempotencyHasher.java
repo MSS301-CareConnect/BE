@@ -2,6 +2,7 @@ package mss301.bookingservice.util;
 
 import mss301.bookingservice.dto.request.BookingCreateRequest;
 import mss301.bookingservice.dto.request.BookingServiceRequest;
+import mss301.bookingservice.dto.request.TimeSlotRequest;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * SHA-256 của nội dung yêu cầu đặt lịch đã chuẩn hóa (thứ tự dịch vụ / thứ trong tuần không ảnh hưởng). Cùng
+ * SHA-256 của nội dung yêu cầu đặt lịch đã chuẩn hóa (thứ tự dịch vụ / thứ trong tuần / buổi CUSTOM không ảnh hưởng). Cùng
  * Idempotency-Key + cùng hash → trả booking đã tạo; khác hash → IDEMPOTENCY_KEY_REUSED.
  */
 public final class IdempotencyHasher {
@@ -28,12 +29,15 @@ public final class IdempotencyHasher {
         parts.add(String.valueOf(request.getRecipientId()));
         parts.add(String.valueOf(request.getCenterId()));
         parts.add(String.valueOf(request.getCaregiverId()));
-        parts.add(String.valueOf(request.getScheduleType()));
+        parts.add(String.valueOf(request.getBookingType()));
+        parts.add(String.valueOf(request.getCaregiverScheduleId()));
+        parts.add(String.valueOf(request.getFrequency()));
         parts.add(String.valueOf(request.getStartDate()));
         parts.add(String.valueOf(request.getEndDate()));
         parts.add(String.valueOf(request.getStartTime()));
         parts.add(String.valueOf(request.getEndTime()));
         parts.add(String.valueOf(sortedDays(request.getDaysOfWeek())));
+        parts.add(String.valueOf(sortedSlots(request.getSlots())));
         parts.add(String.valueOf(request.getCustomerNote()));
         parts.add(String.valueOf(sortedServices(request.getServices())));
         return sha256(String.join(SEPARATOR, parts));
@@ -45,6 +49,18 @@ public final class IdempotencyHasher {
         }
         return daysOfWeek.stream()
                 .filter(Objects::nonNull)
+                .sorted()
+                .toList();
+    }
+
+    // CUSTOM: thứ tự buổi gửi lên không ảnh hưởng (generator sắp lại theo giờ bắt đầu).
+    private static List<String> sortedSlots(List<TimeSlotRequest> slots) {
+        if (slots == null) {
+            return List.of();
+        }
+        return slots.stream()
+                .filter(Objects::nonNull)
+                .map(slot -> slot.getStartAt() + "/" + slot.getEndAt())
                 .sorted()
                 .toList();
     }

@@ -10,6 +10,7 @@ import mss301.paymentservice.dto.response.OutstandingDebtResponse;
 import mss301.paymentservice.dto.response.PageResponse;
 import mss301.paymentservice.dto.response.RemainingInvoiceResponse;
 import mss301.paymentservice.dto.response.RemainingInvoiceResultResponse;
+import mss301.paymentservice.entity.BookingFinancial;
 import mss301.paymentservice.entity.Payment;
 import mss301.paymentservice.enums.InvoiceStatus;
 import mss301.paymentservice.enums.RoleCode;
@@ -32,8 +33,13 @@ public interface RemainingInvoiceService {
 
     APIResponse<RemainingInvoiceResponse> waive(UUID actorId, UUID invoiceId, WaiveInvoiceRequest request);
 
-    // Trong transaction IPN của payment REMAINING thành công. false = hóa đơn không còn mở (đã miễn / đã trả) → tiền thừa.
-    boolean markPaid(Payment payment);
+    // Spec §9.1: trong transaction IPN của khoản đầu (financial đã khóa) — còn phần chưa trả thì mở hóa đơn, hạn trước
+    // buổi đầu. Không có hạn phần còn lại (SHIFT 100 %, booking cũ) → không làm gì.
+    void openBeforeService(BookingFinancial financial);
+
+    // Trong transaction IPN của payment REMAINING thành công. false = hóa đơn không còn mở (đã miễn / đã trả / hết hạn)
+    // → tiền thừa. Hóa đơn trước buổi đầu: xếp outbox báo Booking đã trả đủ.
+    boolean markPaid(Payment payment, String paymentReference);
 
     List<UUID> findOverdueCandidateIds();
 

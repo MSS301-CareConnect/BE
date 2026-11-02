@@ -12,6 +12,7 @@ import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 // booking_financials + occurrence_financials (tài chính của booking, tạo khi mở phiên cọc).
@@ -27,6 +28,7 @@ public interface FinancialMapper {
     @Mapping(target = "status", source = "status")
     @Mapping(target = "depositPaymentId", ignore = true)
     @Mapping(target = "depositPaidAt", ignore = true)
+    @Mapping(target = "remainingDueAt", source = "context.remainingPaymentDueAt")
     BookingFinancial toBookingFinancial(BookingPaymentContextResponse context, PolicySnapshot policySnapshot,
                                         BigDecimal totalAmount, BigDecimal depositAmount, BookingFinancialStatus status);
 
@@ -36,8 +38,9 @@ public interface FinancialMapper {
     @Mapping(target = "policySnapshot", source = "policySnapshot")
     @Mapping(target = "totalAmount", source = "totalAmount")
     @Mapping(target = "depositAmount", source = "depositAmount")
+    @Mapping(target = "remainingDueAt", source = "remainingDueAt")
     void updatePricing(PolicySnapshot policySnapshot, BigDecimal totalAmount, BigDecimal depositAmount,
-                       @MappingTarget BookingFinancial bookingFinancial);
+                       Instant remainingDueAt, @MappingTarget BookingFinancial bookingFinancial);
 
     @IgnoreServerManagedFields
     @Mapping(target = "chargedAmount", constant = "0")

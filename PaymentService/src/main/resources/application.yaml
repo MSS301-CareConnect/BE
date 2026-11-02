@@ -28,7 +28,8 @@ management:
 
 payment:
   jwt:
-    issuer: ${PAYMENT_JWT_ISSUER:careconnect-identity}
+    # Phải khớp chính xác IDENTITY_JWT_ISSUER; không đặt mặc định để thiếu cấu hình thì app dừng ngay khi khởi động.
+    issuer: ${PAYMENT_JWT_ISSUER}
     jwks-uri: ${PAYMENT_JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
   booking-url: ${PAYMENT_BOOKING_URL:http://localhost:8080}
   identity-url: ${PAYMENT_IDENTITY_URL:http://localhost:8080}

@@ -22,22 +22,30 @@ class BookingActionTests {
     static final Map<BookingAction, BookingStatus> EXPECTED_TARGETS = new EnumMap<>(BookingAction.class);
 
     static {
-        EXPECTED_SOURCES.put(BookingAction.ACCEPT, EnumSet.of(BookingStatus.PENDING));
-        EXPECTED_TARGETS.put(BookingAction.ACCEPT, BookingStatus.AWAITING_DEPOSIT);
-        EXPECTED_SOURCES.put(BookingAction.REJECT, EnumSet.of(BookingStatus.PENDING));
+        // Spec §11.1 — bảng chuyển trạng thái đầy đủ của booking.
+        EXPECTED_SOURCES.put(BookingAction.ACCEPT, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION));
+        EXPECTED_TARGETS.put(BookingAction.ACCEPT, BookingStatus.AWAITING_INITIAL_PAYMENT);
+        EXPECTED_SOURCES.put(BookingAction.ACCEPT_WITHOUT_CAREGIVER, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION));
+        EXPECTED_TARGETS.put(BookingAction.ACCEPT_WITHOUT_CAREGIVER, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT);
+        EXPECTED_SOURCES.put(BookingAction.ASSIGN_CAREGIVER, EnumSet.of(BookingStatus.PENDING_CAREGIVER_ASSIGNMENT));
+        EXPECTED_TARGETS.put(BookingAction.ASSIGN_CAREGIVER, BookingStatus.AWAITING_INITIAL_PAYMENT);
+        EXPECTED_SOURCES.put(BookingAction.REJECT, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT));
         EXPECTED_TARGETS.put(BookingAction.REJECT, BookingStatus.REJECTED);
-        EXPECTED_SOURCES.put(BookingAction.PAY_DEPOSIT, EnumSet.of(BookingStatus.AWAITING_DEPOSIT));
-        EXPECTED_TARGETS.put(BookingAction.PAY_DEPOSIT, BookingStatus.CONFIRMED);
-        EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_CUSTOMER,
-                EnumSet.of(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED));
+        EXPECTED_SOURCES.put(BookingAction.PAY_INITIAL_PAYMENT, EnumSet.of(BookingStatus.AWAITING_INITIAL_PAYMENT));
+        EXPECTED_TARGETS.put(BookingAction.PAY_INITIAL_PAYMENT, BookingStatus.CONFIRMED);
+        EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_CUSTOMER, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED));
         EXPECTED_TARGETS.put(BookingAction.CANCEL_BY_CUSTOMER, BookingStatus.CANCELLED);
         EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_CENTER,
-                EnumSet.of(BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
+                EnumSet.of(BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
         EXPECTED_TARGETS.put(BookingAction.CANCEL_BY_CENTER, BookingStatus.CANCELLED);
-        EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_SYSTEM, EnumSet.of(BookingStatus.PENDING,
-                BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS));
+        EXPECTED_SOURCES.put(BookingAction.CANCEL_BY_SYSTEM, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED,
+                BookingStatus.IN_PROGRESS));
         EXPECTED_TARGETS.put(BookingAction.CANCEL_BY_SYSTEM, BookingStatus.CANCELLED);
-        EXPECTED_SOURCES.put(BookingAction.EXPIRE, EnumSet.of(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT));
+        EXPECTED_SOURCES.put(BookingAction.EXPIRE, EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED));
         EXPECTED_TARGETS.put(BookingAction.EXPIRE, BookingStatus.EXPIRED);
         EXPECTED_SOURCES.put(BookingAction.START, EnumSet.of(BookingStatus.CONFIRMED));
         EXPECTED_TARGETS.put(BookingAction.START, BookingStatus.IN_PROGRESS);
@@ -83,24 +91,39 @@ class BookingActionTests {
 
     @Test
     void scheduleHoldingStatusesAreExactlyTheActiveOnes() {
-        assertThat(BookingStatus.SCHEDULE_HOLDING).containsExactlyInAnyOrder(BookingStatus.PENDING,
-                BookingStatus.AWAITING_DEPOSIT, BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS);
+        assertThat(BookingStatus.SCHEDULE_HOLDING).containsExactlyInAnyOrder(BookingStatus.PENDING_CENTER_CONFIRMATION,
+                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, BookingStatus.CONFIRMED,
+                BookingStatus.IN_PROGRESS);
         assertThat(BookingStatus.CAREGIVER_RECIPIENT_ACCESS).containsExactlyInAnyOrder(BookingStatus.CONFIRMED,
                 BookingStatus.IN_PROGRESS);
     }
 
     @Test
     void occurrenceTransitions() {
+        // Spec §11.2: chưa có caregiver → giữ lịch → lên lịch chính thức khi trả khoản đầu.
+        assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.RESERVED)).isTrue();
+        assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.SCHEDULED)).isFalse();
+        assertThat(OccurrenceStatus.RESERVED.canTransitionTo(OccurrenceStatus.SCHEDULED)).isTrue();
+        assertThat(OccurrenceStatus.RESERVED.canTransitionTo(OccurrenceStatus.EXPIRED)).isTrue();
+        assertThat(OccurrenceStatus.RESERVED.canTransitionTo(OccurrenceStatus.IN_PROGRESS)).isFalse();
         assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.CANCELLED)).isTrue();
         assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.IN_PROGRESS)).isTrue();
-        assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.MISSED)).isTrue();
+        assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.CAREGIVER_MISSED)).isTrue();
         assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.COMPLETED)).isFalse();
+        // M1: booking quá hạn trả phần còn lại → buổi đã lên lịch hết hiệu lực.
+        assertThat(OccurrenceStatus.SCHEDULED.canTransitionTo(OccurrenceStatus.EXPIRED)).isTrue();
+        assertThat(OccurrenceStatus.ACKNOWLEDGED.canTransitionTo(OccurrenceStatus.EXPIRED)).isTrue();
+        assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.EXPIRED)).isFalse();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.COMPLETED)).isTrue();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.CANCELLED)).isFalse();
-        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.COMPLETED, OccurrenceStatus.CANCELLED, OccurrenceStatus.MISSED)) {
+        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.COMPLETED, OccurrenceStatus.CANCELLED,
+                OccurrenceStatus.EXPIRED, OccurrenceStatus.CUSTOMER_NO_SHOW, OccurrenceStatus.CAREGIVER_MISSED)) {
             for (OccurrenceStatus target : OccurrenceStatus.values()) {
                 assertThat(terminal.canTransitionTo(target)).isFalse();
             }
         }
+        // Spec §6: các trạng thái chiếm lịch caregiver.
+        assertThat(OccurrenceStatus.CAREGIVER_HOLDING).containsExactlyInAnyOrder(OccurrenceStatus.RESERVED,
+                OccurrenceStatus.SCHEDULED, OccurrenceStatus.ACKNOWLEDGED, OccurrenceStatus.IN_PROGRESS);
     }
 }

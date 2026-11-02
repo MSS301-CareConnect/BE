@@ -191,7 +191,7 @@ public abstract class PaymentIntegrationTest {
             startTimes.add(startAt);
             occurrences.add(PaymentTestServer.occurrence(occurrenceId, i + 1, startAt, "SCHEDULED", prices[i]));
         }
-        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_DEPOSIT", BASE.plus(Duration.ofHours(24)),
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
                 occurrences);
         return new BookingSetup(bookingId, customerId, centerId, occurrenceIds, startTimes);
     }
@@ -205,7 +205,7 @@ public abstract class PaymentIntegrationTest {
             occurrenceIds.add(occurrenceId);
             occurrences.add(PaymentTestServer.occurrence(occurrenceId, i + 1, startTimes.get(i), "SCHEDULED", price));
         }
-        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_DEPOSIT", BASE.plus(Duration.ofHours(24)),
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
                 occurrences);
         return new BookingSetup(bookingId, customerId, centerId, occurrenceIds, startTimes);
     }

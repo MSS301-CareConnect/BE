@@ -133,14 +133,29 @@ booking:
     # L-08: buổi đầu bắt đầu trong vòng 90 ngày; mỗi buổi dài ít nhất 1 giờ.
     max-advance-days: ${BOOKING_MAX_ADVANCE_DAYS:90}
     min-occurrence-duration: ${BOOKING_MIN_OCCURRENCE_DURATION:1h}
-    min-lead-time: ${BOOKING_MIN_LEAD_TIME:12h}
-    acceptance-timeout: ${BOOKING_ACCEPTANCE_TIMEOUT:24h}
-    deposit-timeout: ${BOOKING_DEPOSIT_TIMEOUT:24h}
     # Caregiver còn xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (BK-07).
     caregiver-access-grace: ${BOOKING_CAREGIVER_ACCESS_GRACE:24h}
     expiry-batch-size: ${BOOKING_EXPIRY_BATCH_SIZE:100}
     # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler).
     expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:5m}
+
+  # Center booking policy mặc định (spec §8) cho trung tâm chưa cấu hình riêng — phút / phần trăm.
+  policy-defaults:
+    shift-min-advance-minutes: ${BOOKING_POLICY_SHIFT_MIN_ADVANCE_MINUTES:120}
+    recurring-min-advance-minutes: ${BOOKING_POLICY_RECURRING_MIN_ADVANCE_MINUTES:2880}
+    custom-min-advance-minutes: ${BOOKING_POLICY_CUSTOM_MIN_ADVANCE_MINUTES:2880}
+    confirmation-timeout-minutes: ${BOOKING_POLICY_CONFIRMATION_TIMEOUT_MINUTES:1440}
+    assignment-timeout-minutes: ${BOOKING_POLICY_ASSIGNMENT_TIMEOUT_MINUTES:1440}
+    initial-payment-timeout-minutes: ${BOOKING_POLICY_INITIAL_PAYMENT_TIMEOUT_MINUTES:1440}
+    remaining-payment-due-before-minutes: ${BOOKING_POLICY_REMAINING_PAYMENT_DUE_BEFORE_MINUTES:1440}
+    remaining-payment-reminder-minutes: ${BOOKING_POLICY_REMAINING_PAYMENT_REMINDER_MINUTES:4320,2880}
+    deposit-percent: ${BOOKING_POLICY_DEPOSIT_PERCENT:30}
+    check-in-early-minutes: ${BOOKING_POLICY_CHECK_IN_EARLY_MINUTES:30}
+    check-in-late-minutes: ${BOOKING_POLICY_CHECK_IN_LATE_MINUTES:30}
+    refund-threshold-minutes: ${BOOKING_POLICY_REFUND_THRESHOLD_MINUTES:1440}
+    refund-percent-before-threshold: ${BOOKING_POLICY_REFUND_PERCENT_BEFORE_THRESHOLD:100}
+    refund-percent-after-threshold: ${BOOKING_POLICY_REFUND_PERCENT_AFTER_THRESHOLD:70}
+    overdue-payment-forfeit-percent: ${BOOKING_POLICY_OVERDUE_PAYMENT_FORFEIT_PERCENT:100}
 
   # Ca chăm sóc (OPS-02 / OPS-04): check-in sớm tối đa 30 phút; nhắc session quên kết thúc sau giờ kết thúc + 60 phút.
   session:

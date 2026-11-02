@@ -6,7 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import mss301.bookingservice.enums.ScheduleType;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -26,26 +27,33 @@ public class BookingCreateRequest implements BookingScheduleRequest {
     @NotNull(message = "CENTER_ID_REQUIRED")
     UUID centerId;
 
-    // caregiver_profiles.caregiver_id bên ProviderService; không bắt buộc (trung tâm phân công khi chấp nhận)
+    @NotNull(message = "BOOKING_TYPE_REQUIRED")
+    BookingType bookingType;
+
+    // caregiver_profiles.caregiver_id bên ProviderService; bắt buộc với SHIFT, tùy chọn với RECURRING / CUSTOM
+    // (trung tâm phân công sau khi xác nhận).
     UUID caregiverId;
 
-    @NotNull(message = "SCHEDULE_TYPE_REQUIRED")
-    ScheduleType scheduleType;
+    // SHIFT: caregiver_schedules.schedule_id bên ProviderService.
+    UUID caregiverScheduleId;
 
-    @NotNull(message = "START_DATE_REQUIRED")
+    // RECURRING: DAILY / WEEKLY.
+    RecurrenceFrequency frequency;
+
     LocalDate startDate;
 
-    // Bắt buộc với DAILY / WEEKLY; ONE_TIME bỏ trống hoặc bằng startDate
     LocalDate endDate;
 
-    @NotNull(message = "START_TIME_REQUIRED")
     LocalTime startTime;
 
-    @NotNull(message = "END_TIME_REQUIRED")
     LocalTime endTime;
 
-    // ISO 1 = Thứ Hai … 7 = Chủ Nhật; chỉ cho WEEKLY
+    // ISO 1 = Thứ Hai … 7 = Chủ Nhật; chỉ cho RECURRING WEEKLY.
     List<Integer> daysOfWeek;
+
+    // CUSTOM: từng buổi một khung giờ riêng.
+    @Size(max = 366, message = "TOO_MANY_OCCURRENCES")
+    List<@Valid @NotNull(message = "INVALID_TIME_SLOT") TimeSlotRequest> slots;
 
     @Size(max = 2000, message = "TEXT_TOO_LONG")
     String customerNote;

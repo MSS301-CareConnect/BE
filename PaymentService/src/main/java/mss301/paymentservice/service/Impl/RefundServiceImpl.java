@@ -55,6 +55,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -71,7 +72,8 @@ import java.util.UUID;
 public class RefundServiceImpl implements RefundService {
     // Tiền đang giữ chỗ trên payment: chưa chuyển xong (PENDING) hoặc lỗi chờ admin thử lại (FAILED — vẫn nợ khách).
     static Set<RefundStatus> RESERVED_STATUSES = EnumSet.of(RefundStatus.REFUND_PENDING, RefundStatus.FAILED);
-    static Set<BookingStatus> UNPAID_BOOKING_STATUSES = EnumSet.of(BookingStatus.PENDING, BookingStatus.AWAITING_DEPOSIT);
+    static Set<BookingStatus> UNPAID_BOOKING_STATUSES = EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+            BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT);
     static Set<InvoiceStatus> OPEN_INVOICE_STATUSES = EnumSet.of(InvoiceStatus.PENDING, InvoiceStatus.OVERDUE);
     static String COMPLAINT_KEY_PREFIX = "COMPLAINT_REFUND:";
     static String KEY_SEPARATOR = ":";
@@ -123,8 +125,7 @@ public class RefundServiceImpl implements RefundService {
         Map<UUID, OccurrenceFinancial> occurrenceFinancials = findOccurrenceFinancials(financial);
         boolean paid = isDepositPaid(financial) && !UNPAID_BOOKING_STATUSES.contains(request.getBookingStatus());
         RefundCalculator.Context context = new RefundCalculator.Context(paid,
-                financial == null ? null : financial.getPolicySnapshot(), request.getReason(), request.getCancelledAt(),
-                request.getFirstUpcomingStartAt(), financial == null ? null : financial.getDepositPaidAt());
+                financial == null ? null : financial.getPolicySnapshot(), request.getReason(), request.getCancelledAt());
         List<RefundCalculator.OccurrenceInput> inputs = new ArrayList<>();
         for (RefundQuoteRequest.Occurrence occurrence : request.getOccurrences()) {
             OccurrenceFinancial occurrenceFinancial = occurrenceFinancials.get(occurrence.getOccurrenceId());
@@ -163,10 +164,21 @@ public class RefundServiceImpl implements RefundService {
             log.warn("Refund {} for booking {} skipped: deposit not paid", key, bookingId);
             return buildCreateResponse(List.of());
         }
-        Map<UUID, Refund> alreadyCreated = new HashMap<>();
+        boolean settledByOverdue = remainingInvoiceRepository.findByBookingId(bookingId)
+                .filter(invoice -> invoice.getStatus() == InvoiceStatus.EXPIRED)
+                .isPresent();
+        if (settledByOverdue) {
+            // Quá hạn trả phần còn lại đã giữ cọc / hoàn phần dư (M3) — lệnh hủy tới sau không hoàn thêm.
+            log.warn("Refund {} for booking {} skipped: already settled as payment overdue", key, bookingId);
+            return buildCreateResponse(List.of());
+        }
+        // Một buổi có thể có nhiều dòng hoàn (chia qua khoản đầu và phần còn lại).
+        List<Refund> alreadyCreated = new ArrayList<>();
+        Set<UUID> doneOccurrences = new HashSet<>();
         for (Refund refund : refundRepository.findAllByIdempotencyKey(key)) {
             if (refund.getOccurrenceId() != null && refund.getBookingId().equals(bookingId)) {
-                alreadyCreated.put(refund.getOccurrenceId(), refund);
+                alreadyCreated.add(refund);
+                doneOccurrences.add(refund.getOccurrenceId());
             }
         }
         Map<UUID, OccurrenceFinancial> occurrenceFinancials = findOccurrenceFinancials(financial);
@@ -174,7 +186,7 @@ public class RefundServiceImpl implements RefundService {
         Set<UUID> requested = new HashSet<>(request.getOccurrenceIds());
         for (UUID occurrenceId : requested) {
             OccurrenceFinancial occurrenceFinancial = occurrenceFinancials.get(occurrenceId);
-            if (alreadyCreated.containsKey(occurrenceId)) {
+            if (doneOccurrences.contains(occurrenceId)) {
                 continue;
             }
             if (occurrenceFinancial == null) {
@@ -185,18 +197,33 @@ public class RefundServiceImpl implements RefundService {
                     occurrenceFinancial.getPriceAmount(), paidAmountOf(occurrenceFinancial)));
         }
         RefundCalculator.Context context = new RefundCalculator.Context(true, financial.getPolicySnapshot(),
-                request.getReason(), request.getCancelledAt(), request.getFirstUpcomingStartAt(),
-                financial.getDepositPaidAt());
+                request.getReason(), request.getCancelledAt());
         List<RefundCalculator.Line> lines = RefundCalculator.calculate(context, inputs);
         BigDecimal newTotal = BigDecimal.ZERO;
         for (RefundCalculator.Line line : lines) {
             newTotal = newTotal.add(line.refundAmount());
         }
-        checkRefundable(deposit, newTotal);
+        // Spec v1 §9.1: buổi đã trả đủ thì tiền nằm ở cả khoản đầu lẫn phần còn lại — chia hoàn theo chỗ còn hoàn được,
+        // phần còn lại trước (như khiếu nại). Booking cũ / chưa trả phần còn lại thì chỉ có khoản đầu.
+        List<Payment> payments = new ArrayList<>(paymentRepository.findAllByBookingIdAndStatus(bookingId,
+                PaymentStatus.SUCCESS));
+        payments.sort(Comparator.comparing(payment -> payment.getPaymentType() == PaymentType.REMAINING ? 0 : 1));
+        Map<UUID, BigDecimal> rooms = new HashMap<>();
+        BigDecimal refundable = BigDecimal.ZERO;
+        for (Payment payment : payments) {
+            BigDecimal room = refundableRoomOf(payment);
+            rooms.put(payment.getId(), room);
+            refundable = refundable.add(room);
+        }
+        if (newTotal.compareTo(refundable) > 0) {
+            log.warn("Refund {} for booking {} rejected: {} exceeds refundable room {}", key, bookingId, newTotal,
+                    refundable);
+            throw new AppException(ErrorCode.REFUND_EXCEEDS_PAID);
+        }
         OccurrenceFinalStatus finalStatus = request.getReason() == RefundReason.CAREGIVER_MISSED
                 ? OccurrenceFinalStatus.MISSED
                 : OccurrenceFinalStatus.CANCELLED;
-        List<Refund> refunds = new ArrayList<>(alreadyCreated.values());
+        List<Refund> refunds = new ArrayList<>(alreadyCreated);
         Instant now = clock.instant();
         for (RefundCalculator.Line line : lines) {
             OccurrenceFinancial occurrenceFinancial = occurrenceFinancials.get(line.occurrenceId());
@@ -206,14 +233,30 @@ public class RefundServiceImpl implements RefundService {
             }
             // Ghi "đã hoàn" ngay khi tạo lệnh: lần tính sau (lý do khác, key khác) không hoàn trùng buổi này.
             occurrenceFinancial.setRefundedAmount(occurrenceFinancial.getRefundedAmount().add(line.refundAmount()));
-            Refund refund = refundRepository.save(refundMapper.toRefund(deposit, null, line.occurrenceId(), null,
-                    line.refundAmount(), line.feeAmount(), request.getReason(), request.getCancelledBy(),
-                    request.getRequestedBy(), key, RefundStatus.REFUND_PENDING, now));
-            paymentTransactionService.record(bookingId, deposit.getId(), refund.getId(), null,
-                    TransactionEventType.REFUND_REQUESTED, refund.getAmount(), key,
-                    "reason=" + request.getReason() + " rule=" + line.rule() + " fee=" + line.feeAmount(), null);
-            refunds.add(refund);
+            BigDecimal remaining = line.refundAmount();
+            BigDecimal fee = line.feeAmount();
+            for (Payment payment : payments) {
+                BigDecimal part = rooms.get(payment.getId()).min(remaining);
+                if (part.signum() <= 0) {
+                    continue;
+                }
+                rooms.put(payment.getId(), rooms.get(payment.getId()).subtract(part));
+                remaining = remaining.subtract(part);
+                Refund refund = refundRepository.save(refundMapper.toRefund(payment, null, line.occurrenceId(), null,
+                        part, fee, request.getReason(), request.getCancelledBy(), request.getRequestedBy(), key,
+                        RefundStatus.REFUND_PENDING, now));
+                paymentTransactionService.record(bookingId, payment.getId(), refund.getId(), null,
+                        TransactionEventType.REFUND_REQUESTED, refund.getAmount(), key,
+                        "reason=" + request.getReason() + " rule=" + line.rule() + " fee=" + fee, null);
+                refunds.add(refund);
+                // Phí ghi một lần cho buổi (ở dòng hoàn đầu tiên).
+                fee = BigDecimal.ZERO;
+                if (remaining.signum() == 0) {
+                    break;
+                }
+            }
         }
+        reduceBeforeServiceInvoice(financial, occurrenceFinancials.values(), key);
         log.info("Refund {} for booking {}: {} item(s), total {}", key, bookingId, refunds.size(), newTotal);
         return buildCreateResponse(refunds);
     }
@@ -317,6 +360,10 @@ public class RefundServiceImpl implements RefundService {
                         occurrenceFinancial.setFinalStatus(OccurrenceFinalStatus.CANCELLED);
                     }
                 }
+                // Booking không nhận khoản đầu → hóa đơn phần còn lại trước buổi đầu không còn phải trả.
+                remainingInvoiceRepository.findForUpdateByBookingId(payment.getBookingId())
+                        .filter(invoice -> invoice.getStatus() == InvoiceStatus.PENDING)
+                        .ifPresent(invoice -> invoice.setStatus(InvoiceStatus.CANCELLED));
             }
             financial.setStatus(BookingFinancialStatus.CLOSED);
         }
@@ -339,6 +386,82 @@ public class RefundServiceImpl implements RefundService {
                 "reason=" + reason + " attempt=" + attempt.getReference(), null);
         log.warn("Attempt {} of payment {} paid late / twice — {} queued for refund ({})", attempt.getReference(),
                 payment.getId(), attempt.getAmount(), reason);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void refundOverdueForfeit(BookingFinancial financial) {
+        UUID bookingId = financial.getBookingId();
+        String key = RefundReason.PAYMENT_OVERDUE.name() + KEY_SEPARATOR + bookingId;
+        Payment deposit = paymentRepository.findByBookingIdAndPaymentType(bookingId, PaymentType.DEPOSIT)
+                .filter(payment -> payment.getStatus() == PaymentStatus.SUCCESS)
+                .orElse(null);
+        if (deposit == null || refundRepository.existsByIdempotencyKey(key)) {
+            return;
+        }
+        List<OccurrenceFinancial> open = occurrenceFinancialRepository.findAllByBookingId(bookingId).stream()
+                .filter(occurrenceFinancial -> occurrenceFinancial.getFinalStatus() == null)
+                .toList();
+        List<RefundCalculator.OccurrenceInput> inputs = new ArrayList<>();
+        for (OccurrenceFinancial occurrenceFinancial : open) {
+            inputs.add(new RefundCalculator.OccurrenceInput(occurrenceFinancial.getOccurrenceId(),
+                    occurrenceFinancial.getStartAt(), null, false, occurrenceFinancial.getPriceAmount(),
+                    paidAmountOf(occurrenceFinancial)));
+        }
+        // Snapshot cũ chưa có % giữ cọc → không đoán phí, hoàn đủ (cùng cách RefundCalculator xử lý mốc hoàn).
+        BigDecimal forfeitPercent = financial.getPolicySnapshot().getOverduePaymentForfeitPercent() == null
+                ? BigDecimal.ZERO
+                : financial.getPolicySnapshot().getOverduePaymentForfeitPercent();
+        List<RefundCalculator.Line> lines = RefundCalculator.forfeit(forfeitPercent, inputs);
+        BigDecimal total = BigDecimal.ZERO;
+        for (RefundCalculator.Line line : lines) {
+            total = total.add(line.refundAmount());
+        }
+        checkRefundable(deposit, total);
+        Instant now = clock.instant();
+        for (int i = 0; i < open.size(); i++) {
+            OccurrenceFinancial occurrenceFinancial = open.get(i);
+            RefundCalculator.Line line = lines.get(i);
+            occurrenceFinancial.setFinalStatus(OccurrenceFinalStatus.CANCELLED);
+            if (line.refundAmount().signum() <= 0) {
+                continue;
+            }
+            occurrenceFinancial.setRefundedAmount(occurrenceFinancial.getRefundedAmount().add(line.refundAmount()));
+            Refund refund = refundRepository.save(refundMapper.toRefund(deposit, null, line.occurrenceId(), null,
+                    line.refundAmount(), line.feeAmount(), RefundReason.PAYMENT_OVERDUE, CancelledBy.SYSTEM, null, key,
+                    RefundStatus.REFUND_PENDING, now));
+            paymentTransactionService.record(bookingId, deposit.getId(), refund.getId(), null,
+                    TransactionEventType.REFUND_REQUESTED, refund.getAmount(), key,
+                    "reason=PAYMENT_OVERDUE fee=" + line.feeAmount(), null);
+        }
+        financial.setStatus(BookingFinancialStatus.CLOSED);
+        log.info("Booking {} payment overdue: {}% of the paid amount kept, {} refunded", bookingId, forfeitPercent, total);
+    }
+
+    // Buổi bị hủy trước khi trả phần còn lại: hóa đơn trước buổi đầu chỉ còn phần chưa trả của buổi còn hiệu lực; về 0 →
+    // CANCELLED (không còn gì phải trả).
+    private void reduceBeforeServiceInvoice(BookingFinancial financial, Collection<OccurrenceFinancial> occurrenceFinancials,
+                                            String key) {
+        if (financial.getRemainingDueAt() == null) {
+            return;
+        }
+        RemainingInvoice invoice = remainingInvoiceRepository.findForUpdateByBookingId(financial.getBookingId())
+                .filter(openInvoice -> openInvoice.getStatus() == InvoiceStatus.PENDING)
+                .orElse(null);
+        if (invoice == null) {
+            return;
+        }
+        BigDecimal amount = RemainingInvoiceServiceImpl.unpaidBeforeService(occurrenceFinancials);
+        if (amount.compareTo(invoice.getAmount()) >= 0) {
+            return;
+        }
+        paymentTransactionService.record(financial.getBookingId(), null, null, invoice.getId(),
+                TransactionEventType.INVOICE_REDUCED, invoice.getAmount().subtract(amount), key, "occurrences cancelled",
+                null);
+        invoice.setAmount(amount);
+        if (amount.signum() == 0) {
+            invoice.setStatus(InvoiceStatus.CANCELLED);
+        }
     }
 
     // Hóa đơn phần còn lại chưa trả: giảm nợ trước (khách chưa trả thì không cần hoàn), trả về phần còn phải hoàn.

@@ -64,10 +64,10 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "caregiver_user_id")
     UUID caregiverUserId;
 
-    // Tham chiếu caregiver_schedules.schedule_id bên Provider (khung giờ làm việc theo ngày) — chỉ tham chiếu,
-    // Provider không đánh dấu đã đặt. TODO(Provider): gán khi có API kiểm khung giờ làm việc.
-    @Column(name = "availability_slot_id")
-    UUID availabilitySlotId;
+    // SHIFT: caregiver_schedules.schedule_id bên Provider mà buổi giữ — Provider không đánh dấu đã đặt; Booking chặn hai
+    // buổi cùng giữ một lịch (uk_booking_occurrences_schedule_holding).
+    @Column(name = "caregiver_schedule_id")
+    UUID caregiverScheduleId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -79,12 +79,12 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "note", columnDefinition = "text")
     String note;
 
-    // OPS-06: buổi MISSED do ai (căn cứ hoàn tiền).
+    // OPS-06: buổi CAREGIVER_MISSED do ai (căn cứ hoàn tiền).
     @Enumerated(EnumType.STRING)
     @Column(name = "missed_reason", length = 30)
     MissedReason missedReason;
 
-    // Caregiver báo khách vắng mặt; job MISSED bỏ qua buổi đã báo, chờ manager quyết định.
+    // Caregiver báo khách vắng mặt; job CAREGIVER_MISSED bỏ qua buổi đã báo, chờ manager quyết định.
     @Column(name = "no_show_reported_at")
     Instant noShowReportedAt;
 
@@ -124,15 +124,21 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "version", nullable = false)
     Long version;
 
-    // Hai id caregiver luôn đổi cùng nhau. Người mới chưa nhận ca → buổi đã ACKNOWLEDGED quay về SCHEDULED (OPS-01).
+    // Hai id caregiver luôn đổi cùng nhau. Người mới chưa nhận ca → buổi đã ACKNOWLEDGED quay về SCHEDULED (OPS-01);
+    // buổi chưa có caregiver được giữ lịch (PENDING_ASSIGNMENT → RESERVED, spec §11.2).
     public void assignCaregiver(UUID newCaregiverId, UUID newCaregiverUserId) {
         if (!Objects.equals(caregiverId, newCaregiverId) && status == OccurrenceStatus.ACKNOWLEDGED) {
             status = OccurrenceStatus.SCHEDULED;
             acknowledgedAt = null;
         }
+        if (status == OccurrenceStatus.PENDING_ASSIGNMENT) {
+            status = OccurrenceStatus.RESERVED;
+        }
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;
             reminderSentAt = null;
+            // Lịch Provider gắn với caregiver cũ (SHIFT) — người mới không giữ lịch đó.
+            caregiverScheduleId = null;
         }
         caregiverId = newCaregiverId;
         caregiverUserId = newCaregiverUserId;

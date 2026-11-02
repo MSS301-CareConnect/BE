@@ -9,6 +9,7 @@ import mss301.providerservice.dto.request.*;
 import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.dto.response.AvailabilityCheckResponse;
 import mss301.providerservice.dto.response.AvailabilityWindowResponse;
+import mss301.providerservice.dto.response.BookableScheduleResponse;
 import mss301.providerservice.dto.response.CaregiverCardResponse;
 import mss301.providerservice.dto.response.CaregiverPublicResponse;
 import mss301.providerservice.dto.response.CaregiverResponse;
@@ -21,10 +22,12 @@ import mss301.providerservice.enums.VerificationStatus;
 import mss301.providerservice.security.CurrentUserId;
 import mss301.providerservice.service.CaregiverScheduleService;
 import mss301.providerservice.service.CaregiverService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,6 +94,13 @@ public class CaregiverController {
         return caregiverScheduleService.listMine(actorId, page, size);
     }
 
+    // BookingService (token SERVICE) xác minh lịch của booking SHIFT; ADMIN tra cứu.
+    @GetMapping("/schedules/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','SERVICE')")
+    public APIResponse<ScheduleResponse> getSchedule(@PathVariable UUID id) {
+        return caregiverScheduleService.get(id);
+    }
+
     // Hồ sơ đầy đủ: ADMIN / manager của trung tâm / chính caregiver / SERVICE (Booking). Khách dùng /{id}/public.
     @GetMapping("/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','SERVICE','CUSTOMER')")
@@ -126,6 +136,16 @@ public class CaregiverController {
                                                                          @RequestParam Instant from,
                                                                          @RequestParam Instant to) {
         return caregiverService.getAvailability(caregiverId, from, to);
+    }
+
+    // Lịch SCHEDULED khách chọn khi đặt booking SHIFT (spec booking §3); lịch nào đã bị giữ do BookingService cho biết.
+    @GetMapping("/{caregiverId}/schedules")
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<List<BookableScheduleResponse>> listBookableSchedules(
+            @PathVariable UUID caregiverId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return caregiverScheduleService.listBookable(caregiverId, from, to);
     }
 
     @GetMapping("/by-user/{userId}")

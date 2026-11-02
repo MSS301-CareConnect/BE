@@ -5,7 +5,7 @@
 -- Tham chiếu service khác bằng UUID, không FK xuyên DB:
 --   customer_id, caregiver_user_id, changed_by… = users.user_id (IdentityService)
 --   recipient_id = care_recipients (CareRecipientService)
---   center_id, caregiver_id, availability_slot_id = care_centers / caregiver_profiles / caregiver_schedules (ProviderService)
+--   center_id, caregiver_id, caregiver_schedule_id = care_centers / caregiver_profiles / caregiver_schedules (ProviderService)
 --   care_service_id, center_service_id, price_plan_id = CareCatalogService
 -- Thời điểm: timestamptz (UTC); ngày/giờ theo lịch: date/time theo bookings.timezone.
 
@@ -22,11 +22,12 @@ CREATE TABLE bookings (
     center_id           uuid          NOT NULL,
     caregiver_id        uuid,
     caregiver_user_id   uuid,
-    schedule_type       varchar(20)   NOT NULL,
+    booking_type        varchar(20)   NOT NULL,
+    recurrence_frequency varchar(20),
     start_date          date          NOT NULL,
     end_date            date          NOT NULL,
-    start_time          time          NOT NULL,
-    end_time            time          NOT NULL,
+    start_time          time,
+    end_time            time,
     days_of_week        smallint[],
     timezone            varchar(64)   NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
     recipient_snapshot  jsonb         NOT NULL,
@@ -36,10 +37,18 @@ CREATE TABLE bookings (
     subtotal            numeric(14,2),
     deposit_amount      numeric(14,2),
     total_amount        numeric(14,2),
+    -- Tỷ lệ khoản thanh toán đầu chụp từ center policy lúc tạo: SHIFT 100, RECURRING / CUSTOM = cọc %.
+    initial_payment_percent numeric(5,2) NOT NULL,
     acceptance_due_at   timestamptz,
     accepted_by         uuid,
     accepted_at         timestamptz,
+    assignment_due_at   timestamptz,
     deposit_due_at      timestamptz,
+    remaining_payment_due_at timestamptz,
+    -- Đã trả đủ (spec §9.1): SHIFT ngay khi trả khoản đầu 100 %, RECURRING / CUSTOM khi trả xong phần còn lại.
+    fully_paid_at       timestamptz,
+    -- Mốc nhắc trả phần còn lại nhỏ nhất đã gửi / đã bỏ qua (phút trước hạn, M6); NULL = chưa nhắc.
+    remaining_reminder_minutes integer,
     confirmed_at        timestamptz,
     started_at          timestamptz,
     completed_at        timestamptz,
@@ -57,20 +66,28 @@ CREATE TABLE bookings (
     version             bigint        NOT NULL DEFAULT 0,
 
     CONSTRAINT uk_bookings_code UNIQUE (booking_code),
-    CONSTRAINT ck_bookings_schedule_type CHECK (schedule_type IN ('ONE_TIME', 'DAILY', 'WEEKLY')),
-    CONSTRAINT ck_bookings_status CHECK (status IN ('PENDING', 'AWAITING_DEPOSIT', 'CONFIRMED', 'IN_PROGRESS',
+    CONSTRAINT ck_bookings_booking_type CHECK (booking_type IN ('SHIFT', 'RECURRING', 'CUSTOM')),
+    -- Chỉ RECURRING có tần suất DAILY / WEEKLY.
+    CONSTRAINT ck_bookings_recurrence_frequency CHECK (
+        (booking_type = 'RECURRING' AND recurrence_frequency IN ('DAILY', 'WEEKLY'))
+        OR (booking_type <> 'RECURRING' AND recurrence_frequency IS NULL)),
+    CONSTRAINT ck_bookings_status CHECK (status IN ('PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT',
+                                                    'AWAITING_INITIAL_PAYMENT', 'CONFIRMED', 'IN_PROGRESS',
                                                     'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
     CONSTRAINT ck_bookings_date_range CHECK (end_date >= start_date),
-    CONSTRAINT ck_bookings_one_time_single_day CHECK (schedule_type <> 'ONE_TIME' OR end_date = start_date),
-    -- Chưa hỗ trợ ca qua đêm (TODO): giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.
-    CONSTRAINT ck_bookings_time_range CHECK (end_time > start_time),
-    -- WEEKLY: 1..7 thứ, mỗi giá trị trong [1, 7]; lịch khác không có days_of_week.
+    CONSTRAINT ck_bookings_shift_single_day CHECK (booking_type <> 'SHIFT' OR end_date = start_date),
+    -- RECURRING có khung giờ lặp, chưa hỗ trợ ca qua đêm (TODO); SHIFT / CUSTOM lưu giờ ở từng buổi.
+    CONSTRAINT ck_bookings_time_range CHECK (
+        (booking_type = 'RECURRING' AND start_time IS NOT NULL AND end_time IS NOT NULL AND end_time > start_time)
+        OR (booking_type <> 'RECURRING' AND start_time IS NULL AND end_time IS NULL)),
+    -- RECURRING WEEKLY: 1..7 thứ, mỗi giá trị trong [1, 7]; loại khác không có days_of_week.
     CONSTRAINT ck_bookings_days_of_week CHECK (
-        (schedule_type = 'WEEKLY'
+        (recurrence_frequency = 'WEEKLY'
             AND days_of_week IS NOT NULL
             AND cardinality(days_of_week) BETWEEN 1 AND 7
             AND days_of_week <@ ARRAY[1, 2, 3, 4, 5, 6, 7]::smallint[])
-        OR (schedule_type <> 'WEEKLY' AND days_of_week IS NULL)),
+        OR (recurrence_frequency IS DISTINCT FROM 'WEEKLY' AND days_of_week IS NULL)),
+    CONSTRAINT ck_bookings_initial_payment_percent CHECK (initial_payment_percent > 0 AND initial_payment_percent <= 100),
     -- Phân công luôn ghi cả hai id caregiver (Provider + Identity) cùng lúc.
     CONSTRAINT ck_bookings_caregiver_pair CHECK ((caregiver_id IS NULL) = (caregiver_user_id IS NULL)),
     CONSTRAINT ck_bookings_amounts CHECK ((subtotal IS NULL OR subtotal >= 0)
@@ -85,9 +102,10 @@ CREATE INDEX idx_bookings_center ON bookings (center_id, status);
 CREATE INDEX idx_bookings_caregiver ON bookings (caregiver_id);
 CREATE INDEX idx_bookings_caregiver_user ON bookings (caregiver_user_id);
 CREATE INDEX idx_bookings_status ON bookings (status);
--- Scheduler quét PENDING quá hạn duyệt / AWAITING_DEPOSIT quá hạn cọc.
-CREATE INDEX idx_bookings_acceptance_due ON bookings (acceptance_due_at) WHERE status = 'PENDING';
-CREATE INDEX idx_bookings_deposit_due ON bookings (deposit_due_at) WHERE status = 'AWAITING_DEPOSIT';
+-- Scheduler quét quá hạn xác nhận / phân caregiver / thanh toán khoản đầu.
+CREATE INDEX idx_bookings_acceptance_due ON bookings (acceptance_due_at) WHERE status = 'PENDING_CENTER_CONFIRMATION';
+CREATE INDEX idx_bookings_assignment_due ON bookings (assignment_due_at) WHERE status = 'PENDING_CAREGIVER_ASSIGNMENT';
+CREATE INDEX idx_bookings_deposit_due ON bookings (deposit_due_at) WHERE status = 'AWAITING_INITIAL_PAYMENT';
 -- Header Idempotency-Key: một key chỉ tạo một booking cho mỗi khách hàng.
 CREATE UNIQUE INDEX uk_bookings_idempotency ON bookings (customer_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
@@ -108,7 +126,8 @@ CREATE TABLE booking_occurrences (
     actual_end_at         timestamptz,
     caregiver_id          uuid,
     caregiver_user_id     uuid,
-    availability_slot_id  uuid,
+    -- SHIFT: lịch caregiver (ProviderService) mà buổi giữ.
+    caregiver_schedule_id uuid,
     status                varchar(20)  NOT NULL,
     cancel_reason         text,
     note                  text,
@@ -136,24 +155,32 @@ CREATE TABLE booking_occurrences (
     CONSTRAINT ck_booking_occurrences_price CHECK (price_amount IS NULL OR price_amount >= 0),
     CONSTRAINT ck_booking_occurrences_actual_range CHECK (
         actual_start_at IS NULL OR actual_end_at IS NULL OR actual_end_at > actual_start_at),
-    CONSTRAINT ck_booking_occurrences_status CHECK (status IN ('SCHEDULED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'COMPLETED',
-                                                               'CANCELLED', 'MISSED', 'CUSTOMER_NO_SHOW')),
+    CONSTRAINT ck_booking_occurrences_status CHECK (status IN ('PENDING_ASSIGNMENT', 'RESERVED', 'SCHEDULED',
+                                                               'ACKNOWLEDGED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED',
+                                                               'EXPIRED', 'CUSTOMER_NO_SHOW', 'CAREGIVER_MISSED')),
+    -- Buổi chưa có caregiver chỉ ở trạng thái chờ phân công (hoặc đã kết thúc vì hủy / hết hạn).
+    CONSTRAINT ck_booking_occurrences_pending_assignment CHECK (
+        status <> 'PENDING_ASSIGNMENT' OR caregiver_id IS NULL),
     CONSTRAINT ck_booking_occurrences_caregiver_pair CHECK ((caregiver_id IS NULL) = (caregiver_user_id IS NULL)),
     CONSTRAINT ck_booking_occurrences_missed_reason CHECK (missed_reason IS NULL OR missed_reason IN ('CAREGIVER')),
     CONSTRAINT ck_booking_occurrences_no_show_pair CHECK ((no_show_reported_at IS NULL) = (no_show_reported_by IS NULL)),
     CONSTRAINT ck_booking_occurrences_cancelled_by_party CHECK (
         cancelled_by_party IS NULL OR cancelled_by_party IN ('CUSTOMER', 'CENTER', 'SYSTEM', 'ADMIN')),
     CONSTRAINT ck_booking_occurrences_version CHECK (version >= 0),
-    -- BK-09: chốt chặn cuối chống trùng lịch caregiver (khoảng nửa mở). Chỉ theo trạng thái buổi: booking rời trạng thái
-    -- giữ chỗ luôn kéo mọi buổi chưa kết thúc về CANCELLED (BookingLifecycleService) nên không cần cột active_slot.
+    -- BK-09: chốt chặn cuối chống trùng lịch caregiver (khoảng nửa mở) trên các trạng thái chiếm lịch (spec §6). Chỉ theo
+    -- trạng thái buổi: booking rời trạng thái giữ chỗ luôn kéo mọi buổi chưa kết thúc về CANCELLED / EXPIRED
+    -- (BookingLifecycleService) nên không cần cột active_slot.
     CONSTRAINT ex_booking_occurrences_caregiver_slot EXCLUDE USING gist (
         caregiver_id WITH =, tstzrange(start_at, end_at, '[)') WITH &&)
-        WHERE (status IN ('SCHEDULED', 'ACKNOWLEDGED', 'IN_PROGRESS'))
+        WHERE (status IN ('RESERVED', 'SCHEDULED', 'ACKNOWLEDGED', 'IN_PROGRESS'))
 );
 
 CREATE INDEX idx_booking_occurrences_caregiver ON booking_occurrences (caregiver_id, start_at);
 CREATE INDEX idx_booking_occurrences_caregiver_user ON booking_occurrences (caregiver_user_id, start_at);
 CREATE INDEX idx_booking_occurrences_booking ON booking_occurrences (booking_id, start_at);
+-- SHIFT (spec §6): một lịch caregiver chỉ được một buổi đang giữ — hai khách đặt cùng lúc thì một bên nhận 409.
+CREATE UNIQUE INDEX uk_booking_occurrences_schedule_holding ON booking_occurrences (caregiver_schedule_id)
+    WHERE caregiver_schedule_id IS NOT NULL AND status IN ('RESERVED', 'SCHEDULED', 'ACKNOWLEDGED', 'IN_PROGRESS');
 -- Job MISSED / nhắc quyết định báo vắng (OPS-06) chỉ quét buổi chưa bắt đầu.
 CREATE INDEX idx_booking_occurrences_not_started ON booking_occurrences (start_at)
     WHERE status IN ('SCHEDULED', 'ACKNOWLEDGED');
@@ -196,12 +223,55 @@ CREATE TABLE booking_status_history (
     changed_at   timestamptz   NOT NULL,
 
     CONSTRAINT ck_booking_status_history_from CHECK (from_status IS NULL OR from_status IN (
-        'PENDING', 'AWAITING_DEPOSIT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
+        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
+        'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
     CONSTRAINT ck_booking_status_history_to CHECK (to_status IN (
-        'PENDING', 'AWAITING_DEPOSIT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED'))
+        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
+        'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED'))
 );
 
 CREATE INDEX idx_booking_status_history_booking ON booking_status_history (booking_id, changed_at);
+
+-- Center booking policy (spec §8): mỗi trung tâm tối đa một dòng, chưa có thì dùng mặc định booking.policy-defaults.
+-- Mốc thời gian theo phút, tỷ lệ theo phần trăm.
+CREATE TABLE center_booking_policies (
+    policy_id                              uuid PRIMARY KEY,
+    center_id                              uuid          NOT NULL,
+    shift_min_advance_minutes              integer       NOT NULL,
+    recurring_min_advance_minutes          integer       NOT NULL,
+    custom_min_advance_minutes             integer       NOT NULL,
+    confirmation_timeout_minutes           integer       NOT NULL,
+    assignment_timeout_minutes             integer       NOT NULL,
+    initial_payment_timeout_minutes        integer       NOT NULL,
+    remaining_payment_due_before_minutes   integer       NOT NULL,
+    remaining_payment_reminder_minutes     integer[]     NOT NULL,
+    deposit_percent                        numeric(5,2)  NOT NULL,
+    check_in_early_minutes                 integer       NOT NULL,
+    check_in_late_minutes                  integer       NOT NULL,
+    refund_threshold_minutes               integer       NOT NULL,
+    refund_percent_before_threshold        numeric(5,2)  NOT NULL,
+    refund_percent_after_threshold         numeric(5,2)  NOT NULL,
+    overdue_payment_forfeit_percent        numeric(5,2)  NOT NULL,
+    updated_by                             uuid,
+    created_at                             timestamptz   NOT NULL,
+    updated_at                             timestamptz   NOT NULL,
+    deleted_at                             timestamptz,
+    version                                bigint        NOT NULL DEFAULT 0,
+
+    CONSTRAINT uk_center_booking_policies_center UNIQUE (center_id),
+    CONSTRAINT ck_center_booking_policies_minutes CHECK (shift_min_advance_minutes >= 0
+        AND recurring_min_advance_minutes > remaining_payment_due_before_minutes
+        AND custom_min_advance_minutes > remaining_payment_due_before_minutes
+        AND confirmation_timeout_minutes > 0 AND assignment_timeout_minutes > 0
+        AND initial_payment_timeout_minutes > 0 AND remaining_payment_due_before_minutes >= 0
+        AND check_in_early_minutes >= 0 AND check_in_late_minutes >= 0 AND refund_threshold_minutes >= 0),
+    CONSTRAINT ck_center_booking_policies_percents CHECK (deposit_percent > 0 AND deposit_percent <= 100
+        AND refund_percent_before_threshold BETWEEN 0 AND 100
+        AND refund_percent_after_threshold BETWEEN 0 AND refund_percent_before_threshold
+        AND overdue_payment_forfeit_percent BETWEEN 0 AND 100),
+    CONSTRAINT ck_center_booking_policies_reminders CHECK (cardinality(remaining_payment_reminder_minutes) <= 5),
+    CONSTRAINT ck_center_booking_policies_version CHECK (version >= 0)
+);
 
 -- Sự kiện mức buổi (nhận ca, đổi trạng thái buổi, đổi caregiver) — chỉ ghi thêm (OPS-01; API lịch sử ở BK-05).
 CREATE TABLE booking_events (

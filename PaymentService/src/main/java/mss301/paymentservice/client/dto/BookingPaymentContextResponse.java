@@ -33,6 +33,21 @@ public class BookingPaymentContextResponse {
 
     BookingStatus status;
 
+    // Spec §9.1: % khoản thanh toán đầu (SHIFT 100) và hạn trả phần còn lại (RECURRING / CUSTOM). NULL = booking cũ
+    // (trước spec v1): cọc theo platform_policies, phần còn lại thu sau khi hoàn tất.
+    BigDecimal initialPaymentPercent;
+
+    Instant remainingPaymentDueAt;
+
+    // Center booking policy (spec §8, §10.2), chụp vào policy_snapshot lúc mở phiên thanh toán đầu.
+    Integer refundThresholdMinutes;
+
+    BigDecimal refundPercentBeforeThreshold;
+
+    BigDecimal refundPercentAfterThreshold;
+
+    BigDecimal overduePaymentForfeitPercent;
+
     BigDecimal totalAmount;
 
     Instant depositDueAt;

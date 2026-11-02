@@ -83,6 +83,8 @@ CREATE TABLE booking_financials (
     deposit_amount     numeric(14,2) NOT NULL CHECK (deposit_amount >= 0),
     deposit_payment_id uuid,
     deposit_paid_at    timestamptz,
+    -- Spec booking v1 §9.1: hạn trả phần còn lại trước buổi đầu; NULL = SHIFT trả 100 % / booking cũ (thu sau hoàn tất).
+    remaining_due_at   timestamptz,
     status             varchar(20)   NOT NULL CHECK (status IN ('AWAITING_DEPOSIT','DEPOSIT_PAID','CLOSED')),
     version            bigint        NOT NULL DEFAULT 0,
     created_at         timestamptz   NOT NULL,
@@ -117,7 +119,8 @@ CREATE TABLE remaining_invoices (
     center_id    uuid          NOT NULL,
     amount       numeric(14,2) NOT NULL CHECK (amount >= 0),
     due_at       timestamptz   NOT NULL,
-    status       varchar(20)   NOT NULL CHECK (status IN ('PENDING','PAID','OVERDUE','WAIVED')),
+    status       varchar(20)   NOT NULL CONSTRAINT ck_remaining_invoices_status
+                                   CHECK (status IN ('PENDING','PAID','OVERDUE','WAIVED','EXPIRED','CANCELLED')),
     payment_id   uuid,
     paid_at      timestamptz,
     waived_by    uuid,
@@ -142,9 +145,9 @@ CREATE TABLE refunds (
     complaint_id           uuid,
     amount                 numeric(14,2) NOT NULL CHECK (amount > 0),
     fee_amount             numeric(14,2) NOT NULL DEFAULT 0 CHECK (fee_amount >= 0),
-    reason                 varchar(30)   NOT NULL CHECK (reason IN ('CUSTOMER_CANCEL','CENTER_REJECT','CENTER_CANCEL',
-                               'CENTER_LOCKED','CAREGIVER_MISSED','EXPIRED','COMPLAINT_ACCEPTED','LATE_PAYMENT',
-                               'BOOKING_NOT_CONFIRMABLE','DUPLICATE')),
+    reason                 varchar(30)   NOT NULL CONSTRAINT ck_refunds_reason CHECK (reason IN ('CUSTOMER_CANCEL',
+                               'CENTER_REJECT','CENTER_CANCEL','CENTER_LOCKED','CAREGIVER_MISSED','EXPIRED',
+                               'COMPLAINT_ACCEPTED','LATE_PAYMENT','BOOKING_NOT_CONFIRMABLE','DUPLICATE','PAYMENT_OVERDUE')),
     cancelled_by           varchar(20)   CHECK (cancelled_by IN ('CUSTOMER','CENTER','SYSTEM','ADMIN')),
     requested_by           uuid,
     status                 varchar(20)   NOT NULL CHECK (status IN ('REFUND_PENDING','REFUNDED','FAILED')),
@@ -189,10 +192,11 @@ CREATE TABLE payment_transactions (
 CREATE INDEX idx_payment_transactions_booking ON payment_transactions(booking_id, created_at);
 CREATE INDEX idx_payment_transactions_key ON payment_transactions(idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- Outbox xác nhận cọc sang BookingService (Đợt 1b): ghi cùng transaction IPN, gửi sau commit, retry có backoff.
+-- Outbox báo BookingService (Đợt 1b): ghi cùng transaction IPN / job, gửi sau commit, retry có backoff.
 CREATE TABLE payment_outbox (
     outbox_id         uuid          PRIMARY KEY,
-    event_type        varchar(30)   NOT NULL CHECK (event_type IN ('DEPOSIT_CONFIRMATION')),
+    event_type        varchar(30)   NOT NULL CONSTRAINT ck_payment_outbox_event_type
+                                    CHECK (event_type IN ('DEPOSIT_CONFIRMATION','REMAINING_CONFIRMATION','PAYMENT_OVERDUE')),
     booking_id        uuid          NOT NULL,
     payment_id        uuid          NOT NULL REFERENCES payments(payment_id),
     payment_reference varchar(100)  NOT NULL,

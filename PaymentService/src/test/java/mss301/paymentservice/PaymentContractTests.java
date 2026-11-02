@@ -38,7 +38,7 @@ class PaymentContractTests extends PaymentIntegrationTest {
         UUID customerId = UUID.randomUUID();
         // Booking đã cọc với đúng id trong mẫu để mọi endpoint ghi trả 200 thật (kể cả hoàn khiếu nại).
         Instant startAt = Instant.parse(quoteRequest.get("occurrences").get(0).get("startAt").asString());
-        SERVER.putBooking(bookingId, customerId, UUID.randomUUID(), "AWAITING_DEPOSIT", BASE.plusSeconds(3600),
+        SERVER.putBooking(bookingId, customerId, UUID.randomUUID(), "AWAITING_INITIAL_PAYMENT", BASE.plusSeconds(3600),
                 List.of(PaymentTestServer.occurrence(occurrenceId, 1, startAt, "SCHEDULED", 1_000_000L)));
         payDeposit(new BookingSetup(bookingId, customerId, null, List.of(occurrenceId), List.of(startAt)));
 

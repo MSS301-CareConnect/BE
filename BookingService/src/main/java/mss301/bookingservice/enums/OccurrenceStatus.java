@@ -3,32 +3,48 @@ package mss301.bookingservice.enums;
 import java.util.EnumSet;
 import java.util.Set;
 
-// Trạng thái một buổi chăm sóc — đồng bộ CHECK booking_occurrences.status.
-// SCHEDULED → ACKNOWLEDGED (caregiver nhận ca, OPS-01) → IN_PROGRESS (check-in, OPS-02) → COMPLETED (check-out, OPS-04);
-// buổi chưa bắt đầu → CANCELLED | MISSED | CUSTOMER_NO_SHOW (OPS-06). Đổi caregiver đưa ACKNOWLEDGED về SCHEDULED.
+// Trạng thái một buổi chăm sóc theo spec §11.2 — đồng bộ CHECK booking_occurrences.status.
+// PENDING_ASSIGNMENT (chưa có caregiver) → RESERVED (đã gắn caregiver, giữ lịch khi chờ xác nhận / thanh toán đầu)
+// → SCHEDULED (đã trả khoản đầu) → ACKNOWLEDGED (caregiver nhận ca, OPS-01) → IN_PROGRESS (check-in) → COMPLETED.
+// Chưa bắt đầu → CANCELLED | EXPIRED (booking hết hạn) | CAREGIVER_MISSED | CUSTOMER_NO_SHOW (OPS-06).
 public enum OccurrenceStatus {
+    PENDING_ASSIGNMENT,
+    RESERVED,
     SCHEDULED,
     ACKNOWLEDGED,
     IN_PROGRESS,
     COMPLETED,
     CANCELLED,
-    MISSED,
-    CUSTOMER_NO_SHOW;
+    EXPIRED,
+    CUSTOMER_NO_SHOW,
+    CAREGIVER_MISSED;
 
-    // Buổi còn chiếm giờ của caregiver / người bệnh (kiểm trùng lịch, quyền xem hồ sơ người bệnh).
-    public static final Set<OccurrenceStatus> ACTIVE = EnumSet.of(SCHEDULED, ACKNOWLEDGED, IN_PROGRESS);
+    // Buổi chiếm lịch caregiver (spec §6) — đồng bộ exclusion constraint ex_booking_occurrences_caregiver_slot.
+    public static final Set<OccurrenceStatus> CAREGIVER_HOLDING = EnumSet.of(RESERVED, SCHEDULED, ACKNOWLEDGED,
+            IN_PROGRESS);
 
-    // Buổi chưa bắt đầu: còn đổi caregiver, hủy, check-in được.
-    public static final Set<OccurrenceStatus> NOT_STARTED = EnumSet.of(SCHEDULED, ACKNOWLEDGED);
+    // Buổi chưa kết thúc: chiếm giờ người bệnh (kiểm trùng lịch), quyền xem hồ sơ người bệnh.
+    public static final Set<OccurrenceStatus> ACTIVE = EnumSet.of(PENDING_ASSIGNMENT, RESERVED, SCHEDULED, ACKNOWLEDGED,
+            IN_PROGRESS);
+
+    // Buổi chưa bắt đầu: còn đổi caregiver, hủy được.
+    public static final Set<OccurrenceStatus> NOT_STARTED = EnumSet.of(PENDING_ASSIGNMENT, RESERVED, SCHEDULED,
+            ACKNOWLEDGED);
+
+    // Buổi đã lên lịch chính thức, caregiver làm việc được (nhận ca, check-in, báo vắng, MISSED).
+    public static final Set<OccurrenceStatus> WORKABLE = EnumSet.of(SCHEDULED, ACKNOWLEDGED);
 
     public boolean canTransitionTo(OccurrenceStatus targetStatus) {
         return switch (this) {
+            case PENDING_ASSIGNMENT -> targetStatus == RESERVED || targetStatus == CANCELLED || targetStatus == EXPIRED;
+            case RESERVED -> targetStatus == SCHEDULED || targetStatus == CANCELLED || targetStatus == EXPIRED;
+            // EXPIRED: booking quá hạn trả phần còn lại (đã trả khoản đầu nên buổi đã SCHEDULED).
             case SCHEDULED -> targetStatus == ACKNOWLEDGED || targetStatus == IN_PROGRESS || targetStatus == CANCELLED
-                    || targetStatus == MISSED || targetStatus == CUSTOMER_NO_SHOW;
+                    || targetStatus == CAREGIVER_MISSED || targetStatus == CUSTOMER_NO_SHOW || targetStatus == EXPIRED;
             case ACKNOWLEDGED -> targetStatus == SCHEDULED || targetStatus == IN_PROGRESS || targetStatus == CANCELLED
-                    || targetStatus == MISSED || targetStatus == CUSTOMER_NO_SHOW;
+                    || targetStatus == CAREGIVER_MISSED || targetStatus == CUSTOMER_NO_SHOW || targetStatus == EXPIRED;
             case IN_PROGRESS -> targetStatus == COMPLETED;
-            case COMPLETED, CANCELLED, MISSED, CUSTOMER_NO_SHOW -> false;
+            case COMPLETED, CANCELLED, EXPIRED, CUSTOMER_NO_SHOW, CAREGIVER_MISSED -> false;
         };
     }
 }

@@ -188,7 +188,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.code").value(6035));
 
         UUID noPriceBooking = UUID.randomUUID();
-        SERVER.putBooking(noPriceBooking, customerId, UUID.randomUUID(), "AWAITING_DEPOSIT", BASE.plusSeconds(3600),
+        SERVER.putBooking(noPriceBooking, customerId, UUID.randomUUID(), "AWAITING_INITIAL_PAYMENT", BASE.plusSeconds(3600),
                 List.of(PaymentTestServer.occurrence(UUID.randomUUID(), 1, BASE.plus(Duration.ofDays(3)), "SCHEDULED", null)));
         mockMvc.perform(post("/api/v1/payments/bookings/{id}/checkout", noPriceBooking)
                         .header("Authorization", customer(customerId))
@@ -197,7 +197,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.code").value(6018));
 
         UUID soonDueBooking = UUID.randomUUID();
-        SERVER.putBooking(soonDueBooking, customerId, UUID.randomUUID(), "AWAITING_DEPOSIT", BASE.plusSeconds(600),
+        SERVER.putBooking(soonDueBooking, customerId, UUID.randomUUID(), "AWAITING_INITIAL_PAYMENT", BASE.plusSeconds(600),
                 List.of(PaymentTestServer.occurrence(UUID.randomUUID(), 1, BASE.plus(Duration.ofDays(3)), "SCHEDULED", PRICE)));
         JsonNode checkout = checkout(new BookingSetup(soonDueBooking, customerId, null, List.of(), List.of()));
         assertThat(Instant.parse(checkout.get("expiresAt").asString())).isEqualTo(BASE.plusSeconds(600));
@@ -283,7 +283,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
     void refundQuoteForUnpaidBookingIsZero() throws Exception {
         BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE);
         checkout(booking);
-        JsonNode quote = quote(booking.bookingId(), "AWAITING_DEPOSIT", "CUSTOMER_CANCEL", BASE, null,
+        JsonNode quote = quote(booking.bookingId(), "AWAITING_INITIAL_PAYMENT", "CUSTOMER_CANCEL", BASE, null,
                 List.of(quoteOccurrence(booking.occurrenceIds().get(0), booking.startTimes().get(0), false)));
         assertThat(quote.get("totalRefund").decimalValue()).isEqualByComparingTo("0");
         assertThat(quote.get("items").get(0).get("rule").asString()).isEqualTo("NOT_PAID");
@@ -296,13 +296,13 @@ class PaymentApiTests extends PaymentIntegrationTest {
     }
 
     @Test
-    void refundQuoteAppliesTierBoundariesAt24And72Hours() throws Exception {
+    void refundQuoteAppliesThresholdOfTheCenterPolicy() throws Exception {
         Instant cancelledAt = BASE.plus(Duration.ofHours(2));
         List<Instant> starts = List.of(
                 cancelledAt.plus(Duration.ofHours(72)),
-                cancelledAt.plus(Duration.ofHours(72)).minusSeconds(1),
                 cancelledAt.plus(Duration.ofHours(24)),
                 cancelledAt.plus(Duration.ofHours(24)).minusSeconds(1),
+                cancelledAt.plus(Duration.ofHours(1)),
                 cancelledAt.plus(Duration.ofHours(30)));
         BookingSetup booking = bookingWithStarts(UUID.randomUUID(), UUID.randomUUID(), PRICE, starts);
         payDeposit(booking);
@@ -315,39 +315,40 @@ class PaymentApiTests extends PaymentIntegrationTest {
         JsonNode quote = quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", cancelledAt,
                 starts.get(3), occurrences);
 
+        // Spec §10.2 / Q5: còn ≥ 24h hoàn 100 %, < 24h hoàn 70 % số đã trả cho buổi; bỏ cooling-off và bậc 72h.
         JsonNode items = quote.get("items");
-        assertItem(items.get(0), "TIER_72_INF", "300000", "0", "300000");
-        assertItem(items.get(1), "TIER_24_72", "300000", "100000", "200000");
-        assertItem(items.get(2), "TIER_24_72", "300000", "100000", "200000");
-        assertItem(items.get(3), "TIER_0_24", "300000", "300000", "0");
+        assertItem(items.get(0), "BEFORE_THRESHOLD", "300000", "0", "300000");
+        assertItem(items.get(1), "BEFORE_THRESHOLD", "300000", "0", "300000");
+        assertItem(items.get(2), "AFTER_THRESHOLD", "300000", "90000", "210000");
+        assertItem(items.get(3), "AFTER_THRESHOLD", "300000", "90000", "210000");
         assertItem(items.get(4), "NOT_CANCELLABLE", "300000", "0", "0");
         assertThat(quote.get("totalPaid").decimalValue()).isEqualByComparingTo("1500000");
-        assertThat(quote.get("totalFee").decimalValue()).isEqualByComparingTo("500000");
-        assertThat(quote.get("totalRefund").decimalValue()).isEqualByComparingTo("700000");
+        assertThat(quote.get("totalFee").decimalValue()).isEqualByComparingTo("180000");
+        assertThat(quote.get("totalRefund").decimalValue()).isEqualByComparingTo("1020000");
         assertThat(quote.get("policyId").asString()).isEqualTo(GLOBAL_POLICY_ID.toString());
         // Preview không ghi DB.
         assertThat(refundRepository.findAllByBookingIdOrderByCreatedAtAsc(booking.bookingId())).isEmpty();
     }
 
     @Test
-    void refundQuoteCoolingOffBoundaryAndPartyRules() throws Exception {
+    void refundQuotePolicyComesFromBookingAndPartyRules() throws Exception {
         Instant start = BASE.plus(Duration.ofHours(1)).plus(Duration.ofHours(30));
         BookingSetup booking = bookingWithStarts(UUID.randomUUID(), UUID.randomUUID(), PRICE, List.of(start));
+        // Center policy riêng: mốc 48h, hoàn 90 % / 50 % — chụp vào snapshot lúc mở phiên thanh toán đầu.
+        SERVER.setPolicyValue(booking.bookingId(), "refundThresholdMinutes", 2880);
+        SERVER.setPolicyValue(booking.bookingId(), "refundPercentBeforeThreshold", 90);
+        SERVER.setPolicyValue(booking.bookingId(), "refundPercentAfterThreshold", 50);
         payDeposit(booking);
         List<Map<String, Object>> occurrence = List.of(quoteOccurrence(booking.occurrenceIds().get(0), start, false));
 
-        // Đúng 60' sau khi cọc và buổi đầu còn ≥ 24h → thời gian cân nhắc, hoàn đủ.
-        Instant atBoundary = BASE.plus(Duration.ofMinutes(60));
-        assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", atBoundary, start, occurrence)
-                .get("items").get(0), "COOLING_OFF", "300000", "0", "300000");
-        // Quá 1 giây → theo mốc (còn 30h → 10 %).
-        assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", atBoundary.plusSeconds(1), start, occurrence)
-                .get("items").get(0), "TIER_24_72", "300000", "100000", "200000");
-        // Trong 60' nhưng buổi đầu còn dưới 24h → không được cân nhắc.
-        Instant closeStart = BASE.plus(Duration.ofMinutes(30)).plus(Duration.ofHours(24)).minusSeconds(1);
-        assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE.plus(Duration.ofMinutes(30)),
-                closeStart, List.of(quoteOccurrence(booking.occurrenceIds().get(0), closeStart, false)))
-                .get("items").get(0), "TIER_0_24", "300000", "300000", "0");
+        assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE, start, occurrence)
+                .get("items").get(0), "AFTER_THRESHOLD", "300000", "150000", "150000");
+        assertThat(bookingFinancialRepository.findById(booking.bookingId()).orElseThrow().getPolicySnapshot()
+                .getRefundThresholdMinutes()).isEqualTo(2880);
+        // Đổi policy sau khi đã trả không ảnh hưởng booking này.
+        SERVER.setPolicyValue(booking.bookingId(), "refundThresholdMinutes", 60);
+        assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE, start, occurrence)
+                .get("items").get(0), "AFTER_THRESHOLD", "300000", "150000", "150000");
 
         assertItem(quote(booking.bookingId(), "CONFIRMED", "CENTER_CANCEL", start.minusSeconds(60), start, occurrence)
                 .get("items").get(0), "FULL_REFUND_CENTER", "300000", "0", "300000");
@@ -357,8 +358,8 @@ class PaymentApiTests extends PaymentIntegrationTest {
                 .get("items").get(0), "FULL_REFUND_MISSED", "300000", "0", "300000");
         assertItem(quote(booking.bookingId(), "CONFIRMED", "EXPIRED", start, null, occurrence)
                 .get("items").get(0), "FULL_REFUND_SYSTEM", "300000", "0", "300000");
-        // Booking đang PENDING / AWAITING_DEPOSIT phía Booking → chưa trả.
-        assertItem(quote(booking.bookingId(), "PENDING", "CUSTOMER_CANCEL", start, start, occurrence)
+        // Booking chưa trả khoản đầu phía Booking (PENDING_CENTER_CONFIRMATION …) → chưa trả.
+        assertItem(quote(booking.bookingId(), "PENDING_CENTER_CONFIRMATION", "CUSTOMER_CANCEL", start, start, occurrence)
                 .get("items").get(0), "NOT_PAID", "0", "0", "0");
     }
 
@@ -414,18 +415,18 @@ class PaymentApiTests extends PaymentIntegrationTest {
     }
 
     @Test
-    void customerCancelRefundUsesSnapshotTiersAndMarksOccurrenceCancelled() throws Exception {
+    void customerCancelRefundUsesSnapshotThresholdAndMarksOccurrenceCancelled() throws Exception {
         BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE, PRICE);
         payDeposit(booking);
-        Instant cancelledAt = booking.startTimes().get(0).minus(Duration.ofHours(48));
+        Instant cancelledAt = booking.startTimes().get(0).minus(Duration.ofHours(12));
         JsonNode result = createRefund("REFUND:CUSTOMER_CANCEL:a", booking.bookingId(), booking.occurrenceIds(),
                 "CUSTOMER_CANCEL", cancelledAt).get("result");
-        // Buổi 1 còn 48h → phí 10 %; buổi 2 còn 72h → hoàn đủ cọc.
-        assertThat(result.get("totalRefund").decimalValue()).isEqualByComparingTo("500000");
+        // Buổi 1 còn 12h → hoàn 70 % (210.000); buổi 2 còn 36h → hoàn đủ 300.000.
+        assertThat(result.get("totalRefund").decimalValue()).isEqualByComparingTo("510000");
         Refund refund = refundRepository.findAllByIdempotencyKey("REFUND:CUSTOMER_CANCEL:a").stream()
                 .filter(item -> item.getOccurrenceId().equals(booking.occurrenceIds().get(0)))
                 .findFirst().orElseThrow();
-        assertThat(refund.getFeeAmount()).isEqualByComparingTo("100000");
+        assertThat(refund.getFeeAmount()).isEqualByComparingTo("90000");
         assertThat(occurrenceFinancialRepository.findById(booking.occurrenceIds().get(0)).orElseThrow().getFinalStatus())
                 .hasToString("CANCELLED");
     }
@@ -536,7 +537,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
         payDeposit(booking);
         List<UUID> occurrences = booking.occurrenceIds();
         String body = remainingBody(booking.bookingId(), List.of(occurrences.get(0), occurrences.get(1),
-                occurrences.get(2), occurrences.get(3)), List.of("COMPLETED", "CUSTOMER_NO_SHOW", "CANCELLED", "MISSED"));
+                occurrences.get(2), occurrences.get(3)), List.of("COMPLETED", "CUSTOMER_NO_SHOW", "CANCELLED", "CAREGIVER_MISSED"));
 
         JsonNode created = createInvoice(booking.bookingId(), body);
         JsonNode replay = createInvoice(booking.bookingId(), body);
@@ -722,6 +723,152 @@ class PaymentApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.grossRevenue").value(600000))
                 .andExpect(jsonPath("$.result.totalRefunded").value(300000))
                 .andExpect(jsonPath("$.result.totalRevenue").value(300000));
+        // Spec §9.3: manager chỉ xem trung tâm mình — centerId truyền lên bị bỏ qua, thiếu claim → 403.
+        mockMvc.perform(get("/api/v1/payments/revenue").header("Authorization", manager(centerId))
+                        .param("from", BASE.minusSeconds(60).toString()).param("to", BASE.plusSeconds(60).toString())
+                        .param("centerId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.grossRevenue").value(600000));
+        mockMvc.perform(get("/api/v1/payments/revenue").header("Authorization", manager(UUID.randomUUID()))
+                        .param("from", BASE.minusSeconds(60).toString()).param("to", BASE.plusSeconds(60).toString())
+                        .param("centerId", centerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.grossRevenue").value(0));
+        mockMvc.perform(get("/api/v1/payments/revenue").header("Authorization", manager(null))
+                        .param("from", BASE.minusSeconds(60).toString()).param("to", BASE.plusSeconds(60).toString()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(6027));
+    }
+
+    // ===== spec booking v1: thanh toán đầu theo % của Booking, phần còn lại trước buổi đầu =====
+
+    @Test
+    void shiftPaysHundredPercentAndIsFullyPaidAtOnce() throws Exception {
+        BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE);
+        SERVER.setPaymentTerms(booking.bookingId(), 100, null);
+
+        JsonNode checkout = payDeposit(booking);
+
+        assertThat(checkout.get("amount").decimalValue()).isEqualByComparingTo("1000000");
+        BookingFinancial financial = bookingFinancialRepository.findById(booking.bookingId()).orElseThrow();
+        assertThat(financial.getPolicySnapshot().getDepositPercent()).isEqualByComparingTo("100");
+        assertThat(remainingInvoiceRepository.findByBookingId(booking.bookingId())).isEmpty();
+        assertThat(SERVER.depositPaidBodies()).singleElement()
+                .satisfies(body -> assertThat(body.get("fullyPaid").asBoolean()).isTrue());
+    }
+
+    @Test
+    void recurringDepositOpensInvoiceDueBeforeTheFirstVisitAndPayingItNotifiesBooking() throws Exception {
+        BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE, PRICE);
+        Instant dueAt = booking.startTimes().get(0).minus(Duration.ofHours(24));
+        SERVER.setPaymentTerms(booking.bookingId(), 40, dueAt);
+
+        JsonNode deposit = payDeposit(booking);
+
+        assertThat(deposit.get("amount").decimalValue()).isEqualByComparingTo("800000");
+        assertThat(SERVER.depositPaidBodies()).singleElement()
+                .satisfies(body -> assertThat(body.get("fullyPaid").asBoolean()).isFalse());
+        RemainingInvoice invoice = invoiceOf(booking.bookingId());
+        assertThat(invoice.getStatus()).isEqualTo(InvoiceStatus.PENDING);
+        assertThat(invoice.getAmount()).isEqualByComparingTo("1200000");
+        assertThat(invoice.getDueAt()).isEqualTo(dueAt);
+        // Hóa đơn trước buổi đầu không phải nợ (không chặn đặt lịch mới).
+        mockMvc.perform(get("/api/v1/payments/me/outstanding").header("Authorization", customer(booking.customerId())))
+                .andExpect(jsonPath("$.result.hasDebt").value(false));
+        // Booking FINALIZE của booking mới không còn sinh hóa đơn sau hoàn tất.
+        assertThat(createInvoice(booking.bookingId(), remainingBody(booking.bookingId(), booking.occurrenceIds(),
+                List.of("COMPLETED", "COMPLETED"))).get("status").asString()).isEqualTo("NOT_REQUIRED");
+
+        JsonNode checkout = body(mockMvc.perform(post("/api/v1/remaining-invoices/{id}/payments", invoice.getId())
+                        .header("Authorization", customer(booking.customerId()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"provider\":\"VNPAY\"}"))
+                .andExpect(status().isOk())).get("result");
+        assertThat(checkout.get("amount").decimalValue()).isEqualByComparingTo("1200000");
+        ipn(checkout, "00").andExpect(jsonPath("$.RspCode").value("00"));
+
+        assertThat(invoiceOf(booking.bookingId()).getStatus()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(SERVER.remainingPaidCalls()).containsExactly(booking.bookingId());
+        OccurrenceFinancial first = occurrenceFinancialRepository.findById(booking.occurrenceIds().get(0)).orElseThrow();
+        assertThat(first.getDepositAmount().add(first.getChargedAmount())).isEqualByComparingTo("1000000");
+
+        // Đã trả đủ rồi khách hủy buổi 1 khi còn 12h → hoàn 70 % số đã trả cho buổi (M4).
+        JsonNode refund = createRefund("REFUND:CUSTOMER_CANCEL:full", booking.bookingId(),
+                List.of(booking.occurrenceIds().get(0)), "CUSTOMER_CANCEL",
+                booking.startTimes().get(0).minus(Duration.ofHours(12))).get("result");
+        assertThat(refund.get("totalRefund").decimalValue()).isEqualByComparingTo("700000");
+    }
+
+    @Test
+    void cancellingOccurrencesBeforePayingTheRestShrinksTheInvoice() throws Exception {
+        BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE, PRICE);
+        SERVER.setPaymentTerms(booking.bookingId(), 30, booking.startTimes().get(0).minus(Duration.ofHours(24)));
+        payDeposit(booking);
+
+        createRefund("REFUND:CUSTOMER_CANCEL:one", booking.bookingId(), List.of(booking.occurrenceIds().get(1)),
+                "CUSTOMER_CANCEL", BASE);
+        assertThat(invoiceOf(booking.bookingId()).getAmount()).isEqualByComparingTo("700000");
+
+        createRefund("REFUND:CENTER_CANCEL:rest", booking.bookingId(), List.of(booking.occurrenceIds().get(0)),
+                "CENTER_CANCEL", BASE);
+        RemainingInvoice invoice = invoiceOf(booking.bookingId());
+        assertThat(invoice.getStatus()).isEqualTo(InvoiceStatus.CANCELLED);
+        assertThat(invoice.getAmount()).isEqualByComparingTo("0");
+        mockMvc.perform(post("/api/v1/remaining-invoices/{id}/payments", invoice.getId())
+                        .header("Authorization", customer(booking.customerId()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"provider\":\"VNPAY\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(6025));
+    }
+
+    @Test
+    void overdueRemainingPaymentExpiresBookingAndKeepsDepositPerPolicy() throws Exception {
+        BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE, PRICE);
+        Instant dueAt = BASE.plus(Duration.ofDays(2));
+        SERVER.setPaymentTerms(booking.bookingId(), 30, dueAt);
+        SERVER.setPolicyValue(booking.bookingId(), "overduePaymentForfeitPercent", 40);
+        payDeposit(booking);
+        UUID invoiceId = invoiceOf(booking.bookingId()).getId();
+
+        // Phiên trả phần còn lại bị giới hạn tới hạn; quá hạn thì không mở phiên được nữa.
+        clock.set(dueAt.minus(Duration.ofMinutes(5)));
+        JsonNode lateSession = body(mockMvc.perform(post("/api/v1/remaining-invoices/{id}/payments", invoiceId)
+                        .header("Authorization", customer(booking.customerId()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"provider\":\"VNPAY\"}"))
+                .andExpect(status().isOk())).get("result");
+        assertThat(Instant.parse(lateSession.get("expiresAt").asString())).isEqualTo(dueAt);
+        clock.set(dueAt);
+        mockMvc.perform(post("/api/v1/remaining-invoices/{id}/payments", invoiceId)
+                        .header("Authorization", customer(booking.customerId()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"provider\":\"VNPAY\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(6025));
+
+        for (UUID candidate : remainingInvoiceService.findOverdueCandidateIds()) {
+            remainingInvoiceService.markOverdue(candidate);
+        }
+
+        assertThat(invoiceOf(booking.bookingId()).getStatus()).isEqualTo(InvoiceStatus.EXPIRED);
+        assertThat(SERVER.paymentOverdueCalls()).containsExactly(booking.bookingId());
+        // M3: giữ 40 % của 300.000 mỗi buổi, hoàn 180.000 mỗi buổi; không thành nợ.
+        List<Refund> refunds = refundRepository.findAllByBookingIdOrderByCreatedAtAsc(booking.bookingId());
+        assertThat(refunds).hasSize(2).allSatisfy(refund -> {
+            assertThat(refund.getReason()).hasToString("PAYMENT_OVERDUE");
+            assertThat(refund.getAmount()).isEqualByComparingTo("180000");
+            assertThat(refund.getFeeAmount()).isEqualByComparingTo("120000");
+        });
+        assertThat(bookingFinancialRepository.findById(booking.bookingId()).orElseThrow().getStatus())
+                .isEqualTo(BookingFinancialStatus.CLOSED);
+        mockMvc.perform(get("/api/v1/payments/me/outstanding").header("Authorization", customer(booking.customerId())))
+                .andExpect(jsonPath("$.result.hasDebt").value(false));
+
+        // Lệnh hủy tới sau không hoàn thêm; khách trả phiên cũ sau hạn → hoàn lại khoản đó.
+        assertThat(createRefund("REFUND:CUSTOMER_CANCEL:late", booking.bookingId(), booking.occurrenceIds(),
+                "CUSTOMER_CANCEL", dueAt).get("result").get("items")).isEmpty();
+        ipn(lateSession, "00").andExpect(jsonPath("$.RspCode").value("00"));
+        assertThat(refundRepository.findAllByBookingIdOrderByCreatedAtAsc(booking.bookingId()))
+                .extracting(refund -> refund.getReason().name())
+                .contains("DUPLICATE");
+        assertThat(SERVER.remainingPaidCalls()).isEmpty();
     }
 
     // ===== helpers =====

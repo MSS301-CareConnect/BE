@@ -14,6 +14,9 @@ import java.util.UUID;
  * thúc sớm, booking_status_history, việc gửi sang Payment qua outbox. Chỉ gọi trong transaction ghi, booking ĐÃ khóa dòng.
  */
 public interface BookingLifecycleService {
+    // Nhắc trả phần còn lại khi tới mốc nhắc mới của policy (M6); false = chưa tới mốc / mốc đã nhắc.
+    boolean remindRemainingPayment(Booking booking);
+
     void recordCreated(Booking booking, UUID customerId);
 
     void apply(Booking booking, BookingAction action, UUID changedBy, String reason);

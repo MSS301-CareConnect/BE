@@ -197,7 +197,7 @@ class PaymentSafetyTests extends PaymentIntegrationTest {
         BookingSetup booking = bookingWithPrices(customerId, UUID.randomUUID(), PRICE);
         JsonNode stale = checkout(booking);
         // Giá đổi trước khi khách trả → phiên mới số tiền khác, phiên cũ EXPIRED.
-        SERVER.putBooking(booking.bookingId(), customerId, booking.centerId(), "AWAITING_DEPOSIT",
+        SERVER.putBooking(booking.bookingId(), customerId, booking.centerId(), "AWAITING_INITIAL_PAYMENT",
                 BASE.plus(Duration.ofHours(24)), List.of(PaymentTestServer.occurrence(booking.occurrenceIds().get(0), 1,
                         booking.startTimes().get(0), "SCHEDULED", 2_000_000L)));
         JsonNode current = checkout(booking);

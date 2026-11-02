@@ -20,4 +20,10 @@ public interface BookingClient {
 
     @PostMapping("/api/v1/bookings/{id}/deposit-paid")
     RemoteApiResponse<Object> markDepositPaid(@PathVariable("id") UUID id, @RequestBody DepositPaidRequest request);
+
+    @PostMapping("/api/v1/bookings/{id}/remaining-paid")
+    RemoteApiResponse<Object> markRemainingPaid(@PathVariable("id") UUID id, @RequestBody DepositPaidRequest request);
+
+    @PostMapping("/api/v1/bookings/{id}/payment-overdue")
+    RemoteApiResponse<Object> markPaymentOverdue(@PathVariable("id") UUID id);
 }

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.client.ProviderServiceClient;
 import mss301.bookingservice.client.dto.AvailabilityCheckResponse;
 import mss301.bookingservice.client.dto.ProviderCaregiverResponse;
+import mss301.bookingservice.client.dto.ProviderScheduleResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
@@ -77,6 +78,30 @@ public class CaregiverPortImpl implements CaregiverPort {
         }
     }
 
+    @Override
+    public ProviderScheduleResponse findBookableSchedule(UUID centerId, UUID caregiverId, UUID scheduleId) {
+        RemoteApiResponse<ProviderScheduleResponse> response;
+        try {
+            response = providerServiceClient.getSchedule(scheduleId);
+        } catch (AppException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw toScheduleException(scheduleId, e);
+        }
+        ProviderScheduleResponse schedule = response == null ? null : response.getResult();
+        if (schedule == null || schedule.getWorkDate() == null || schedule.getStartTime() == null
+                || schedule.getEndTime() == null) {
+            throw new AppException(ErrorCode.PROVIDER_UNAVAILABLE);
+        }
+        if (!centerId.equals(schedule.getCenterId()) || !caregiverId.equals(schedule.getCaregiverId())) {
+            throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_MISMATCH);
+        }
+        if (!ProviderScheduleResponse.STATUS_SCHEDULED.equals(schedule.getScheduleStatus())) {
+            throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_NOT_AVAILABLE);
+        }
+        return schedule;
+    }
+
     private AvailabilityCheckResponse requestAvailability(UUID caregiverId, List<OccurrenceSlot> slots) {
         RemoteApiResponse<AvailabilityCheckResponse> response;
         try {
@@ -100,6 +125,15 @@ public class CaregiverPortImpl implements CaregiverPort {
         if (!supportedServiceIds.containsAll(careServiceIds)) {
             throw new AppException(ErrorCode.CAREGIVER_SERVICE_NOT_SUPPORTED);
         }
+    }
+
+    // Provider trả 404 cho lịch không tồn tại → CAREGIVER_SCHEDULE_NOT_FOUND (ErrorDecoder chỉ biết mã chung của caregiver).
+    private AppException toScheduleException(UUID scheduleId, RuntimeException exception) {
+        AppException appException = toProviderException(scheduleId, exception);
+        if (appException.getErrorCode() == ErrorCode.CAREGIVER_NOT_FOUND) {
+            return new AppException(ErrorCode.CAREGIVER_SCHEDULE_NOT_FOUND);
+        }
+        return appException;
     }
 
     // Circuit breaker bọc lỗi ErrorDecoder (vd 404 CAREGIVER_NOT_FOUND) trong exception của nó → lấy lại AppException;

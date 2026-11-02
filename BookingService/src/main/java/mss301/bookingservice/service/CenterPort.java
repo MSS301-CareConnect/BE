@@ -6,4 +6,7 @@ import java.util.UUID;
 public interface CenterPort {
     // Trung tâm phải tồn tại (CENTER_NOT_FOUND) và ACTIVE (CENTER_NOT_ACTIVE); Provider lỗi → 503.
     void checkBookable(UUID centerId);
+
+    // Trung tâm phải tồn tại (mọi trạng thái) — admin cấu hình policy cho trung tâm bất kỳ; Provider lỗi → 503.
+    void checkExists(UUID centerId);
 }

@@ -87,12 +87,15 @@ public class PaymentController {
         return remainingInvoiceService.getOutstanding(customerId);
     }
 
+    // Spec §9.3: manager xem doanh thu trung tâm mình (centerId lấy từ token).
     @GetMapping("/revenue")
-    @PreAuthorize("hasRole('ADMIN')")
-    public APIResponse<RevenueResponse> getRevenue(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<RevenueResponse> getRevenue(@CurrentRoles Set<RoleCode> roles,
+                                                   @CurrentCenterId(required = false) UUID claimCenterId,
+                                                   @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
                                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
                                                    @RequestParam(required = false) UUID centerId) {
-        return paymentService.getRevenue(from, to, centerId);
+        return paymentService.getRevenue(roles, claimCenterId, from, to, centerId);
     }
 
     // Ngoại lệ rule #3: VNPay chỉ đọc JSON thô {RspCode, Message}; xác thực bằng chữ ký HMAC thay cho JWT.

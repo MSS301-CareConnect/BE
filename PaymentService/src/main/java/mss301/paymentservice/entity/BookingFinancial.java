@@ -62,6 +62,10 @@ public class BookingFinancial extends BaseEntity {
     @Column(name = "deposit_paid_at")
     Instant depositPaidAt;
 
+    // Spec v1 §9.1: hạn trả phần còn lại trước buổi đầu (từ Booking). NULL = SHIFT trả 100 % hoặc booking cũ (thu sau).
+    @Column(name = "remaining_due_at")
+    Instant remainingDueAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     BookingFinancialStatus status;

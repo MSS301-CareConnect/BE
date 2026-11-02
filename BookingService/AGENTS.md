@@ -41,9 +41,17 @@
    Không `setStatus` booking ở chỗ khác. Chốt booking khi hết buổi: `BookingLifecycleService.finalizeIfDone` →
    `FINALIZE` (COMPLETED, có buổi COMPLETED / CUSTOMER_NO_SHOW) hoặc `FINALIZE_CANCELLED` (CANCELLED) — BK-03 / BK-04 /
    OPS-06 dùng lại. Thứ tự khóa luôn booking → buổi → session.
-1a. **Buổi**: SCHEDULED → ACKNOWLEDGED (caregiver nhận ca) → IN_PROGRESS (check-in) → COMPLETED (check-out); chưa bắt
-   đầu → CANCELLED / MISSED / CUSTOMER_NO_SHOW (`OccurrenceStatus.canTransitionTo`). Đổi caregiver dùng
-   `BookingOccurrence.assignCaregiver` (ACKNOWLEDGED → SCHEDULED). Sự kiện mức buổi ghi `booking_events`.
+1a. **Buổi** (spec booking v1.0 §11.2): PENDING_ASSIGNMENT → RESERVED (gắn caregiver) → SCHEDULED (trả khoản đầu) →
+   ACKNOWLEDGED (caregiver nhận ca) → IN_PROGRESS (check-in) → COMPLETED (check-out); chưa bắt đầu → CANCELLED / EXPIRED /
+   CAREGIVER_MISSED / CUSTOMER_NO_SHOW (`OccurrenceStatus.canTransitionTo`). Đổi caregiver dùng
+   `BookingOccurrence.assignCaregiver` (ACKNOWLEDGED → SCHEDULED, PENDING_ASSIGNMENT → RESERVED, bỏ `caregiverScheduleId`
+   của người cũ). Sự kiện mức buổi ghi `booking_events`.
+1e. **Loại booking + center policy** (spec §4, §8): SHIFT / RECURRING / CUSTOM (`OccurrenceGenerator`); đặt trước tối thiểu,
+   timeout xác nhận / phân công / thanh toán đầu, cọc %, hạn phần còn lại đọc từ `CenterBookingPolicyService.findEffective`
+   lúc xử lý — không hardcode. SHIFT: một lịch Provider chỉ một buổi giữ (`uk_booking_occurrences_schedule_holding`).
+1f. **Trả đủ trước khi chăm sóc** (spec §9.1, §14): `fullyPaidAt` chỉ do PaymentService đặt (`deposit-paid` với
+   `fullyPaid`, `/remaining-paid`); check-in đòi trả đủ khi có `remainingPaymentDueAt`. Quá hạn phần còn lại do Payment
+   quyết (dưới khóa hóa đơn) rồi gọi `/payment-overdue` → `EXPIRE` từ CONFIRMED; Booking không xếp hoàn tiền cho ca này.
 1b. **Gửi sang service khác = outbox** (`BookingOutboxService.enqueue` trong transaction nghiệp vụ → gửi sau commit,
    `REQUIRES_NEW`; `BookingOutboxScheduler` retry backoff, quá `BOOKING_OUTBOX_MAX_ATTEMPTS` → FAILED). Bên nhận khử
    trùng theo `Idempotency-Key` (cột `idempotency_key` UNIQUE; `enqueue` bỏ qua key đã có): `REMAINING_INVOICE:<bookingId>`,
@@ -53,12 +61,12 @@
    hợp lệ → từ chối cả lệnh. Booking chưa cọc chỉ hủy cả booking. `previewToken` = HMAC (không lưu DB) — lệnh hủy tính lại
    tiền ở Payment rồi so token cả trước lẫn trong transaction. Booking rời trạng thái giữ chỗ luôn kéo mọi buổi chưa kết
    thúc về CANCELLED — exclusion constraint BK-09 dựa vào bất biến này (không có cột `active_slot`).
-1d. **MISSED / báo vắng (OPS-06)**: job chỉ đánh dấu buổi không có báo vắng; báo vắng chờ manager quyết định (không tự
-   quyết, chỉ nhắc). MISSED không mở lại.
+1d. **CAREGIVER_MISSED / báo vắng (OPS-06)**: job chỉ đánh dấu buổi không có báo vắng; báo vắng chờ manager quyết định
+   (không tự quyết, chỉ nhắc). CAREGIVER_MISSED không mở lại.
 2. **Hai id caregiver luôn đi cùng nhau**: `caregiver_id` (Provider) + `caregiver_user_id` (Identity), lấy từ
    `CaregiverPort` (Provider) — không bao giờ nhận `user_id` từ client. CHECK trong SQL bắt cùng NULL / cùng có.
-3. **Booking là nguồn sự thật về giờ đã đặt.** Kiểm trùng trên buổi `SCHEDULED/ACKNOWLEDGED/IN_PROGRESS` của booking
-   `PENDING/AWAITING_DEPOSIT/CONFIRMED/IN_PROGRESS`; khoảng nửa mở `[start, end)`. Gọi `lockSchedule(...)` (advisory lock
+3. **Booking là nguồn sự thật về giờ đã đặt.** Kiểm trùng trên buổi `RESERVED/SCHEDULED/ACKNOWLEDGED/IN_PROGRESS` của booking
+   còn giữ chỗ (`BookingStatus.SCHEDULE_HOLDING`); khoảng nửa mở `[start, end)`. Gọi `lockSchedule(...)` (advisory lock
    caregiver → người bệnh) TRƯỚC khi check, trong cùng transaction ghi. Chốt chặn cuối ở PostgreSQL: exclusion constraint
    `ex_booking_occurrences_caregiver_slot` (btree_gist) → `GlobalExceptionHandler` trả 409 `5215`.
 4. **Không I/O mạng trong transaction** (rule #24): gọi CareRecipient / Provider / Identity trước, ghi trong

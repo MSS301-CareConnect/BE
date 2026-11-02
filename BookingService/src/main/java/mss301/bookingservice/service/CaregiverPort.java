@@ -1,5 +1,6 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.client.dto.ProviderScheduleResponse;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 
@@ -18,4 +19,9 @@ public interface CaregiverPort {
     // BK-02 (C5.2): caregiver có lịch làm việc và không nghỉ trong MỌI buổi → không thì 409 CAREGIVER_NOT_AVAILABLE;
     // Provider lỗi → 503. Trùng với booking khác vẫn do Booking kiểm (nguồn sự thật về giờ đã đặt).
     void checkAvailable(UUID caregiverId, List<OccurrenceSlot> slots);
+
+    // SHIFT (spec §6): lịch phải tồn tại (CAREGIVER_SCHEDULE_NOT_FOUND), thuộc đúng trung tâm + caregiver đã chọn
+    // (CAREGIVER_SCHEDULE_MISMATCH) và đang SCHEDULED (CAREGIVER_SCHEDULE_NOT_AVAILABLE). Đã bị booking khác giữ hay chưa
+    // do Booking kiểm.
+    ProviderScheduleResponse findBookableSchedule(UUID centerId, UUID caregiverId, UUID scheduleId);
 }

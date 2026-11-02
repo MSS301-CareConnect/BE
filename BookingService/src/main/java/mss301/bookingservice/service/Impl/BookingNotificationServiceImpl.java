@@ -44,10 +44,10 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     @Override
     public void notifyLifecycle(Booking booking, List<BookingOccurrence> occurrences, BookingAction action) {
         NotificationType type = switch (action) {
-            case ACCEPT -> NotificationType.BOOKING_ACCEPTED;
+            case ACCEPT, ACCEPT_WITHOUT_CAREGIVER, ASSIGN_CAREGIVER -> NotificationType.BOOKING_ACCEPTED;
             case REJECT -> NotificationType.BOOKING_REJECTED;
             case EXPIRE -> NotificationType.BOOKING_EXPIRED;
-            case PAY_DEPOSIT -> NotificationType.BOOKING_CONFIRMED;
+            case PAY_INITIAL_PAYMENT -> NotificationType.BOOKING_CONFIRMED;
             case CANCEL_BY_CUSTOMER, CANCEL_BY_CENTER, CANCEL_BY_SYSTEM, FINALIZE_CANCELLED -> NotificationType.BOOKING_CANCELLED;
             case FINALIZE -> NotificationType.BOOKING_COMPLETED;
             case START -> null;
@@ -62,11 +62,18 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                     .distinct().forEach(recipients::add);
         }
         String body = "Lịch " + booking.getBookingCode();
-        if (action == BookingAction.ACCEPT && booking.getDepositDueAt() != null) {
-            body += ": vui lòng thanh toán cọc trước " + booking.getDepositDueAt();
+        boolean awaitingPayment = action == BookingAction.ACCEPT || action == BookingAction.ASSIGN_CAREGIVER;
+        if (awaitingPayment && booking.getDepositDueAt() != null) {
+            body += ": vui lòng thanh toán trước " + booking.getDepositDueAt();
+        }
+        if (action == BookingAction.ACCEPT_WITHOUT_CAREGIVER) {
+            body += ": trung tâm đã xác nhận, đang phân người chăm sóc";
         }
         notificationService.notify(recipients, type, Map.of("body", body), "BOOKING", booking.getId());
-        if (action != BookingAction.ACCEPT && action != BookingAction.REJECT) {
+        // Thao tác do chính trung tâm làm (xác nhận / phân công / từ chối) thì không báo lại trung tâm.
+        boolean centerAction = action == BookingAction.ACCEPT || action == BookingAction.ACCEPT_WITHOUT_CAREGIVER
+                || action == BookingAction.ASSIGN_CAREGIVER || action == BookingAction.REJECT;
+        if (!centerAction) {
             notifyCenter(booking.getCenterId(), type, "BOOKING", booking.getId());
         }
     }
@@ -92,6 +99,14 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         notificationService.notify(recipients, NotificationType.OCCURRENCE_CANCELLED, Map.of("body", body),
                 "BOOKING", booking.getId());
         notifyCenter(booking.getCenterId(), NotificationType.OCCURRENCE_CANCELLED, "BOOKING", booking.getId());
+    }
+
+    @Override
+    public void notifyRemainingDue(Booking booking) {
+        String body = "Lịch " + booking.getBookingCode() + ": vui lòng thanh toán phần còn lại trước "
+                + booking.getRemainingPaymentDueAt();
+        notificationService.notify(List.of(booking.getCustomerId()), NotificationType.REMAINING_DUE, Map.of("body", body),
+                "BOOKING", booking.getId());
     }
 
     @Override

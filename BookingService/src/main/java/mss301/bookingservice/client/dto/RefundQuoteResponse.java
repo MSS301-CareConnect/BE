@@ -43,7 +43,7 @@ public class RefundQuoteResponse {
 
         BigDecimal refundAmount;
 
-        // Mốc chính sách áp dụng (vd TIER_24_72) — chuỗi để không vỡ khi Payment thêm mốc mới.
+        // Mốc chính sách áp dụng (vd BEFORE_THRESHOLD) — chuỗi để không vỡ khi Payment thêm mốc mới.
         String rule;
     }
 }
