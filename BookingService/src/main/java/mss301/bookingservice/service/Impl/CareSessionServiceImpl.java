@@ -49,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 import mss301.bookingservice.entity.CareSessionNote;
 import mss301.bookingservice.repository.CareSessionNoteRepository;
 import mss301.bookingservice.service.NotificationService;
@@ -263,9 +264,9 @@ public class CareSessionServiceImpl implements CareSessionService {
             throw new AppException(ErrorCode.OCCURRENCE_NEEDS_REASSIGNMENT);
         }
         Instant now = clock.instant();
-        Instant earliestCheckIn = occurrence.getStartAt().minus(bookingProperties.getSession().getStartWindow());
-        // D22 (M-08): check-in muộn nhất start + 30' — sau mốc đó buổi bị đánh MISSED (hoàn 100 % cọc buổi).
-        Instant latestCheckIn = occurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace());
+        // Q12: cửa sổ check-in theo center policy chụp trên booking; sau mốc muộn nhất buổi bị đánh MISSED.
+        Instant earliestCheckIn = occurrence.getStartAt().minus(Duration.ofMinutes(booking.getCheckInEarlyMinutes()));
+        Instant latestCheckIn = occurrence.getStartAt().plus(Duration.ofMinutes(booking.getCheckInLateMinutes()));
         if (now.isBefore(earliestCheckIn) || !now.isBefore(latestCheckIn) || !now.isBefore(occurrence.getEndAt())) {
             throw new AppException(ErrorCode.SESSION_WINDOW_NOT_OPEN);
         }

@@ -109,6 +109,14 @@ public class Booking extends BaseEntity {
     @Column(name = "initial_payment_percent", nullable = false, precision = 5, scale = 2)
     BigDecimal initialPaymentPercent;
 
+    // Cửa sổ check-in chụp từ center policy lúc tạo (spec §8, Q12): sớm nhất start − early, muộn nhất start + late;
+    // quá start + late chưa check-in → CAREGIVER_MISSED. Đổi policy sau không đổi cửa sổ của booking đã đặt.
+    @Column(name = "check_in_early_minutes", nullable = false)
+    Integer checkInEarlyMinutes;
+
+    @Column(name = "check_in_late_minutes", nullable = false)
+    Integer checkInLateMinutes;
+
     @Column(name = "total_amount", precision = 14, scale = 2)
     BigDecimal totalAmount;
 

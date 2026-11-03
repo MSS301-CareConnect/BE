@@ -30,12 +30,12 @@ public class ServiceQuote {
     // Thời lượng chuẩn của gói (HOUR luôn 60; DAY / SHIFT là độ dài đơn vị) — dùng để kiểm buổi theo ca.
     Integer planDurationMinutes;
 
-    Integer unitsPerOccurrence;
+    BigDecimal unitsPerOccurrence;
 
     Integer occurrenceCount;
 
     // Tổng số đơn vị trên cả booking (Σ đơn vị mỗi buổi).
-    Integer quantity;
+    BigDecimal quantity;
 
     BigDecimal totalPrice;
 }

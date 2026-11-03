@@ -1,6 +1,7 @@
 package mss301.providerservice.service;
 
 import mss301.providerservice.dto.request.CenterCreateRequest;
+import mss301.providerservice.dto.request.CenterRestoreRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
 import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
@@ -35,5 +36,8 @@ public interface CareCenterService {
     APIResponse<CenterResponse> updateStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request);
 
     APIResponse<Void> delete(UUID actorId, UUID id, Long version);
+
+    APIResponse<CenterResponse> restore(UUID actorId, UUID id, CenterRestoreRequest request);
+
     APIResponse<ProviderStatisticsResponse> statistics();
 }

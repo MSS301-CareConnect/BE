@@ -22,7 +22,8 @@ class BookingPriceCalculatorTests {
 
     BookingPriceCalculator bookingPriceCalculator = new BookingPriceCalculatorImpl();
 
-    // AC BK-01: HOUR 100.000 + DAY 300.000, 3 buổi × 150 phút → HOUR 3 đơn vị / buổi, giá buổi 600.000, tổng 1.800.000.
+    // Spec §7.2 (Q11): HOUR 100.000 + DAY 300.000, 3 buổi × 150 phút → HOUR 2,5 giờ / buổi, giá buổi 550.000,
+    // tổng 1.650.000 (trước đây làm tròn lên 3 giờ).
     @Test
     void pricesEachOccurrenceByUnits() {
         ServiceQuote hourly = serviceQuote(UnitType.HOUR, 60, "100000");
@@ -30,15 +31,29 @@ class BookingPriceCalculatorTests {
         BookingQuote quote = bookingPriceCalculator.calculate(List.of(hourly, daily), slots(3, 150));
 
         assertThat(quote.getOccurrences()).extracting(OccurrenceSlot::getPriceAmount)
-                .allSatisfy(price -> assertThat(price).isEqualByComparingTo("600000"));
-        assertThat(quote.getTotalAmount()).isEqualByComparingTo("1800000");
-        assertThat(quote.getSubtotal()).isEqualByComparingTo("1800000");
-        assertThat(hourly.getUnitsPerOccurrence()).isEqualTo(3);
-        assertThat(hourly.getQuantity()).isEqualTo(9);
-        assertThat(hourly.getTotalPrice()).isEqualByComparingTo("900000");
-        assertThat(daily.getUnitsPerOccurrence()).isEqualTo(1);
+                .allSatisfy(price -> assertThat(price).isEqualByComparingTo("550000"));
+        assertThat(quote.getTotalAmount()).isEqualByComparingTo("1650000");
+        assertThat(quote.getSubtotal()).isEqualByComparingTo("1650000");
+        assertThat(hourly.getUnitsPerOccurrence()).isEqualByComparingTo("2.5");
+        assertThat(hourly.getQuantity()).isEqualByComparingTo("7.5");
+        assertThat(hourly.getTotalPrice()).isEqualByComparingTo("750000");
+        assertThat(daily.getUnitsPerOccurrence()).isEqualByComparingTo("1");
         assertThat(daily.getOccurrenceCount()).isEqualTo(3);
         assertThat(daily.getTotalPrice()).isEqualByComparingTo("900000");
+    }
+
+    // Q11: 90 phút = 1,5 giờ; giờ lẻ không chia hết vẫn tính tiền theo phút chính xác rồi làm tròn đến đồng.
+    @Test
+    void chargesFractionalHours() {
+        ServiceQuote hourly = serviceQuote(UnitType.HOUR, 60, "100000");
+        BookingQuote quote = bookingPriceCalculator.calculate(List.of(hourly), slots(1, 90));
+        assertThat(hourly.getUnitsPerOccurrence()).isEqualByComparingTo("1.5");
+        assertThat(quote.getTotalAmount()).isEqualByComparingTo("150000");
+
+        ServiceQuote odd = serviceQuote(UnitType.HOUR, 60, "100000");
+        BookingQuote oddQuote = bookingPriceCalculator.calculate(List.of(odd), slots(1, 70));
+        assertThat(odd.getUnitsPerOccurrence()).isEqualByComparingTo("1.1667");
+        assertThat(oddQuote.getTotalAmount()).isEqualByComparingTo("116667");
     }
 
     @Test

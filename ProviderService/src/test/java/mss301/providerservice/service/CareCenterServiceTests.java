@@ -184,4 +184,48 @@ class CareCenterServiceTests {
         assertEquals(actorId, entity.getUpdatedBy());
         verify(careCenterRepository).saveAndFlush(entity);
     }
+
+    @Test
+    void restoreBringsArchivedCenterBackAsInactive() {
+        UUID actorId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID managerId = UUID.randomUUID();
+        CareCenter entity = new CareCenter();
+        entity.setVersion(3L);
+        entity.setEmail("center@test.vn");
+        entity.setManagerUserId(managerId);
+        entity.setCenterStatus(CenterStatus.ARCHIVED);
+        entity.setDeletedAt(java.time.Instant.now());
+        when(careCenterRepository.findArchivedForUpdate(centerId)).thenReturn(Optional.of(entity));
+        when(careCenterRepository.existsByEmailAndIdNotAndDeletedAtIsNull("center@test.vn", centerId)).thenReturn(false);
+        when(careCenterRepository.existsByManagerUserIdAndIdNotAndDeletedAtIsNull(managerId, centerId)).thenReturn(false);
+        when(careCenterMapper.toResponse(entity)).thenReturn(CenterResponse.builder().managerUserId(managerId).build());
+        when(transactionTemplate.execute(any())).thenAnswer(invocation ->
+                invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
+
+        careCenterService.restore(actorId, centerId,
+                mss301.providerservice.dto.request.CenterRestoreRequest.builder().reason(" Mở lại ").version(3L).build());
+
+        assertEquals(CenterStatus.INACTIVE, entity.getCenterStatus());
+        assertEquals("Mở lại", entity.getStatusReason());
+        assertEquals(managerId, entity.getManagerUserId());
+        assertEquals(null, entity.getDeletedAt());
+        assertEquals(actorId, entity.getUpdatedBy());
+        verify(careCenterRepository).saveAndFlush(entity);
+    }
+
+    @Test
+    void reactivatingInactiveCenterRequiresManager() {
+        UUID centerId = UUID.randomUUID();
+        CareCenter entity = new CareCenter();
+        entity.setVersion(1L);
+        entity.setCenterStatus(CenterStatus.INACTIVE);
+        when(careCenterRepository.findByIdAndDeletedAtIsNull(centerId)).thenReturn(Optional.of(entity));
+
+        AppException exception = assertThrows(AppException.class, () -> careCenterService.updateStatus(UUID.randomUUID(),
+                centerId, CenterStatusUpdateRequest.builder().status(CenterStatus.ACTIVE).version(1L).build()));
+
+        assertEquals(ErrorCode.CENTER_MANAGER_REQUIRED, exception.getErrorCode());
+        verifyNoInteractions(transactionTemplate);
+    }
 }

@@ -122,7 +122,8 @@ booking:
     connect-timeout: ${BOOKING_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
     read-timeout: ${BOOKING_SERVICE_TOKEN_READ_TIMEOUT:3s}
 
-  # Số booking PENDING / AWAITING_DEPOSIT tối đa một khách giữ cùng lúc (BK-02).
+  # Số booking chưa trả khoản đầu (PENDING_CENTER_CONFIRMATION / PENDING_CAREGIVER_ASSIGNMENT /
+  # AWAITING_INITIAL_PAYMENT) tối đa một khách giữ cùng lúc (BK-02).
   max-pending-per-customer: ${BOOKING_MAX_PENDING_PER_CUSTOMER:3}
 
   # Quy tắc lịch (docs/2026-10-09-PLAN_BOOKING.md §9). Duration dạng 12h, 30m, PT24H…
@@ -157,15 +158,14 @@ booking:
     refund-percent-after-threshold: ${BOOKING_POLICY_REFUND_PERCENT_AFTER_THRESHOLD:70}
     overdue-payment-forfeit-percent: ${BOOKING_POLICY_OVERDUE_PAYMENT_FORFEIT_PERCENT:100}
 
-  # Ca chăm sóc (OPS-02 / OPS-04): check-in sớm tối đa 30 phút; nhắc session quên kết thúc sau giờ kết thúc + 60 phút.
+  # Ca chăm sóc (OPS-02 / OPS-04): nhắc session quên kết thúc sau giờ kết thúc + 60 phút. Cửa sổ check-in và mốc MISSED
+  # lấy từ center policy (check-in-early / late-minutes) chụp trên booking (Q12).
   session:
-    start-window: ${BOOKING_SESSION_START_WINDOW:30m}
     overdue-reminder-after: ${BOOKING_SESSION_OVERDUE_REMINDER_AFTER:60m}
     overdue-scan-interval: ${BOOKING_SESSION_OVERDUE_SCAN_INTERVAL:5m}
     # D21: ca quên check-out tự đóng sau giờ kết thúc buổi + 4h (COMPLETED, cờ auto_closed, báo trung tâm).
     auto-close-after: ${BOOKING_SESSION_AUTO_CLOSE_AFTER:4h}
-    # D22 (M-08): check-in và báo khách vắng chỉ tới giờ bắt đầu + 30'; sau đó chưa check-in → MISSED (hoàn 100 % cọc buổi).
-    missed-grace: ${BOOKING_MISSED_GRACE:30m}
+    # D22 / Q12: chưa check-in sau giờ bắt đầu + check_in_late_minutes → MISSED (hoàn 100 % phần đã trả của buổi).
     missed-scan-interval: ${BOOKING_MISSED_SCAN_INTERVAL:5m}
     no-show-decision-reminder-after: ${BOOKING_NO_SHOW_DECISION_REMINDER_AFTER:24h}
 

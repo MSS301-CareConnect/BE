@@ -219,8 +219,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             throw new AppException(ErrorCode.NO_SHOW_ALREADY_REPORTED);
         }
         Instant now = clock.instant();
-        // D22 (M-08): báo vắng trước mốc MISSED (start + 30'), cùng mốc với hạn check-in.
-        Instant reportDeadline = lockedOccurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace());
+        // D22 / Q12: báo vắng trước mốc MISSED, cùng mốc với hạn check-in của booking.
+        Instant reportDeadline = lockedOccurrence.getStartAt().plus(Duration.ofMinutes(booking.getCheckInLateMinutes()));
         if (now.isBefore(lockedOccurrence.getStartAt()) || !now.isBefore(reportDeadline)) {
             throw new AppException(ErrorCode.NO_SHOW_WINDOW_INVALID);
         }
@@ -274,9 +274,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findMissedIds() {
-        Instant startedBefore = clock.instant().minus(bookingProperties.getSession().getMissedGrace());
         return bookingOccurrenceRepository.findMissedIds(OccurrenceStatus.WORKABLE,
-                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, startedBefore, PageRequest.of(0, SCAN_BATCH_SIZE));
+                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, clock.instant(), PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
     @Override
@@ -298,7 +297,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 && OccurrenceStatus.WORKABLE.contains(lockedOccurrence.getStatus())
                 && lockedOccurrence.getNoShowReportedAt() == null
                 && !careSessionRepository.existsByOccurrenceIdAndDeletedAtIsNull(id)
-                && !lockedOccurrence.getStartAt().plus(bookingProperties.getSession().getMissedGrace()).isAfter(now);
+                && !lockedOccurrence.getStartAt().plus(Duration.ofMinutes(booking.getCheckInLateMinutes())).isAfter(now);
         if (!stillMissed) {
             return;
         }

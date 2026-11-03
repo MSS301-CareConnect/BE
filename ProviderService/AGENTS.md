@@ -17,6 +17,9 @@
   không có cross-service foreign key.
 - Chỉ IdentityService phát token. ProviderService xác minh access JWT bằng JWKS và tự kiểm tra role/phạm vi tài nguyên.
 - Admin CRUD trung tâm. Tạo mới luôn `PENDING`; `REJECTED`/`SUSPENDED` bắt buộc có lý do; xóa mềm thành `ARCHIVED`.
+  ARCHIVED khôi phục được (D31): `POST /care-centers/{id}/restore` (ADMIN, lý do + version) → `INACTIVE`;
+  email đã bị trung tâm khác dùng → 409 `4101`; manager đã sang trung tâm khác → gỡ manager. INACTIVE → ACTIVE kiểm
+  manager như PENDING → ACTIVE. Admin `GET /{id}` đọc được bản đã lưu trữ.
 - `care_centers.manager_user_id` ánh xạ tài khoản `CENTER_MANAGER`; manager chỉ thao tác đúng center của mình.
 - `client/` gọi service khác qua ApiGateway, **trước** transaction ghi (rule #24):
   - `IdentityClient` + `ServiceTokenInterceptor` (token SERVICE) — `IdentityAccountService.requireActiveRole(userId,

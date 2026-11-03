@@ -21,10 +21,11 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.Named;
 import org.mapstruct.NullValueMappingStrategy;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
-@Mapper(config = MapStructConfig.class)
+@Mapper(config = MapStructConfig.class, imports = Duration.class)
 public interface OccurrenceMapper {
 
     OccurrenceResponse toResponse(BookingOccurrence occurrence);
@@ -77,6 +78,8 @@ public interface OccurrenceMapper {
     @Mapping(target = "recipientName", source = "booking.recipientSnapshot.fullName")
     @Mapping(target = "serviceAddress", source = "booking.serviceAddress")
     @Mapping(target = "customerNote", source = "booking.customerNote")
+    @Mapping(target = "checkInOpensAt", expression = "java(occurrence.getStartAt().minus(Duration.ofMinutes(occurrence.getBooking().getCheckInEarlyMinutes())))")
+    @Mapping(target = "checkInClosesAt", expression = "java(occurrence.getStartAt().plus(Duration.ofMinutes(occurrence.getBooking().getCheckInLateMinutes())))")
     @Mapping(target = "recipientSnapshot", ignore = true)
     @Mapping(target = "services", ignore = true)
     @Mapping(target = "specialNotes", ignore = true)

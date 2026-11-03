@@ -72,7 +72,7 @@
 4. **Không I/O mạng trong transaction** (rule #24): gọi CareRecipient / Provider / Identity trước, ghi trong
    `TransactionTemplate`. Service có I/O mạng không được `@Transactional`.
 5. **Không tin giá từ client** (BK-01): luôn báo giá qua `CareServiceCatalogPort` (gói giá bắt buộc); Catalog lỗi → 503,
-   không tạo booking không giá. Giá từng buổi do `BookingPriceCalculator` (HOUR = số giờ làm tròn lên, DAY / SHIFT = 1,
+   không tạo booking không giá. Giá từng buổi do `BookingPriceCalculator` (HOUR = số phút / 60 — 90 phút = 1,5 giờ, Q11 — DAY / SHIFT = 1,
    làm tròn đồng); `bookings.deposit_amount` để NULL — PaymentService quyết định tiền cọc.
 6. Kỹ năng caregiver (PRV-01): Provider trả `careServiceIds` (không có = rỗng); phải chứa đủ dịch vụ đã chọn, không thì
    `CAREGIVER_SERVICE_NOT_SUPPORTED`.

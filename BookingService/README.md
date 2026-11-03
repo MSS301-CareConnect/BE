@@ -106,7 +106,7 @@ Identity của caregiver (lấy từ Provider, không nhận từ client).
 | Job | Chu kỳ | Việc |
 |---|---|---|
 | `BookingExpiryScheduler` | `BOOKING_EXPIRY_SCAN_INTERVAL` | PENDING_CENTER_CONFIRMATION quá hạn xác nhận / PENDING_CAREGIVER_ASSIGNMENT quá hạn phân công / AWAITING_INITIAL_PAYMENT quá hạn thanh toán đầu → EXPIRED. Cùng chu kỳ: nhắc khách trả phần còn lại tại các mốc `remainingPaymentReminderMinutes` của center policy (mặc định 72h, 48h trước hạn), mỗi mốc một lần (`REMAINING_DUE`); mốc đã qua lúc trả khoản đầu thì bỏ |
-| `OccurrenceMissedScheduler` | `BOOKING_MISSED_SCAN_INTERVAL` (5m) | Buổi chưa check-in sau `startAt + BOOKING_MISSED_GRACE` (30m), không có báo vắng, booking CONFIRMED / IN_PROGRESS → CAREGIVER_MISSED + hoàn tiền `CAREGIVER_MISSED` + chốt booking. Báo vắng chưa quyết định sau `endAt + BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` (24h) → nhắc manager một lần |
+| `OccurrenceMissedScheduler` | `BOOKING_MISSED_SCAN_INTERVAL` (5m) | Buổi chưa check-in sau `startAt + bookings.check_in_late_minutes` (center policy chụp lúc tạo, Q12), không có báo vắng, booking CONFIRMED / IN_PROGRESS → CAREGIVER_MISSED + hoàn tiền `CAREGIVER_MISSED` + chốt booking. Báo vắng chưa quyết định sau `endAt + BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` (24h) → nhắc manager một lần |
 | `CareSessionOverdueScheduler` | `BOOKING_SESSION_OVERDUE_SCAN_INTERVAL` | Session còn mở quá giờ kết thúc + 60m → nhắc một lần |
 | `BookingOutboxScheduler` | `BOOKING_OUTBOX_SCAN_INTERVAL` | Gửi lại việc sang Payment (`REMAINING_INVOICE`, `REFUND`) với backoff |
 
@@ -149,12 +149,13 @@ Xem `.env.example` (chỉ tên + chú thích): `BOOKING_SERVER_PORT`, `BOOKING_S
 `BOOKING_PROVIDER_URL`, `BOOKING_CARE_CATALOG_URL`, `BOOKING_PAYMENT_URL` (đều là gateway) · `BOOKING_SERVICE_CLIENT_ID`,
 `BOOKING_SERVICE_CLIENT_SECRET` · `BOOKING_TIMEZONE`, `BOOKING_MAX_OCCURRENCES`, `BOOKING_MAX_SPAN_DAYS`,
 `BOOKING_POLICY_*` (mặc định center booking policy, phút / %), `BOOKING_EXPIRY_BATCH_SIZE`,
-`BOOKING_EXPIRY_SCAN_INTERVAL` · `BOOKING_MAX_PENDING_PER_CUSTOMER` · `BOOKING_SESSION_*`, `BOOKING_MISSED_GRACE`,
+`BOOKING_EXPIRY_SCAN_INTERVAL` · `BOOKING_MAX_PENDING_PER_CUSTOMER` · `BOOKING_SESSION_*`,
 `BOOKING_MISSED_SCAN_INTERVAL`, `BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` · `BOOKING_COMPLAINT_OPEN_WINDOW`,
 `BOOKING_COMPLAINT_CUSTOMER_ESCALATE_AFTER`, `BOOKING_ADMIN_USER_IDS` (admin nhận thông báo vận hành) ·
 `BOOKING_OUTBOX_*` · `BOOKING_CANCELLATION_PREVIEW_SECRET` (khóa HMAC chung cho mọi instance; trống = khóa ngẫu nhiên
 theo tiến trình, chỉ dùng dev), `BOOKING_CANCELLATION_PREVIEW_TTL`. `BOOKING_MAX_CAREGIVER_RANGE_DAYS` đã bỏ (BK-06);
-`BOOKING_NO_SHOW_REPORT_WINDOW` đã bỏ (D22: báo vắng dùng chung mốc `BOOKING_MISSED_GRACE`).
+`BOOKING_NO_SHOW_REPORT_WINDOW`, `BOOKING_SESSION_START_WINDOW`, `BOOKING_MISSED_GRACE` đã bỏ (Q12: cửa sổ check-in, hạn báo
+vắng và mốc MISSED theo `check_in_early_minutes` / `check_in_late_minutes` của booking).
 
 Vận hành (Đợt 4): `GET /api/v1/booking-outbox` + `POST /{id}/requeue|skip` (ADMIN) xử lý việc gửi sang service khác
 đã FAILED; `GET /api/v1/bookings/recipient-activity` (SERVICE) cho CareRecipientService kiểm booking chưa kết thúc;

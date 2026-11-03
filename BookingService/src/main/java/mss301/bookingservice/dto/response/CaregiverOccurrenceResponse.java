@@ -27,6 +27,11 @@ public class CaregiverOccurrenceResponse {
 
     Instant endAt;
 
+    // Q12: cửa sổ check-in theo center policy chụp trên booking (sau checkInClosesAt chưa check-in → CAREGIVER_MISSED).
+    Instant checkInOpensAt;
+
+    Instant checkInClosesAt;
+
     Integer durationMinutes;
 
     OccurrenceStatus status;

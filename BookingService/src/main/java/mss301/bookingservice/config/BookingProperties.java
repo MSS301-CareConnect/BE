@@ -150,9 +150,7 @@ public class BookingProperties {
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Session {
-        // Caregiver được check-in sớm nhất bao lâu trước giờ bắt đầu buổi.
-        @NotNull
-        Duration startWindow = Duration.ofMinutes(30);
+        // Cửa sổ check-in / mốc MISSED lấy từ center policy chụp trên booking (Q12), không cấu hình ở đây.
 
         // Session còn IN_PROGRESS quá giờ kết thúc buổi bao lâu thì nhắc (một lần).
         @NotNull
@@ -165,10 +163,7 @@ public class BookingProperties {
         @NotNull
         Duration autoCloseAfter = Duration.ofHours(4);
 
-        // OPS-06: buổi chưa check-in sau giờ bắt đầu + missedGrace (và không có báo vắng) → MISSED, hoàn tiền khách.
-        @NotNull
-        Duration missedGrace = Duration.ofMinutes(30);
-
+        // OPS-06: chu kỳ quét buổi chưa check-in sau giờ bắt đầu + check_in_late_minutes của booking → MISSED.
         @NotNull
         Duration missedScanInterval = Duration.ofMinutes(5);
 

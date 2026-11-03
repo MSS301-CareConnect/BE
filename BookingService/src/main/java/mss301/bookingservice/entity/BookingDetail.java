@@ -54,12 +54,13 @@ public class BookingDetail {
     @Column(name = "unit_price", precision = 14, scale = 2)
     BigDecimal unitPrice;
 
-    @Column(name = "quantity")
-    Integer quantity;
+    // Q11: HOUR tính giờ lẻ (90 phút = 1,5 giờ), 4 chữ số thập phân; DAY / SHIFT luôn số nguyên.
+    @Column(name = "quantity", precision = 12, scale = 4)
+    BigDecimal quantity;
 
     // Số đơn vị tính mỗi buổi (HOUR = số giờ làm tròn lên, DAY / SHIFT = 1) — BK-01.
-    @Column(name = "units_per_occurrence")
-    Integer unitsPerOccurrence;
+    @Column(name = "units_per_occurrence", precision = 10, scale = 4)
+    BigDecimal unitsPerOccurrence;
 
     @Column(name = "total_price", precision = 14, scale = 2)
     BigDecimal totalPrice;

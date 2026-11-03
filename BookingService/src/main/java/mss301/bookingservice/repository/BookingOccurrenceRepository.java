@@ -124,7 +124,8 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                                                   @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                                                   @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
-    // OPS-06: buổi chưa bắt đầu, quá hạn check-in, không có báo vắng, của booking đang chạy → job MISSED (theo lô).
+    // OPS-06: buổi chưa bắt đầu, quá hạn check-in (start + check_in_late_minutes của booking, Q12), không có báo vắng,
+    // của booking đang chạy → job MISSED (theo lô).
     @Query("""
             select o.id from BookingOccurrence o join o.booking b
             where o.deletedAt is null
@@ -132,12 +133,12 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
               and o.status in :occurrenceStatuses
               and b.status in :bookingStatuses
               and o.noShowReportedAt is null
-              and o.startAt <= :startedBefore
+              and o.startAt + (b.checkInLateMinutes) minute <= :now
             order by o.startAt
             """)
     List<UUID> findMissedIds(@Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                              @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
-                             @Param("startedBefore") Instant startedBefore,
+                             @Param("now") Instant now,
                              Pageable pageable);
 
     // BK-04: buổi tương lai còn hoạt động của caregiver bị khóa, chưa đánh dấu cần đổi người.

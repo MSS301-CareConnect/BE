@@ -171,10 +171,10 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
             case CARE_CENTER -> careCenterRepository.findByIdAndDeletedAtIsNull(ownerId)
                     .filter(center -> center.getCenterStatus() == CenterStatus.ACTIVE)
                     .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
-            case CAREGIVER_PROFILE -> checkPublicCaregiver(caregiverProfileRepository.findByIdAndDeletedAtIsNull(ownerId)
+            case CAREGIVER_PROFILE -> checkPublicCaregiver(caregiverProfileRepository.findWithCenterById(ownerId)
                     .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND)));
             case CERTIFICATE -> {
-                Certificate certificate = certificateRepository.findByIdAndDeletedAtIsNull(ownerId)
+                Certificate certificate = certificateRepository.findWithCaregiverById(ownerId)
                         .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
                 if (certificate.getVerificationStatus() != CertificateVerificationStatus.ADMIN_VERIFIED
                         || (certificate.getExpiryDate() != null
@@ -209,13 +209,13 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
     }
 
     private void requireCaregiverAccess(UUID actorId, UUID caregiverId) {
-        CaregiverProfile caregiver = caregiverProfileRepository.findByIdAndDeletedAtIsNull(caregiverId)
+        CaregiverProfile caregiver = caregiverProfileRepository.findWithCenterById(caregiverId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
         providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
     }
 
     private void requireCertificateAccess(UUID actorId, UUID certificateId) {
-        Certificate certificate = certificateRepository.findByIdAndDeletedAtIsNull(certificateId)
+        Certificate certificate = certificateRepository.findWithCaregiverById(certificateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
         providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
     }

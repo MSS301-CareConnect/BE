@@ -6,6 +6,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.providerservice.dto.request.CenterCreateRequest;
+import mss301.providerservice.dto.request.CenterRestoreRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
 import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
@@ -96,6 +97,15 @@ public class CareCenterController {
     public APIResponse<CenterResponse> create(@CurrentUserId UUID actorId,
                                               @RequestBody @Valid CenterCreateRequest request) {
         return careCenterService.create(actorId, request);
+    }
+
+    // D31: trung tâm đã lưu trữ → INACTIVE để admin rà lại trước khi mở lại.
+    @PostMapping("/{centerId}/restore")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<CenterResponse> restore(@CurrentUserId UUID actorId,
+                                               @PathVariable UUID centerId,
+                                               @RequestBody @Valid CenterRestoreRequest request) {
+        return careCenterService.restore(actorId, centerId, request);
     }
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────

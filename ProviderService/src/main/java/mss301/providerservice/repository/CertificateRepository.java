@@ -24,6 +24,10 @@ public interface CertificateRepository extends JpaRepository<Certificate, UUID>,
     Optional<Certificate> findForUpdate(@Param("id") UUID id);
 
     Optional<Certificate> findByIdAndDeletedAtIsNull(UUID id);
+
+    // Như CaregiverProfileRepository.findWithCenterById: kiểm chứng chỉ công khai ngoài transaction.
+    @Query("select c from Certificate c join fetch c.caregiver g join fetch g.center where c.id = :id and c.deletedAt is null")
+    Optional<Certificate> findWithCaregiverById(@Param("id") UUID id);
     List<Certificate> findByCaregiverIdAndDeletedAtIsNullOrderByIssuedDateDesc(UUID caregiverId);
     List<Certificate> findByCaregiverIdAndVerificationStatusAndDeletedAtIsNullOrderByIssuedDateDesc(
             UUID caregiverId, CertificateVerificationStatus verificationStatus);

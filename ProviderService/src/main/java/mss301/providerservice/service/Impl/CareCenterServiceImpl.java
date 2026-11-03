@@ -9,6 +9,7 @@ import mss301.providerservice.client.CareCatalogClient;
 import mss301.providerservice.client.dto.CenterPriceSummaryClientResponse;
 import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.dto.request.CenterCreateRequest;
+import mss301.providerservice.dto.request.CenterRestoreRequest;
 import mss301.providerservice.dto.request.CenterStatusUpdateRequest;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
 import mss301.providerservice.dto.request.CenterSelfUpdateRequest;
@@ -105,7 +106,10 @@ public class CareCenterServiceImpl implements CareCenterService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CenterResponse> get(UUID id) {
-        CareCenter careCenter = findActiveCenter(id);
+        // D31: admin xem được trung tâm đã lưu trữ (chỉ đọc) để quyết định khôi phục.
+        CareCenter careCenter = providerAuthorization.isAdmin()
+                ? careCenterRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND))
+                : findActiveCenter(id);
         // L-07: khách chỉ xem được trung tâm đang hoạt động (giống /public/{id}); trung tâm chờ duyệt / khóa → 404.
         if (careCenter.getCenterStatus() != CenterStatus.ACTIVE && providerAuthorization.hasRole(RoleCode.CUSTOMER)
                 && !providerAuthorization.isAdmin()
@@ -192,7 +196,10 @@ public class CareCenterServiceImpl implements CareCenterService {
     public APIResponse<CenterResponse> updateStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request) {
         CareCenter snapshot = findActiveCenter(id);
         checkVersion(snapshot, request.getVersion());
-        if (request.getStatus() == CenterStatus.ACTIVE && snapshot.getCenterStatus() == CenterStatus.PENDING) {
+        // D31: INACTIVE → ACTIVE cũng cần manager hợp lệ (trung tâm vừa khôi phục có thể chưa có manager).
+        // SUSPENDED → ACTIVE không kiểm ở đây: tài khoản manager đang bị khóa, RESUME mở lại qua outbox.
+        if (request.getStatus() == CenterStatus.ACTIVE && (snapshot.getCenterStatus() == CenterStatus.PENDING
+                || snapshot.getCenterStatus() == CenterStatus.INACTIVE)) {
             if (snapshot.getManagerUserId() == null) {
                 throw new AppException(ErrorCode.CENTER_MANAGER_REQUIRED);
             }
@@ -214,6 +221,15 @@ public class CareCenterServiceImpl implements CareCenterService {
             changeStatus(actorId, id, request);
         });
         return APIResponse.success("Lưu trữ trung tâm thành công");
+    }
+
+    @Override
+    public APIResponse<CenterResponse> restore(UUID actorId, UUID id, CenterRestoreRequest request) {
+        CenterResponse response = transactionTemplate.execute(status -> restoreCenter(actorId, id, request));
+        String message = response != null && response.getManagerUserId() == null
+                ? "Khôi phục trung tâm thành công, cần gán manager trước khi mở lại hoạt động"
+                : "Khôi phục trung tâm thành công";
+        return APIResponse.success(message, response);
     }
 
     @Override
@@ -281,6 +297,31 @@ public class CareCenterServiceImpl implements CareCenterService {
         } else if (from == CenterStatus.PENDING && to == CenterStatus.ACTIVE) {
             providerOutboxService.enqueue(center, "ACTIVATE", request.getReason());
         }
+        return careCenterMapper.toResponse(center);
+    }
+
+    // D31. Lưu trữ đã trả email / manager cho trung tâm khác (partial unique, M-05): email trùng → chặn; manager đã
+    // sang trung tâm khác → gỡ manager, INACTIVE → ACTIVE sẽ đòi gán lại. Không gọi mạng ở đây.
+    private CenterResponse restoreCenter(UUID actorId, UUID id, CenterRestoreRequest request) {
+        CareCenter center = careCenterRepository.findArchivedForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
+        checkVersion(center, request.getVersion());
+        if (center.getCenterStatus() != CenterStatus.ARCHIVED) {
+            throw new AppException(ErrorCode.CENTER_INVALID_TRANSITION);
+        }
+        if (careCenterRepository.existsByEmailAndIdNotAndDeletedAtIsNull(center.getEmail(), id)) {
+            throw new AppException(ErrorCode.CENTER_EMAIL_EXISTED);
+        }
+        if (center.getManagerUserId() != null
+                && careCenterRepository.existsByManagerUserIdAndIdNotAndDeletedAtIsNull(center.getManagerUserId(), id)) {
+            center.setManagerUserId(null);
+        }
+        center.setCenterStatus(CenterStatus.INACTIVE);
+        center.setStatusReason(normalizeNullable(request.getReason()));
+        center.setDeletedAt(null);
+        center.setUpdatedBy(actorId);
+        careCenterRepository.saveAndFlush(center);
+        log.info("Admin {} restored care center {}", actorId, id);
         return careCenterMapper.toResponse(center);
     }
 

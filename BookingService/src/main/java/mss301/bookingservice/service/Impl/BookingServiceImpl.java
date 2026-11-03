@@ -681,6 +681,8 @@ public class BookingServiceImpl implements BookingService {
         booking.setAcceptanceDueAt(findEarlier(
                 clock.instant().plus(Duration.ofMinutes(policy.getConfirmationTimeoutMinutes())), paymentCutoff));
         booking.setRemainingPaymentDueAt(calculateRemainingPaymentDueAt(request.getBookingType(), slots, policy));
+        booking.setCheckInEarlyMinutes(policy.getCheckInEarlyMinutes());
+        booking.setCheckInLateMinutes(policy.getCheckInLateMinutes());
         booking.setIdempotencyKey(idempotencyKey);
         booking.setIdempotencyHash(requestHash);
         Booking savedBooking = bookingRepository.save(booking);

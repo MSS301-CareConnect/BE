@@ -185,16 +185,16 @@ class BookingMapperTests {
                 .serviceName("Tắm gội")
                 .unitType(UnitType.HOUR)
                 .unitPrice(new BigDecimal("100000"))
-                .unitsPerOccurrence(3)
-                .quantity(9)
+                .unitsPerOccurrence(new BigDecimal("1.5"))
+                .quantity(new BigDecimal("4.5"))
                 .totalPrice(new BigDecimal("900000"))
                 .build();
         Booking booking = new Booking();
         BookingDetail detail = bookingDetailMapper.toBookingDetailList(List.of(quote), booking).getFirst();
         assertThat(detail.getBooking()).isSameAs(booking);
         assertThat(detail.getCenterServiceId()).isEqualTo(service.getCenterServiceId());
-        assertThat(detail.getUnitsPerOccurrence()).isEqualTo(3);
-        assertThat(detail.getQuantity()).isEqualTo(9);
+        assertThat(detail.getUnitsPerOccurrence()).isEqualByComparingTo("1.5");
+        assertThat(detail.getQuantity()).isEqualByComparingTo("4.5");
         assertThat(detail.getId()).isNull();
     }
 
@@ -236,10 +236,18 @@ class BookingMapperTests {
         Booking booking = bookingMapper.toBooking(request(recipientId, null), UUID.randomUUID(), snapshot(recipientId),
                 null, BookingQuote.builder().build(), LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-23"), new BigDecimal("30"));
         booking.setId(UUID.randomUUID());
+        booking.setCheckInEarlyMinutes(15);
+        booking.setCheckInLateMinutes(45);
         BookingOccurrence occurrence = new BookingOccurrence();
         occurrence.setId(UUID.randomUUID());
         occurrence.setBooking(booking);
+        occurrence.setStartAt(Instant.parse("2026-10-12T01:00:00Z"));
         assertThat(occurrenceMapper.toCaregiverResponseList(List.of(occurrence)).getFirst().getRecipientSnapshot()).isNull();
+        // Q12: cửa sổ check-in theo policy chụp trên booking.
+        assertThat(occurrenceMapper.toCaregiverResponse(occurrence).getCheckInOpensAt())
+                .isEqualTo(Instant.parse("2026-10-12T00:45:00Z"));
+        assertThat(occurrenceMapper.toCaregiverResponse(occurrence).getCheckInClosesAt())
+                .isEqualTo(Instant.parse("2026-10-12T01:45:00Z"));
         assertThat(occurrenceMapper.toCaregiverResponseList(List.of(occurrence)).getFirst().getBookingId())
                 .isEqualTo(booking.getId());
         assertThat(occurrenceMapper.toCaregiverDetailResponse(occurrence).getRecipientSnapshot().getFullName())

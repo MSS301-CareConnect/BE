@@ -25,6 +25,11 @@ public interface CareCenterRepository extends JpaRepository<CareCenter, UUID>, J
     @Query("select c from CareCenter c where c.id = :id and c.deletedAt is null")
     Optional<CareCenter> findForUpdate(@Param("id") UUID id);
 
+    // D31: chỉ dùng cho khôi phục — khóa dòng đã lưu trữ.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from CareCenter c where c.id = :id and c.deletedAt is not null")
+    Optional<CareCenter> findArchivedForUpdate(@Param("id") UUID id);
+
     Optional<CareCenter> findByIdAndDeletedAtIsNull(UUID id);
 
     Optional<CareCenter> findByIdAndCenterStatusAndDeletedAtIsNull(UUID id, CenterStatus centerStatus);

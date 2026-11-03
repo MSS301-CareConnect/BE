@@ -39,6 +39,9 @@ CREATE TABLE bookings (
     total_amount        numeric(14,2),
     -- Tỷ lệ khoản thanh toán đầu chụp từ center policy lúc tạo: SHIFT 100, RECURRING / CUSTOM = cọc %.
     initial_payment_percent numeric(5,2) NOT NULL,
+    -- Cửa sổ check-in chụp từ center policy lúc tạo (Q12): start − early … start + late.
+    check_in_early_minutes integer NOT NULL,
+    check_in_late_minutes  integer NOT NULL,
     acceptance_due_at   timestamptz,
     accepted_by         uuid,
     accepted_at         timestamptz,
@@ -88,6 +91,8 @@ CREATE TABLE bookings (
             AND days_of_week <@ ARRAY[1, 2, 3, 4, 5, 6, 7]::smallint[])
         OR (recurrence_frequency IS DISTINCT FROM 'WEEKLY' AND days_of_week IS NULL)),
     CONSTRAINT ck_bookings_initial_payment_percent CHECK (initial_payment_percent > 0 AND initial_payment_percent <= 100),
+    CONSTRAINT ck_bookings_check_in_window CHECK (check_in_early_minutes BETWEEN 0 AND 1440
+        AND check_in_late_minutes BETWEEN 0 AND 1440),
     -- Phân công luôn ghi cả hai id caregiver (Provider + Identity) cùng lúc.
     CONSTRAINT ck_bookings_caregiver_pair CHECK ((caregiver_id IS NULL) = (caregiver_user_id IS NULL)),
     CONSTRAINT ck_bookings_amounts CHECK ((subtotal IS NULL OR subtotal >= 0)
@@ -196,8 +201,9 @@ CREATE TABLE booking_details (
     service_name       varchar(255),
     unit_type          varchar(20),
     unit_price         numeric(14,2),
-    quantity           integer,
-    units_per_occurrence integer,
+    -- Q11: HOUR tính giờ lẻ (phút / 60, 4 chữ số thập phân); DAY / SHIFT = 1 mỗi buổi.
+    quantity           numeric(12,4),
+    units_per_occurrence numeric(10,4),
     total_price        numeric(14,2),
     created_at         timestamptz   NOT NULL,
 

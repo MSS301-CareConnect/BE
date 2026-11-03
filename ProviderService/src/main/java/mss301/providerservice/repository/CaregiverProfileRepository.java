@@ -24,6 +24,11 @@ import java.util.UUID;
 @Repository
 public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfile, UUID>, JpaSpecificationExecutor<CaregiverProfile> {
     Optional<CaregiverProfile> findByIdAndDeletedAtIsNull(UUID id);
+
+    // Kiểm hồ sơ công khai ngoài transaction (ProviderMediaService.list gọi mạng) — nạp sẵn trung tâm, tránh lazy load.
+    @Query("select c from CaregiverProfile c join fetch c.center where c.id = :id and c.deletedAt is null")
+    Optional<CaregiverProfile> findWithCenterById(@Param("id") UUID id);
+
     Optional<CaregiverProfile> findByUserIdAndDeletedAtIsNull(UUID userId);
 
     // Khóa hồ sơ khi thay toàn bộ kỹ năng: hai PUT song song không cùng xóa/thêm dòng caregiver_services.

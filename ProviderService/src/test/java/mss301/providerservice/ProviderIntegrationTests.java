@@ -1155,6 +1155,81 @@ class ProviderIntegrationTests {
         assertThat(careCenterRepository.findById(center.getId()).orElseThrow().getDeletedAt()).isNull();
     }
 
+    @Test
+    void caregiverMediaChecksAccessWithoutLazyLoadingTheCenter() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+        String path = "/api/v1/provider-media/CAREGIVER_PROFILE/" + caregiver.getId();
+
+        // ProviderMediaService.list chạy ngoài transaction; trước đây đọc caregiver.center lazy → 500.
+        mockMvc.perform(get(path).with(user(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result").isArray());
+        mockMvc.perform(get(path).with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(path).with(user(UUID.randomUUID(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void archivedCenterCanBeViewedAndRestoredToInactive() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        String path = "/api/v1/care-centers/" + center.getId();
+        when(bookingArchiveClient.list(eq(center.getId()), any(), anyInt(), anyInt())).thenReturn(
+                RemoteApiResponse.<BookingCountResponse>builder().code(200).result(BookingCountResponse.builder().totalElements(0L).build()).build());
+        mockMvc.perform(delete(path).param("version", "0").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk());
+
+        // D31: admin vẫn mở được bản lưu trữ; manager thì không.
+        mockMvc.perform(get(path).with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.centerStatus").value("ARCHIVED"));
+        mockMvc.perform(get(path).with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post(path + "/restore").with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"\",\"version\":1}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_STATUS_REASON_REQUIRED.getCode()));
+
+        // Manager đã sang trung tâm khác trong lúc lưu trữ → khôi phục nhưng gỡ manager.
+        CareCenter other = saveCenter(UUID.randomUUID());
+        other.setManagerUserId(managerId);
+        careCenterRepository.saveAndFlush(other);
+        mockMvc.perform(post(path + "/restore").with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Mở lại\",\"version\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.centerStatus").value("INACTIVE"))
+                .andExpect(jsonPath("$.result.managerUserId").doesNotExist());
+        CareCenter restored = careCenterRepository.findById(center.getId()).orElseThrow();
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(restored.getStatusReason()).isEqualTo("Mở lại");
+
+        // Chưa có manager → chưa mở lại hoạt động được.
+        mockMvc.perform(patch(path + "/status").with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"ACTIVE\",\"version\":" + restored.getVersion() + "}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_MANAGER_REQUIRED.getCode()));
+        // Trung tâm không lưu trữ → không khôi phục được.
+        mockMvc.perform(post(path + "/restore").with(user(UUID.randomUUID(), "ADMIN")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Lần nữa\",\"version\":" + restored.getVersion() + "}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void archivedCenterCannotBeRestoredWhenItsEmailWasReused() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        center.setCenterStatus(CenterStatus.ARCHIVED);
+        center.setDeletedAt(java.time.Instant.now());
+        center = careCenterRepository.saveAndFlush(center);
+        CareCenter reuse = saveCenter(UUID.randomUUID());
+        reuse.setEmail(center.getEmail());
+        careCenterRepository.saveAndFlush(reuse);
+
+        mockMvc.perform(post("/api/v1/care-centers/" + center.getId() + "/restore").with(user(UUID.randomUUID(), "ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Mở lại\",\"version\":" + center.getVersion() + "}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(ErrorCode.CENTER_EMAIL_EXISTED.getCode()));
+        assertThat(careCenterRepository.findById(center.getId()).orElseThrow().getDeletedAt()).isNotNull();
+    }
+
     @Autowired
     ProviderOutboxRepository providerOutboxRepository;
 

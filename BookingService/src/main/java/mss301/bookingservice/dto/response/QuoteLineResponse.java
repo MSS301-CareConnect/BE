@@ -24,7 +24,7 @@ public class QuoteLineResponse {
 
     BigDecimal unitPrice;
 
-    Integer unitsPerOccurrence;
+    BigDecimal unitsPerOccurrence;
 
     Integer occurrenceCount;
 

@@ -28,9 +28,9 @@ public class BookingItemResponse {
 
     BigDecimal unitPrice;
 
-    Integer quantity;
+    BigDecimal quantity;
 
-    Integer unitsPerOccurrence;
+    BigDecimal unitsPerOccurrence;
 
     BigDecimal totalPrice;
 }

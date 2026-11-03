@@ -1336,12 +1336,12 @@ class BookingApiTests {
                         .content(json(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.occurrenceCount").value(3))
-                .andExpect(jsonPath("$.result.occurrences[0].priceAmount").value(600000))
-                .andExpect(jsonPath("$.result.lines[0].unitsPerOccurrence").value(3))
-                .andExpect(jsonPath("$.result.lines[1].unitsPerOccurrence").value(1))
-                .andExpect(jsonPath("$.result.totalAmount").value(1800000))
+                .andExpect(jsonPath("$.result.occurrences[0].priceAmount").value(550000))
+                .andExpect(jsonPath("$.result.lines[0].unitsPerOccurrence").value(2.5))
+                .andExpect(jsonPath("$.result.lines[1].unitsPerOccurrence").value(1.0))
+                .andExpect(jsonPath("$.result.totalAmount").value(1650000))
                 .andExpect(jsonPath("$.result.depositPercent").value(30))
-                .andExpect(jsonPath("$.result.estimatedDepositAmount").value(540000));
+                .andExpect(jsonPath("$.result.estimatedDepositAmount").value(495000));
         assertThat(bookingRepository.count()).isEqualTo(bookingsBefore);
 
         // Tỷ lệ thanh toán đầu lấy từ center policy của Booking — PaymentService lỗi không ảnh hưởng báo giá.
@@ -1351,7 +1351,7 @@ class BookingApiTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.totalAmount").value(1800000))
+                .andExpect(jsonPath("$.result.totalAmount").value(1650000))
                 .andExpect(jsonPath("$.result.depositPercent").value(30));
         mockMvc.perform(post("/api/v1/bookings/quotes")
                         .header("Authorization", managerBearer(scenario))
@@ -1370,18 +1370,18 @@ class BookingApiTests {
 
         mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.totalAmount").value(1800000))
+                .andExpect(jsonPath("$.result.totalAmount").value(1650000))
                 .andExpect(jsonPath("$.result.depositAmount").doesNotExist())
-                .andExpect(jsonPath("$.result.occurrences[2].priceAmount").value(600000))
+                .andExpect(jsonPath("$.result.occurrences[2].priceAmount").value(550000))
                 .andExpect(jsonPath("$.result.services[0].unitsPerOccurrence").exists());
         mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/payment-context").header("Authorization", serviceBearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.bookingId").value(bookingId))
                 .andExpect(jsonPath("$.result.customerId").value(scenario.customerId().toString()))
-                .andExpect(jsonPath("$.result.totalAmount").value(1800000))
+                .andExpect(jsonPath("$.result.totalAmount").value(1650000))
                 .andExpect(jsonPath("$.result.firstStartAt").exists())
                 .andExpect(jsonPath("$.result.occurrences.length()").value(3))
-                .andExpect(jsonPath("$.result.occurrences[0].priceAmount").value(600000))
+                .andExpect(jsonPath("$.result.occurrences[0].priceAmount").value(550000))
                 .andExpect(jsonPath("$.result.occurrences[0].hasSession").value(false));
         mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/payment-context").header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isForbidden());
@@ -1708,6 +1708,42 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.SESSION_WINDOW_NOT_OPEN.getCode()));
         assertThat(bookingOccurrenceService.findMissedIds()).contains(occurrenceId);
         moveStartAgo(occurrenceId, 25);
+        startSession(caregiverBearer, occurrenceId).andExpect(status().isOk());
+    }
+
+    // Q12: cửa sổ check-in theo center policy, chụp lúc tạo booking — đổi policy sau không ảnh hưởng booking đã đặt.
+    @Test
+    void checkInWindowFollowsTheCenterPolicySnapshot() throws Exception {
+        Scenario scenario = newScenario();
+        Map<String, Object> policy = policyBody(30, null);
+        policy.put("checkInEarlyMinutes", 60);
+        policy.put("checkInLateMinutes", 10);
+        mockMvc.perform(put("/api/v1/center-booking-policies/" + scenario.centerId())
+                        .header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(policy)))
+                .andExpect(status().isOk());
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        // Đổi policy sau khi đặt: booking vẫn giữ 60 / 10.
+        mockMvc.perform(put("/api/v1/center-booking-policies/" + scenario.centerId())
+                        .header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(policyBody(30, 0L))))
+                .andExpect(status().isOk());
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+
+        moveStartAgo(occurrenceId, 15);
+        startSession(caregiverBearer, occurrenceId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SESSION_WINDOW_NOT_OPEN.getCode()));
+        assertThat(bookingOccurrenceService.findMissedIds()).contains(occurrenceId);
+        mockMvc.perform(get("/api/v1/booking-occurrences/" + occurrenceId).header("Authorization", caregiverBearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.checkInClosesAt").exists())
+                .andExpect(jsonPath("$.result.checkInOpensAt").exists());
+
+        moveStartAgo(occurrenceId, -50);
+        assertThat(bookingOccurrenceService.findMissedIds()).doesNotContain(occurrenceId);
         startSession(caregiverBearer, occurrenceId).andExpect(status().isOk());
     }
 
