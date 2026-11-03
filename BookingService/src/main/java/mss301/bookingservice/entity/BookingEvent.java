@@ -58,6 +58,13 @@ public class BookingEvent {
     @Column(name = "reason", columnDefinition = "text")
     String reason;
 
+    // CR-2: giá trị trước / sau của sự kiện đổi dữ liệu booking (địa chỉ chăm sóc).
+    @Column(name = "old_value", columnDefinition = "text")
+    String oldValue;
+
+    @Column(name = "new_value", columnDefinition = "text")
+    String newValue;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 }

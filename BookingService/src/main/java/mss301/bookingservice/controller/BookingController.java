@@ -14,6 +14,7 @@ import mss301.bookingservice.dto.response.BookingQuoteResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
 import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
@@ -60,6 +61,16 @@ public class BookingController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return bookingService.listHeldSchedules(caregiverId, from, to);
+    }
+
+    // CR-3: đơn khách gửi thẳng cho caregiver đang chờ trả lời (chỉ khu vực, không hồ sơ người bệnh).
+    @GetMapping("/caregiver-requests")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(
+            @CurrentUserId UUID actorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return bookingService.listCaregiverRequests(actorId, page, size);
     }
 
     @GetMapping("/{id}")
@@ -173,6 +184,23 @@ public class BookingController {
         return bookingService.reject(actorId, centerId, id, request);
     }
 
+    // CR-3: caregiver khách đã chọn nhận đơn — không cần trung tâm duyệt.
+    @PostMapping("/{id}/caregiver-accept")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<CaregiverBookingRequestResponse> acceptAsCaregiver(@CurrentUserId UUID actorId,
+                                                                          @PathVariable UUID id) {
+        return bookingService.acceptAsCaregiver(actorId, id);
+    }
+
+    // CR-3: caregiver từ chối — RECURRING / CUSTOM chuyển trung tâm phân người khác, SHIFT bị từ chối.
+    @PostMapping("/{id}/caregiver-decline")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<CaregiverBookingRequestResponse> declineAsCaregiver(@CurrentUserId UUID actorId,
+                                                                           @PathVariable UUID id,
+                                                                           @Valid @RequestBody ReasonRequest request) {
+        return bookingService.declineAsCaregiver(actorId, id, request);
+    }
+
     // Chỉ PaymentService (token SERVICE) xác nhận đã cọc — người dùng không tự đánh dấu đã trả tiền.
     @PostMapping("/{id}/deposit-paid")
     @PreAuthorize("hasRole('SERVICE')")
@@ -203,6 +231,17 @@ public class BookingController {
                                                               @PathVariable UUID id,
                                                               @Valid @RequestBody CaregiverAssignRequest request) {
         return bookingService.updateCaregiver(actorId, centerId, id, request);
+    }
+
+    // CR-2: khách hoặc trung tâm đổi địa chỉ chăm sóc cho các buổi chưa bắt đầu.
+    @PatchMapping("/{id}/service-address")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER')")
+    public APIResponse<BookingDetailResponse> updateServiceAddress(@CurrentUserId UUID actorId,
+                                                                   @CurrentRoles Set<RoleCode> roles,
+                                                                   @CurrentCenterId(required = false) UUID scopeCenterId,
+                                                                   @PathVariable UUID id,
+                                                                   @Valid @RequestBody ServiceAddressRequest request) {
+        return bookingService.updateServiceAddress(actorId, roles, scopeCenterId, id, request);
     }
 
     @PatchMapping("/{id}/occurrences/{occurrenceId}/caregiver")

@@ -1,5 +1,6 @@
 package mss301.providerservice.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -55,9 +56,9 @@ public class CareCenterController {
         return careCenterService.list(status, keyword, includeDeleted, page, size);
     }
 
-    // SRCH-02: khách xem trung tâm ACTIVE (lọc dịch vụ / giá qua Catalog). Mặc định cần đăng nhập (chưa mở public).
+    // SRCH-02: danh bạ trung tâm ACTIVE, công khai cho cả khách chưa đăng nhập (CR-6, 2026-11-03) — chỉ DTO thẻ công khai.
     @GetMapping("/public")
-    @PreAuthorize("isAuthenticated()")
+    @SecurityRequirements({})
     public APIResponse<PageResponse<CenterCardResponse>> listPublic(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID careServiceId,
@@ -69,7 +70,7 @@ public class CareCenterController {
     }
 
     @GetMapping("/public/{centerId}")
-    @PreAuthorize("isAuthenticated()")
+    @SecurityRequirements({})
     public APIResponse<CenterCardResponse> getPublic(@PathVariable UUID centerId) {
         return careCenterService.getPublic(centerId);
     }

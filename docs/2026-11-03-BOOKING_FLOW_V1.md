@@ -5,6 +5,10 @@
 > sách file đã sửa nằm ở `2026-11-02-BOOKING_FLOW_REVIEW.md` (gọi tắt **REVIEW**): §7 quyết định, §8.1 / §9.2 / §10.1
 > thay đổi. Tiến độ: `2026-11-03-BOOKING_SPEC_V1_PROGRESS.md`.
 >
+> **Cập nhật 2026-11-03 — yêu cầu thay đổi v2** (`2026-11-03-BOOKING_CHANGE_REQUEST_V2.md`): booking có caregiver khách
+> chọn đi qua `PENDING_CAREGIVER_CONFIRMATION` (caregiver tự nhận / từ chối) thay vì trung tâm duyệt; RECURRING nhận
+> `slots` đã sửa; đổi địa chỉ chăm sóc; cọc bị giữ ghi cho caregiver của buổi. Phần dưới chưa viết lại theo các điểm này.
+>
 > Số "spec §x" là mục trong đặc tả. Mọi mốc thời gian lưu và truyền theo UTC (`Instant`); FE đổi sang giờ người dùng.
 
 ---

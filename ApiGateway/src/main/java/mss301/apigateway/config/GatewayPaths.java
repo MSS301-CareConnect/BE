@@ -31,7 +31,8 @@ public final class GatewayPaths {
 
     public static final String[] PAYMENT_ROUTES = {
             "/api/v1/payments/**", "/api/v1/payment-policies/**", "/api/v1/refunds/**", "/api/v1/refund-quotes/**",
-            "/api/v1/remaining-invoices/**", "/api/v1/settlements/**", "/api/v1/revenue/**"
+            "/api/v1/remaining-invoices/**", "/api/v1/settlements/**", "/api/v1/revenue/**",
+            "/api/v1/deposit-forfeitures/**"
     };
 
     public static final String[] PROVIDER_ROUTES = {
@@ -59,8 +60,10 @@ public final class GatewayPaths {
     };
 
     // Public CHỈ với GET: VNPay gọi IPN / trình duyệt quay về return URL không mang JWT; PaymentService tự kiểm chữ ký.
+    // Danh bạ trung tâm ACTIVE (SRCH-02, CR-6 2026-11-03): khách chưa đăng nhập xem và chọn trung tâm.
     public static final String[] PUBLIC_GET_ENDPOINTS = {
-            "/api/v1/payments/vnpay/ipn", "/api/v1/payments/vnpay/return"
+            "/api/v1/payments/vnpay/ipn", "/api/v1/payments/vnpay/return",
+            "/api/v1/care-centers/public", "/api/v1/care-centers/public/{centerId}"
     };
 
     // Swagger tổng hợp + health của chính gateway.

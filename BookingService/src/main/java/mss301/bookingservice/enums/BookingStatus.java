@@ -6,6 +6,8 @@ import java.util.Set;
 // Trạng thái booking theo spec §11.1 — đồng bộ CHECK bookings.status. Chuyển trạng thái chỉ qua BookingAction.
 public enum BookingStatus {
     PENDING_CENTER_CONFIRMATION,
+    // CR-3 (2026-11-03): khách đã chọn caregiver → caregiver tự nhận / từ chối, trung tâm không phải duyệt.
+    PENDING_CAREGIVER_CONFIRMATION,
     PENDING_CAREGIVER_ASSIGNMENT,
     AWAITING_INITIAL_PAYMENT,
     CONFIRMED,
@@ -17,11 +19,12 @@ public enum BookingStatus {
 
     // Booking còn giữ chỗ caregiver / người bệnh (tính trùng lịch). EXPIRED/REJECTED/CANCELLED/COMPLETED giải phóng.
     public static final Set<BookingStatus> SCHEDULE_HOLDING = EnumSet.of(PENDING_CENTER_CONFIRMATION,
-            PENDING_CAREGIVER_ASSIGNMENT, AWAITING_INITIAL_PAYMENT, CONFIRMED, IN_PROGRESS);
+            PENDING_CAREGIVER_CONFIRMATION, PENDING_CAREGIVER_ASSIGNMENT, AWAITING_INITIAL_PAYMENT, CONFIRMED,
+            IN_PROGRESS);
 
     // Chưa trả khoản thanh toán đầu — tính vào giới hạn booking chờ của một khách (SEC-12).
     public static final Set<BookingStatus> AWAITING_CONFIRMATION = EnumSet.of(PENDING_CENTER_CONFIRMATION,
-            PENDING_CAREGIVER_ASSIGNMENT, AWAITING_INITIAL_PAYMENT);
+            PENDING_CAREGIVER_CONFIRMATION, PENDING_CAREGIVER_ASSIGNMENT, AWAITING_INITIAL_PAYMENT);
 
     // Caregiver thấy buổi được giao khi booking đã xác nhận (trước đó chưa lộ dữ liệu người bệnh).
     public static final Set<BookingStatus> CAREGIVER_VISIBLE = EnumSet.of(CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED);

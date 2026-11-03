@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.UnitType;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 // Một dòng dịch vụ trong báo giá: đơn giá × số đơn vị mỗi buổi × số buổi.
@@ -24,7 +25,13 @@ public class QuoteLineResponse {
 
     BigDecimal unitPrice;
 
+    // NULL khi các buổi có thời lượng khác nhau (giá theo giờ) — FE dùng quantity (tổng đơn vị mọi buổi).
     BigDecimal unitsPerOccurrence;
+
+    BigDecimal quantity;
+
+    // Buổi chia theo thời lượng (vd 2 giờ × 14 buổi, 3 giờ × 1 buổi) kèm thành tiền từng nhóm.
+    List<QuoteUnitGroup> unitGroups;
 
     Integer occurrenceCount;
 

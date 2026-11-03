@@ -1,0 +1,70 @@
+package mss301.bookingservice.dto.response;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.*;
+import lombok.experimental.FieldDefaults;
+import mss301.bookingservice.enums.BookingStatus;
+import mss301.bookingservice.enums.BookingType;
+import mss301.bookingservice.enums.RecurrenceFrequency;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.UUID;
+
+// CR-3: đơn khách gửi thẳng cho caregiver. Chưa xác nhận nên chỉ lộ khu vực (phường / quận / tỉnh), tuổi và giới tính của
+// người được chăm sóc — hồ sơ đầy đủ chỉ mở khi booking CONFIRMED (AGENTS.md BookingService rule 7).
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@FieldDefaults(level = AccessLevel.PRIVATE)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class CaregiverBookingRequestResponse {
+    UUID id;
+
+    String bookingCode;
+
+    BookingStatus status;
+
+    BookingType bookingType;
+
+    RecurrenceFrequency recurrenceFrequency;
+
+    UUID centerId;
+
+    LocalDate startDate;
+
+    LocalDate endDate;
+
+    LocalTime startTime;
+
+    LocalTime endTime;
+
+    List<Integer> daysOfWeek;
+
+    Integer recipientAge;
+
+    String recipientGender;
+
+    String ward;
+
+    String district;
+
+    String province;
+
+    String customerNote;
+
+    BigDecimal totalAmount;
+
+    // Hạn caregiver trả lời; quá hạn thì RECURRING / CUSTOM chuyển trung tâm, SHIFT hết hạn.
+    Instant acceptanceDueAt;
+
+    Instant createdAt;
+
+    List<BookingItemResponse> services;
+
+    List<OccurrenceResponse> occurrences;
+}

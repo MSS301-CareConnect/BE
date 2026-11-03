@@ -74,7 +74,9 @@ CREATE TABLE bookings (
     CONSTRAINT ck_bookings_recurrence_frequency CHECK (
         (booking_type = 'RECURRING' AND recurrence_frequency IN ('DAILY', 'WEEKLY'))
         OR (booking_type <> 'RECURRING' AND recurrence_frequency IS NULL)),
-    CONSTRAINT ck_bookings_status CHECK (status IN ('PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT',
+    -- PENDING_CAREGIVER_CONFIRMATION (CR-3): khách đã chọn caregiver, chờ caregiver nhận / từ chối.
+    CONSTRAINT ck_bookings_status CHECK (status IN ('PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_CONFIRMATION',
+                                                    'PENDING_CAREGIVER_ASSIGNMENT',
                                                     'AWAITING_INITIAL_PAYMENT', 'CONFIRMED', 'IN_PROGRESS',
                                                     'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
     CONSTRAINT ck_bookings_date_range CHECK (end_date >= start_date),
@@ -108,7 +110,11 @@ CREATE INDEX idx_bookings_caregiver ON bookings (caregiver_id);
 CREATE INDEX idx_bookings_caregiver_user ON bookings (caregiver_user_id);
 CREATE INDEX idx_bookings_status ON bookings (status);
 -- Scheduler quét quá hạn xác nhận / phân caregiver / thanh toán khoản đầu.
-CREATE INDEX idx_bookings_acceptance_due ON bookings (acceptance_due_at) WHERE status = 'PENDING_CENTER_CONFIRMATION';
+CREATE INDEX idx_bookings_acceptance_due ON bookings (acceptance_due_at)
+    WHERE status IN ('PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_CONFIRMATION');
+-- CR-3: đơn khách gửi thẳng cho caregiver đang chờ trả lời.
+CREATE INDEX idx_bookings_caregiver_requests ON bookings (caregiver_user_id, created_at DESC)
+    WHERE status = 'PENDING_CAREGIVER_CONFIRMATION';
 CREATE INDEX idx_bookings_assignment_due ON bookings (assignment_due_at) WHERE status = 'PENDING_CAREGIVER_ASSIGNMENT';
 CREATE INDEX idx_bookings_deposit_due ON bookings (deposit_due_at) WHERE status = 'AWAITING_INITIAL_PAYMENT';
 -- Header Idempotency-Key: một key chỉ tạo một booking cho mỗi khách hàng.
@@ -291,10 +297,14 @@ CREATE TABLE booking_events (
     to_status         varchar(30),
     changed_by        uuid,
     reason            text,
+    -- CR-2: giá trị trước / sau của SERVICE_ADDRESS_CHANGED.
+    old_value         text,
+    new_value         text,
     created_at        timestamptz  NOT NULL,
 
     CONSTRAINT ck_booking_events_type CHECK (event_type IN ('OCCURRENCE_ACKNOWLEDGED', 'OCCURRENCE_STATUS_CHANGED',
-                                                            'CAREGIVER_CHANGED', 'NO_SHOW_REPORTED'))
+                                                            'CAREGIVER_CHANGED', 'NO_SHOW_REPORTED',
+                                                            'SERVICE_ADDRESS_CHANGED'))
 );
 
 CREATE INDEX idx_booking_events_booking ON booking_events (booking_id, created_at);
@@ -390,7 +400,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),

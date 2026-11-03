@@ -168,14 +168,34 @@ class OccurrenceGeneratorTests {
         BookingCreateRequest customWithRecurrence = custom(slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z"));
         customWithRecurrence.setFrequency(RecurrenceFrequency.DAILY);
         assertError(customWithRecurrence, ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
-        BookingCreateRequest recurringWithSlots = recurring(RecurrenceFrequency.DAILY, "2026-10-12", "2026-10-13",
-                "08:00", "10:00", null);
-        recurringWithSlots.setSlots(List.of(slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z")));
-        assertError(recurringWithSlots, ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
         BookingCreateRequest recurringWithSchedule = recurring(RecurrenceFrequency.DAILY, "2026-10-12", "2026-10-13",
                 "08:00", "10:00", null);
         recurringWithSchedule.setCaregiverScheduleId(UUID.randomUUID());
         assertError(recurringWithSchedule, ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
+    }
+
+    @Test
+    void recurringUsesEditedSlotsWithinTheRuleRange() {
+        // CR-1: khách chỉnh danh sách buổi sinh từ quy tắc (đổi giờ, bỏ một ngày) — dùng đúng danh sách đó.
+        BookingCreateRequest edited = recurring(RecurrenceFrequency.DAILY, "2026-10-12", "2026-10-14",
+                "08:00", "10:00", null);
+        edited.setSlots(List.of(slot("2026-10-14T07:00:00Z", "2026-10-14T09:00:00Z"),
+                slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z")));
+        List<OccurrenceSlot> slots = generator.generate(edited);
+        assertThat(slots).extracting(OccurrenceSlot::getStartAt)
+                .containsExactly(Instant.parse("2026-10-12T01:00:00Z"), Instant.parse("2026-10-14T07:00:00Z"));
+        assertThat(slots).extracting(OccurrenceSlot::getOccurrenceNo).containsExactly(1, 2);
+
+        BookingCreateRequest outside = recurring(RecurrenceFrequency.DAILY, "2026-10-12", "2026-10-13",
+                "08:00", "10:00", null);
+        outside.setSlots(List.of(slot("2026-10-15T01:00:00Z", "2026-10-15T03:00:00Z")));
+        assertError(outside, ErrorCode.SLOT_OUTSIDE_RECURRENCE_RANGE);
+
+        // Quy tắc vẫn phải hợp lệ dù đã có danh sách buổi.
+        BookingCreateRequest invalidRule = recurring(RecurrenceFrequency.DAILY, "2026-10-13", "2026-10-12",
+                "08:00", "10:00", null);
+        invalidRule.setSlots(List.of(slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z")));
+        assertError(invalidRule, ErrorCode.INVALID_DATE_RANGE);
     }
 
     @Test

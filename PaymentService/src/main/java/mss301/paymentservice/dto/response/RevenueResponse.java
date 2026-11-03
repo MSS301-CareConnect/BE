@@ -22,6 +22,12 @@ public class RevenueResponse {
 
     BigDecimal totalRefunded;
 
+    // CR-4: phần cọc khách bị giữ — caregiver của buổi hưởng (không tính vào doanh thu trung tâm) / trung tâm hưởng.
+    BigDecimal caregiverForfeitAmount;
+
+    BigDecimal centerForfeitAmount;
+
+    // Doanh thu thuần của trung tâm = đã thu − đã hoàn − phần cọc thuộc caregiver.
     BigDecimal totalRevenue;
 
     BigDecimal averagePayment;

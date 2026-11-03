@@ -61,7 +61,22 @@ public class OccurrenceFinancial extends BaseEntity {
     @Column(name = "final_status", length = 20)
     OccurrenceFinalStatus finalStatus;
 
+    // CR-4: caregiver được giao buổi (Provider id + Identity id), chụp từ payment-context lúc mở phiên thanh toán đầu và
+    // cập nhật theo lệnh hoàn của Booking — quyết định ai hưởng phần cọc bị giữ.
+    @Column(name = "caregiver_id")
+    UUID caregiverId;
+
+    @Column(name = "caregiver_user_id")
+    UUID caregiverUserId;
+
     @Version
     @Column(nullable = false)
     Long version;
+
+    // Hai id caregiver luôn đổi cùng nhau; id rỗng (buổi chưa có người) xóa cả hai.
+    public void assignCaregiver(UUID newCaregiverId, UUID newCaregiverUserId) {
+        boolean assigned = newCaregiverId != null && newCaregiverUserId != null;
+        caregiverId = assigned ? newCaregiverId : null;
+        caregiverUserId = assigned ? newCaregiverUserId : null;
+    }
 }

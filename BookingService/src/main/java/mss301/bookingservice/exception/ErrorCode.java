@@ -70,6 +70,9 @@ public enum ErrorCode {
     TOO_MANY_SERVICES(5109, "A booking can have at most 10 services", HttpStatus.BAD_REQUEST),
     DUPLICATE_SERVICE(5110, "Each service can only be selected once", HttpStatus.BAD_REQUEST),
     INVALID_SORT(5112, "Sorting is only allowed by createdAt or startDate, direction asc / desc", HttpStatus.BAD_REQUEST),
+    ADDRESS_LINE_REQUIRED(5113, "Street address is required", HttpStatus.BAD_REQUEST),
+    PROVINCE_REQUIRED(5114, "Province / city is required", HttpStatus.BAD_REQUEST),
+    SERVICE_ADDRESS_NOT_EDITABLE(5115, "The care address can only be changed while the booking still has upcoming occurrences and no visit is in progress", HttpStatus.CONFLICT),
     CARE_SERVICE_ID_REQUIRED(5111, "Care service is required", HttpStatus.BAD_REQUEST),
 
     // LỊCH / BUỔI CHĂM SÓC
@@ -94,6 +97,7 @@ public enum ErrorCode {
     RECURRENCE_FREQUENCY_REQUIRED(5238, "Recurring bookings require a frequency (DAILY, WEEKLY)", HttpStatus.BAD_REQUEST),
     SCHEDULE_FIELD_NOT_ALLOWED(5239, "The schedule fields sent do not match the booking type", HttpStatus.BAD_REQUEST),
     OCCURRENCES_OVERLAP(5240, "Care occurrences in the same booking must not overlap", HttpStatus.BAD_REQUEST),
+    SLOT_OUTSIDE_RECURRENCE_RANGE(5243, "Every edited occurrence of a recurring booking must fall between its start and end dates", HttpStatus.BAD_REQUEST),
     NO_VALID_PAYMENT_DEADLINE(5241, "Not enough time before the first occurrence for the center to confirm and for payment", HttpStatus.BAD_REQUEST),
     CAREGIVER_SCHEDULE_CONFLICT(5215, "The caregiver already has an overlapping schedule", HttpStatus.CONFLICT),
     RECIPIENT_SCHEDULE_CONFLICT(5216, "The care recipient already has an overlapping booking", HttpStatus.CONFLICT),

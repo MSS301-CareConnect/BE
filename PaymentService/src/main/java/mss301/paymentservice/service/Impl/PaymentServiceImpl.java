@@ -48,6 +48,8 @@ import mss301.paymentservice.mapper.FinancialMapper;
 import mss301.paymentservice.mapper.PaymentMapper;
 import mss301.paymentservice.mapper.PaymentPolicyMapper;
 import mss301.paymentservice.repository.BookingFinancialRepository;
+import mss301.paymentservice.repository.DepositForfeitureRepository;
+import mss301.paymentservice.enums.ForfeitureBeneficiary;
 import mss301.paymentservice.repository.OccurrenceFinancialRepository;
 import mss301.paymentservice.repository.PaymentAttemptRepository;
 import mss301.paymentservice.repository.PaymentRepository;
@@ -104,6 +106,7 @@ public class PaymentServiceImpl implements PaymentService {
     PaymentAttemptRepository paymentAttemptRepository;
     BookingFinancialRepository bookingFinancialRepository;
     OccurrenceFinancialRepository occurrenceFinancialRepository;
+    DepositForfeitureRepository depositForfeitureRepository;
     BookingClient bookingClient;
     PaymentPolicyService paymentPolicyService;
     PaymentCheckoutService paymentCheckoutService;
@@ -171,7 +174,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Lấy danh sách giao dịch thành công", pageResponse);
     }
 
-    // PAY-15 tối thiểu (D15): doanh thu thuần = đã thu − đã hoàn. Spec §9.3: manager chỉ xem trung tâm mình (theo token,
+    // PAY-15 tối thiểu (D15): doanh thu thuần = đã thu − đã hoàn − phần cọc bị giữ thuộc caregiver (CR-4). Spec §9.3: manager chỉ xem trung tâm mình (theo token,
     // bỏ qua centerId truyền lên); admin xem toàn nền tảng hoặc một trung tâm.
     @Override
     @Transactional(readOnly = true)
@@ -187,11 +190,17 @@ public class PaymentServiceImpl implements PaymentService {
         long count = paymentRepository.countPaid(PaymentStatus.SUCCESS, from, to, centerId);
         BigDecimal gross = paymentRepository.sumPaid(PaymentStatus.SUCCESS, from, to, centerId);
         BigDecimal refunded = paymentRepository.sumRefunded(PaymentStatus.SUCCESS, from, to, centerId);
-        BigDecimal net = gross.subtract(refunded);
+        // CR-4: phần cọc bị giữ của buổi đã có caregiver thuộc caregiver, không phải doanh thu trung tâm.
+        BigDecimal caregiverForfeit = depositForfeitureRepository.sumForRevenue(ForfeitureBeneficiary.CAREGIVER,
+                PaymentStatus.SUCCESS, from, to, centerId);
+        BigDecimal centerForfeit = depositForfeitureRepository.sumForRevenue(ForfeitureBeneficiary.CENTER,
+                PaymentStatus.SUCCESS, from, to, centerId);
+        BigDecimal net = gross.subtract(refunded).subtract(caregiverForfeit);
         BigDecimal average = count == 0
                 ? BigDecimal.ZERO
                 : net.divide(BigDecimal.valueOf(count), 0, RoundingMode.HALF_UP);
-        RevenueResponse revenueResponse = paymentMapper.toRevenueResponse(count, gross, refunded, net, average);
+        RevenueResponse revenueResponse = paymentMapper.toRevenueResponse(count, gross, refunded, caregiverForfeit,
+                centerForfeit, net, average);
         return APIResponse.success("Thống kê doanh thu thành công", revenueResponse);
     }
 
@@ -409,7 +418,7 @@ public class PaymentServiceImpl implements PaymentService {
             financialMapper.updatePricing(policySnapshot, allocation.totalPrice(), allocation.totalDeposit(),
                     context.getRemainingPaymentDueAt(), financial);
         }
-        upsertOccurrenceFinancials(financial, allocation);
+        upsertOccurrenceFinancials(financial, allocation, context);
         Payment payment = paymentRepository.findByBookingIdAndPaymentType(bookingId, PaymentType.DEPOSIT).orElse(null);
         if (payment == null) {
             payment = paymentRepository.save(paymentMapper.toPayment(bookingId, context.getCustomerId(),
@@ -425,7 +434,13 @@ public class PaymentServiceImpl implements PaymentService {
         return attempt.getId();
     }
 
-    private void upsertOccurrenceFinancials(BookingFinancial financial, DepositAllocator.Result allocation) {
+    private void upsertOccurrenceFinancials(BookingFinancial financial, DepositAllocator.Result allocation,
+                                            BookingPaymentContextResponse context) {
+        // CR-4: caregiver từng buổi lúc khách trả khoản đầu — mặc định cho bên hưởng phần cọc bị giữ.
+        Map<UUID, BookingPaymentContextResponse.Occurrence> contextOccurrences = new HashMap<>();
+        for (BookingPaymentContextResponse.Occurrence occurrence : context.getOccurrences()) {
+            contextOccurrences.put(occurrence.getOccurrenceId(), occurrence);
+        }
         Map<UUID, OccurrenceFinancial> existing = new HashMap<>();
         for (OccurrenceFinancial occurrenceFinancial : occurrenceFinancialRepository.findAllByBookingId(
                 financial.getBookingId())) {
@@ -437,10 +452,14 @@ public class PaymentServiceImpl implements PaymentService {
             allocated.add(item.occurrenceId());
             OccurrenceFinancial occurrenceFinancial = existing.get(item.occurrenceId());
             if (occurrenceFinancial == null) {
-                created.add(financialMapper.toOccurrenceFinancial(item, financial.getBookingId(), financial.getCenterId()));
+                occurrenceFinancial = financialMapper.toOccurrenceFinancial(item, financial.getBookingId(),
+                        financial.getCenterId());
+                created.add(occurrenceFinancial);
             } else {
                 financialMapper.updateAllocation(item, occurrenceFinancial);
             }
+            BookingPaymentContextResponse.Occurrence contextOccurrence = contextOccurrences.get(item.occurrenceId());
+            occurrenceFinancial.assignCaregiver(contextOccurrence.getCaregiverId(), contextOccurrence.getCaregiverUserId());
         }
         // Buổi đã bị hủy trước khi khách trả cọc không còn được phân bổ cọc.
         for (OccurrenceFinancial occurrenceFinancial : existing.values()) {

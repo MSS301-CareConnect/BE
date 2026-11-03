@@ -96,7 +96,7 @@ class ApiGatewayTests {
     void paymentAndBookingOperationRoutesForwardToOwners() throws Exception {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
         for (String path : List.of("/payments", "/payment-policies/effective", "/refunds", "/refund-quotes",
-                "/remaining-invoices", "/settlements", "/revenue/centers")) {
+                "/remaining-invoices", "/settlements", "/revenue/centers", "/deposit-forfeitures")) {
             mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.result.service").value("payment"))
@@ -121,6 +121,25 @@ class ApiGatewayTests {
         mockMvc.perform(post("/api/v1/payments/vnpay/ipn"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/payments"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void publicCenterDirectoryIsAnonymousOnlyForGet() throws Exception {
+        UUID centerId = UUID.randomUUID();
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "an"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.service").value("provider"))
+                .andExpect(jsonPath("$.result.path").value("/api/v1/care-centers/public"));
+        mockMvc.perform(get("/api/v1/care-centers/public/" + centerId)
+                        .cookie(new Cookie("access_token", "expired.or.broken")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.path").value("/api/v1/care-centers/public/" + centerId));
+        mockMvc.perform(post("/api/v1/care-centers/public"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/care-centers/" + centerId))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/care-centers/public/" + centerId + "/schedules"))
                 .andExpect(status().isUnauthorized());
     }
 

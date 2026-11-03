@@ -12,6 +12,8 @@ import mss301.bookingservice.dto.request.BookingSearchRequest;
 import mss301.bookingservice.dto.request.CaregiverAssignRequest;
 import mss301.bookingservice.dto.request.DepositPaidRequest;
 import mss301.bookingservice.dto.request.ReasonRequest;
+import mss301.bookingservice.dto.request.ServiceAddressRequest;
+import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingHistoryResponse;
@@ -79,6 +81,20 @@ public interface BookingService {
 
     APIResponse<OccurrenceResponse> updateOccurrenceCaregiver(UUID actorId, UUID centerId, UUID id, UUID occurrenceId,
                                                               CaregiverAssignRequest request);
+
+    // CR-2: CUSTOMER (booking của mình) hoặc CENTER_MANAGER (trung tâm mình) đổi địa chỉ chăm sóc cho các buổi chưa bắt
+    // đầu; không đổi khi đang có buổi IN_PROGRESS. Báo khách, trung tâm và caregiver được giao.
+    APIResponse<BookingDetailResponse> updateServiceAddress(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id,
+                                                            ServiceAddressRequest request);
+
+    // CR-3: CAREGIVER — đơn khách gửi thẳng cho mình đang chờ trả lời.
+    APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(UUID actorId, int page, int size);
+
+    // CR-3: CAREGIVER nhận đơn → AWAITING_INITIAL_PAYMENT (không qua trung tâm).
+    APIResponse<CaregiverBookingRequestResponse> acceptAsCaregiver(UUID actorId, UUID id);
+
+    // CR-3: CAREGIVER từ chối — SHIFT → REJECTED; RECURRING / CUSTOM → trung tâm phân người khác.
+    APIResponse<CaregiverBookingRequestResponse> declineAsCaregiver(UUID actorId, UUID id, ReasonRequest request);
 
     // SERVICE (CareRecipientService): caregiver có được xem hồ sơ người bệnh không — tính theo từng buổi.
     APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId);

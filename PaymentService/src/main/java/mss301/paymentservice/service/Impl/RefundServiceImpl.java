@@ -40,6 +40,7 @@ import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.PaymentTransactionRepository;
 import mss301.paymentservice.repository.RefundRepository;
 import mss301.paymentservice.repository.RemainingInvoiceRepository;
+import mss301.paymentservice.service.DepositForfeitureService;
 import mss301.paymentservice.service.PaymentTransactionService;
 import mss301.paymentservice.service.RefundService;
 import mss301.paymentservice.util.RefundCalculator;
@@ -80,6 +81,9 @@ public class RefundServiceImpl implements RefundService {
     static String COMPLAINT_WAIVE_REASON = "complaint refund";
     static int MAX_KEY_LENGTH = 150;
     static int MAX_PAGE_SIZE = 100;
+    // CR-4: quy tắc tính phí của RefundCalculator có nghĩa là khách bị giữ một phần tiền vì hủy (NOT_CANCELLABLE là buổi
+    // đã phục vụ, không phải tiền bị giữ).
+    static Set<String> FORFEIT_RULES = Set.of(RefundCalculator.BEFORE_THRESHOLD, RefundCalculator.AFTER_THRESHOLD);
     static String CREATED_AT = "createdAt";
 
     RefundRepository refundRepository;
@@ -89,6 +93,7 @@ public class RefundServiceImpl implements RefundService {
     RemainingInvoiceRepository remainingInvoiceRepository;
     PaymentTransactionRepository paymentTransactionRepository;
     PaymentTransactionService paymentTransactionService;
+    DepositForfeitureService depositForfeitureService;
     RefundMapper refundMapper;
     Clock clock;
 
@@ -182,6 +187,7 @@ public class RefundServiceImpl implements RefundService {
             }
         }
         Map<UUID, OccurrenceFinancial> occurrenceFinancials = findOccurrenceFinancials(financial);
+        applyCaregivers(occurrenceFinancials, request.getCaregivers());
         List<RefundCalculator.OccurrenceInput> inputs = new ArrayList<>();
         Set<UUID> requested = new HashSet<>(request.getOccurrenceIds());
         for (UUID occurrenceId : requested) {
@@ -228,6 +234,11 @@ public class RefundServiceImpl implements RefundService {
         for (RefundCalculator.Line line : lines) {
             OccurrenceFinancial occurrenceFinancial = occurrenceFinancials.get(line.occurrenceId());
             occurrenceFinancial.setFinalStatus(finalStatus);
+            // CR-4: phần khách bị giữ do hủy theo mốc — ghi sổ (caregiver của buổi hưởng, chưa có người thì trung tâm).
+            if (FORFEIT_RULES.contains(line.rule())) {
+                depositForfeitureService.record(occurrenceFinancial, deposit.getId(), line.feeAmount(),
+                        request.getReason(), line.rule(), key);
+            }
             if (line.refundAmount().signum() <= 0) {
                 continue;
             }
@@ -423,6 +434,8 @@ public class RefundServiceImpl implements RefundService {
             OccurrenceFinancial occurrenceFinancial = open.get(i);
             RefundCalculator.Line line = lines.get(i);
             occurrenceFinancial.setFinalStatus(OccurrenceFinalStatus.CANCELLED);
+            depositForfeitureService.record(occurrenceFinancial, deposit.getId(), line.feeAmount(),
+                    RefundReason.PAYMENT_OVERDUE, line.rule(), key);
             if (line.refundAmount().signum() <= 0) {
                 continue;
             }
@@ -436,6 +449,20 @@ public class RefundServiceImpl implements RefundService {
         }
         financial.setStatus(BookingFinancialStatus.CLOSED);
         log.info("Booking {} payment overdue: {}% of the paid amount kept, {} refunded", bookingId, forfeitPercent, total);
+    }
+
+    // CR-4: Booking gửi caregiver từng buổi lúc hủy (đổi người sau khi khách trả cọc) — cập nhật trước khi ghi sổ cọc bị giữ.
+    private void applyCaregivers(Map<UUID, OccurrenceFinancial> occurrenceFinancials,
+                                 List<RefundCreateRequest.OccurrenceCaregiver> caregivers) {
+        if (caregivers == null) {
+            return;
+        }
+        for (RefundCreateRequest.OccurrenceCaregiver caregiver : caregivers) {
+            OccurrenceFinancial occurrenceFinancial = occurrenceFinancials.get(caregiver.getOccurrenceId());
+            if (occurrenceFinancial != null) {
+                occurrenceFinancial.assignCaregiver(caregiver.getCaregiverId(), caregiver.getCaregiverUserId());
+            }
+        }
     }
 
     // Buổi bị hủy trước khi trả phần còn lại: hóa đơn trước buổi đầu chỉ còn phần chưa trả của buổi còn hiệu lực; về 0 →

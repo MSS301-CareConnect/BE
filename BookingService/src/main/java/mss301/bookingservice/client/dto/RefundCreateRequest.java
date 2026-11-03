@@ -32,4 +32,20 @@ public class RefundCreateRequest {
     UUID requestedBy;
 
     String idempotencyKey;
+
+    // CR-4: caregiver từng buổi lúc hủy — PaymentService ghi ai hưởng phần cọc khách bị giữ.
+    List<OccurrenceCaregiver> caregivers;
+
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class OccurrenceCaregiver {
+        UUID occurrenceId;
+
+        UUID caregiverId;
+
+        UUID caregiverUserId;
+    }
 }

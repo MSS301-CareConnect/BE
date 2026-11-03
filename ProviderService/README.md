@@ -56,8 +56,9 @@ Swagger: `http://localhost:8084/swagger-ui.html`
 - `ADMIN`: CRUD center; quản lý toàn bộ dữ liệu; duyệt caregiver/certificate.
 - `CENTER_MANAGER`: chỉ quản lý center có `manager_user_id` bằng `sub` trong JWT.
 - `CAREGIVER`: quản lý chứng chỉ của mình, đăng ký ca, xem và cập nhật lịch của mình.
-- `CUSTOMER`: tìm caregiver (`/caregivers/search`), xem hồ sơ công khai, lịch rảnh tổng hợp, trung tâm `ACTIVE`
-  (`/care-centers/public`). Không đọc được hồ sơ đầy đủ `GET /caregivers/{id}` hay ca làm việc.
+- `CUSTOMER`: tìm caregiver (`/caregivers/search`), xem hồ sơ công khai, lịch rảnh tổng hợp. Không đọc được hồ sơ
+  đầy đủ `GET /caregivers/{id}` hay ca làm việc.
+- Khách chưa đăng nhập: chỉ `GET /care-centers/public` và `GET /care-centers/public/{centerId}` (CR-6, 2026-11-03).
 - `SERVICE` (token máy, vd BookingService): `GET /caregivers/{id}`, `/caregivers/by-user/{userId}`, `/care-centers/{id}`,
   `POST /caregivers/availability-checks`.
 
@@ -71,7 +72,9 @@ trung tâm trong service.
 - `GET /` (ADMIN, CENTER_MANAGER) · `GET /{centerId}` · `GET /{centerId}/schedules`
 - `POST /` · `PUT /{centerId}` · `PATCH /{centerId}/status` · `DELETE /{centerId}` (ADMIN)
 - Đã bỏ `PATCH /schedules/{id}/status` (trùng `PATCH /caregivers/schedules/{id}/status`).
-- **Công khai cho khách (SRCH-02, 2026-10-22)** — mọi user đã đăng nhập (chưa mở anonymous):
+- **Công khai (SRCH-02, 2026-10-22; mở anonymous CR-6, 2026-11-03)** — không cần token, chỉ GET:
+  `@SecurityRequirements({})` + `SecurityConfig.PUBLIC_GET_ENDPOINTS` (không đọc token, cookie hết hạn không gây 401);
+  ApiGateway để qua trong `GatewayPaths.PUBLIC_GET_ENDPOINTS`. Mọi method / path khác của `/care-centers` vẫn cần đăng nhập.
   - `GET /public?keyword=&careServiceId=&minPrice=&maxPrice=&page=&size=` → `Page<CenterCardResponse>`
     `{centerId, centerName, address, operatingHours, phoneNumber, imageUrls[≤3], minPrice, serviceCount}` — **không**
     có email, `managerUserId`, `createdBy`. Chỉ `ACTIVE`, chưa xóa; keyword theo tên / địa chỉ; sắp xếp theo tên.
@@ -80,7 +83,7 @@ trung tâm trong service.
     thị (Catalog lỗi → `minPrice` vắng). `minPrice > maxPrice` → 400 `PRICE_RANGE_INVALID` 4119.
   - `GET /public/{centerId}` — cùng DTO, tối đa 10 ảnh; trung tâm không ACTIVE → 404 4100.
   - `serviceCount` đọc từ Catalog nếu có (không nằm trong C9.2 → hiện là `null`). Ảnh: `provider_media` owner
-    `CARE_CENTER`, URL presigned qua Media (`MediaClient`, token người dùng), best-effort.
+    `CARE_CENTER`, URL presigned qua Media (`MediaClient`, token SERVICE), best-effort.
 
 ### Caregiver — `/api/v1/caregivers`
 

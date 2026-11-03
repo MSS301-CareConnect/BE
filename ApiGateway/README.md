@@ -17,7 +17,7 @@ cho path: `config/GatewayPaths`.
 | `/api/v1/care-centers/**`, `/caregivers/**`, `/work-shifts/**`, `/certificates/**`, `/provider-media/**` | ProviderService |
 | `/api/v1/catalog-items/**`, `/care-services/**`, `/center-services/**`, `/price-plans/**` | CareCatalogService |
 | `/api/v1/media/**` | MediaService |
-| `/api/v1/payments/**`, `/payment-policies/**`, `/refunds/**`, `/refund-quotes/**`, `/remaining-invoices/**`, `/settlements/**`, `/revenue/**` | PaymentService (`GATEWAY_PAYMENT_URL`, GW-01 2026-10-22) |
+| `/api/v1/payments/**`, `/payment-policies/**`, `/refunds/**`, `/refund-quotes/**`, `/remaining-invoices/**`, `/settlements/**`, `/revenue/**`, `/deposit-forfeitures/**` | PaymentService (`GATEWAY_PAYMENT_URL`, GW-01 2026-10-22) |
 | `/api-docs/{identity,care-recipient,booking,provider,care-catalog,media,payment}` | `/v3/api-docs` của từng service (Swagger tổng hợp) |
 
 - **SSE** `GET /api/v1/notifications/stream` đi route riêng (`handler/SseProxyHandler`): chỉ giới hạn thời gian chờ header
@@ -35,8 +35,9 @@ cho path: `config/GatewayPaths`.
   `/api/v1/auth/{login,refresh,logout,csrf,register,register/verify,register/resend-otp,verify-email,forgot-password,reset-password}`,
   `/api/v1/auth/mobile/{login,refresh,logout}`, **`POST /api/v1/auth/service-token`** (token SERVICE), **chỉ GET**
   `/api/v1/payments/vnpay/ipn` và `/api/v1/payments/vnpay/return` (PaymentService tự kiểm chữ ký VNPay), Swagger
-  (`/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`, `/api-docs/**`), `/actuator/health/**`.
-  `/api/v1/care-centers/public/**` (SRCH-02) **chưa** mở public — chờ nhóm chốt.
+  (`/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`, `/api-docs/**`), `/actuator/health/**`, **chỉ GET**
+  `/api/v1/care-centers/public` và `/api/v1/care-centers/public/{centerId}` (danh bạ trung tâm ACTIVE, SRCH-02 — mở
+  public ngày 2026-11-03, CR-6; ProviderService cũng permit và không đọc token ở hai path này).
 - Header client gửi bị xóa trước khi chuyển tiếp: mọi `X-User-*`, mọi `X-Service-*`, `X-Internal-Secret`, `Origin`. Gateway gắn lại
   `X-User-Id` (= `sub`) và `X-User-Roles` (roles, phân tách dấu phẩy) từ token đã xác minh — **chỉ để log/tracing**,
   service không phân quyền theo header này. (Không có `X-User-Email`: JWT không chứa email.)

@@ -16,6 +16,7 @@ import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.enums.TransactionEventType;
 import mss301.paymentservice.gateway.VnPaySigner;
 import mss301.paymentservice.repository.BookingFinancialRepository;
+import mss301.paymentservice.repository.DepositForfeitureRepository;
 import mss301.paymentservice.repository.OccurrenceFinancialRepository;
 import mss301.paymentservice.repository.PaymentAttemptRepository;
 import mss301.paymentservice.repository.PaymentRepository;
@@ -56,6 +57,9 @@ class PaymentApiTests extends PaymentIntegrationTest {
 
     @Autowired
     PaymentRepository paymentRepository;
+
+    @Autowired
+    DepositForfeitureRepository depositForfeitureRepository;
 
     @Autowired
     PaymentAttemptRepository paymentAttemptRepository;
@@ -738,6 +742,88 @@ class PaymentApiTests extends PaymentIntegrationTest {
                         .param("from", BASE.minusSeconds(60).toString()).param("to", BASE.plusSeconds(60).toString()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(6027));
+    }
+
+    // ===== CR-4: cọc bị giữ thuộc caregiver của buổi, chưa có caregiver thì thuộc trung tâm =====
+
+    @Test
+    void keptDepositGoesToTheCaregiverOfEachOccurrenceOrTheCenter() throws Exception {
+        UUID centerId = UUID.randomUUID();
+        UUID customerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID caregiverA = UUID.randomUUID();
+        UUID caregiverUserA = UUID.randomUUID();
+        UUID caregiverB = UUID.randomUUID();
+        UUID caregiverUserB = UUID.randomUUID();
+        Instant cancelledAt = BASE.plus(Duration.ofHours(2));
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            Map<String, Object> occurrence = PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    cancelledAt.plus(Duration.ofHours(1 + i)), "SCHEDULED", PRICE);
+            if (i < 2) {
+                occurrence.put("caregiverId", caregiverA.toString());
+                occurrence.put("caregiverUserId", caregiverUserA.toString());
+            }
+            occurrences.add(occurrence);
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(0)).orElseThrow().getCaregiverUserId())
+                .isEqualTo(caregiverUserA);
+
+        // Khách hủy < 24h: hoàn 70 %, giữ 30 % (90.000) mỗi buổi. Buổi 2 vừa được đổi sang caregiver B (Booking gửi kèm).
+        Map<String, Object> body = new LinkedHashMap<>(objectMapper.readValue(refundBody(bookingId, occurrenceIds,
+                "CUSTOMER_CANCEL", cancelledAt, "REFUND:CF"), Map.class));
+        body.put("caregivers", List.of(
+                Map.of("occurrenceId", occurrenceIds.get(1).toString(), "caregiverId", caregiverB.toString(),
+                        "caregiverUserId", caregiverUserB.toString())));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/v1/refunds").header("Authorization", service())
+                            .header("Idempotency-Key", "REFUND:CF")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk());
+        }
+        assertThat(depositForfeitureRepository.findAll())
+                .filteredOn(forfeiture -> forfeiture.getBookingId().equals(bookingId))
+                .extracting(forfeiture -> forfeiture.getBeneficiary().name() + ":" + forfeiture.getCaregiverUserId()
+                        + ":" + forfeiture.getAmount().stripTrailingZeros().toPlainString())
+                .containsExactlyInAnyOrder("CAREGIVER:" + caregiverUserA + ":90000",
+                        "CAREGIVER:" + caregiverUserB + ":90000", "CENTER:null:90000");
+        dispatchDueRefunds();
+
+        String from = "2000-01-01T00:00:00Z";
+        String to = "2100-01-01T00:00:00Z";
+        mockMvc.perform(get("/api/v1/deposit-forfeitures/summary")
+                        .header("Authorization", SERVER.bearer(caregiverUserA, centerId, "CAREGIVER"))
+                        .param("from", from).param("to", to))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.caregiverAmount").value(90000))
+                .andExpect(jsonPath("$.result.centerAmount").value(0));
+        mockMvc.perform(get("/api/v1/deposit-forfeitures")
+                        .header("Authorization", SERVER.bearer(caregiverUserB, centerId, "CAREGIVER"))
+                        .param("from", from).param("to", to))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].occurrenceId").value(occurrenceIds.get(1).toString()))
+                .andExpect(jsonPath("$.result.items[0].reason").value("CUSTOMER_CANCEL"));
+        mockMvc.perform(get("/api/v1/deposit-forfeitures/summary").header("Authorization", manager(centerId))
+                        .param("from", from).param("to", to))
+                .andExpect(jsonPath("$.result.caregiverAmount").value(180000))
+                .andExpect(jsonPath("$.result.centerAmount").value(90000));
+        mockMvc.perform(get("/api/v1/deposit-forfeitures").header("Authorization", customer(customerId))
+                        .param("from", from).param("to", to))
+                .andExpect(status().isForbidden());
+
+        // Doanh thu trung tâm = đã thu − đã hoàn − phần thuộc caregiver.
+        mockMvc.perform(get("/api/v1/payments/revenue").header("Authorization", manager(centerId))
+                        .param("from", BASE.minusSeconds(60).toString()).param("to", BASE.plusSeconds(60).toString()))
+                .andExpect(jsonPath("$.result.grossRevenue").value(900000))
+                .andExpect(jsonPath("$.result.totalRefunded").value(630000))
+                .andExpect(jsonPath("$.result.caregiverForfeitAmount").value(180000))
+                .andExpect(jsonPath("$.result.centerForfeitAmount").value(90000))
+                .andExpect(jsonPath("$.result.totalRevenue").value(90000));
     }
 
     // ===== spec booking v1: thanh toán đầu theo % của Booking, phần còn lại trước buổi đầu =====

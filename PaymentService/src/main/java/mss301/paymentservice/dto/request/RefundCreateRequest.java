@@ -1,5 +1,6 @@
 package mss301.paymentservice.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
@@ -44,4 +45,22 @@ public class RefundCreateRequest {
     // Booking gửi cả ở header Idempotency-Key — header được ưu tiên.
     @Size(max = 150, message = "TEXT_TOO_LONG")
     String idempotencyKey;
+
+    // CR-4: caregiver của từng buổi lúc hủy (Booking là nguồn sự thật) — quyết định ai hưởng phần cọc bị giữ. Không gửi
+    // (Booking cũ) thì giữ caregiver đã chụp lúc thanh toán.
+    List<@Valid OccurrenceCaregiver> caregivers;
+
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class OccurrenceCaregiver {
+        @NotNull(message = "OCCURRENCE_ID_REQUIRED")
+        UUID occurrenceId;
+
+        UUID caregiverId;
+
+        UUID caregiverUserId;
+    }
 }

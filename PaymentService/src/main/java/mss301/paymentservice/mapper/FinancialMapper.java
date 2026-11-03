@@ -46,6 +46,8 @@ public interface FinancialMapper {
     @Mapping(target = "chargedAmount", constant = "0")
     @Mapping(target = "refundedAmount", constant = "0")
     @Mapping(target = "finalStatus", ignore = true)
+    @Mapping(target = "caregiverId", ignore = true)
+    @Mapping(target = "caregiverUserId", ignore = true)
     OccurrenceFinancial toOccurrenceFinancial(DepositAllocator.Allocation allocation, UUID bookingId, UUID centerId);
 
     @BeanMapping(ignoreByDefault = true)

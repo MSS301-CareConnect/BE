@@ -143,4 +143,14 @@ public class BookingOccurrence extends BaseEntity {
         caregiverId = newCaregiverId;
         caregiverUserId = newCaregiverUserId;
     }
+
+    // CR-3: caregiver khách chọn không nhận đơn → buổi đang giữ (RESERVED) trả lịch, chờ trung tâm phân người khác.
+    public void releaseCaregiver() {
+        status = OccurrenceStatus.PENDING_ASSIGNMENT;
+        caregiverId = null;
+        caregiverUserId = null;
+        caregiverScheduleId = null;
+        needsReassignment = false;
+        reminderSentAt = null;
+    }
 }

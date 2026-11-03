@@ -4,6 +4,7 @@ import mss301.providerservice.client.dto.SystemCancellationRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import jakarta.servlet.http.Cookie;
 import mss301.providerservice.dto.request.RegistrationReviewRequest;
 import mss301.providerservice.dto.request.ShiftRegistrationRequest;
 import mss301.providerservice.dto.response.ShiftRegistrationResponse;
@@ -1030,7 +1031,43 @@ class ProviderIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.centerName").value(active.getCenterName()))
                 .andExpect(jsonPath("$.result.email").doesNotExist());
+    }
+
+    // CR-6: danh bạ trung tâm mở cho khách chưa đăng nhập, chỉ GET; token hỏng / hết hạn bị bỏ qua.
+    @Test
+    void publicCentersAreReadableAnonymouslyAndIgnoreStaleTokens() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter active = saveNamedCenter("Anonymous " + tag + " A", CenterStatus.ACTIVE);
+        CareCenter pending = saveNamedCenter("Anonymous " + tag + " B", CenterStatus.PENDING);
+
         mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", tag))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].centerId").value(active.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].managerUserId").doesNotExist())
+                .andExpect(jsonPath("$.result.items[0].email").doesNotExist());
+        mockMvc.perform(get("/api/v1/care-centers/public/{id}", active.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.centerName").value(active.getCenterName()));
+        mockMvc.perform(get("/api/v1/care-centers/public/{id}", pending.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CENTER_NOT_FOUND.getCode()));
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", tag)
+                        .cookie(new Cookie("access_token", "expired.or.broken")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/care-centers/public/{id}", active.getId())
+                        .header("Authorization", "Bearer expired.or.broken"))
+                .andExpect(status().isOk());
+
+        // Chỉ hai GET trên được mở: hồ sơ đầy đủ và mọi method khác vẫn cần đăng nhập.
+        mockMvc.perform(get("/api/v1/care-centers/{id}", active.getId()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/care-centers"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/care-centers/public")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isUnauthorized());
     }
 

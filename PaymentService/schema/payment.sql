@@ -104,13 +104,46 @@ CREATE TABLE occurrence_financials (
     charged_amount  numeric(14,2) NOT NULL DEFAULT 0 CHECK (charged_amount >= 0),
     refunded_amount numeric(14,2) NOT NULL DEFAULT 0 CHECK (refunded_amount >= 0),
     final_status    varchar(20)   CHECK (final_status IN ('COMPLETED','CANCELLED','MISSED','CUSTOMER_NO_SHOW')),
+    -- CR-4: caregiver của buổi (Provider id + Identity id) — quyết định ai hưởng phần cọc bị giữ.
+    caregiver_id      uuid,
+    caregiver_user_id uuid,
     version         bigint        NOT NULL DEFAULT 0,
     created_at      timestamptz   NOT NULL,
     updated_at      timestamptz   NOT NULL,
-    CONSTRAINT ck_occurrence_financials_refund CHECK (refunded_amount <= deposit_amount + charged_amount)
+    CONSTRAINT ck_occurrence_financials_refund CHECK (refunded_amount <= deposit_amount + charged_amount),
+    CONSTRAINT ck_occurrence_financials_caregiver_pair CHECK ((caregiver_id IS NULL) = (caregiver_user_id IS NULL))
 );
 
 CREATE INDEX idx_occurrence_financials_booking ON occurrence_financials(booking_id);
+
+-- CR-4: sổ cọc khách bị giữ (hủy sau mốc hoàn tiền, quá hạn trả phần còn lại) theo từng buổi, append-only. Buổi đã có
+-- caregiver → caregiver hưởng toàn bộ; chưa có → trung tâm hưởng. payment_id = khoản thanh toán đầu (doanh thu theo paid_at).
+CREATE TABLE deposit_forfeitures (
+    forfeiture_id       uuid          PRIMARY KEY,
+    booking_id          uuid          NOT NULL REFERENCES booking_financials(booking_id),
+    center_id           uuid          NOT NULL,
+    occurrence_id       uuid          NOT NULL REFERENCES occurrence_financials(occurrence_id),
+    occurrence_start_at timestamptz   NOT NULL,
+    payment_id          uuid          NOT NULL REFERENCES payments(payment_id),
+    amount              numeric(14,2) NOT NULL CHECK (amount > 0),
+    beneficiary         varchar(20)   NOT NULL CONSTRAINT ck_deposit_forfeitures_beneficiary
+                                          CHECK (beneficiary IN ('CENTER','CAREGIVER')),
+    caregiver_id        uuid,
+    caregiver_user_id   uuid,
+    reason              varchar(30)   NOT NULL,
+    rule                varchar(40),
+    idempotency_key     varchar(150)  NOT NULL,
+    created_at          timestamptz   NOT NULL,
+    CONSTRAINT ck_deposit_forfeitures_caregiver CHECK (
+        (beneficiary = 'CAREGIVER' AND caregiver_id IS NOT NULL AND caregiver_user_id IS NOT NULL)
+        OR (beneficiary = 'CENTER' AND caregiver_id IS NULL AND caregiver_user_id IS NULL)),
+    CONSTRAINT uk_deposit_forfeitures_key UNIQUE (idempotency_key, occurrence_id)
+);
+
+CREATE INDEX idx_deposit_forfeitures_center ON deposit_forfeitures(center_id, created_at);
+CREATE INDEX idx_deposit_forfeitures_caregiver ON deposit_forfeitures(caregiver_user_id, created_at)
+    WHERE caregiver_user_id IS NOT NULL;
+CREATE INDEX idx_deposit_forfeitures_payment ON deposit_forfeitures(payment_id);
 
 CREATE TABLE remaining_invoices (
     invoice_id   uuid          PRIMARY KEY,

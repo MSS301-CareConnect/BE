@@ -37,6 +37,9 @@ public final class NotificationTemplates {
             case OUTBOX_FAILED -> "Có việc đồng bộ giữa các dịch vụ bị lỗi cần xử lý";
             case NO_SHOW_AUTO_ACCEPTED -> "Hệ thống đã xác nhận khách vắng mặt";
             case SESSION_AUTO_CLOSED -> "Hệ thống đã tự đóng ca chăm sóc quên check-out";
+            case CAREGIVER_REQUEST -> "Có khách đặt lịch với bạn, vui lòng nhận hoặc từ chối";
+            case BOOKING_HANDED_OVER -> "Người chăm sóc không nhận lịch, trung tâm sẽ phân người khác";
+            case BOOKING_ADDRESS_CHANGED -> "Địa chỉ chăm sóc của lịch đã thay đổi";
         };
     }
 }

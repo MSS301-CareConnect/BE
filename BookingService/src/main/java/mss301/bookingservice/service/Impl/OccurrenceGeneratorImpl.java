@@ -60,7 +60,8 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
                 }
             }
             case RECURRING -> {
-                if (request.getCaregiverScheduleId() != null || hasSlots) {
+                // slots đi kèm quy tắc = danh sách buổi khách đã chỉnh từ quy tắc (CR-1, 2026-11-03).
+                if (request.getCaregiverScheduleId() != null) {
                     throw new AppException(ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
                 }
                 checkRecurrenceRequired(request);
@@ -80,7 +81,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     public List<OccurrenceSlot> generate(BookingScheduleRequest request) {
         checkShape(request);
         List<OccurrenceSlot> slots = switch (request.getBookingType()) {
-            case RECURRING -> generateRecurring(request);
+            case RECURRING -> generateEditedRecurring(request);
             case CUSTOM -> generateCustom(request.getSlots());
             case SHIFT -> throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_ID_REQUIRED);
         };
@@ -154,6 +155,27 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
             throw new AppException(ErrorCode.NO_OCCURRENCE_IN_RANGE);
         }
         return slots;
+    }
+
+    // RECURRING (CR-1): quy tắc luôn phải hợp lệ; có slots thì dùng danh sách khách đã chỉnh (đổi giờ, bỏ hoặc thêm
+    // buổi) thay cho các buổi sinh ra, miễn mọi buổi nằm trong khoảng ngày của quy tắc (giờ Việt Nam).
+    private List<OccurrenceSlot> generateEditedRecurring(BookingScheduleRequest request) {
+        List<OccurrenceSlot> generated = generateRecurring(request);
+        List<TimeSlotRequest> requestedSlots = request.getSlots();
+        if (requestedSlots == null || requestedSlots.isEmpty()) {
+            return generated;
+        }
+        ZoneId zone = bookingProperties.getSchedule().getTimezone();
+        for (TimeSlotRequest requestedSlot : requestedSlots) {
+            if (requestedSlot.getStartAt() == null || requestedSlot.getEndAt() == null) {
+                throw new AppException(ErrorCode.INVALID_TIME_SLOT);
+            }
+            LocalDate date = LocalDate.ofInstant(requestedSlot.getStartAt(), zone);
+            if (date.isBefore(request.getStartDate()) || date.isAfter(request.getEndDate())) {
+                throw new AppException(ErrorCode.SLOT_OUTSIDE_RECURRENCE_RANGE);
+            }
+        }
+        return generateCustom(requestedSlots);
     }
 
     // CUSTOM (spec §4): mỗi buổi một khung giờ riêng; sắp theo giờ bắt đầu rồi đánh số lại.

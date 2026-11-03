@@ -26,6 +26,8 @@ import mss301.bookingservice.dto.request.BookingServiceRequest;
 import mss301.bookingservice.dto.request.CaregiverAssignRequest;
 import mss301.bookingservice.dto.request.DepositPaidRequest;
 import mss301.bookingservice.dto.request.ReasonRequest;
+import mss301.bookingservice.dto.request.ServiceAddressRequest;
+import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
@@ -142,6 +144,9 @@ public class BookingServiceImpl implements BookingService {
     static int ACCEPT_ATTEMPTS = 2;
     static int HELD_SCHEDULE_RANGE_DAYS = 31;
     static BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
+    static String CAREGIVER_TIMEOUT_REASON = "Người chăm sóc không trả lời trước hạn";
+    static Set<BookingStatus> CONFIRMATION_STATUSES = EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+            BookingStatus.PENDING_CAREGIVER_CONFIRMATION);
 
     BookingRepository bookingRepository;
     BookingOccurrenceRepository bookingOccurrenceRepository;
@@ -221,7 +226,10 @@ public class BookingServiceImpl implements BookingService {
         }
         log.info("Booking {} created by customer {} with {} occurrences", savedBooking.getBookingCode(), actorId, slots.size());
         BookingDetailResponse bookingDetailResponse = toDetailResponse(savedBooking, false);
-        return APIResponse.success("Đặt lịch thành công, chờ trung tâm xác nhận", bookingDetailResponse);
+        String message = savedBooking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION
+                ? "Đặt lịch thành công, chờ người chăm sóc nhận lịch"
+                : "Đặt lịch thành công, chờ trung tâm xác nhận";
+        return APIResponse.success(message, bookingDetailResponse);
     }
 
     // Không @Transactional: response của manager / admin gọi Identity batch (mạng) để hiển thị khách hàng.
@@ -510,6 +518,102 @@ public class BookingServiceImpl implements BookingService {
         return APIResponse.success("Đổi người chăm sóc cho buổi thành công", occurrenceResponse);
     }
 
+    // ─── CUSTOMER / CENTER_MANAGER: địa chỉ chăm sóc (CR-2) ──────────────────
+
+    // Không @Transactional: chi tiết cho manager gọi Identity (mạng) — chỉ phần ghi chạy trong TransactionTemplate.
+    @Override
+    public APIResponse<BookingDetailResponse> updateServiceAddress(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
+                                                                   UUID id, ServiceAddressRequest request) {
+        Booking updatedBooking = transactionTemplate.execute(status ->
+                changeServiceAddress(actorId, roles, scopeCenterId, id, request));
+        log.info("Booking {} care address changed by {}", id, actorId);
+        BookingDetailResponse bookingDetailResponse = toDetailResponse(updatedBooking, !isCustomerScope(roles));
+        return APIResponse.success("Đã cập nhật địa chỉ chăm sóc", bookingDetailResponse);
+    }
+
+    // Booking khóa dòng; snapshot + service_address đổi cùng lúc, ghi sự kiện và báo các bên.
+    private Booking changeServiceAddress(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id,
+                                         ServiceAddressRequest request) {
+        Booking booking = bookingRepository.findForUpdate(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        boolean allowed = isManagerOf(roles, scopeCenterId, booking)
+                || (roles.contains(RoleCode.CUSTOMER) && booking.getCustomerId().equals(actorId));
+        if (!allowed) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Instant now = clock.instant();
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(id);
+        boolean visitInProgress = occurrences.stream()
+                .anyMatch(occurrence -> occurrence.getStatus() == OccurrenceStatus.IN_PROGRESS);
+        List<BookingOccurrence> upcomingOccurrences = occurrences.stream()
+                .filter(occurrence -> isFutureScheduled(occurrence, now))
+                .toList();
+        if (!BookingStatus.SCHEDULE_HOLDING.contains(booking.getStatus()) || visitInProgress
+                || upcomingOccurrences.isEmpty()) {
+            throw new AppException(ErrorCode.SERVICE_ADDRESS_NOT_EDITABLE);
+        }
+        String oldAddress = booking.getServiceAddress();
+        RecipientSnapshot recipientSnapshot = bookingMapper.toAddressSnapshot(booking.getRecipientSnapshot(), request);
+        String newAddress = bookingMapper.toServiceAddress(recipientSnapshot);
+        booking.setRecipientSnapshot(recipientSnapshot);
+        booking.setServiceAddress(newAddress);
+        String note = request.getNote() == null || request.getNote().isBlank() ? null : request.getNote().strip();
+        bookingEventRepository.save(bookingEventMapper.toAddressChangedEvent(booking, oldAddress, newAddress, actorId,
+                note, now));
+        List<UUID> caregiverUserIds = upcomingOccurrences.stream()
+                .map(BookingOccurrence::getCaregiverUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        bookingNotificationService.notifyAddressChanged(booking, caregiverUserIds);
+        return booking;
+    }
+
+    // ─── CAREGIVER: đơn khách gửi thẳng (CR-3) ────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(UUID actorId, int page,
+                                                                                           int size) {
+        Page<Booking> bookings = bookingRepository.findByCaregiverUserIdAndStatusAndDeletedAtIsNullOrderByCreatedAtDesc(
+                actorId, BookingStatus.PENDING_CAREGIVER_CONFIRMATION, PageRequests.unsorted(page, size));
+        List<CaregiverBookingRequestResponse> requestResponses = bookings.getContent().stream()
+                .map(this::toCaregiverRequestResponse)
+                .toList();
+        PageResponse<CaregiverBookingRequestResponse> pageResponse = PageResponse.of(bookings, requestResponses);
+        return APIResponse.success("Lấy danh sách lịch chờ nhận thành công", pageResponse);
+    }
+
+    @Override
+    public APIResponse<CaregiverBookingRequestResponse> acceptAsCaregiver(UUID actorId, UUID id) {
+        CaregiverBookingRequestResponse requestResponse = transactionTemplate.execute(status -> {
+            Booking lockedBooking = lockCaregiverRequest(actorId, id);
+            bookingLifecycleService.apply(lockedBooking, BookingAction.CAREGIVER_ACCEPT, actorId, null);
+            return toCaregiverRequestResponse(lockedBooking);
+        });
+        log.info("Booking {} accepted by caregiver {}", id, actorId);
+        return APIResponse.success("Đã nhận lịch, chờ khách thanh toán", requestResponse);
+    }
+
+    @Override
+    public APIResponse<CaregiverBookingRequestResponse> declineAsCaregiver(UUID actorId, UUID id, ReasonRequest request) {
+        String reason = request.getReason().strip();
+        CaregiverBookingRequestResponse requestResponse = transactionTemplate.execute(status -> {
+            Booking lockedBooking = lockCaregiverRequest(actorId, id);
+            // SHIFT gắn với ca của chính caregiver này nên không chuyển được cho người khác.
+            BookingAction action = canHandOverToCenter(lockedBooking, clock.instant())
+                    ? BookingAction.HAND_OVER_TO_CENTER
+                    : BookingAction.CAREGIVER_DECLINE;
+            bookingLifecycleService.apply(lockedBooking, action, actorId, reason);
+            return toCaregiverRequestResponse(lockedBooking);
+        });
+        log.info("Booking {} declined by caregiver {} -> {}", id, actorId, requestResponse.getStatus());
+        String message = requestResponse.getStatus() == BookingStatus.PENDING_CAREGIVER_ASSIGNMENT
+                ? "Đã từ chối, trung tâm sẽ phân người khác"
+                : "Đã từ chối lịch";
+        return APIResponse.success(message, requestResponse);
+    }
+
     // ─── SERVICE / THANH TOÁN (tạm) ───────────────────────────────────────────
 
     @Override
@@ -627,8 +731,7 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findExpirableIds() {
-        return bookingRepository.findExpirableIds(BookingStatus.PENDING_CENTER_CONFIRMATION,
-                BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, clock.instant(),
+        return bookingRepository.findExpirableIds(CONFIRMATION_STATUSES, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, clock.instant(),
                 PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
     }
 
@@ -637,10 +740,17 @@ public class BookingServiceImpl implements BookingService {
     public void expire(UUID id) {
         Optional<Booking> lockedBooking = bookingRepository.findForUpdateSkipLocked(id);
         // Instance khác đang xử lý → rỗng, bỏ qua. Booking có thể vừa được duyệt / đặt cọc / hủy → kiểm lại.
-        if (lockedBooking.isEmpty() || !isOverdue(lockedBooking.get(), clock.instant())) {
+        Instant now = clock.instant();
+        if (lockedBooking.isEmpty() || !isOverdue(lockedBooking.get(), now)) {
             return;
         }
-        bookingLifecycleService.apply(lockedBooking.get(), BookingAction.EXPIRE, null, null);
+        Booking booking = lockedBooking.get();
+        // CR-3: caregiver không trả lời đơn RECURRING / CUSTOM kịp hạn → trung tâm phân người khác nếu còn kịp.
+        if (booking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION && canHandOverToCenter(booking, now)) {
+            bookingLifecycleService.apply(booking, BookingAction.HAND_OVER_TO_CENTER, null, CAREGIVER_TIMEOUT_REASON);
+            return;
+        }
+        bookingLifecycleService.apply(booking, BookingAction.EXPIRE, null, null);
     }
 
     @Override
@@ -676,7 +786,10 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingMapper.toBooking(request, actorId, recipientSnapshot, caregiver, quote, startDate, endDate,
                 resolveInitialPaymentPercent(request.getBookingType(), policy));
         booking.setBookingCode(bookingCodeGenerator.generate());
-        booking.setStatus(BookingStatus.PENDING_CENTER_CONFIRMATION);
+        // CR-3: khách đã chọn caregiver → caregiver tự nhận / từ chối; để trung tâm chọn → trung tâm duyệt.
+        booking.setStatus(caregiver == null
+                ? BookingStatus.PENDING_CENTER_CONFIRMATION
+                : BookingStatus.PENDING_CAREGIVER_CONFIRMATION);
         booking.setTimezone(zone.getId());
         booking.setAcceptanceDueAt(findEarlier(
                 clock.instant().plus(Duration.ofMinutes(policy.getConfirmationTimeoutMinutes())), paymentCutoff));
@@ -1189,6 +1302,30 @@ public class BookingServiceImpl implements BookingService {
     }
 
     // Booking trung tâm khác → 404 giống không tồn tại.
+    // CR-3: chỉ caregiver khách đã chọn, đơn còn chờ trả lời và chưa quá hạn (scheduler chưa kịp xử lý) — khác → 404 / 409.
+    private Booking lockCaregiverRequest(UUID caregiverUserId, UUID id) {
+        Booking booking = bookingRepository.findForUpdate(id)
+                .filter(found -> caregiverUserId.equals(found.getCaregiverUserId()))
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStatus() != BookingStatus.PENDING_CAREGIVER_CONFIRMATION
+                || !clock.instant().isBefore(booking.getAcceptanceDueAt())) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+        }
+        return booking;
+    }
+
+    // CR-3: RECURRING / CUSTOM chuyển trung tâm khi còn trước hạn trả phần còn lại (mốc chốt); SHIFT thì không.
+    private boolean canHandOverToCenter(Booking booking, Instant now) {
+        return booking.getBookingType() != BookingType.SHIFT && booking.getRemainingPaymentDueAt() != null
+                && now.isBefore(booking.getRemainingPaymentDueAt());
+    }
+
+    private CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking) {
+        return bookingMapper.toCaregiverRequestResponse(booking,
+                bookingDetailRepository.findAllByBooking(booking.getId()),
+                bookingOccurrenceRepository.findAllByBooking(booking.getId()));
+    }
+
     private Booking lockCenterBooking(UUID centerId, UUID id) {
         Booking booking = bookingRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
@@ -1200,7 +1337,7 @@ public class BookingServiceImpl implements BookingService {
 
     private boolean isOverdue(Booking booking, Instant now) {
         return switch (booking.getStatus()) {
-            case PENDING_CENTER_CONFIRMATION -> booking.getAcceptanceDueAt() != null
+            case PENDING_CENTER_CONFIRMATION, PENDING_CAREGIVER_CONFIRMATION -> booking.getAcceptanceDueAt() != null
                     && !now.isBefore(booking.getAcceptanceDueAt());
             case PENDING_CAREGIVER_ASSIGNMENT -> booking.getAssignmentDueAt() != null
                     && !now.isBefore(booking.getAssignmentDueAt());

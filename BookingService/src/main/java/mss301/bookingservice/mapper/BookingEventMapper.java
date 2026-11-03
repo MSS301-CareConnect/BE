@@ -22,6 +22,8 @@ public interface BookingEventMapper {
     @Mapping(target = "occurrenceId", source = "occurrence.id")
     @Mapping(target = "oldCaregiverId", ignore = true)
     @Mapping(target = "newCaregiverId", ignore = true)
+    @Mapping(target = "oldValue", ignore = true)
+    @Mapping(target = "newValue", ignore = true)
     @Mapping(target = "createdAt", source = "occurredAt")
     BookingEvent toStatusEvent(BookingOccurrence occurrence, BookingEventType eventType, OccurrenceStatus fromStatus,
                                OccurrenceStatus toStatus, UUID changedBy, String reason, Instant occurredAt);
@@ -32,9 +34,24 @@ public interface BookingEventMapper {
     @Mapping(target = "eventType", constant = "CAREGIVER_CHANGED")
     @Mapping(target = "fromStatus", ignore = true)
     @Mapping(target = "toStatus", ignore = true)
+    @Mapping(target = "oldValue", ignore = true)
+    @Mapping(target = "newValue", ignore = true)
     @Mapping(target = "createdAt", source = "occurredAt")
     BookingEvent toCaregiverChangedEvent(Booking booking, UUID occurrenceId, UUID oldCaregiverId, UUID newCaregiverId,
                                          UUID changedBy, String reason, Instant occurredAt);
+
+    // CR-2: đổi địa chỉ chăm sóc của cả booking (không gắn một buổi).
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "booking", source = "booking")
+    @Mapping(target = "occurrenceId", ignore = true)
+    @Mapping(target = "eventType", constant = "SERVICE_ADDRESS_CHANGED")
+    @Mapping(target = "oldCaregiverId", ignore = true)
+    @Mapping(target = "newCaregiverId", ignore = true)
+    @Mapping(target = "fromStatus", ignore = true)
+    @Mapping(target = "toStatus", ignore = true)
+    @Mapping(target = "createdAt", source = "occurredAt")
+    BookingEvent toAddressChangedEvent(Booking booking, String oldValue, String newValue, UUID changedBy, String reason,
+                                       Instant occurredAt);
 
     // BK-05: sự kiện mức buổi trong API lịch sử.
     @Mapping(target = "changedAt", source = "createdAt")

@@ -25,6 +25,8 @@ public interface BookingStatusHistoryMapper {
     @Mapping(target = "occurrenceId", ignore = true)
     @Mapping(target = "oldCaregiverId", ignore = true)
     @Mapping(target = "newCaregiverId", ignore = true)
+    @Mapping(target = "oldValue", ignore = true)
+    @Mapping(target = "newValue", ignore = true)
     BookingHistoryResponse toHistoryResponse(BookingStatusHistory history);
 
     List<BookingHistoryResponse> toHistoryResponseList(List<BookingStatusHistory> histories);

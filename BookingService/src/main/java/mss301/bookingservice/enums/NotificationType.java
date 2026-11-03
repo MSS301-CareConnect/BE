@@ -13,5 +13,9 @@ public enum NotificationType {
     // H-08: việc gửi sang service khác hết lượt retry — báo admin.
     OUTBOX_FAILED,
     // D21: hệ thống tự chấp nhận báo vắng / tự đóng ca quên check-out.
-    NO_SHOW_AUTO_ACCEPTED, SESSION_AUTO_CLOSED
+    NO_SHOW_AUTO_ACCEPTED, SESSION_AUTO_CLOSED,
+    // CR-3: khách chọn caregiver → đơn tới thẳng caregiver; caregiver từ chối / quá hạn → chuyển trung tâm phân người.
+    CAREGIVER_REQUEST, BOOKING_HANDED_OVER,
+    // CR-2: khách / trung tâm đổi địa chỉ chăm sóc của booking.
+    BOOKING_ADDRESS_CHANGED
 }

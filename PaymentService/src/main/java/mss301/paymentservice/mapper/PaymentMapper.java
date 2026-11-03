@@ -59,5 +59,6 @@ public interface PaymentMapper {
     PaymentReturnResponse toReturnResponse(Payment payment, String message);
 
     RevenueResponse toRevenueResponse(long successfulPaymentCount, BigDecimal grossRevenue, BigDecimal totalRefunded,
+                                      BigDecimal caregiverForfeitAmount, BigDecimal centerForfeitAmount,
                                       BigDecimal totalRevenue, BigDecimal averagePayment);
 }

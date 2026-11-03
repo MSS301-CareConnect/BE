@@ -8,5 +8,12 @@
   "cancelledAt": "2026-11-02T03:00:00Z",
   "firstUpcomingStartAt": "2026-11-07T01:00:00Z",
   "requestedBy": "33333333-3333-4333-8333-333333333333",
-  "idempotencyKey": "REFUND:CENTER_CANCEL:22222222-2222-4222-8222-222222222222"
+  "idempotencyKey": "REFUND:CENTER_CANCEL:22222222-2222-4222-8222-222222222222",
+  "caregivers": [
+    {
+      "occurrenceId": "22222222-2222-4222-8222-222222222222",
+      "caregiverId": "44444444-4444-4444-8444-444444444444",
+      "caregiverUserId": "55555555-5555-4555-8555-555555555555"
+    }
+  ]
 }

@@ -77,6 +77,11 @@ public class BookingPaymentContextResponse {
 
         BigDecimal priceAmount;
 
+        // CR-4: caregiver đang được giao buổi (NULL = chưa có người).
+        UUID caregiverId;
+
+        UUID caregiverUserId;
+
         boolean hasSession;
     }
 }

@@ -56,6 +56,24 @@ class BookingPriceCalculatorTests {
         assertThat(oddQuote.getTotalAmount()).isEqualByComparingTo("116667");
     }
 
+    // Buổi dài khác nhau: báo giá chia nhóm theo số giờ mỗi buổi kèm thành tiền từng nhóm (14 × 2 giờ, 1 × 3 giờ).
+    @Test
+    void groupsOccurrencesByLengthWithTheirAmounts() {
+        ServiceQuote hourly = serviceQuote(UnitType.HOUR, 60, "100000");
+        List<OccurrenceSlot> slots = new ArrayList<>(slots(14, 120));
+        OccurrenceSlot longer = slots(15, 180).getLast();
+        slots.add(longer);
+        BookingQuote quote = bookingPriceCalculator.calculate(List.of(hourly), slots);
+
+        assertThat(hourly.getUnitsPerOccurrence()).isNull();
+        assertThat(hourly.getQuantity()).isEqualByComparingTo("31");
+        assertThat(hourly.getUnitGroups()).extracting(group -> group.getUnitsPerOccurrence().stripTrailingZeros()
+                        .toPlainString() + "x" + group.getOccurrenceCount() + "=" + group.getAmount().stripTrailingZeros()
+                        .toPlainString())
+                .containsExactly("2x14=2800000", "3x1=300000");
+        assertThat(quote.getTotalAmount()).isEqualByComparingTo("3100000");
+    }
+
     @Test
     void shiftPlanRejectsLongerOccurrence() {
         ServiceQuote shift = serviceQuote(UnitType.SHIFT, 240, "500000");

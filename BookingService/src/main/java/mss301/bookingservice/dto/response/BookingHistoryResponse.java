@@ -32,5 +32,10 @@ public class BookingHistoryResponse {
 
     String reason;
 
+    // CR-2: SERVICE_ADDRESS_CHANGED — địa chỉ cũ / mới.
+    String oldValue;
+
+    String newValue;
+
     Instant changedAt;
 }

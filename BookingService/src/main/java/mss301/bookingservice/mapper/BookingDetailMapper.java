@@ -37,13 +37,15 @@ public interface BookingDetailMapper {
     @Mapping(target = "items", source = "services")
     CareCatalogQuoteRequest toCatalogQuoteRequest(UUID centerId, List<BookingServiceRequest> services);
 
-    // Giá gốc từ Catalog; số lượng / thành tiền do BookingPriceCalculator tính sau.
+    // Đơn giá khách trả (sau giảm % của gói) từ Catalog; số lượng / thành tiền do BookingPriceCalculator tính sau.
     @Mapping(target = "unitType", source = "pricingUnit")
-    @Mapping(target = "unitPrice", source = "basePrice")
+    @Mapping(target = "unitPrice",
+            expression = "java(catalogQuote.getFinalPrice() != null ? catalogQuote.getFinalPrice() : catalogQuote.getBasePrice())")
     @Mapping(target = "planDurationMinutes", source = "durationMinutes")
     @Mapping(target = "unitsPerOccurrence", ignore = true)
     @Mapping(target = "occurrenceCount", ignore = true)
     @Mapping(target = "quantity", ignore = true)
     @Mapping(target = "totalPrice", ignore = true)
+    @Mapping(target = "unitGroups", ignore = true)
     ServiceQuote toServiceQuote(CareCatalogQuoteResponse catalogQuote);
 }

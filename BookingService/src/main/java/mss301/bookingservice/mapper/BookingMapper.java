@@ -10,6 +10,7 @@ import mss301.bookingservice.client.dto.RemainingInvoiceRequest;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.RefundReason;
 import mss301.bookingservice.dto.request.BookingCreateRequest;
+import mss301.bookingservice.dto.request.ServiceAddressRequest;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingQuote;
@@ -22,6 +23,7 @@ import mss301.bookingservice.dto.response.QuoteOccurrenceResponse;
 import mss301.bookingservice.dto.response.ServiceQuote;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
+import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
 import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.CustomerProfileResponse;
 import mss301.bookingservice.dto.response.RecipientSnapshot;
@@ -145,6 +147,18 @@ public interface BookingMapper {
 
     CustomerProfileResponse toCustomerProfileResponse(IdentityUserResponse user);
 
+    // CR-3: đơn chờ caregiver nhận — chỉ khu vực + tuổi / giới tính từ snapshot, không hồ sơ người bệnh.
+    @Mapping(target = "id", source = "booking.id")
+    @Mapping(target = "recipientAge", source = "booking.recipientSnapshot.age")
+    @Mapping(target = "recipientGender", source = "booking.recipientSnapshot.gender")
+    @Mapping(target = "ward", source = "booking.recipientSnapshot.ward")
+    @Mapping(target = "district", source = "booking.recipientSnapshot.district")
+    @Mapping(target = "province", source = "booking.recipientSnapshot.province")
+    @Mapping(target = "services", source = "services")
+    @Mapping(target = "occurrences", source = "occurrences")
+    CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking, List<BookingDetail> services,
+                                                               List<BookingOccurrence> occurrences);
+
     // Kết quả hủy (BK-03 / BK-04) gắn vào chi tiết booking sau khi dựng.
     @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "refund", source = "refund")
@@ -192,10 +206,14 @@ public interface BookingMapper {
     @Mapping(target = "rule", constant = "NOT_PAID")
     CancellationPreviewResponse.Item toUnpaidPreviewItem(BookingOccurrence occurrence);
 
-    // C2.3: yêu cầu hoàn tiền gửi PaymentService qua outbox.
+    // C2.3: yêu cầu hoàn tiền gửi PaymentService qua outbox; caregivers = các buổi được hoàn (CR-4).
     RefundCreateRequest toRefundCreateRequest(UUID bookingId, List<UUID> occurrenceIds, RefundReason reason,
                                               CancelledBy cancelledBy, Instant cancelledAt, Instant firstUpcomingStartAt,
-                                              UUID requestedBy, String idempotencyKey);
+                                              UUID requestedBy, String idempotencyKey,
+                                              List<BookingOccurrence> caregivers);
+
+    @Mapping(target = "occurrenceId", source = "id")
+    RefundCreateRequest.OccurrenceCaregiver toOccurrenceCaregiver(BookingOccurrence occurrence);
 
     // C2.5: PaymentService tính hóa đơn phần còn lại theo trạng thái cuối của từng buổi (OPS-04).
     RemainingInvoiceRequest toRemainingInvoiceRequest(UUID bookingId, List<BookingOccurrence> occurrences);
@@ -229,6 +247,16 @@ public interface BookingMapper {
         }
         return String.join(ADDRESS_SEPARATOR, parts);
     }
+
+    // CR-2: snapshot mới (object khác để Hibernate thấy jsonb đổi) — chỉ phần địa chỉ lấy từ request; tọa độ cũ không còn
+    // đúng nên bỏ.
+    @Mapping(target = "addressLine", source = "request.addressLine")
+    @Mapping(target = "ward", source = "request.ward")
+    @Mapping(target = "district", source = "request.district")
+    @Mapping(target = "province", source = "request.province")
+    @Mapping(target = "latitude", ignore = true)
+    @Mapping(target = "longitude", ignore = true)
+    RecipientSnapshot toAddressSnapshot(RecipientSnapshot snapshot, ServiceAddressRequest request);
 
     // Thứ trong tuần: request/response dùng List<Integer> (1..7), DB lưu smallint[] tăng dần không trùng; rỗng → NULL.
     default Short[] toDayNumbers(List<Integer> daysOfWeek) {

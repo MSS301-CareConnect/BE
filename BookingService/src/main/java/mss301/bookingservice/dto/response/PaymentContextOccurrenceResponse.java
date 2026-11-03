@@ -33,5 +33,8 @@ public class PaymentContextOccurrenceResponse {
 
     UUID caregiverId;
 
+    // CR-4: PaymentService chụp caregiver từng buổi để ghi ai hưởng phần cọc bị giữ.
+    UUID caregiverUserId;
+
     boolean hasSession;
 }

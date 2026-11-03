@@ -44,8 +44,9 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     @Override
     public void notifyLifecycle(Booking booking, List<BookingOccurrence> occurrences, BookingAction action) {
         NotificationType type = switch (action) {
-            case ACCEPT, ACCEPT_WITHOUT_CAREGIVER, ASSIGN_CAREGIVER -> NotificationType.BOOKING_ACCEPTED;
-            case REJECT -> NotificationType.BOOKING_REJECTED;
+            case ACCEPT, ACCEPT_WITHOUT_CAREGIVER, ASSIGN_CAREGIVER, CAREGIVER_ACCEPT -> NotificationType.BOOKING_ACCEPTED;
+            case REJECT, CAREGIVER_DECLINE -> NotificationType.BOOKING_REJECTED;
+            case HAND_OVER_TO_CENTER -> NotificationType.BOOKING_HANDED_OVER;
             case EXPIRE -> NotificationType.BOOKING_EXPIRED;
             case PAY_INITIAL_PAYMENT -> NotificationType.BOOKING_CONFIRMED;
             case CANCEL_BY_CUSTOMER, CANCEL_BY_CENTER, CANCEL_BY_SYSTEM, FINALIZE_CANCELLED -> NotificationType.BOOKING_CANCELLED;
@@ -57,17 +58,23 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         }
         List<UUID> recipients = new ArrayList<>();
         recipients.add(booking.getCustomerId());
-        if (action != BookingAction.FINALIZE) {
+        // Caregiver vừa tự nhận / từ chối đơn thì không báo lại chính họ (CR-3).
+        boolean caregiverAction = action == BookingAction.CAREGIVER_ACCEPT || action == BookingAction.CAREGIVER_DECLINE;
+        if (action != BookingAction.FINALIZE && !caregiverAction) {
             occurrences.stream().map(BookingOccurrence::getCaregiverUserId).filter(Objects::nonNull)
                     .distinct().forEach(recipients::add);
         }
         String body = "Lịch " + booking.getBookingCode();
-        boolean awaitingPayment = action == BookingAction.ACCEPT || action == BookingAction.ASSIGN_CAREGIVER;
+        boolean awaitingPayment = action == BookingAction.ACCEPT || action == BookingAction.ASSIGN_CAREGIVER
+                || action == BookingAction.CAREGIVER_ACCEPT;
         if (awaitingPayment && booking.getDepositDueAt() != null) {
             body += ": vui lòng thanh toán trước " + booking.getDepositDueAt();
         }
         if (action == BookingAction.ACCEPT_WITHOUT_CAREGIVER) {
             body += ": trung tâm đã xác nhận, đang phân người chăm sóc";
+        }
+        if (action == BookingAction.HAND_OVER_TO_CENTER) {
+            body += ": người chăm sóc đã chọn không nhận, trung tâm sẽ phân người khác";
         }
         notificationService.notify(recipients, type, Map.of("body", body), "BOOKING", booking.getId());
         // Thao tác do chính trung tâm làm (xác nhận / phân công / từ chối) thì không báo lại trung tâm.
@@ -107,6 +114,24 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                 + booking.getRemainingPaymentDueAt();
         notificationService.notify(List.of(booking.getCustomerId()), NotificationType.REMAINING_DUE, Map.of("body", body),
                 "BOOKING", booking.getId());
+    }
+
+    @Override
+    public void notifyCaregiverRequest(Booking booking) {
+        String body = "Lịch " + booking.getBookingCode() + ": vui lòng trả lời trước " + booking.getAcceptanceDueAt();
+        notificationService.notify(List.of(booking.getCaregiverUserId()), NotificationType.CAREGIVER_REQUEST,
+                Map.of("body", body), "BOOKING", booking.getId());
+    }
+
+    @Override
+    public void notifyAddressChanged(Booking booking, List<UUID> caregiverUserIds) {
+        List<UUID> recipients = new ArrayList<>();
+        recipients.add(booking.getCustomerId());
+        recipients.addAll(caregiverUserIds);
+        String body = "Lịch " + booking.getBookingCode() + ": địa chỉ mới " + booking.getServiceAddress();
+        notificationService.notify(recipients, NotificationType.BOOKING_ADDRESS_CHANGED, Map.of("body", body),
+                "BOOKING", booking.getId());
+        notifyCenter(booking.getCenterId(), NotificationType.BOOKING_ADDRESS_CHANGED, "BOOKING", booking.getId());
     }
 
     @Override

@@ -5,6 +5,7 @@ import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.UnitType;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 // Một dòng dịch vụ: phần giá gốc lấy từ CareCatalogService (CareServiceCatalogPort), phần số lượng / thành tiền do
@@ -38,4 +39,7 @@ public class ServiceQuote {
     BigDecimal quantity;
 
     BigDecimal totalPrice;
+
+    // Các nhóm buổi theo số đơn vị mỗi buổi, tăng dần (chỉ để hiển thị báo giá; không lưu vào booking_details).
+    List<QuoteUnitGroup> unitGroups;
 }

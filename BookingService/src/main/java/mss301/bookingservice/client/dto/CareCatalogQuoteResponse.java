@@ -29,5 +29,8 @@ public class CareCatalogQuoteResponse {
 
     BigDecimal basePrice;
 
+    // Đơn giá sau giảm % của gói (CAT-03). Catalog bản cũ không gửi → dùng basePrice.
+    BigDecimal finalPrice;
+
     boolean active;
 }

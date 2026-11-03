@@ -36,6 +36,11 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
 
     long countByCustomerIdAndStatusInAndDeletedAtIsNull(UUID customerId, Collection<BookingStatus> statuses);
 
+    // CR-3: đơn khách gửi thẳng cho caregiver (caregiver cấp booking), mới nhất trước.
+    Page<Booking> findByCaregiverUserIdAndStatusAndDeletedAtIsNullOrderByCreatedAtDesc(UUID caregiverUserId,
+                                                                                       BookingStatus status,
+                                                                                       Pageable pageable);
+
     // Khóa dòng booking khi đổi trạng thái / caregiver: accept, hủy, đặt cọc, hết hạn chạy song song không cùng vượt
     // qua bước kiểm trạng thái (state machine) trên cùng một booking.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -60,16 +65,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("select b from Booking b where b.id = :id and b.deletedAt is null")
     Optional<Booking> findForUpdateSkipLocked(@Param("id") UUID id);
 
-    // Booking quá hạn xác nhận, quá hạn phân caregiver hoặc quá hạn thanh toán khoản đầu (scheduler xử lý theo lô).
+    // Booking quá hạn xác nhận (trung tâm hoặc caregiver, CR-3), quá hạn phân caregiver hoặc quá hạn thanh toán khoản đầu
+    // (scheduler xử lý theo lô).
     @Query("""
             select b.id from Booking b
             where b.deletedAt is null
-              and ((b.status = :confirmationStatus and b.acceptanceDueAt <= :now)
+              and ((b.status in :confirmationStatuses and b.acceptanceDueAt <= :now)
                 or (b.status = :assignmentStatus and b.assignmentDueAt <= :now)
                 or (b.status = :paymentStatus and b.depositDueAt <= :now))
             order by b.createdAt
             """)
-    List<UUID> findExpirableIds(@Param("confirmationStatus") BookingStatus confirmationStatus,
+    List<UUID> findExpirableIds(@Param("confirmationStatuses") Collection<BookingStatus> confirmationStatuses,
                                 @Param("assignmentStatus") BookingStatus assignmentStatus,
                                 @Param("paymentStatus") BookingStatus paymentStatus,
                                 @Param("now") Instant now,

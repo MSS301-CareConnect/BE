@@ -2,6 +2,7 @@ package mss301.bookingservice.service.Impl;
 
 import mss301.bookingservice.dto.response.BookingQuote;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
+import mss301.bookingservice.dto.response.QuoteUnitGroup;
 import mss301.bookingservice.dto.response.ServiceQuote;
 import mss301.bookingservice.enums.UnitType;
 import mss301.bookingservice.exception.AppException;
@@ -11,7 +12,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
@@ -28,13 +32,23 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
             service.setQuantity(BigDecimal.ZERO);
             service.setTotalPrice(BigDecimal.ZERO);
         }
+        // Mỗi dịch vụ: số đơn vị mỗi buổi → [số buổi, tiền chưa làm tròn], để báo giá ghi riêng buổi dài hơn.
+        List<Map<BigDecimal, BigDecimal[]>> groups = new ArrayList<>();
+        for (int serviceIndex = 0; serviceIndex < services.size(); serviceIndex++) {
+            groups.add(new TreeMap<>());
+        }
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (int index = 0; index < slots.size(); index++) {
             OccurrenceSlot slot = slots.get(index);
             BigDecimal priceAmount = BigDecimal.ZERO;
-            for (ServiceQuote service : services) {
+            for (int serviceIndex = 0; serviceIndex < services.size(); serviceIndex++) {
+                ServiceQuote service = services.get(serviceIndex);
                 BigDecimal linePrice = calculateLinePrice(service, slot.getDurationMinutes());
                 BigDecimal units = calculateUnits(service, slot.getDurationMinutes());
+                BigDecimal[] group = groups.get(serviceIndex).computeIfAbsent(units,
+                        key -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+                group[0] = group[0].add(BigDecimal.ONE);
+                group[1] = group[1].add(linePrice);
                 // SHIFT / RECURRING: mọi buổi cùng số đơn vị. CUSTOM mỗi buổi một khung giờ → số đơn vị khác nhau thì để
                 // null (quantity vẫn là tổng đúng).
                 if (index == 0) {
@@ -49,8 +63,18 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
             slot.setPriceAmount(roundToDong(priceAmount));
             totalAmount = totalAmount.add(slot.getPriceAmount());
         }
-        for (ServiceQuote service : services) {
+        for (int serviceIndex = 0; serviceIndex < services.size(); serviceIndex++) {
+            ServiceQuote service = services.get(serviceIndex);
             service.setTotalPrice(roundToDong(service.getTotalPrice()));
+            List<QuoteUnitGroup> unitGroups = new ArrayList<>();
+            for (Map.Entry<BigDecimal, BigDecimal[]> entry : groups.get(serviceIndex).entrySet()) {
+                unitGroups.add(QuoteUnitGroup.builder()
+                        .unitsPerOccurrence(entry.getKey())
+                        .occurrenceCount(entry.getValue()[0].intValue())
+                        .amount(roundToDong(entry.getValue()[1]))
+                        .build());
+            }
+            service.setUnitGroups(unitGroups);
         }
         return BookingQuote.builder()
                 .items(services)

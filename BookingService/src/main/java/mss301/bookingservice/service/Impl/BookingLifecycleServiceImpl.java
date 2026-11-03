@@ -68,6 +68,10 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     public void recordCreated(Booking booking, UUID customerId) {
         bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, null, booking.getStatus(),
                 customerId, null, clock.instant()));
+        // CR-3: đơn đã chọn caregiver tới thẳng caregiver; trung tâm vẫn được báo để theo dõi.
+        if (booking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION) {
+            bookingNotificationService.notifyCaregiverRequest(booking);
+        }
         bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.BOOKING_CREATED, "BOOKING", booking.getId());
     }
 
@@ -94,6 +98,24 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             }
             case ASSIGN_CAREGIVER -> booking.setDepositDueAt(calculateDueAt(booking, occurrences, now,
                     findPolicy(booking).getInitialPaymentTimeoutMinutes()));
+            case CAREGIVER_ACCEPT -> {
+                booking.setAcceptedBy(changedBy);
+                booking.setAcceptedAt(now);
+                booking.setDepositDueAt(calculateDueAt(booking, occurrences, now,
+                        findPolicy(booking).getInitialPaymentTimeoutMinutes()));
+            }
+            case CAREGIVER_DECLINE -> {
+                booking.setRejectedBy(changedBy);
+                booking.setRejectedAt(now);
+                booking.setRejectedReason(reason);
+                cancelScheduledOccurrences(booking, occurrences, CancelledBy.CENTER, changedBy, REJECTED_OCCURRENCE_REASON);
+            }
+            case HAND_OVER_TO_CENTER -> {
+                // CR-3: trả lịch caregiver cũ, trung tâm phân người khác trước hạn phân công của policy.
+                releaseCaregiver(booking, occurrences, changedBy, reason, now);
+                booking.setAssignmentDueAt(calculateDueAt(booking, occurrences, now,
+                        findPolicy(booking).getAssignmentTimeoutMinutes()));
+            }
             case REJECT -> {
                 booking.setRejectedBy(changedBy);
                 booking.setRejectedAt(now);
@@ -215,7 +237,8 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                               UUID requestedBy, String keySuffix) {
         Instant now = clock.instant();
         // Mốc tính % hoàn: buổi chưa diễn ra gần nhất còn lại (PaymentService dùng cho bảng mốc 24h / 72h).
-        Instant firstUpcomingStartAt = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        Instant firstUpcomingStartAt = occurrences.stream()
                 .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())
                         || occurrenceIds.contains(occurrence.getId()))
                 .map(BookingOccurrence::getStartAt)
@@ -225,7 +248,8 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         String idempotencyKey = OutboxEventType.REFUND.name() + KEY_SEPARATOR + reason.name() + KEY_SEPARATOR + keySuffix;
         bookingOutboxService.enqueue(OutboxEventType.REFUND, booking.getId(), idempotencyKey,
                 bookingMapper.toRefundCreateRequest(booking.getId(), occurrenceIds, reason, cancelledBy, now,
-                        firstUpcomingStartAt, requestedBy, idempotencyKey));
+                        firstUpcomingStartAt, requestedBy, idempotencyKey,
+                        occurrences.stream().filter(occurrence -> occurrenceIds.contains(occurrence.getId())).toList()));
     }
 
     // Hạn = bây giờ + timeout của policy, nhưng không quá mốc chốt thanh toán: hạn trả phần còn lại (RECURRING / CUSTOM)
@@ -275,6 +299,22 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 changeOccurrenceStatus(occurrence, OccurrenceStatus.EXPIRED, changedBy, reason, now);
             }
         }
+    }
+
+    // CR-3: mỗi buổi đang giữ lịch của caregiver cũ về PENDING_ASSIGNMENT (ghi CAREGIVER_CHANGED cho lịch sử), booking bỏ
+    // caregiver mặc định. Thông báo do notifyLifecycle (trung tâm + khách) — caregiver cũ là người vừa từ chối / quá hạn.
+    private void releaseCaregiver(Booking booking, List<BookingOccurrence> occurrences, UUID changedBy, String reason,
+                                  Instant now) {
+        for (BookingOccurrence occurrence : occurrences) {
+            if (occurrence.getStatus() != OccurrenceStatus.RESERVED) {
+                continue;
+            }
+            bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(booking, occurrence.getId(),
+                    occurrence.getCaregiverId(), null, changedBy, reason, now));
+            occurrence.releaseCaregiver();
+        }
+        booking.setCaregiverId(null);
+        booking.setCaregiverUserId(null);
     }
 
     private void changeOccurrenceStatus(BookingOccurrence occurrence, OccurrenceStatus toStatus, UUID changedBy,
