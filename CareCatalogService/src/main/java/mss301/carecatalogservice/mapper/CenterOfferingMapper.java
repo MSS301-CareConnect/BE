@@ -37,6 +37,7 @@ public interface CenterOfferingMapper {
     @Mapping(target = "pricePlanId", source = "pricePlan.id")
     @Mapping(target = "serviceName", source = "catalogItem.name")
     @Mapping(target = "active", constant = "true")
+    @Mapping(target = "finalPrice", expression = "java(pricePlan.finalPrice())")
     ServiceQuoteResponse toQuoteResponse(CatalogItem catalogItem, CenterOffering centerOffering, PricePlan pricePlan);
 
     @IgnoreServerManagedFields

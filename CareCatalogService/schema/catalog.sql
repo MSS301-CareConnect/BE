@@ -53,6 +53,8 @@ CREATE TABLE price_plans (
     pricing_unit VARCHAR(50) NOT NULL CHECK (pricing_unit IN ('HOUR', 'DAY', 'SHIFT')),
     duration_minutes INT NOT NULL CHECK (duration_minutes > 0),
     base_price DECIMAL(10, 2) NOT NULL CHECK (base_price >= 0),
+    -- Giảm theo % trên base_price (CAT-03); khách trả base_price × (100 − discount_percent) / 100.
+    discount_percent INT NOT NULL DEFAULT 0 CHECK (discount_percent BETWEEN 0 AND 90),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

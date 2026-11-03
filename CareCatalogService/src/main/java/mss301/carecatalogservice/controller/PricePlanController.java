@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import mss301.carecatalogservice.dto.request.PricePlanBatchUpdateRequest;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
@@ -41,6 +42,14 @@ public class PricePlanController {
     public APIResponse<PricePlanResponse> create(@CurrentCenterId UUID centerId,
                                                  @Valid @RequestBody PricePlanRequest request) {
         return pricePlanService.create(centerId, request);
+    }
+
+    // Sửa nhiều gói cùng lúc: tất cả hoặc không gói nào (path cố định được Spring ưu tiên hơn "/{id}").
+    @PutMapping("/batch")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<List<PricePlanResponse>> updateBatch(@CurrentCenterId UUID centerId,
+                                                            @Valid @RequestBody PricePlanBatchUpdateRequest request) {
+        return pricePlanService.updateBatch(centerId, request);
     }
 
     @PutMapping("/{id}")

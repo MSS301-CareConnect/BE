@@ -16,6 +16,9 @@ Quy ước chung: `../AGENTS.md`; phần riêng của service: `AGENTS.md`.
 - **Bảng giá dịch vụ (PricePlan):**
   - Trung tâm cấu hình các gói giá linh hoạt theo đơn vị tính (`pricingUnit`: `HOUR`, `DAY`, `SHIFT`).
   - Định nghĩa thời lượng (`durationMinutes`) và giá gốc (`basePrice`).
+  - CAT-03 (2026-11-03): giảm theo % (`discountPercent`, số nguyên 0–90, mặc định 0). Response trả thêm `finalPrice` =
+    `basePrice × (100 − discountPercent) / 100` làm tròn đến đồng; khách trả `finalPrice` (báo giá cho Booking, giá thấp
+    nhất của price-summary đều theo giá này). Sửa gói mà không gửi `discountPercent` → giữ mức đang lưu.
   - Tự động kiểm tra quyền sở hữu trung tâm trước khi thao tác bảng giá.
 - **Duyệt danh mục & giá:**
   - Cung cấp API xem chi tiết và danh sách dịch vụ theo trung tâm phục vụ đặt lịch và tìm kiếm.
@@ -63,7 +66,10 @@ Get-Content -Raw schema/catalog.sql | docker compose exec -T care-catalog-db psq
 - `POST /api/v1/center-services/quote` (authenticated): báo giá **xác định** — body `{centerId, items[{careServiceId,
   centerServiceId?, pricePlanId}]}`, **`pricePlanId` bắt buộc** (thiếu → 400 `3305`, Catalog không tự chọn gói). Gói phải
   active (`3306`), thuộc đúng dịch vụ trung tâm; dịch vụ trung tâm và danh mục chuẩn phải ACTIVE (`3105`). Trả
-  `[{careServiceId, centerServiceId, pricePlanId, serviceName, pricingUnit, durationMinutes, basePrice, active}]`.
+  `[{careServiceId, centerServiceId, pricePlanId, serviceName, pricingUnit, durationMinutes, basePrice, discountPercent,
+  finalPrice, active}]` — BookingService lấy `finalPrice` làm đơn giá (thiếu thì dùng `basePrice`).
+- `POST /center-services` nhận thêm `pricePlans[]` (tùy chọn, ≤ 20; bỏ qua khi sửa): tạo các gói cùng dịch vụ trong **một
+  transaction** — một gói sai (vd HOUR ≠ 60 phút) thì không tạo gì; response kèm `pricePlans`.
 - Tạo / sửa dịch vụ trung tâm (ACTIVE) yêu cầu danh mục chuẩn ACTIVE (409 `3105`); vẫn tắt được dịch vụ có danh mục đã bị
   vô hiệu hóa. Hai request song song cùng đăng ký một dịch vụ → 409 `3205` (unique index `uk_center_services_center_care`).
 
@@ -78,6 +84,8 @@ Get-Content -Raw schema/catalog.sql | docker compose exec -T care-catalog-db psq
 ### 3. Bảng giá (`/price-plans`)
 - `POST /price-plans`: Tạo bảng giá mới cho dịch vụ trung tâm (*Role: CENTER_MANAGER*)
 - `PUT /price-plans/{id}`: Cập nhật bảng giá (*Role: CENTER_MANAGER*)
+- `PUT /price-plans/batch`: Sửa nhiều gói cùng lúc — body `{items: [{id, plan: PricePlanRequest}]}` (1–50 gói, không trùng
+  id, sai → 400 `3308`); tất cả hoặc không gói nào (một gói version cũ → 409 `3006`, rollback cả lô) (*Role: CENTER_MANAGER*)
 - `GET /price-plans/center-service/{centerServiceId}`: Lấy các bảng giá của một dịch vụ trung tâm
 - `GET /price-plans/{id}`: Lấy chi tiết bảng giá
 - `DELETE /price-plans/{id}`: Xóa mềm bảng giá (*Role: CENTER_MANAGER*)

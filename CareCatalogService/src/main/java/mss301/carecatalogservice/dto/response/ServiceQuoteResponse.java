@@ -28,5 +28,10 @@ public class ServiceQuoteResponse {
 
     BigDecimal basePrice;
 
+    Integer discountPercent;
+
+    // Đơn giá khách trả (sau giảm) — Booking tính tiền theo giá này.
+    BigDecimal finalPrice;
+
     boolean active;
 }

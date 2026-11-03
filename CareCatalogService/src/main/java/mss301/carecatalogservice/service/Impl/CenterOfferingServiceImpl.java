@@ -28,6 +28,7 @@ import mss301.carecatalogservice.repository.CenterPriceView;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.CatalogQuoteService;
 import mss301.carecatalogservice.service.CenterOfferingService;
+import mss301.carecatalogservice.service.PricePlanService;
 import mss301.carecatalogservice.util.PageRequests;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -57,6 +58,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     PricePlanRepository pricePlanRepository;
     CenterOfferingMapper centerOfferingMapper;
     CatalogQuoteService catalogQuoteService;
+    PricePlanService pricePlanService;
 
     @Override
     @Transactional(readOnly = true)
@@ -111,9 +113,10 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
                 ? pricePlanRepository.findSellablePrices(ServiceStatus.ACTIVE)
                 : pricePlanRepository.findSellablePricesByCatalogItem(request.getCareServiceId(), ServiceStatus.ACTIVE);
         // Gom theo trung tâm, chỉ tính gói nằm trong khoảng giá; TreeMap để thứ tự kết quả ổn định.
+        // Lọc / lấy giá thấp nhất theo giá khách trả (sau giảm), không theo giá gốc.
         Map<UUID, BigDecimal> minPriceByCenter = prices.stream()
-                .filter(price -> isInRange(price.getBasePrice(), request.getMinPrice(), request.getMaxPrice()))
-                .collect(Collectors.toMap(CenterPriceView::getCenterId, CenterPriceView::getBasePrice,
+                .filter(price -> isInRange(findFinalPrice(price), request.getMinPrice(), request.getMaxPrice()))
+                .collect(Collectors.toMap(CenterPriceView::getCenterId, this::findFinalPrice,
                         BigDecimal::min, TreeMap::new));
         List<PriceSummaryResponse> priceSummaryResponses = new ArrayList<>();
         minPriceByCenter.forEach((centerId, minPrice) ->
@@ -134,7 +137,14 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         offering.setCenterId(centerId);
         CenterOffering saved = centerOfferingRepository.save(offering);
         log.info("Created center offering {} for center {}", saved.getId(), centerId);
-        CenterOfferingResponse centerOfferingResponse = centerOfferingMapper.toResponse(saved);
+        if (request.getPricePlans() == null || request.getPricePlans().isEmpty()) {
+            CenterOfferingResponse centerOfferingResponse = centerOfferingMapper.toResponse(saved);
+            return APIResponse.success("Đăng ký dịch vụ cho trung tâm thành công", centerOfferingResponse);
+        }
+        // Gói giá gửi kèm: cùng transaction, một gói sai thì không tạo cả dịch vụ.
+        List<PricePlan> pricePlans = pricePlanService.createForOffering(saved, request.getPricePlans());
+        log.info("Created {} price plans with center offering {}", pricePlans.size(), saved.getId());
+        CenterOfferingResponse centerOfferingResponse = centerOfferingMapper.toResponse(saved, pricePlans);
         return APIResponse.success("Đăng ký dịch vụ cho trung tâm thành công", centerOfferingResponse);
     }
 
@@ -227,6 +237,10 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return offering.getStatus() == ServiceStatus.ACTIVE
                 && offering.getCatalogItem().getStatus() == ServiceStatus.ACTIVE
                 && !activePricePlans.isEmpty();
+    }
+
+    private BigDecimal findFinalPrice(CenterPriceView price) {
+        return PricePlan.applyDiscount(price.getBasePrice(), price.getDiscountPercent());
     }
 
     private boolean isInRange(BigDecimal price, BigDecimal minPrice, BigDecimal maxPrice) {

@@ -8,4 +8,6 @@ public interface CenterPriceView {
     UUID getCenterId();
 
     BigDecimal getBasePrice();
+
+    Integer getDiscountPercent();
 }

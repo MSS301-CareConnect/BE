@@ -29,7 +29,10 @@ Service hiện **không gọi service nào** (không Feign client); Booking / Pr
    active và thuộc đúng dịch vụ trung tâm; dịch vụ trung tâm + danh mục chuẩn phải ACTIVE. Cùng input → cùng kết quả.
 2. **HOUR = 60 phút**: đơn giá theo giờ luôn trên 60 phút (Booking nhân với số giờ của buổi). Kiểm ở service
    (`INVALID_DURATION`) **và** CHECK `ck_price_plans_hour_duration` trong SQL.
-3. `isActive` của gói giá do service quyết định (mapper ignore): tạo không gửi → `true`; sửa không gửi → giữ giá trị cũ.
+3. `isActive` và `discountPercent` của gói giá do service quyết định (mapper ignore): tạo không gửi → `true` / `0`; sửa không
+   gửi → giữ giá trị cũ.
+3a. **Giảm giá % (CAT-03)**: `discount_percent` 0–90 (Bean Validation `INVALID_DISCOUNT_PERCENT` 3307 + CHECK SQL). Giá khách
+   trả = `PricePlan.applyDiscount` (làm tròn đến đồng) — một công thức cho response, báo giá và price-summary.
 4. Dịch vụ trung tâm ACTIVE chỉ dùng danh mục chuẩn ACTIVE (`SERVICE_NOT_ACTIVE`); tắt dịch vụ thì luôn được.
 5. Một trung tâm đăng ký một dịch vụ chuẩn một lần: kiểm ở service + unique index `uk_center_services_center_care`
    (race → `GlobalExceptionHandler` map thành `CENTER_SERVICE_ALREADY_EXISTS`).

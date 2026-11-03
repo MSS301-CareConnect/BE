@@ -51,7 +51,9 @@ public enum ErrorCode {
     INVALID_DURATION(3303, "Duration (minutes) must be greater than 0; an hourly (HOUR) price plan must be 60 minutes", HttpStatus.BAD_REQUEST),
     INVALID_BASE_PRICE(3304, "Base price must be greater than or equal to 0", HttpStatus.BAD_REQUEST),
     PRICE_PLAN_ID_REQUIRED(3305, "A price plan must be selected for each service", HttpStatus.BAD_REQUEST),
-    PRICE_PLAN_NOT_ACTIVE(3306, "Price plan is not currently active", HttpStatus.CONFLICT);
+    PRICE_PLAN_NOT_ACTIVE(3306, "Price plan is not currently active", HttpStatus.CONFLICT),
+    INVALID_DISCOUNT_PERCENT(3307, "Discount must be a whole percentage from 0 to 90", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_BATCH_INVALID(3308, "A batch must list 1 to 50 distinct price plans", HttpStatus.BAD_REQUEST);
 
     private int code;
     private String message;

@@ -38,7 +38,7 @@ public interface PricePlanRepository extends JpaRepository<PricePlan, UUID> {
 
     // Gói giá đang bán (gói active, offering + danh mục chuẩn ở trạng thái bán) của mọi trung tâm, cho price-summary.
     @Query("""
-            select o.centerId as centerId, p.basePrice as basePrice
+            select o.centerId as centerId, p.basePrice as basePrice, p.discountPercent as discountPercent
             from PricePlan p join p.centerOffering o join o.catalogItem i
             where p.isActive = true
               and p.deletedAt is null
@@ -51,7 +51,7 @@ public interface PricePlanRepository extends JpaRepository<PricePlan, UUID> {
 
     // Như trên nhưng chỉ cho một dịch vụ chuẩn — tách method thay vì tham số nullable (PostgreSQL không suy được kiểu).
     @Query("""
-            select o.centerId as centerId, p.basePrice as basePrice
+            select o.centerId as centerId, p.basePrice as basePrice, p.discountPercent as discountPercent
             from PricePlan p join p.centerOffering o join o.catalogItem i
             where i.id = :catalogItemId
               and p.isActive = true

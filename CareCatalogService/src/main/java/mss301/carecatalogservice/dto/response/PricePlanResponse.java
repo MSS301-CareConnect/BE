@@ -19,6 +19,9 @@ public class PricePlanResponse {
     PricingUnit pricingUnit;
     Integer durationMinutes;
     BigDecimal basePrice;
+    // Giá gốc = basePrice; khách trả finalPrice = basePrice × (100 − discountPercent) / 100, làm tròn đến đồng.
+    Integer discountPercent;
+    BigDecimal finalPrice;
     Boolean isActive;
 
     Long version;
