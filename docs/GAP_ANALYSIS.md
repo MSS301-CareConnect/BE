@@ -461,7 +461,7 @@ Ký hiệu: ✅ Đã có · ⚠️ Có nhưng thiếu/sai · ❌ Chưa có. Cộ
 | Refund | ❌ | REFUND_PENDING → REFUNDED / FAILED (FAILED → REFUND_PENDING khi retry) (PAY-10) |
 | Remaining invoice | ❌ | PENDING → PAID / OVERDUE; OVERDUE → PAID (PAY-11) |
 | Settlement | ❌ | DRAFT → CONFIRMED → PAID (PAY-14) |
-| Center | ⚠️ chuyển tùy ý (`CareCenterServiceImpl.java:118-135`) | PENDING → ACTIVE / REJECTED; ACTIVE ↔ SUSPENDED; ACTIVE ↔ INACTIVE; * → ARCHIVED (PRV-04) |
+| Center | ⚠️ chuyển tùy ý (`CareCenterServiceImpl.java:118-135`) | PENDING → ACTIVE / REJECTED; ACTIVE ↔ SUSPENDED; ACTIVE ↔ INACTIVE; * → ARCHIVED; ARCHIVED → INACTIVE qua `/restore` (PRV-04, D31) |
 | Caregiver credential | ⚠️ PENDING → VERIFIED / REJECTED | PENDING → CENTER_VERIFIED → ADMIN_VERIFIED; REJECTED (PRV-05) |
 | Caregiver profile | ⚠️ verify kích hoạt lại hồ sơ ARCHIVED (`CaregiverServiceImpl.java:160-178`) | Chặn chuyển từ ARCHIVED; ACTIVE chỉ khi VERIFIED (PRV-05, PRV-06) |
 | Complaint | ❌ | OPEN → IN_PROGRESS → RESOLVED; OPEN/IN_PROGRESS/RESOLVED → ESCALATED → RESOLVED_BY_ADMIN (FB-02) |

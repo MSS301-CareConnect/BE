@@ -4,7 +4,8 @@
 > Báo cáo chi tiết từng đợt: `2026-11-02-BOOKING_FLOW_REVIEW.md` (gọi tắt **REVIEW**) — §1–§7 rà soát và quyết định,
 > §8 đợt 1–3, §9 đợt 4, §10 đợt 5.
 >
-> **Trạng thái: ĐANG DỪNG theo yêu cầu của chủ dự án (2026-11-03).** Đã làm xong X1 và đợt 1–5; đợt 6 (tài liệu) chưa làm.
+> **Trạng thái (2026-11-03): đã làm xong X1 và đợt 1–6.** Tài liệu luồng sau khi sửa: `2026-11-03-BOOKING_FLOW_V1.md`.
+> Phần còn lại cần chủ dự án (áp change script, commit, trả lời Q11 / Q12, duyệt G) hoặc cần stack chạy (E2E).
 > Mọi thay đổi ở 3 repo (BE, FE-careconnect, careconnect-mobile) **chưa commit / push**.
 
 ---
@@ -21,17 +22,27 @@
 | 6 | Đợt 3 — API `held-schedules` + form đặt lịch FE | Xong | REVIEW §8 |
 | 7 | Đợt 4 — PaymentService: thanh toán đầu (SHIFT 100 %, RECURRING / CUSTOM theo % cọc), phần còn lại trước buổi đầu, quá hạn → EXPIRED + giữ cọc, hoàn 100 / 70, doanh thu cho manager; kèm phần BookingService (`fully_paid_at`, chặn check-in, nhắc trả) | Xong | REVIEW §9 |
 | 8 | Đợt 5 — FE: thanh toán đầu / phần còn lại, khung hoàn tiền theo center policy, form chính sách cho manager / admin, hủy từng buổi, doanh thu trung tâm | Xong | REVIEW §10 |
+| 9 | Đợt 6 — tài liệu: luồng theo vai trò, Mermaid state / sequence, API contract, policy, mã lỗi, edge case, 14 kịch bản test thủ công, tồn đọng | Xong | `2026-11-03-BOOKING_FLOW_V1.md`, REVIEW §11 |
+| 10 | Trung tâm ARCHIVED (X2): khôi phục về `INACTIVE` — làm ngoài phạm vi booking | Xong | D31 trong `IMPLEMENTATION_PROGRESS.md` |
+| 11 | Q11 giờ lẻ (90 phút = 1,5 giờ) + Q12 cửa sổ check-in theo center policy (BE, FE, mobile) | Xong | REVIEW §12; change script `2026-11-03_booking_spec_v1_q11_q12.sql` |
+
+### Lỗi phát hiện khi chủ dự án chạy thử (2026-11-03) — đã sửa, chưa commit
+
+| Lỗi | Nguyên nhân | Sửa |
+|---|---|---|
+| Form đặt lịch báo "Không tải được người chăm sóc của trung tâm" ngay khi chọn dịch vụ | FE gọi `GET /caregivers/search` với `size=100`, Provider chỉ nhận tối đa 50 → 400 (log gateway). Test FE mock API nên không bắt được | `use-booking-providers.ts`: `size=50`, đọc đủ các trang (tối đa 10 = 500 ứng viên của BE); test mới cho nhiều trang |
+| `GET /provider-media/CAREGIVER_PROFILE/{id}` trả 500 (`LazyInitializationException`), ảnh người chăm sóc không hiện | `ProviderMediaServiceImpl.list` / upload / delete chạy ngoài transaction (có gọi MediaService) nhưng đọc `caregiver.center` lazy khi kiểm quyền (khách và manager) | `CaregiverProfileRepository.findWithCenterById`, `CertificateRepository.findWithCaregiverById` (join fetch); test tích hợp mới. **Cần build lại provider-service** |
 
 ### Kiểm thử lần chạy gần nhất
 
 | Phần | Kết quả |
 |---|---|
-| BookingService | H2: 116 test, 0 lỗi, 2 skip. PostgreSQL: 115 / 116 — lỗi có sẵn từ trước (G14) |
+| BookingService | H2: 118 test, 0 lỗi, 2 skip. PostgreSQL: 117 / 118 — lỗi có sẵn từ trước (G14) |
 | PaymentService | 48 / 48 (H2 và PostgreSQL) |
-| ProviderService | 66 / 66 (đợt 2; đợt 4–5 không đổi) |
+| ProviderService | 71 / 71 (sau D31 và sửa media) |
 | ApiGateway | 20 / 20 (đợt 1; sau đó không đổi) |
 | FE | typecheck, lint, build pass; 84 file / 350 test pass |
-| Mobile | 101 / 101 (đợt 1; sau đó không đổi) |
+| Mobile | 101 / 101 (sau Q12) |
 | Change script | Schema cũ + change script **khớp** schema tạo mới (Booking, Payment); script Payment chạy lại được |
 
 ---
@@ -40,20 +51,16 @@
 
 | # | Việc | Ai làm | Ghi chú |
 |---|---|---|---|
-| 1 | **Đợt 6 — tài liệu Giai đoạn 5**: luồng chi tiết theo từng vai trò; Mermaid `stateDiagram-v2` + bảng chuyển trạng thái; sơ đồ sequence; API contract; edge case; hướng dẫn test thủ công; tồn đọng tổng hợp. Danh sách thay đổi đã có ở REVIEW §8.1, §9.2, §10.1 | Tôi, khi được duyệt | Đang dừng theo yêu cầu |
-| 2 | Kiểm trên trình duyệt thật (end-to-end) | Tôi, sau mục 3 | Stack chưa chạy trên máy |
-| 3 | Áp change script cho DB dev (hoặc reset DB): Booking `2026-11-02_booking_spec_v1.sql` rồi `2026-11-02_booking_spec_v1_payment.sql`; Payment `2026-11-02-payment-spec-v1.sql`. Build lại booking-service, payment-service, provider-service, api-gateway | Chủ dự án | REVIEW §8.3, §9.4 |
-| 4 | Commit từng repo — BE: issuer, đợt 1–3, đợt 4; FE: đợt 1–3, đợt 5; mobile: đợt 1 | Chủ dự án | Message đề xuất ở REVIEW §8.6, §9.7, §10.5 |
-| 5 | Trả lời **Q11** (làm tròn giờ: 90 phút = 1,5 giờ theo spec §7.2 hay 2 giờ như code hiện tại) và **Q12** (đợt nào áp cửa sổ check-in của policy) | Chủ dự án | REVIEW §8.5 |
-| 6 | Duyệt / bỏ các đề xuất G1–G11, G13–G25 (G12 đã làm qua X1) | Chủ dự án | REVIEW §6, §7.7, §8.5, §9.6, §10.4 |
-| 7 | Hỏi người viết spec: thứ tự chọn caregiver ↔ dịch vụ (Q10), admin hủy booking (Q9), mất cọc khi quá hạn thanh toán (M3) | Chủ dự án | REVIEW §7.8 |
-| 8 | Trung tâm ARCHIVED (X2) | Backlog | Ngoài phạm vi booking |
+| 1 | Kiểm trên trình duyệt thật (end-to-end) theo 14 kịch bản ở `2026-11-03-BOOKING_FLOW_V1.md` §7 | Tôi, sau mục 2 | Stack chưa chạy trên máy |
+| 2 | Áp change script cho DB dev (hoặc reset DB): Booking `2026-11-02_booking_spec_v1.sql` rồi `2026-11-02_booking_spec_v1_payment.sql`; Payment `2026-11-02-payment-spec-v1.sql`; Booking `2026-11-03_booking_spec_v1_q11_q12.sql` (Q11 / Q12). Build lại booking-service, payment-service, provider-service, api-gateway | Chủ dự án | REVIEW §8.3, §9.4, §12 |
+| 3 | Commit từng repo — BE: issuer, đợt 1–3, đợt 4; FE: đợt 1–3, đợt 5, D31; mobile: đợt 1; BE: tài liệu đợt 6 + D31 | Chủ dự án | Message đề xuất ở REVIEW §8.6, §9.7, §10.5 |
+| 4 | Duyệt / bỏ các đề xuất G1–G11, G13–G25 (G12 đã làm qua X1) | Chủ dự án | REVIEW §6, §7.7, §8.5, §9.6, §10.4 |
+| 5 | Hỏi người viết spec: thứ tự chọn caregiver ↔ dịch vụ (Q10), admin hủy booking (Q9), mất cọc khi quá hạn thanh toán (M3) | Chủ dự án | REVIEW §7.8 |
 
 ### Tồn đọng đã biết (chưa xử lý, không chặn)
 
 | # | Nội dung | Chi tiết |
 |---|---|---|
-| T3 | Cửa sổ check-in theo policy chưa được áp dụng (chờ Q12) | REVIEW §8.4 |
 | T6 | Lịch tháng chỉ vẽ booking CUSTOM ở ngày đầu (G15) | REVIEW §8.4 |
 | T10 | Hóa đơn bị giảm trong lúc khách đang mở phiên trả với số tiền cũ → phần trả dư không tự hoàn (G19) | REVIEW §9.5 |
 | T11 | Thứ tự khóa khác nhau giữa lệnh hoàn và IPN → có thể xảy ra deadlock hiếm gặp (G20) | REVIEW §9.5 |

@@ -487,3 +487,24 @@ version cũ → 409) · PaymentService ✅ 43 · FE `pnpm check` ✅ 71 file / 2
 soft-delete aware unique email and caregiver account` · `fix(booking): booking horizon and minimum visit length; hide booking id
 in public reviews` · `refactor(payment): explicit imports` · `docs: update AGENTS and ARCHITECTURE` · FE `chore: catalog
 version, error copy, route meta cleanup, Node engine`
+
+## D31 — Khôi phục trung tâm đã lưu trữ (2026-11-03) — XONG, chưa commit
+
+Trước đây `ARCHIVED` là trạng thái cuối: admin không mở được chi tiết (404), lưu trữ nhầm hay trung tâm muốn hoạt động
+lại thì phải tạo trung tâm mới, mất lịch sử booking / đánh giá / caregiver. Quyết định: giữ `ARCHIVED` (xóa mềm, trả
+email + manager cho trung tâm khác, ra khỏi danh sách và thống kê) nhưng cho phép khôi phục về `INACTIVE` để rà soát lại.
+
+- **Provider** — `POST /api/v1/care-centers/{id}/restore` (ADMIN, `CenterRestoreRequest { reason (bắt buộc ≤ 500),
+  version }`) → `INACTIVE`, `deleted_at = null`, `statusReason = reason`. Email đã thuộc trung tâm chưa xóa khác → 409
+  `4101` (không khôi phục). Manager đã quản lý trung tâm khác → gỡ `managerUserId`, message báo cần gán manager mới.
+  Trung tâm không ở trạng thái lưu trữ → 404. Không dây chuyền: caregiver không đổi trạng thái khi lưu trữ nên hiện lại
+  như cũ; booking mới chỉ nhận khi trung tâm ACTIVE.
+- `INACTIVE → ACTIVE` giờ kiểm manager như `PENDING → ACTIVE` (`4120` / Identity `4503`). `SUSPENDED → ACTIVE` không
+  kiểm vì tài khoản manager đang bị khóa và chỉ mở lại qua RESUME.
+- Admin `GET /care-centers/{id}` đọc được trung tâm đã lưu trữ; role khác vẫn 404.
+- **FE** — thẻ Đã lưu trữ mở được trung tâm; trang chi tiết chỉ đọc (Tổng quan, Lịch đặt, Hoạt động; ẩn Sửa / Lưu trữ /
+  Nhân sự / Hình ảnh), khối trạng thái có nút **Khôi phục** (hộp thoại nhập lý do). Map `4101` thành câu nghiệp vụ.
+  OpenAPI thêm `restoreProviderCenter` + `CenterRestoreRequest`, đã generate.
+- Test: Provider ✅ 32 integration + 7 unit CareCenterService (thêm khôi phục, email trùng, manager đã chuyển, INACTIVE →
+  ACTIVE không manager). FE ✅ 17 test thư mục `admin/centers`, typecheck + eslint sạch.
+- Còn mở: khôi phục hồ sơ người bệnh / caregiver đã lưu trữ (M-07) chưa làm — cùng mẫu này nếu chủ dự án đồng ý.

@@ -2,7 +2,7 @@
 
 > Đối chiếu `CareConnect_Booking_Business_Specification.docx` (v1.0, 02/11/2026) với code hiện tại của
 > BookingService, PaymentService, ProviderService và FE-careconnect.
-> **Trạng thái: X1 + đợt 1–5 đã làm xong, test xanh (§8, §9, §10). CHỜ DUYỆT trước đợt 6 (tài liệu). Không commit / push (chủ dự án tự làm).**
+> **Trạng thái: X1 + đợt 1–6 đã làm xong (§8, §9, §10, §11). Tài liệu luồng sau khi sửa: `2026-11-03-BOOKING_FLOW_V1.md`. Không commit / push (chủ dự án tự làm).**
 >
 > Vị trí file: dự án đặt tài liệu tại `BE/docs/<yyyy-MM-dd>-<TÊN>.md` (BE/AGENTS.md §2), nên không tạo `docs/booking/`.
 > Tài liệu booking cũ: `2026-10-09-PLAN_BOOKING.md`, `GAP_ANALYSIS.md` (D1–D14),
@@ -951,3 +951,56 @@ feat(payment,booking): booking spec v1.0 payments and center booking policy UI
 - Center managers cancel a single paid visit (B16) and see the center's net revenue
 - Fix the caregiver card still keyed on the pre-v1 statuses in the customer booking summary
 ```
+
+
+---
+
+## 11. Kết quả đợt 6 — Tài liệu (2026-11-03)
+
+Tài liệu luồng sau khi sửa tách thành file riêng **`2026-11-03-BOOKING_FLOW_V1.md`** (file này đã gần 1000 dòng và là
+nhật ký rà soát; file mới mô tả trạng thái hiện tại của code để tra cứu). Nội dung:
+
+| Mục | Nội dung |
+|---|---|
+| §1 | Ba loại booking, các mốc thời gian lưu trên booking và cách tính |
+| §2 | Luồng theo vai trò (khách, manager, caregiver, admin, hệ thống), kèm màn hình FE và API |
+| §3 | Mermaid `stateDiagram-v2` + bảng chuyển cho booking, buổi chăm sóc, hóa đơn phần còn lại |
+| §4 | Sơ đồ tuần tự: RECURRING chưa có caregiver tới trả đủ; SHIFT 100 %; quá hạn phần còn lại; hủy một buổi đã trả |
+| §5 | API contract của Booking và phần Payment / Provider dùng, body tạo booking, center policy (mặc định, giới hạn, ràng buộc), mã lỗi thường gặp |
+| §6 | Edge case (spec §15 và phát sinh khi làm) |
+| §7 | Hướng dẫn test thủ công: chuẩn bị và 14 kịch bản |
+| §8 | Tồn đọng tổng hợp và câu hỏi còn mở |
+
+Mọi giá trị (trạng thái, cạnh chuyển, role, mặc định policy, mã lỗi) đối chiếu lại với code lúc viết. Không sửa code
+trong đợt này, trừ một comment cũ trong `BookingService/src/main/resources/application.yaml` (giới hạn booking chờ
+còn ghi tên trạng thái trước v1).
+
+Trung tâm ARCHIVED (X2) đã làm ngoài phạm vi booking: khôi phục về `INACTIVE` (D31, `IMPLEMENTATION_PROGRESS.md`).
+
+---
+
+## 12. Q11 + Q12 (2026-11-03) — chưa commit
+
+Chủ dự án chốt: Q11 tính giờ lẻ theo spec (90 phút = 1,5 giờ); các câu hỏi khác theo đề xuất của tôi. Q12 → áp ngay
+cửa sổ check-in của center policy. Q9 / Q10 / M3 giữ quyết định đã chốt (§7.1, §7.8), chỉ còn chờ người viết spec xác nhận.
+
+| # | Quyết định / cách làm | Lý do |
+|---|---|---|
+| Q11 | HOUR: số giờ = phút / 60 (lưu 4 chữ số thập phân), tiền dòng = đơn giá × phút / 60 tính chính xác, giá buổi làm tròn đến đồng. `booking_details.quantity` / `units_per_occurrence` sang `numeric` | Spec §7.2 "làm tròn theo quy tắc tiền tệ" áp cho tiền, không cho số giờ. Booking cũ giữ số nguyên đã tính, tiền không đổi |
+| Q12 | `bookings.check_in_early_minutes` / `check_in_late_minutes` chụp từ policy lúc tạo. Check-in `[start − early, start + late)`, báo vắng `[start, start + late)`, job MISSED khi `start + late ≤ now` (HQL `o.startAt + (b.checkInLateMinutes) minute`). Buổi của caregiver trả `checkInOpensAt` / `checkInClosesAt`; web và mobile dùng mốc này (30' chỉ là dự phòng) | Job MISSED quét bằng một query nên cần mốc theo từng dòng; chụp lúc tạo giống các hạn khác và `policy_snapshot` của Payment — đổi policy không đổi cửa sổ của ca đã đặt. Bỏ env `BOOKING_SESSION_START_WINDOW`, `BOOKING_MISSED_GRACE` |
+
+| Repo | File chính |
+|---|---|
+| BE Booking | `BookingPriceCalculatorImpl`, `ServiceQuote`, `BookingDetail`, `BookingItemResponse`, `QuoteLineResponse`; `Booking`, `IgnoreServerManagedBookingFields`, `BookingServiceImpl`, `CareSessionServiceImpl`, `BookingOccurrenceServiceImpl`, `BookingOccurrenceRepository.findMissedIds`, `CaregiverOccurrenceResponse`, `OccurrenceMapper`, `ErrorCode` (5222, 5817 không còn ghi 30'), `BookingProperties`, `application.yaml`, `.env.example`; `schema/booking.sql`, `schema/changes/2026-11-03_booking_spec_v1_q11_q12.sql`; README, AGENTS |
+| FE | `openapi.yaml` (+ generate): units `number`, `checkInOpensAt` / `checkInClosesAt`; `caregiver/visits/components/visit-actions.tsx`; câu chữ check-in, mã 5222 / 5817, ghi chú form policy |
+| Mobile | `core/time.ts` `checkInAllowed`, `visits/models.ts`, `visits/screens.tsx`, `core/l10n.ts` |
+
+**Kiểm thử.** BookingService H2 **118 / 118** (2 skip); PostgreSQL 17 tạm **117 / 118** — lỗi duy nhất vẫn là G14 có
+sẵn. Test mới: 90 phút = 1,5 giờ / 150.000đ, 70 phút = 116.667đ; báo giá và booking 150 phút = 2,5 giờ; cửa sổ 60' / 10'
+theo policy, đổi policy sau khi đặt không ảnh hưởng, job MISSED theo mốc mới; mapper trả mốc mở / đóng. Change script:
+schema HEAD + script **trùng khớp** schema tạo mới (pg_dump). FE: test web liên quan pass, test mới cho cửa sổ theo
+policy. Mobile 101 / 101, tsc pass.
+
+**Cần làm trên DB dev:** áp `schema/changes/2026-11-03_booking_spec_v1_q11_q12.sql` rồi build lại booking-service (thiếu
+script thì service dừng ở bước `ddl-auto: validate`).
+
