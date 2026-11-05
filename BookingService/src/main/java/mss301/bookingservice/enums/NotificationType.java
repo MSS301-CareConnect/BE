@@ -17,5 +17,7 @@ public enum NotificationType {
     // CR-3: khách chọn caregiver → đơn tới thẳng caregiver; caregiver từ chối / quá hạn → chuyển trung tâm phân người.
     CAREGIVER_REQUEST, BOOKING_HANDED_OVER,
     // CR-2: khách / trung tâm đổi địa chỉ chăm sóc của booking.
-    BOOKING_ADDRESS_CHANGED
+    BOOKING_ADDRESS_CHANGED,
+    // Nhắc trung tâm: booking sắp quá hạn xác nhận / phân người chăm sóc.
+    CENTER_ACTION_DUE
 }

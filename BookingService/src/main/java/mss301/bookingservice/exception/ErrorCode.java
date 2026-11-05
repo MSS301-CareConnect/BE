@@ -69,11 +69,12 @@ public enum ErrorCode {
     SERVICES_REQUIRED(5108, "At least one service must be selected", HttpStatus.BAD_REQUEST),
     TOO_MANY_SERVICES(5109, "A booking can have at most 10 services", HttpStatus.BAD_REQUEST),
     DUPLICATE_SERVICE(5110, "Each service can only be selected once", HttpStatus.BAD_REQUEST),
-    INVALID_SORT(5112, "Sorting is only allowed by createdAt or startDate, direction asc / desc", HttpStatus.BAD_REQUEST),
+    INVALID_SORT(5112, "Sorting is only allowed by createdAt, startDate or deadlineAt, direction asc / desc", HttpStatus.BAD_REQUEST),
     ADDRESS_LINE_REQUIRED(5113, "Street address is required", HttpStatus.BAD_REQUEST),
     PROVINCE_REQUIRED(5114, "Province / city is required", HttpStatus.BAD_REQUEST),
     SERVICE_ADDRESS_NOT_EDITABLE(5115, "The care address can only be changed while the booking still has upcoming occurrences and no visit is in progress", HttpStatus.CONFLICT),
     CARE_SERVICE_ID_REQUIRED(5111, "Care service is required", HttpStatus.BAD_REQUEST),
+    BOOKING_EXPIRED(5116, "The booking passed its deadline and has expired", HttpStatus.CONFLICT),
 
     // LỊCH / BUỔI CHĂM SÓC
     BOOKING_TYPE_REQUIRED(5200, "Booking type is required (SHIFT, RECURRING, CUSTOM)", HttpStatus.BAD_REQUEST),

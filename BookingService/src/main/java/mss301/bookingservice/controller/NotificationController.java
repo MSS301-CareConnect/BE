@@ -6,9 +6,13 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.request.NotificationRequest;
+import mss301.bookingservice.dto.request.NotificationDeletionRequest;
+import mss301.bookingservice.dto.request.NotificationReadStateRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.NotificationResponse;
 import mss301.bookingservice.dto.response.NotificationsCreatedResponse;
+import mss301.bookingservice.dto.response.NotificationsDeletedResponse;
+import mss301.bookingservice.dto.response.NotificationsUpdatedResponse;
 import mss301.bookingservice.dto.response.UnreadCountResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.NotificationType;
@@ -63,5 +67,37 @@ public class NotificationController {
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<Void> readAll(@CurrentUserId UUID actorId) {
         return notificationService.readAll(actorId);
+    }
+
+    @PatchMapping("/{id}/unread")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
+    public APIResponse<Void> unread(@CurrentUserId UUID actorId, @PathVariable UUID id) {
+        return notificationService.unread(actorId, id);
+    }
+
+    @PatchMapping("/read-state")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
+    public APIResponse<NotificationsUpdatedResponse> updateReadState(@CurrentUserId UUID actorId,
+                                                                     @Valid @RequestBody NotificationReadStateRequest request) {
+        return notificationService.updateReadState(actorId, request);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
+        return notificationService.delete(actorId, id);
+    }
+
+    @PostMapping("/deletions")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
+    public APIResponse<NotificationsDeletedResponse> deleteMany(@CurrentUserId UUID actorId,
+                                                                @Valid @RequestBody NotificationDeletionRequest request) {
+        return notificationService.deleteMany(actorId, request);
+    }
+
+    @DeleteMapping("/read")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
+    public APIResponse<NotificationsDeletedResponse> deleteRead(@CurrentUserId UUID actorId) {
+        return notificationService.deleteRead(actorId);
     }
 }

@@ -11,6 +11,7 @@ import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BookingDetailResponse;
 import mss301.bookingservice.dto.response.BookingHistoryResponse;
 import mss301.bookingservice.dto.response.BookingQuoteResponse;
+import mss301.bookingservice.dto.response.BookingStatusCountsResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
@@ -51,6 +52,14 @@ public class BookingController {
                                                                   @CurrentCenterId(required = false) UUID scopeCenterId,
                                                                   @ParameterObject BookingSearchRequest request) {
         return bookingService.list(actorId, roles, scopeCenterId, request);
+    }
+
+    @GetMapping("/status-counts")
+    @PreAuthorize("hasAnyRole('CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<BookingStatusCountsResponse> countByStatus(@CurrentRoles Set<RoleCode> roles,
+                                                                  @CurrentCenterId(required = false) UUID scopeCenterId,
+                                                                  @RequestParam(required = false) UUID centerId) {
+        return bookingService.countByStatus(roles, scopeCenterId, centerId);
     }
 
     // Spec §3: khách chọn lịch SHIFT — lịch Provider đã bị booking giữ thì giao diện khóa lựa chọn.

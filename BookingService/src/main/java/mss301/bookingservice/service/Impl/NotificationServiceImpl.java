@@ -4,10 +4,14 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.bookingservice.dto.request.NotificationDeletionRequest;
+import mss301.bookingservice.dto.request.NotificationReadStateRequest;
 import mss301.bookingservice.dto.request.NotificationRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.NotificationResponse;
 import mss301.bookingservice.dto.response.NotificationsCreatedResponse;
+import mss301.bookingservice.dto.response.NotificationsDeletedResponse;
+import mss301.bookingservice.dto.response.NotificationsUpdatedResponse;
 import mss301.bookingservice.dto.response.UnreadCountResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.entity.Notification;
@@ -15,6 +19,7 @@ import mss301.bookingservice.enums.NotificationType;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.NotificationMapper;
+import mss301.bookingservice.repository.NotificationLinkView;
 import mss301.bookingservice.repository.NotificationRepository;
 import mss301.bookingservice.service.NotificationService;
 import mss301.bookingservice.util.NotificationTemplates;
@@ -33,18 +38,24 @@ import jakarta.validation.Validator;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
 public class NotificationServiceImpl implements NotificationService {
+    static String BOOKING_REF = "BOOKING";
     NotificationRepository notificationRepository;
     NotificationMapper notificationMapper;
     TransactionTemplate transactionTemplate;
@@ -70,8 +81,7 @@ public class NotificationServiceImpl implements NotificationService {
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         }, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-        PageResponse<NotificationResponse> response = PageResponse.of(notifications,
-                notificationMapper.toResponseList(notifications.getContent()));
+        PageResponse<NotificationResponse> response = PageResponse.of(notifications, toResponses(notifications.getContent()));
         return APIResponse.success("Lấy thông báo thành công", response);
     }
 
@@ -86,8 +96,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional
     public APIResponse<Void> read(UUID userId, UUID id) {
-        Notification notification = notificationRepository.findByIdAndRecipientUserIdAndDeletedAtIsNull(id, userId)
-                .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
+        Notification notification = findOwned(userId, id);
         if (notification.getReadAt() == null) {
             notification.setReadAt(clock.instant());
         }
@@ -99,6 +108,45 @@ public class NotificationServiceImpl implements NotificationService {
     public APIResponse<Void> readAll(UUID userId) {
         notificationRepository.markAllRead(userId, clock.instant());
         return APIResponse.success("Đã đọc tất cả thông báo");
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> unread(UUID userId, UUID id) {
+        findOwned(userId, id).setReadAt(null);
+        return APIResponse.success("Đã đánh dấu chưa đọc");
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<NotificationsUpdatedResponse> updateReadState(UUID userId, NotificationReadStateRequest request) {
+        Set<UUID> ids = Set.copyOf(request.getIds());
+        int updated = request.getRead()
+                ? notificationRepository.markRead(userId, ids, clock.instant())
+                : notificationRepository.markUnread(userId, ids);
+        String message = request.getRead() ? "Đã đánh dấu đã đọc" : "Đã đánh dấu chưa đọc";
+        return APIResponse.success(message, notificationMapper.toUpdatedResponse((long) updated));
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> delete(UUID userId, UUID id) {
+        findOwned(userId, id).setDeletedAt(clock.instant());
+        return APIResponse.success("Đã xóa thông báo");
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<NotificationsDeletedResponse> deleteMany(UUID userId, NotificationDeletionRequest request) {
+        int deleted = notificationRepository.softDelete(userId, Set.copyOf(request.getIds()), clock.instant());
+        return APIResponse.success("Đã xóa thông báo", notificationMapper.toDeletedResponse((long) deleted));
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<NotificationsDeletedResponse> deleteRead(UUID userId) {
+        int deleted = notificationRepository.softDeleteRead(userId, clock.instant());
+        return APIResponse.success("Đã xóa thông báo đã đọc", notificationMapper.toDeletedResponse((long) deleted));
     }
 
     @Override
@@ -165,9 +213,55 @@ public class NotificationServiceImpl implements NotificationService {
         // Callback afterCommit vẫn có resource cũ; transaction mới bảo đảm INSERT được commit thật.
         TransactionTemplate write = new TransactionTemplate(transactionTemplate.getTransactionManager());
         write.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        return write.execute(status -> notificationMapper.toResponseList(notificationRepository.saveAllAndFlush(
+        return write.execute(status -> toResponses(notificationRepository.saveAllAndFlush(
                 request.getRecipientUserIds().stream().distinct()
                         .map(userId -> notificationMapper.toNotification(request, userId)).toList())));
+    }
+
+    // Thông báo của người khác / đã xóa → 404 như không tồn tại.
+    private Notification findOwned(UUID userId, UUID id) {
+        return notificationRepository.findByIdAndRecipientUserIdAndDeletedAtIsNull(id, userId)
+                .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
+    }
+
+    // Gắn đích điều hướng (booking / buổi) suy từ ref — một truy vấn cho mỗi loại ref có mặt.
+    private List<NotificationResponse> toResponses(List<Notification> notifications) {
+        Map<String, Set<UUID>> refIds = new HashMap<>();
+        notifications.stream().filter(notification -> notification.getRefType() != null && notification.getRefId() != null)
+                .forEach(notification -> refIds.computeIfAbsent(notification.getRefType(), type -> new HashSet<>())
+                        .add(notification.getRefId()));
+        Map<UUID, NotificationLinkView> links = new HashMap<>();
+        Map<UUID, UUID> bookingIds = new HashMap<>();
+        findLinks(refIds, "BOOKING_OCCURRENCE", notificationRepository::findOccurrenceLinks, links);
+        findLinks(refIds, "CARE_SESSION", notificationRepository::findSessionLinks, links);
+        findLinks(refIds, "CARE_REPORT", notificationRepository::findReportLinks, links);
+        findLinks(refIds, "COMPLAINT", notificationRepository::findComplaintLinks, links);
+        if (refIds.containsKey("FEEDBACK")) {
+            notificationRepository.findFeedbackLinks(refIds.get("FEEDBACK"))
+                    .forEach(link -> bookingIds.put(link.getRefId(), link.getBookingId()));
+        }
+        List<NotificationResponse> responses = notificationMapper.toResponseList(notifications);
+        for (int i = 0; i < notifications.size(); i++) {
+            Notification notification = notifications.get(i);
+            UUID refId = notification.getRefId();
+            NotificationLinkView link = refId == null ? null : links.get(refId);
+            if (BOOKING_REF.equals(notification.getRefType())) {
+                notificationMapper.updateLink(refId, null, responses.get(i));
+            } else if (link != null) {
+                notificationMapper.updateLink(link.getBookingId(), link.getOccurrenceId(), responses.get(i));
+            } else if (refId != null && bookingIds.containsKey(refId)) {
+                notificationMapper.updateLink(bookingIds.get(refId), null, responses.get(i));
+            }
+        }
+        return responses;
+    }
+
+    private void findLinks(Map<String, Set<UUID>> refIds, String refType,
+                           Function<Collection<UUID>, List<NotificationLinkView>> query,
+                           Map<UUID, NotificationLinkView> links) {
+        if (refIds.containsKey(refType)) {
+            query.apply(refIds.get(refType)).forEach(link -> links.put(link.getRefId(), link));
+        }
     }
 
     private void afterCommit(Runnable action) {

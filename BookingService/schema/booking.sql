@@ -52,6 +52,10 @@ CREATE TABLE bookings (
     fully_paid_at       timestamptz,
     -- Mốc nhắc trả phần còn lại nhỏ nhất đã gửi / đã bỏ qua (phút trước hạn, M6); NULL = chưa nhắc.
     remaining_reminder_minutes integer,
+    -- Mốc nhắc trung tâm trước hạn xác nhận / phân công nhỏ nhất đã gửi / đã bỏ qua (phút trước hạn); NULL = chưa nhắc.
+    center_reminder_minutes integer,
+    -- Bên chưa làm kịp khi EXPIRED (suy từ trạng thái lúc hết hạn); NULL ở trạng thái khác.
+    expired_reason      varchar(40),
     confirmed_at        timestamptz,
     started_at          timestamptz,
     completed_at        timestamptz,
@@ -100,6 +104,8 @@ CREATE TABLE bookings (
     CONSTRAINT ck_bookings_amounts CHECK ((subtotal IS NULL OR subtotal >= 0)
         AND (deposit_amount IS NULL OR deposit_amount >= 0)
         AND (total_amount IS NULL OR total_amount >= 0)),
+    CONSTRAINT ck_bookings_expired_reason CHECK (expired_reason IS NULL OR expired_reason IN ('CENTER_CONFIRMATION_TIMEOUT',
+        'CAREGIVER_CONFIRMATION_TIMEOUT', 'ASSIGNMENT_TIMEOUT', 'INITIAL_PAYMENT_TIMEOUT', 'PAYMENT_OVERDUE')),
     CONSTRAINT ck_bookings_version CHECK (version >= 0)
 );
 
@@ -400,7 +406,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),
@@ -512,6 +518,8 @@ CREATE TABLE care_report_media (
     PRIMARY KEY (report_id, media_file_id)
 );
 CREATE INDEX idx_notifications_recipient_unread ON notifications (recipient_user_id, read_at, created_at DESC);
+-- SLA trung tâm (thống kê): booking hết hạn theo lý do.
+CREATE INDEX idx_bookings_expired_reason ON bookings (center_id, created_at) WHERE expired_reason IS NOT NULL;
 CREATE INDEX idx_notes_session ON care_session_notes (session_id, created_at DESC);
 CREATE INDEX idx_reports_booking ON care_reports (booking_id, created_at DESC);
 CREATE INDEX idx_feedbacks_caregiver ON feedbacks (caregiver_id, created_at DESC);

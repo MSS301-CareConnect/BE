@@ -20,6 +20,7 @@ import mss301.bookingservice.dto.response.BookingHistoryResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.SystemCancellationResponse;
 import mss301.bookingservice.dto.response.BookingQuoteResponse;
+import mss301.bookingservice.dto.response.BookingStatusCountsResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
@@ -42,6 +43,10 @@ public interface BookingService {
 
     APIResponse<PageResponse<BookingSummaryResponse>> list(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                            BookingSearchRequest request);
+
+    // Hàng đợi trung tâm: số booking theo trạng thái + hạn gần nhất / sắp quá hạn. Manager: trung tâm trong token;
+    // admin: centerId (null = toàn hệ thống).
+    APIResponse<BookingStatusCountsResponse> countByStatus(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId);
 
     // BK-05: lịch sử trạng thái booking + sự kiện từng buổi, sắp theo thời gian; phạm vi như get.
     APIResponse<PageResponse<BookingHistoryResponse>> listHistory(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
@@ -121,4 +126,8 @@ public interface BookingService {
     List<UUID> findRemainingReminderIds();
 
     void remindRemainingPayment(UUID id);
+
+    List<UUID> findCenterReminderIds();
+
+    void remindCenterAction(UUID id);
 }

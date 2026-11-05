@@ -20,4 +20,5 @@ public class OperationalStatisticsResponse {
     ComplaintStatisticsResponse complaints;
     List<TopCaregiverResponse> topCaregivers;
     PageResponse<CenterOperationalStatsResponse> byCenter;
+    ResponsivenessStatisticsResponse responsiveness;
 }

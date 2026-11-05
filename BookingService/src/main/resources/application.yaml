@@ -137,8 +137,12 @@ booking:
     # Caregiver còn xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (BK-07).
     caregiver-access-grace: ${BOOKING_CAREGIVER_ACCESS_GRACE:24h}
     expiry-batch-size: ${BOOKING_EXPIRY_BATCH_SIZE:100}
-    # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler).
-    expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:5m}
+    # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler); lượt đầu sau khởi động.
+    expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:1m}
+    expiry-initial-delay: ${BOOKING_EXPIRY_INITIAL_DELAY:30s}
+    # Nhắc trung tâm trước hạn xác nhận / phân công (phút trước hạn) và cửa sổ "sắp quá hạn" của hàng đợi.
+    center-reminder-minutes: ${BOOKING_CENTER_REMINDER_MINUTES:720,120}
+    due-soon-window: ${BOOKING_DUE_SOON_WINDOW:2h}
 
   # Center booking policy mặc định (spec §8) cho trung tâm chưa cấu hình riêng — phút / phần trăm.
   policy-defaults:

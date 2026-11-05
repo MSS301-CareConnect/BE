@@ -10,6 +10,8 @@ import mss301.bookingservice.client.dto.ProviderCenterResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
 import mss301.bookingservice.enums.NotificationType;
 import mss301.bookingservice.enums.BookingAction;
+import mss301.bookingservice.enums.BookingExpiredReason;
+import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingOccurrence;
 import java.util.ArrayList;
@@ -23,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +41,13 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     Clock clock;
     TransactionTemplate transactionTemplate;
     BookingProperties bookingProperties;
+    static DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
+    static Map<BookingExpiredReason, String> EXPIRED_BODIES = Map.of(
+            BookingExpiredReason.CENTER_CONFIRMATION_TIMEOUT, "trung tâm chưa xác nhận kịp hạn, chưa phát sinh thanh toán",
+            BookingExpiredReason.CAREGIVER_CONFIRMATION_TIMEOUT, "người chăm sóc chưa trả lời kịp hạn, chưa phát sinh thanh toán",
+            BookingExpiredReason.ASSIGNMENT_TIMEOUT, "trung tâm chưa phân người chăm sóc kịp hạn, chưa phát sinh thanh toán",
+            BookingExpiredReason.INITIAL_PAYMENT_TIMEOUT, "chưa thanh toán khoản đầu đúng hạn",
+            BookingExpiredReason.PAYMENT_OVERDUE, "chưa thanh toán phần còn lại đúng hạn");
     ConcurrentHashMap<UUID, UUID> managerIds = new ConcurrentHashMap<>();
     ConcurrentHashMap<UUID, Instant> expiresAt = new ConcurrentHashMap<>();
 
@@ -68,7 +78,10 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         boolean awaitingPayment = action == BookingAction.ACCEPT || action == BookingAction.ASSIGN_CAREGIVER
                 || action == BookingAction.CAREGIVER_ACCEPT;
         if (awaitingPayment && booking.getDepositDueAt() != null) {
-            body += ": vui lòng thanh toán trước " + booking.getDepositDueAt();
+            body += ": vui lòng thanh toán trước " + formatTime(booking.getDepositDueAt());
+        }
+        if (action == BookingAction.EXPIRE && booking.getExpiredReason() != null) {
+            body += ": " + EXPIRED_BODIES.get(booking.getExpiredReason());
         }
         if (action == BookingAction.ACCEPT_WITHOUT_CAREGIVER) {
             body += ": trung tâm đã xác nhận, đang phân người chăm sóc";
@@ -81,7 +94,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         boolean centerAction = action == BookingAction.ACCEPT || action == BookingAction.ACCEPT_WITHOUT_CAREGIVER
                 || action == BookingAction.ASSIGN_CAREGIVER || action == BookingAction.REJECT;
         if (!centerAction) {
-            notifyCenter(booking.getCenterId(), type, "BOOKING", booking.getId());
+            notifyCenter(booking.getCenterId(), type, Map.of("body", body), "BOOKING", booking.getId());
         }
     }
 
@@ -111,14 +124,15 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     @Override
     public void notifyRemainingDue(Booking booking) {
         String body = "Lịch " + booking.getBookingCode() + ": vui lòng thanh toán phần còn lại trước "
-                + booking.getRemainingPaymentDueAt();
+                + formatTime(booking.getRemainingPaymentDueAt());
         notificationService.notify(List.of(booking.getCustomerId()), NotificationType.REMAINING_DUE, Map.of("body", body),
                 "BOOKING", booking.getId());
     }
 
     @Override
     public void notifyCaregiverRequest(Booking booking) {
-        String body = "Lịch " + booking.getBookingCode() + ": vui lòng trả lời trước " + booking.getAcceptanceDueAt();
+        String body = "Lịch " + booking.getBookingCode() + ": vui lòng trả lời trước "
+                + formatTime(booking.getAcceptanceDueAt());
         notificationService.notify(List.of(booking.getCaregiverUserId()), NotificationType.CAREGIVER_REQUEST,
                 Map.of("body", body), "BOOKING", booking.getId());
     }
@@ -134,6 +148,11 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         notifyCenter(booking.getCenterId(), NotificationType.BOOKING_ADDRESS_CHANGED, "BOOKING", booking.getId());
     }
 
+    // Giờ trong nội dung thông báo theo múi giờ booking (không in Instant UTC thô).
+    private String formatTime(Instant instant) {
+        return instant == null ? "" : TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(instant);
+    }
+
     @Override
     public void notifyAdmins(NotificationType type, String refType, UUID refId) {
         List<UUID> adminIds = bookingProperties.getNotification().getAdminUserIds();
@@ -145,7 +164,23 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     }
 
     @Override
+    public void notifyCenterActionDue(Booking booking) {
+        boolean confirming = booking.getStatus() == BookingStatus.PENDING_CENTER_CONFIRMATION;
+        String body = "Lịch " + booking.getBookingCode() + (confirming
+                ? ": cần xác nhận trước " + formatTime(booking.getAcceptanceDueAt())
+                : ": cần phân người chăm sóc trước " + formatTime(booking.getAssignmentDueAt()));
+        notifyCenter(booking.getCenterId(), NotificationType.CENTER_ACTION_DUE, Map.of("body", body), "BOOKING",
+                booking.getId());
+    }
+
+    @Override
     public void notifyCenter(UUID centerId, NotificationType type, String refType, UUID refId) {
+        notifyCenter(centerId, type, Map.of(), refType, refId);
+    }
+
+    @Override
+    public void notifyCenter(UUID centerId, NotificationType type, Map<String, Object> params, String refType,
+                             UUID refId) {
         Runnable action = () -> {
             try {
                 UUID managerId = managerIds.get(centerId);
@@ -158,7 +193,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                     }
                 }
                 if (managerId != null) {
-                    notificationService.notify(List.of(managerId), type, Map.of(), refType, refId);
+                    notificationService.notify(List.of(managerId), type, params, refType, refId);
                 }
             } catch (RuntimeException exception) {
                 log.error("Không thông báo được manager trung tâm {}", centerId, exception);

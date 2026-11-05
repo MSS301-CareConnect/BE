@@ -221,13 +221,13 @@ class BookingMapperTests {
         assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null).getCustomer()).isNull();
 
         List<BookingSummaryResponse> withCustomer = bookingMapper.toSummaryResponseList(List.of(booking),
-                Map.of(booking.getCustomerId(), customer), Map.of());
+                Map.of(booking.getCustomerId(), customer), Map.of(), Map.of());
         assertThat(withCustomer.getFirst().getRecipientName()).isEqualTo("Bà Lan");
         // Không có thống kê buổi (booking không còn buổi) → 0, không NPE.
         assertThat(withCustomer.getFirst().getTotalCount()).isZero();
         assertThat(withCustomer.getFirst().getNextOccurrenceAt()).isNull();
         assertThat(withCustomer.getFirst().getCustomer().getPhoneNumber()).isEqualTo("0987654321");
-        assertThat(bookingMapper.toSummaryResponseList(List.of(booking), Map.of(), Map.of()).getFirst().getCustomer()).isNull();
+        assertThat(bookingMapper.toSummaryResponseList(List.of(booking), Map.of(), Map.of(), Map.of()).getFirst().getCustomer()).isNull();
     }
 
     @Test

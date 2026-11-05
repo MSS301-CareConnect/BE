@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface BookingLifecycleService {
     // Nhắc trả phần còn lại khi tới mốc nhắc mới của policy (M6); false = chưa tới mốc / mốc đã nhắc.
     boolean remindRemainingPayment(Booking booking);
+    // Nhắc trung tâm khi booking chờ xác nhận / phân công tới mốc nhắc mới; false = chưa tới mốc / mốc đã nhắc.
+    boolean remindCenterAction(Booking booking);
 
     void recordCreated(Booking booking, UUID customerId);
 

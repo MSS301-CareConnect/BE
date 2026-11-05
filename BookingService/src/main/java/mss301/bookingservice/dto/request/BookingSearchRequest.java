@@ -7,6 +7,7 @@ import mss301.bookingservice.enums.BookingStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 // Query của GET /api/v1/bookings (bind từ query string). Phạm vi theo role do service áp lên trên các filter này:
@@ -18,6 +19,10 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class BookingSearchRequest {
     BookingStatus status;
+
+    // Lọc nhiều trạng thái cùng lúc (?statuses=A&statuses=B) — nhóm "Cần xử lý" / "Đã đóng" của trung tâm.
+    @Size(max = 10, message = "INVALID_REQUEST")
+    List<BookingStatus> statuses;
 
     UUID recipientId;
 
@@ -37,7 +42,7 @@ public class BookingSearchRequest {
     @Size(max = 50, message = "TEXT_TOO_LONG")
     String keyword;
 
-    // "createdAt,desc" (mặc định) | "startDate,asc"… — whitelist ở BookingSorts.
+    // "createdAt,desc" (mặc định) | "startDate,asc" | "deadlineAt,asc" (hạn đang chạy gần nhất)… — whitelist ở BookingSorts.
     String sort;
 
     @Builder.Default

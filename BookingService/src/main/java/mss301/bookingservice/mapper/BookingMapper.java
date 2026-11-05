@@ -7,6 +7,7 @@ import mss301.bookingservice.client.dto.RefundQuoteResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CancellationRefundResponse;
 import mss301.bookingservice.client.dto.RemainingInvoiceRequest;
+import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.RefundReason;
 import mss301.bookingservice.dto.request.BookingCreateRequest;
@@ -21,6 +22,8 @@ import mss301.bookingservice.dto.response.PaymentContextResponse;
 import mss301.bookingservice.dto.response.QuoteLineResponse;
 import mss301.bookingservice.dto.response.QuoteOccurrenceResponse;
 import mss301.bookingservice.dto.response.ServiceQuote;
+import mss301.bookingservice.dto.response.BookingStatusCountResponse;
+import mss301.bookingservice.dto.response.BookingStatusCountsResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
 import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
@@ -119,8 +122,12 @@ public interface BookingMapper {
     @Mapping(target = "totalCount", expression = "java(countTotal(occurrenceStats.get(booking.getId())))")
     @Mapping(target = "completedCount", expression = "java(countCompleted(occurrenceStats.get(booking.getId())))")
     @Mapping(target = "nextOccurrenceAt", expression = "java(occurrenceStats.containsKey(booking.getId()) ? occurrenceStats.get(booking.getId()).getNextOccurrenceAt() : null)")
+    @Mapping(target = "deadlineType", expression = "java(mss301.bookingservice.util.BookingDeadlines.typeOf(booking))")
+    @Mapping(target = "deadlineAt", expression = "java(mss301.bookingservice.util.BookingDeadlines.dueAt(booking))")
+    @Mapping(target = "serviceNames", expression = "java(serviceNames.getOrDefault(booking.getId(), List.of()))")
     BookingSummaryResponse toSummaryResponse(Booking booking, @Context Map<UUID, IdentityUserResponse> customerProfiles,
-                                             @Context Map<UUID, OccurrenceStatsView> occurrenceStats);
+                                             @Context Map<UUID, OccurrenceStatsView> occurrenceStats,
+                                             @Context Map<UUID, List<String>> serviceNames);
 
     default int countTotal(OccurrenceStatsView stats) {
         return stats == null || stats.getTotalCount() == null ? 0 : stats.getTotalCount().intValue();
@@ -133,7 +140,14 @@ public interface BookingMapper {
     @IterableMapping(nullValueMappingStrategy = NullValueMappingStrategy.RETURN_DEFAULT)
     List<BookingSummaryResponse> toSummaryResponseList(List<Booking> bookings,
                                                        @Context Map<UUID, IdentityUserResponse> customerProfiles,
-                                                       @Context Map<UUID, OccurrenceStatsView> occurrenceStats);
+                                                       @Context Map<UUID, OccurrenceStatsView> occurrenceStats,
+                                                       @Context Map<UUID, List<String>> serviceNames);
+
+    BookingStatusCountResponse toStatusCountResponse(BookingStatus status, long count, Instant nearestDueAt,
+                                                     long dueSoonCount, long overdueCount);
+
+    BookingStatusCountsResponse toStatusCountsResponse(List<BookingStatusCountResponse> statuses, long dueSoonMinutes,
+                                                       Instant generatedAt);
 
     // booking và customer cùng có id / status → chỉ rõ nguồn; services / occurrences là tham số trùng tên đích.
     @Mapping(target = "id", source = "booking.id")
@@ -142,6 +156,8 @@ public interface BookingMapper {
     @Mapping(target = "occurrences", source = "occurrences")
     @Mapping(target = "customer", source = "customer")
     @Mapping(target = "refund", ignore = true)
+    @Mapping(target = "deadlineType", expression = "java(mss301.bookingservice.util.BookingDeadlines.typeOf(booking))")
+    @Mapping(target = "deadlineAt", expression = "java(mss301.bookingservice.util.BookingDeadlines.dueAt(booking))")
     BookingDetailResponse toDetailResponse(Booking booking, List<BookingDetail> services,
                                            List<BookingOccurrence> occurrences, IdentityUserResponse customer);
 

@@ -283,6 +283,18 @@ public class BookingProperties {
 
         // Chu kỳ quét hết hạn — BookingExpiryScheduler đọc thẳng placeholder; khai báo ở đây để kiểm khi khởi động.
         @NotNull
-        Duration expiryScanInterval = Duration.ofMinutes(5);
+        Duration expiryScanInterval = Duration.ofMinutes(1);
+
+        // Lượt quét đầu sau khi khởi động: dọn ngay booking quá hạn trong lúc service tắt.
+        @NotNull
+        Duration expiryInitialDelay = Duration.ofSeconds(30);
+
+        // Nhắc trung tâm trước hạn xác nhận / phân công (phút trước hạn, mỗi mốc một lần).
+        @NotNull
+        List<@NotNull @Min(1) Integer> centerReminderMinutes = new ArrayList<>(List.of(720, 120));
+
+        // Cửa sổ "sắp quá hạn" của thẻ hàng đợi trung tâm.
+        @NotNull
+        Duration dueSoonWindow = Duration.ofHours(2);
     }
 }

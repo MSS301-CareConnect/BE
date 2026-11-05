@@ -20,4 +20,7 @@ public class NotificationResponse {
     UUID refId;
     Instant readAt;
     Instant createdAt;
+    // Đích điều hướng suy từ ref (booking / buổi chứa nó); null khi ref không thuộc booking.
+    UUID bookingId;
+    UUID occurrenceId;
 }

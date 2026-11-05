@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,4 +15,8 @@ public interface BookingDetailRepository extends JpaRepository<BookingDetail, UU
 
     @Query("select d from BookingDetail d where d.booking.id = :bookingId order by d.createdAt, d.careServiceId")
     List<BookingDetail> findAllByBooking(@Param("bookingId") UUID bookingId);
+
+    // Danh sách booking: tên dịch vụ của cả trang trong một truy vấn.
+    @Query("select d from BookingDetail d where d.booking.id in :bookingIds order by d.createdAt, d.careServiceId")
+    List<BookingDetail> findAllByBookings(@Param("bookingIds") Collection<UUID> bookingIds);
 }

@@ -9,6 +9,9 @@ import mss301.bookingservice.dto.response.OccurrenceStatisticsResponse;
 import mss301.bookingservice.dto.response.ComplaintStatisticsResponse;
 import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
 import mss301.bookingservice.dto.response.PageResponse;
+import mss301.bookingservice.dto.response.ResponsivenessStatisticsResponse;
+import mss301.bookingservice.enums.BookingExpiredReason;
+import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.enums.FeedbackVisibility;
@@ -17,6 +20,7 @@ import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.StatisticsMapper;
 import mss301.bookingservice.repository.BookingRepository;
+import mss301.bookingservice.repository.BookingResponseTimeView;
 import mss301.bookingservice.repository.StatisticsCountView;
 import mss301.bookingservice.repository.FeedbackRatingView;
 import mss301.bookingservice.service.StatisticsService;
@@ -25,10 +29,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +48,11 @@ import java.math.RoundingMode;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class StatisticsServiceImpl implements StatisticsService {
     static ZoneId ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    // Trung tâm trả lời booking chờ xác nhận: xác nhận (chờ thanh toán / chờ phân công) hoặc từ chối.
+    static Set<BookingStatus> CENTER_ANSWERS = EnumSet.of(BookingStatus.AWAITING_INITIAL_PAYMENT,
+            BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.REJECTED);
+    static Set<BookingExpiredReason> CENTER_TIMEOUTS = EnumSet.of(BookingExpiredReason.CENTER_CONFIRMATION_TIMEOUT,
+            BookingExpiredReason.ASSIGNMENT_TIMEOUT);
 
     BookingRepository bookingRepository;
     StatisticsMapper statisticsMapper;
@@ -98,9 +109,22 @@ public class StatisticsServiceImpl implements StatisticsService {
                 complaints.getOrDefault("ESCALATED", 0L));
         FeedbackRatingView rating = bookingRepository.summarizeRating(centerId, from, to, FeedbackVisibility.VISIBLE);
         BigDecimal average = rating.getRatingAverage() == null ? BigDecimal.ZERO : BigDecimal.valueOf(rating.getRatingAverage()).setScale(2, RoundingMode.HALF_UP);
-        return statisticsMapper.toResponse(bookings, occurrenceResponse, rate, average, rating.getRatingCount(), complaintResponse,
+        OperationalStatisticsResponse response = statisticsMapper.toResponse(bookings, occurrenceResponse, rate, average,
+                rating.getRatingCount(), complaintResponse,
                 statisticsMapper.toTopResponseList(bookingRepository.topCaregivers(centerId, from, to, FeedbackVisibility.VISIBLE,
                         CareSessionStatus.ENDED, PageRequest.of(0, 10))));
+        response.setResponsiveness(responsiveness(centerId, from, to));
+        return response;
+    }
+
+    private ResponsivenessStatisticsResponse responsiveness(UUID centerId, Instant from, Instant to) {
+        List<BookingResponseTimeView> answers = bookingRepository.findCenterResponses(centerId, from, to,
+                BookingStatus.PENDING_CENTER_CONFIRMATION, CENTER_ANSWERS);
+        Long avgMinutes = answers.isEmpty() ? null : Math.round(answers.stream()
+                .mapToLong(answer -> Duration.between(answer.getCreatedAt(), answer.getChangedAt()).toMinutes())
+                .average().orElse(0));
+        return statisticsMapper.toResponsivenessResponse(answers.size(), avgMinutes,
+                bookingRepository.countExpired(centerId, from, to, CENTER_TIMEOUTS));
     }
 
     private Map<String, Long> toCounts(List<StatisticsCountView> rows) {

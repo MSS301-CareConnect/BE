@@ -40,5 +40,7 @@ import java.lang.annotation.Target;
 @Mapping(target = "version", ignore = true)
 // Số tiền thanh toán đầu do PaymentService ghi khi xác nhận (PAY-08); tỷ lệ chụp từ center policy truyền qua tham số.
 @Mapping(target = "depositAmount", ignore = true)
+@Mapping(target = "centerReminderMinutes", ignore = true)
+@Mapping(target = "expiredReason", ignore = true)
 public @interface IgnoreServerManagedBookingFields {
 }

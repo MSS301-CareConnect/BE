@@ -74,6 +74,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,7 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -1879,6 +1881,165 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.totalElements").value(1));
     }
 
+    // Xóa / đánh dấu chưa đọc chỉ trên thông báo của chính mình; thông báo về buổi trả kèm booking để điều hướng.
+    @Test
+    void notificationsCanBeUnreadDeletedAndLinkToTheirBooking() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        UUID customer = UUID.randomUUID();
+        String owner = bearer(customer, null, "CUSTOMER");
+        String stranger = bearer(UUID.randomUUID(), null, "CUSTOMER");
+        for (String refType : List.of("BOOKING_OCCURRENCE", "BOOKING", "CARE_REPORT")) {
+            UUID refId = switch (refType) {
+                case "BOOKING_OCCURRENCE" -> occurrenceId;
+                case "BOOKING" -> UUID.fromString(bookingId);
+                default -> UUID.randomUUID();
+            };
+            mockMvc.perform(post("/api/v1/notifications").header("Authorization", serviceBearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("recipientUserIds", List.of(customer), "type", "OCCURRENCE_CANCELLED",
+                                    "title", "Thông báo", "body", refType, "refType", refType, "refId", refId))))
+                    .andExpect(status().isOk());
+        }
+        JsonNode items = readResult(mockMvc.perform(get("/api/v1/notifications").header("Authorization", owner)).andReturn())
+                .path("items");
+        Map<String, JsonNode> byRef = new HashMap<>();
+        items.forEach(item -> byRef.put(item.path("refType").asText(), item));
+        assertThat(byRef.get("BOOKING_OCCURRENCE").path("bookingId").asText()).isEqualTo(bookingId);
+        assertThat(byRef.get("BOOKING_OCCURRENCE").path("occurrenceId").asText()).isEqualTo(occurrenceId.toString());
+        assertThat(byRef.get("BOOKING").path("bookingId").asText()).isEqualTo(bookingId);
+        // Báo cáo không còn tồn tại → không có đích, không lỗi.
+        assertThat(byRef.get("CARE_REPORT").path("bookingId").isNull()).isTrue();
+
+        String readId = byRef.get("BOOKING").path("id").asText();
+        mockMvc.perform(patch("/api/v1/notifications/" + readId + "/read").header("Authorization", owner)).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/notifications/" + readId + "/unread").header("Authorization", stranger))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/v1/notifications/" + readId + "/unread").header("Authorization", owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.count").value(3));
+        // Chọn nhiều: đánh dấu đã đọc rồi chưa đọc; id của người khác không đổi.
+        List<String> allIds = List.of(readId, byRef.get("BOOKING_OCCURRENCE").path("id").asText());
+        mockMvc.perform(patch("/api/v1/notifications/read-state").header("Authorization", stranger)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", allIds, "read", true))))
+                .andExpect(jsonPath("$.result.updated").value(0));
+        mockMvc.perform(patch("/api/v1/notifications/read-state").header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", allIds))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/v1/notifications/read-state").header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", allIds, "read", true))))
+                .andExpect(jsonPath("$.result.updated").value(2));
+        mockMvc.perform(patch("/api/v1/notifications/read-state").header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", allIds, "read", false))))
+                .andExpect(jsonPath("$.result.updated").value(2));
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.count").value(3));
+
+        String deletedId = byRef.get("CARE_REPORT").path("id").asText();
+        mockMvc.perform(delete("/api/v1/notifications/" + deletedId).header("Authorization", stranger))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/v1/notifications/" + deletedId).header("Authorization", owner)).andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/notifications/" + deletedId).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(patch("/api/v1/notifications/" + readId + "/read").header("Authorization", owner)).andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/notifications/read").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.deleted").value(1));
+        String remainingId = byRef.get("BOOKING_OCCURRENCE").path("id").asText();
+        mockMvc.perform(post("/api/v1/notifications/deletions").header("Authorization", stranger)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", List.of(remainingId)))))
+                .andExpect(jsonPath("$.result.deleted").value(0));
+        mockMvc.perform(post("/api/v1/notifications/deletions").header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", List.of()))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/notifications/deletions").header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("ids", List.of(remainingId)))))
+                .andExpect(jsonPath("$.result.deleted").value(1));
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", owner))
+                .andExpect(jsonPath("$.result.totalElements").value(0));
+    }
+
+    // A2: trung tâm thao tác trên booking đã quá hạn mà scheduler chưa chạy → booking đóng ngay, lỗi BOOKING_EXPIRED.
+    @Test
+    void actingOnOverdueBookingExpiresItImmediately() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
+        Booking booking = bookingRepository.findById(UUID.fromString(bookingId)).orElseThrow();
+        booking.setAcceptanceDueAt(Instant.now().minusSeconds(60));
+        bookingRepository.save(booking);
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/reject").header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("reason", "Không còn người"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(5116));
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("EXPIRED"))
+                .andExpect(jsonPath("$.result.expiredReason").value("CENTER_CONFIRMATION_TIMEOUT"))
+                .andExpect(jsonPath("$.result.occurrences[0].status").value("EXPIRED"));
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/accept").header("Authorization", managerBearer(scenario)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(5116));
+    }
+
+    // Hàng đợi trung tâm: đếm theo trạng thái, hạn gần nhất / sắp quá hạn; danh sách lọc nhiều trạng thái, sắp theo hạn.
+    @Test
+    void centerQueueCountsAndSortsByDeadline() throws Exception {
+        Scenario scenario = newScenario();
+        String later = createAndGetId(scenario, weeklyBody(scenario, null, 0));
+        String sooner = createAndGetId(scenario, weeklyBody(scenario, null, 2));
+        Booking soonerBooking = bookingRepository.findById(UUID.fromString(sooner)).orElseThrow();
+        soonerBooking.setAcceptanceDueAt(Instant.now().plus(Duration.ofMinutes(30)));
+        bookingRepository.save(soonerBooking);
+        String manager = managerBearer(scenario);
+
+        JsonNode counts = readResult(mockMvc.perform(get("/api/v1/bookings/status-counts").header("Authorization", manager))
+                .andExpect(status().isOk()).andReturn());
+        JsonNode pending = null;
+        for (JsonNode item : counts.path("statuses")) {
+            if (item.path("status").asText().equals("PENDING_CENTER_CONFIRMATION")) {
+                pending = item;
+            }
+        }
+        assertThat(pending).isNotNull();
+        assertThat(pending.path("count").asLong()).isEqualTo(2);
+        assertThat(pending.path("dueSoonCount").asLong()).isEqualTo(1);
+        // DB lưu tới micro giây (làm tròn) nên so sai lệch dưới 1 ms.
+        assertThat(Duration.between(Instant.parse(pending.path("nearestDueAt").asText()), soonerBooking.getAcceptanceDueAt())
+                .abs()).isLessThan(Duration.ofMillis(1));
+        mockMvc.perform(get("/api/v1/bookings/status-counts").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", manager)
+                        .param("statuses", "PENDING_CENTER_CONFIRMATION", "CANCELLED").param("sort", "deadlineAt,asc"))
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].id").value(sooner))
+                .andExpect(jsonPath("$.result.items[0].deadlineType").value("CENTER_CONFIRMATION"))
+                .andExpect(jsonPath("$.result.items[0].serviceNames[0]").isNotEmpty())
+                .andExpect(jsonPath("$.result.items[1].id").value(later));
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", manager).param("statuses", "CANCELLED"))
+                .andExpect(jsonPath("$.result.totalElements").value(0));
+        mockMvc.perform(get("/api/v1/bookings").header("Authorization", manager).param("sort", "deadlineAt,sideways"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // Nhắc trung tâm mỗi mốc một lần; mốc đã qua lúc tạo booking không nhắc dồn.
+    @Test
+    void centerIsRemindedOncePerMarkBeforeConfirmationDeadline() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
+        UUID id = UUID.fromString(bookingId);
+        assertThat(bookingExpiryService.findCenterReminderIds()).doesNotContain(id);
+        Booking booking = bookingRepository.findById(id).orElseThrow();
+        booking.setAcceptanceDueAt(Instant.now().plus(Duration.ofMinutes(90)));
+        bookingRepository.save(booking);
+        assertThat(bookingExpiryService.findCenterReminderIds()).contains(id);
+        bookingExpiryService.remindCenterAction(id);
+        bookingExpiryService.remindCenterAction(id);
+        assertThat(bookingRepository.findById(id).orElseThrow().getCenterReminderMinutes()).isEqualTo(120);
+        assertThat(notificationRepository.findAll()).filteredOn(notification -> id.equals(notification.getRefId())
+                && notification.getType() == NotificationType.CENTER_ACTION_DUE).hasSize(1);
+    }
+
     @Test
     void sessionTasksNotesAndReportsEnforceLifecycleAndScope() throws Exception {
         Scenario scenario = newScenario();
@@ -2489,11 +2650,13 @@ class BookingApiTests {
                         .header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("caregiverId", scenario.caregiver().caregiverId().toString()))))
-                .andExpect(status().isConflict());
-        assertThat(bookingExpiryService.findExpirableIds()).contains(booking.getId());
-        bookingExpiryService.expire(booking.getId());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(5116));
+        // Phân công sau hạn đóng booking ngay (không chờ scheduler).
+        assertThat(bookingExpiryService.findExpirableIds()).doesNotContain(booking.getId());
         mockMvc.perform(get("/api/v1/bookings/" + expiringId).header("Authorization", customerBearer(scenario)))
                 .andExpect(jsonPath("$.result.status").value("EXPIRED"))
+                .andExpect(jsonPath("$.result.expiredReason").value("ASSIGNMENT_TIMEOUT"))
                 .andExpect(jsonPath("$.result.occurrences[0].status").value("EXPIRED"));
 
         Scenario other = newScenarioInCenter(scenario.centerId());

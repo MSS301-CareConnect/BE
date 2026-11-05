@@ -40,6 +40,7 @@ public final class NotificationTemplates {
             case CAREGIVER_REQUEST -> "Có khách đặt lịch với bạn, vui lòng nhận hoặc từ chối";
             case BOOKING_HANDED_OVER -> "Người chăm sóc không nhận lịch, trung tâm sẽ phân người khác";
             case BOOKING_ADDRESS_CHANGED -> "Địa chỉ chăm sóc của lịch đã thay đổi";
+            case CENTER_ACTION_DUE -> "Lịch đặt sắp quá hạn xử lý";
         };
     }
 }

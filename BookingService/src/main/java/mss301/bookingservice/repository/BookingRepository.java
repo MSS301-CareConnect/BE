@@ -3,6 +3,7 @@ package mss301.bookingservice.repository;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import mss301.bookingservice.entity.Booking;
+import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.util.LockHints;
 import org.springframework.data.domain.Pageable;
@@ -97,6 +98,37 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     Integer lockScheduleKey(@Param("lockKey") String lockKey);
     @Query("select b.status as category, count(b) as count from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId) group by b.status")
     List<StatisticsCountView> countBookings(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    // Hàng đợi trung tâm: số booking theo trạng thái (mọi thời điểm); centerId null = toàn hệ thống (admin).
+    @Query("select b.status as category, count(b) as count from Booking b where b.deletedAt is null and (:centerId is null or b.centerId = :centerId) group by b.status")
+    List<StatisticsCountView> countByStatus(@Param("centerId") UUID centerId);
+
+    // Booking đang có hạn (chờ xác nhận / phân công / thanh toán) để tính hạn gần nhất và số sắp quá hạn.
+    @Query("select b from Booking b where b.deletedAt is null and (:centerId is null or b.centerId = :centerId) and b.status in :statuses")
+    List<Booking> findTimed(@Param("centerId") UUID centerId, @Param("statuses") Collection<BookingStatus> statuses);
+
+    // SLA: trung tâm trả lời (xác nhận / từ chối) booking tạo trong kỳ — thời gian từ lúc tạo tới lúc trả lời.
+    @Query("select h.booking.createdAt as createdAt, h.changedAt as changedAt from BookingStatusHistory h where h.fromStatus = :fromStatus and h.toStatus in :toStatuses and h.booking.createdAt >= :from and h.booking.createdAt < :to and (:centerId is null or h.booking.centerId = :centerId)")
+    List<BookingResponseTimeView> findCenterResponses(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                                      @Param("to") Instant to, @Param("fromStatus") BookingStatus fromStatus,
+                                                      @Param("toStatuses") Collection<BookingStatus> toStatuses);
+
+    // SLA: booking tạo trong kỳ hết hạn vì trung tâm chưa xác nhận / chưa phân công kịp.
+    @Query("select count(b) from Booking b where b.deletedAt is null and b.expiredReason in :reasons and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId)")
+    long countExpired(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
+                      @Param("reasons") Collection<BookingExpiredReason> reasons);
+
+    // Booking chờ trung tâm xác nhận / phân công, hạn trong cửa sổ nhắc lớn nhất (BookingExpiryScheduler).
+    @Query("""
+            select b.id from Booking b
+            where b.deletedAt is null
+              and ((b.status = :confirmationStatus and b.acceptanceDueAt > :now and b.acceptanceDueAt <= :windowEnd)
+                or (b.status = :assignmentStatus and b.assignmentDueAt > :now and b.assignmentDueAt <= :windowEnd))
+            order by b.createdAt
+            """)
+    List<UUID> findCenterReminderIds(@Param("confirmationStatus") BookingStatus confirmationStatus,
+                                     @Param("assignmentStatus") BookingStatus assignmentStatus,
+                                     @Param("now") Instant now, @Param("windowEnd") Instant windowEnd, Pageable pageable);
 
     @Query("select o.status as category, count(o) as count from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId) group by o.status")
     List<StatisticsCountView> countOccurrences(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);

@@ -5,6 +5,7 @@ import mss301.bookingservice.enums.BookingAction;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingOccurrence;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface BookingNotificationService {
@@ -14,6 +15,10 @@ public interface BookingNotificationService {
     // M-10: một thông báo gộp khi nhiều buổi của cùng booking bị hủy cùng lúc.
     void notifyOccurrencesCancelled(Booking booking, List<BookingOccurrence> occurrences);
     void notifyCenter(UUID centerId, NotificationType type, String refType, UUID refId);
+    // Như notifyCenter, kèm params (vd "body") cho nội dung thông báo.
+    void notifyCenter(UUID centerId, NotificationType type, Map<String, Object> params, String refType, UUID refId);
+    // Nhắc trung tâm booking sắp quá hạn xác nhận / phân người chăm sóc.
+    void notifyCenterActionDue(Booking booking);
 
     // Nhắc khách trả phần còn lại trước hạn (spec §9.1, M6).
     void notifyRemainingDue(Booking booking);

@@ -3,6 +3,8 @@ package mss301.bookingservice.dto.response;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import mss301.bookingservice.enums.BookingDeadlineType;
+import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.BookingType;
 import mss301.bookingservice.enums.RecurrenceFrequency;
@@ -116,4 +118,12 @@ public class BookingDetailResponse {
 
     // Chỉ có ở response hủy khi booking đã đặt cọc (BK-03 / BK-04).
     CancellationRefundResponse refund;
+
+    // Hạn đang chạy theo trạng thái (util/BookingDeadlines); null khi không có hạn.
+    BookingDeadlineType deadlineType;
+
+    Instant deadlineAt;
+
+    // Bên chưa làm kịp khi EXPIRED.
+    BookingExpiredReason expiredReason;
 }

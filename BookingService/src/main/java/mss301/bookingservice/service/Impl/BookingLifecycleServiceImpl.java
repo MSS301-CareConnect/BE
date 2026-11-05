@@ -6,7 +6,9 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingOccurrence;
+import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.entity.CenterBookingPolicy;
+import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingAction;
 import mss301.bookingservice.enums.BookingEventType;
 import mss301.bookingservice.enums.BookingStatus;
@@ -26,6 +28,8 @@ import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingOutboxService;
 import mss301.bookingservice.service.CenterBookingPolicyService;
 import mss301.bookingservice.service.BookingNotificationService;
+import mss301.bookingservice.util.BookingDeadlines;
+import mss301.bookingservice.util.CenterReminders;
 import mss301.bookingservice.enums.NotificationType;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +40,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -46,7 +51,14 @@ import java.util.UUID;
 @Slf4j
 public class BookingLifecycleServiceImpl implements BookingLifecycleService {
 
-    static String EXPIRED_REASON = "Quá hạn xác nhận, phân công hoặc thanh toán";
+    static Map<BookingExpiredReason, String> EXPIRED_REASONS = Map.of(
+            BookingExpiredReason.CENTER_CONFIRMATION_TIMEOUT, "Trung tâm không xác nhận kịp hạn",
+            BookingExpiredReason.CAREGIVER_CONFIRMATION_TIMEOUT, "Người chăm sóc không trả lời kịp hạn",
+            BookingExpiredReason.ASSIGNMENT_TIMEOUT, "Trung tâm không phân người chăm sóc kịp hạn",
+            BookingExpiredReason.INITIAL_PAYMENT_TIMEOUT, "Khách chưa thanh toán khoản đầu đúng hạn",
+            BookingExpiredReason.PAYMENT_OVERDUE, "Khách chưa thanh toán phần còn lại đúng hạn");
+    static Set<BookingStatus> CENTER_ACTION_STATUSES = EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
+            BookingStatus.PENDING_CAREGIVER_ASSIGNMENT);
     static String KEY_SEPARATOR = ":";
     static String REJECTED_OCCURRENCE_REASON = "Trung tâm từ chối booking";
     static String NOTHING_SERVED_REASON = "Không còn buổi nào được thực hiện";
@@ -63,6 +75,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     CenterBookingPolicyService centerBookingPolicyService;
     Clock clock;
     BookingNotificationService bookingNotificationService;
+    BookingProperties bookingProperties;
 
     @Override
     public void recordCreated(Booking booking, UUID customerId) {
@@ -95,6 +108,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 booking.setAcceptedAt(now);
                 booking.setAssignmentDueAt(calculateDueAt(booking, occurrences, now,
                         findPolicy(booking).getAssignmentTimeoutMinutes()));
+                booking.setCenterReminderMinutes(findPassedCenterReminder(booking.getAssignmentDueAt(), now));
             }
             case ASSIGN_CAREGIVER -> booking.setDepositDueAt(calculateDueAt(booking, occurrences, now,
                     findPolicy(booking).getInitialPaymentTimeoutMinutes()));
@@ -115,6 +129,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 releaseCaregiver(booking, occurrences, changedBy, reason, now);
                 booking.setAssignmentDueAt(calculateDueAt(booking, occurrences, now,
                         findPolicy(booking).getAssignmentTimeoutMinutes()));
+                booking.setCenterReminderMinutes(findPassedCenterReminder(booking.getAssignmentDueAt(), now));
             }
             case REJECT -> {
                 booking.setRejectedBy(changedBy);
@@ -141,7 +156,8 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             case EXPIRE -> {
                 // Không xếp hoàn tiền ở đây: chưa trả khoản đầu thì chưa có tiền; quá hạn phần còn lại (CONFIRMED) thì
                 // PaymentService đã giữ cọc theo policy và hoàn phần dư trước khi báo. Buổi chưa bắt đầu → EXPIRED.
-                historyReason = reason == null ? EXPIRED_REASON : reason;
+                booking.setExpiredReason(BookingExpiredReason.from(fromStatus));
+                historyReason = reason == null ? EXPIRED_REASONS.get(booking.getExpiredReason()) : reason;
                 expireOccurrences(occurrences, changedBy, historyReason, now);
             }
             case START -> booking.setStartedAt(now);
@@ -183,6 +199,24 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         booking.setRemainingReminderMinutes(passed);
         bookingNotificationService.notifyRemainingDue(booking);
         log.info("Booking {} reminded to pay the remaining amount ({} minutes before due)", booking.getId(), passed);
+        return true;
+    }
+
+    @Override
+    public boolean remindCenterAction(Booking booking) {
+        Instant now = clock.instant();
+        Instant dueAt = BookingDeadlines.dueAt(booking);
+        if (!CENTER_ACTION_STATUSES.contains(booking.getStatus()) || dueAt == null || !now.isBefore(dueAt)) {
+            return false;
+        }
+        Integer passed = findPassedCenterReminder(dueAt, now);
+        Integer sent = booking.getCenterReminderMinutes();
+        if (passed == null || (sent != null && sent <= passed)) {
+            return false;
+        }
+        booking.setCenterReminderMinutes(passed);
+        bookingNotificationService.notifyCenterActionDue(booking);
+        log.info("Booking {} center reminded ({} minutes before {})", booking.getId(), passed, booking.getStatus());
         return true;
     }
 
@@ -271,6 +305,10 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     }
 
     // Mốc nhắc (phút trước hạn phần còn lại) gần hạn nhất đã tới; chưa tới mốc nào → null.
+    private Integer findPassedCenterReminder(Instant dueAt, Instant now) {
+        return CenterReminders.passed(bookingProperties.getSchedule().getCenterReminderMinutes(), dueAt, now);
+    }
+
     private Integer findPassedReminder(Booking booking, Instant now) {
         Integer[] reminders = findPolicy(booking).getRemainingPaymentReminderMinutes();
         if (reminders == null) {

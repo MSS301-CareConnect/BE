@@ -24,8 +24,8 @@ public class BookingExpiryScheduler {
 
     BookingService bookingService;
 
-    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:5m}",
-            initialDelayString = "${booking.schedule.expiry-scan-interval:5m}")
+    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
+            initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void expireOverdueBookings() {
         List<UUID> bookingIds = bookingService.findExpirableIds();
         int expired = 0;
@@ -43,14 +43,27 @@ public class BookingExpiryScheduler {
     }
 
     // Nhắc trả phần còn lại theo mốc của center policy (mặc định 72h, 48h trước hạn — M6), cùng chu kỳ quét.
-    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:5m}",
-            initialDelayString = "${booking.schedule.expiry-scan-interval:5m}")
+    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
+            initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void remindRemainingPayments() {
         for (UUID bookingId : bookingService.findRemainingReminderIds()) {
             try {
                 bookingService.remindRemainingPayment(bookingId);
             } catch (RuntimeException e) {
                 log.error("Failed to remind booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
+    // Nhắc trung tâm booking sắp quá hạn xác nhận / phân công (booking.schedule.center-reminder-minutes).
+    @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
+            initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
+    public void remindCenterActions() {
+        for (UUID bookingId : bookingService.findCenterReminderIds()) {
+            try {
+                bookingService.remindCenterAction(bookingId);
+            } catch (RuntimeException e) {
+                log.error("Failed to remind center of booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
             }
         }
     }

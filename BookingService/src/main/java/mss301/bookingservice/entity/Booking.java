@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.response.RecipientSnapshot;
+import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.BookingType;
 import mss301.bookingservice.enums.RecurrenceFrequency;
@@ -150,6 +151,15 @@ public class Booking extends BaseEntity {
     // Mốc nhắc trả phần còn lại (phút trước hạn) nhỏ nhất đã gửi hoặc đã qua lúc trả khoản đầu — mỗi mốc nhắc một lần.
     @Column(name = "remaining_reminder_minutes")
     Integer remainingReminderMinutes;
+
+    // Mốc nhắc trung tâm (phút trước hạn xác nhận / phân công) nhỏ nhất đã gửi hoặc đã qua khi bắt đầu chờ.
+    @Column(name = "center_reminder_minutes")
+    Integer centerReminderMinutes;
+
+    // Bên chưa làm kịp khi booking EXPIRED; NULL ở trạng thái khác.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "expired_reason", length = 40)
+    BookingExpiredReason expiredReason;
 
     // Buổi đầu tiên check-in (OPS-02).
     @Column(name = "started_at")
