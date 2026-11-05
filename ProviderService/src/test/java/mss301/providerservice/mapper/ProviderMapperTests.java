@@ -131,7 +131,7 @@ class ProviderMapperTests {
                 .build();
         shift.setId(shiftId);
 
-        WorkShiftResponse response = workShiftMapper.toResponse(shift, 2L);
+        WorkShiftResponse response = workShiftMapper.toResponse(shift, 2L, 0L);
 
         assertEquals(shiftId, response.getId());
         assertEquals(centerId, response.getCenterId());

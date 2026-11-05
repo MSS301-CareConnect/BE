@@ -20,6 +20,9 @@ import java.util.UUID;
 public interface CaregiverScheduleRepository extends JpaRepository<CaregiverSchedule, UUID> {
     Optional<CaregiverSchedule> findByIdAndDeletedAtIsNull(UUID id);
     Optional<CaregiverSchedule> findByRegistrationId(UUID registrationId);
+    List<CaregiverSchedule> findByRegistrationIdIn(Collection<UUID> registrationIds);
+    List<CaregiverSchedule> findByWorkShiftIdAndScheduleStatusAndDeletedAtIsNull(UUID workShiftId,
+                                                                                 ScheduleStatus scheduleStatus);
     Page<CaregiverSchedule> findByCaregiverIdAndDeletedAtIsNull(UUID caregiverId, Pageable pageable);
     Page<CaregiverSchedule> findByWorkShiftCenterIdAndDeletedAtIsNull(UUID centerId, Pageable pageable);
 

@@ -168,6 +168,33 @@ Quy tắc ca (PRV-03, 2026-10-22):
 - Capacity: ca chuyển `CLOSED` khi số đăng ký APPROVED **bằng** capacity (đếm trước khi duyệt).
 - Đăng ký lại được sau khi đăng ký cũ `CANCELLED`/`REJECTED` (unique một phần chỉ trên PENDING/APPROVED).
 
+Vòng đời ca (2026-11-05, SQL `schema/changes/2026-11-05_work_shift_lifecycle.sql`):
+- **Trạng thái hiệu lực** (`util/WorkShiftStates`): mọi response trả trạng thái hiệu lực, không phải cột đã lưu — OPEN đã
+  tới giờ bắt đầu hoặc quá hạn đăng ký → CLOSED; OPEN/CLOSED đã kết thúc → COMPLETED. `GET /?status=` lọc theo trạng
+  thái hiệu lực (mobile gọi `status=OPEN` không còn thấy ca đã qua). Job `WorkShiftLifecycleScheduler` (mỗi phút,
+  `PROVIDER_SHIFT_LIFECYCLE_CRON`, `-` để tắt) ghi lại trạng thái đó và từ chối đăng ký còn chờ khi ca đã bắt đầu.
+- **Tạo/sửa** (quy tắc áp lên giá trị mới hoặc đã đổi — ca cũ vẫn sửa được trường khác): ca bắt đầu sau "bây giờ",
+  dài 1–24 giờ (4309), `shiftType` ∈ `util/ShiftTypes` MORNING/AFTERNOON/EVENING/NIGHT/FULL_DAY/CUSTOM (4313; DAILY/WEEKLY cũ
+  giữ nguyên khi không đổi), capacity 1–50 (4310), ghi chú trim ≤ 500 (4312), hạn đăng ký > bây giờ và ≤ giờ bắt đầu − 1h
+  (4311; bỏ trống khi tạo → bắt đầu − 24h, hoặc − 1h nếu không còn kịp). Tạo chỉ nhận DRAFT/OPEN (4307). PUT không mở lại
+  ca đã qua / quá hạn / đủ người, không về DRAFT khi đã có đăng ký, không đặt COMPLETED; ca đã bắt đầu không sửa (4308).
+  Mỗi field có mã lỗi riêng để FE gắn đúng input.
+- `PATCH /{id}/status {status: OPEN|CLOSED, version}` — mở / đóng đăng ký thủ công.
+- `POST /{id}/cancel {reason, version}` — hủy trước giờ bắt đầu kể cả khi đã có người được duyệt: hỏi Booking ngoài
+  transaction (caregiver đã có buổi trong khung ca → 409 4314), rồi lịch SCHEDULED → CANCELLED, đăng ký APPROVED →
+  CANCELLED, PENDING → REJECTED cùng lý do; ca lưu `cancellationReason`, `cancelledAt`. `DELETE` cũ vẫn giữ.
+- `POST /centers/{centerId}/batch` — cùng ca cho 1–31 ngày khác nhau (4315), hạn đăng ký `registrationLeadMinutes` trước
+  giờ bắt đầu; một ngày sai → không tạo ca nào.
+- `GET /statistics?centerId&fromDate&toDate&shiftType` (ADMIN cần `centerId`) — đếm theo trạng thái hiệu lực trên cả bộ
+  lọc, ca 7 ngày tới, đăng ký chờ duyệt, tổng capacity / đã duyệt. Danh sách thêm `shiftType`, `hasVacancy`;
+  `WorkShiftResponse` thêm `pendingCount`.
+- Đăng ký: chặn khi trùng giờ một lịch đã duyệt (4401) hoặc rơi vào ngày nghỉ (4355), kiểm cả lúc đăng ký lẫn lúc duyệt.
+  `GET /registrations/me` và `GET /{id}/registrations` nhận `status`; response kèm tóm tắt ca (ngày, giờ, loại, trạng
+  thái hiệu lực, lý do hủy ca) và lịch sinh ra khi duyệt (`scheduleId/Status/Version` — rút đăng ký đã duyệt qua
+  `PATCH /caregivers/schedules/{scheduleId}/status`). `PATCH /{id}/registrations/review {status, reason, items[{registrationId,
+  version}]}` duyệt / từ chối tối đa 50 đăng ký, tất cả hoặc không.
+- Chưa có: thông báo cho sự kiện ca (cần thêm `NotificationType` ở BookingService — hoãn).
+
 Các request cập nhật dùng `version` để chống ghi đè dữ liệu đồng thời.
 
 ### Gọi service khác

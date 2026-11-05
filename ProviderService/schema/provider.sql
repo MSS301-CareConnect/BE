@@ -172,6 +172,9 @@ CREATE TABLE work_shifts
 
     registration_deadline timestamptz,
     note                  text,
+    -- 2026-11-05 (changes/2026-11-05_work_shift_lifecycle.sql): hủy ca bắt buộc lý do.
+    cancellation_reason   varchar(500),
+    cancelled_at          timestamptz,
     created_by            uuid        NOT NULL,
     updated_by            uuid,
     version               bigint      NOT NULL DEFAULT 0

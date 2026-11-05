@@ -11,10 +11,11 @@ import org.mapstruct.MappingTarget;
 @Mapper(config = MapStructConfig.class)
 public interface WorkShiftMapper {
 
-    // approvedCount do service đếm (registration APPROVED) rồi truyền vào.
+    // approvedCount / pendingCount do service đếm rồi truyền vào; shiftStatus là giá trị đã lưu — service ghi đè bằng
+    // trạng thái hiệu lực (WorkShiftStates) trước khi trả về.
     @Mapping(target = "centerId", source = "workShift.center.id")
     @Mapping(target = "centerName", source = "workShift.center.centerName")
-    WorkShiftResponse toResponse(WorkShift workShift, long approvedCount);
+    WorkShiftResponse toResponse(WorkShift workShift, long approvedCount, long pendingCount);
 
     // center do service tra cứu + kiểm phạm vi rồi truyền vào; audit do service gán.
     @IgnoreServerManagedFields

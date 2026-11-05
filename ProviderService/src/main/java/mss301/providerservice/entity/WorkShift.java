@@ -49,6 +49,13 @@ public class WorkShift extends BaseEntity {
     @Column(name = "note", columnDefinition = "text")
     String note;
 
+    // Hủy ca (POST /work-shifts/{id}/cancel): lý do bắt buộc, hiển thị cho caregiver đã đăng ký.
+    @Column(name = "cancellation_reason", length = 500)
+    String cancellationReason;
+
+    @Column(name = "cancelled_at")
+    Instant cancelledAt;
+
     @Column(name = "created_by", nullable = false)
     UUID createdBy;
 

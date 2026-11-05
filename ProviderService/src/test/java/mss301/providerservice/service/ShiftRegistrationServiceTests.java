@@ -36,6 +36,9 @@ class ShiftRegistrationServiceTests {
     CaregiverScheduleRepository caregiverScheduleRepository;
 
     @Mock
+    mss301.providerservice.repository.CaregiverTimeOffRepository caregiverTimeOffRepository;
+
+    @Mock
     CaregiverService caregiverService;
 
     @Mock

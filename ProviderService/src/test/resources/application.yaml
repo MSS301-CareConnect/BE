@@ -23,6 +23,9 @@ provider:
     url: http://catalog.test
   booking:
     url: http://booking.test
+  # Job vòng đời ca chạy theo đồng hồ thật — tắt trong test để không đổi dữ liệu giữa chừng.
+  work-shift:
+    lifecycle-cron: "-"
 
 springdoc:
   api-docs:

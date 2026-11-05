@@ -20,30 +20,34 @@ import java.time.LocalTime;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class WorkShiftRequest {
 
-    @NotNull(message = "INVALID_REQUEST")
+    @NotNull(message = "WORK_SHIFT_DATE_INVALID")
     LocalDate workDate;
 
-    @NotNull(message = "INVALID_REQUEST")
+    @NotNull(message = "WORK_SHIFT_TIME_INVALID")
     LocalTime startTime;
 
-    @NotNull(message = "INVALID_REQUEST")
+    @NotNull(message = "WORK_SHIFT_TIME_INVALID")
     LocalTime endTime;
 
-    @NotBlank(message = "INVALID_REQUEST")
-    @Size(max = 50, message = "INVALID_REQUEST")
+    // Mã loại ca (util/ShiftTypes): MORNING, AFTERNOON, EVENING, NIGHT, FULL_DAY, CUSTOM; DAILY/WEEKLY cũ chỉ giữ khi sửa.
+    @NotBlank(message = "WORK_SHIFT_TYPE_INVALID")
+    @Size(max = 50, message = "WORK_SHIFT_TYPE_INVALID")
     String shiftType;
 
-    @NotNull(message = "INVALID_REQUEST")
+    @NotNull(message = "WORK_SHIFT_STATUS_INVALID")
     ShiftStatus shiftStatus;
 
-    @NotNull(message = "INVALID_REQUEST")
-    @Min(value = 1, message = "INVALID_REQUEST")
-    @Max(value = 1000, message = "INVALID_REQUEST")
+    // 1–50 khi tạo hoặc khi đổi giá trị (WorkShiftServiceImpl); ca cũ lớn hơn 50 vẫn sửa được các trường khác.
+    @NotNull(message = "WORK_SHIFT_CAPACITY_INVALID")
+    @Min(value = 1, message = "WORK_SHIFT_CAPACITY_INVALID")
+    @Max(value = 1000, message = "WORK_SHIFT_CAPACITY_INVALID")
     Integer capacity;
 
+    // Bỏ trống khi tạo → mặc định giờ bắt đầu − 24h (hoặc − 1h nếu không còn kịp).
     Instant registrationDeadline;
 
-    @Size(max = 5000, message = "INVALID_REQUEST")
+    // ≤ 500 ký tự sau khi trim khi tạo hoặc khi đổi giá trị.
+    @Size(max = 5000, message = "WORK_SHIFT_NOTE_TOO_LONG")
     String note;
 
     Long version;

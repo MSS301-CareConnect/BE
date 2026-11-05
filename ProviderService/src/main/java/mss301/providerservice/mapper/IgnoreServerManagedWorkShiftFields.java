@@ -15,5 +15,7 @@ import java.lang.annotation.Target;
 @Mapping(target = "createdBy", ignore = true)
 @Mapping(target = "updatedBy", ignore = true)
 @Mapping(target = "version", ignore = true)
+@Mapping(target = "cancellationReason", ignore = true)
+@Mapping(target = "cancelledAt", ignore = true)
 public @interface IgnoreServerManagedWorkShiftFields {
 }

@@ -64,6 +64,13 @@
   `CAREGIVER_SERVICES_REQUIRED`), `BOOKING_SERVICE_UNAVAILABLE` = **4702** (spec ghi 4700, đã thuộc
   `SERVICE_TOKEN_UNAVAILABLE`).
 
+## Vòng đời ca (2026-11-05)
+
+- Trạng thái ca trả về / lọc luôn là trạng thái hiệu lực (`util/WorkShiftStates`), job `WorkShiftLifecycleScheduler`
+  ghi lại mỗi phút; loại ca ở `util/ShiftTypes` (cột vẫn là chuỗi để tương thích mobile). Không thêm giá trị enum trạng
+  thái mới (mobile chỉ biết 5 trạng thái ca / 4 trạng thái đăng ký). Mã lỗi thêm: 4309–4316, 4355–4356. Chi tiết:
+  `README.md` mục "Vòng đời ca".
+
 ## Aftercare (2026-10-24)
 
 - Certificate dùng CertificateVerificationStatus riêng: PENDING → CENTER_VERIFIED → ADMIN_VERIFIED; từ chối cần lý do,

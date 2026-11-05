@@ -22,11 +22,16 @@ public class WorkShiftResponse {
     LocalTime startTime;
     LocalTime endTime;
     String shiftType;
+    // Trạng thái hiệu lực (util/WorkShiftStates): ca đã qua không bao giờ là OPEN.
     ShiftStatus shiftStatus;
     Integer capacity;
     long approvedCount;
+    // Đăng ký đang chờ duyệt (badge "N chờ duyệt" phía trung tâm).
+    long pendingCount;
     Instant registrationDeadline;
     String note;
+    String cancellationReason;
+    Instant cancelledAt;
     Long version;
     Instant createdAt;
     Instant updatedAt;
