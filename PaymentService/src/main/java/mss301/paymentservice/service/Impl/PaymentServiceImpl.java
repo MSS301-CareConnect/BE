@@ -250,23 +250,33 @@ public class PaymentServiceImpl implements PaymentService {
             return ipnResponse("97", "Invalid signature");
         }
         // Đợt 1b: IPN chỉ ghi nhận tiền (+ outbox xác nhận cọc) trong một transaction — Booking lỗi không làm IPN lỗi.
-        IpnOutcome outcome = transactionTemplate.execute(status -> applyVnPayIpn(params));
+        IpnOutcome outcome = transactionTemplate.execute(status -> applyVnPayResult(params, TransactionEventType.IPN));
         return ipnResponse(outcome.responseCode(), outcome.message());
     }
 
     @Override
-    @Transactional
     public APIResponse<PaymentReturnResponse> handleVnPayReturn(Map<String, String> params) {
         if (!vnPayGateway.isValidSignature(params)) {
             throw new AppException(ErrorCode.INVALID_SIGNATURE);
         }
-        PaymentAttempt attempt = paymentAttemptRepository.findByReference(params.get(VNP_TXN_REF))
-                .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
-        Payment payment = attempt.getPayment();
-        paymentTransactionService.record(payment.getBookingId(), payment.getId(), null, payment.getInvoiceId(),
-                TransactionEventType.RETURN, null, null, "responseCode=" + params.get(VNP_RESPONSE_CODE), true);
-        PaymentReturnResponse paymentReturnResponse = paymentMapper.toReturnResponse(payment,
-                "Kết quả chính thức được cập nhật qua VNPay IPN");
+        // Return mang cùng chữ ký HMAC như IPN nên áp dụng được kết quả (idempotent với IPN) — cần khi VNPay không
+        // gọi được IPN (chạy localhost không tunnel). Tắt cờ thì chỉ IPN quyết định trạng thái.
+        boolean confirmOnReturn = paymentProperties.getVnpay().isConfirmOnReturn();
+        PaymentReturnResponse paymentReturnResponse = transactionTemplate.execute(status -> {
+            if (confirmOnReturn) {
+                applyVnPayResult(params, TransactionEventType.RETURN);
+            }
+            PaymentAttempt attempt = paymentAttemptRepository.findByReference(params.get(VNP_TXN_REF))
+                    .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+            Payment payment = attempt.getPayment();
+            if (!confirmOnReturn) {
+                paymentTransactionService.record(payment.getBookingId(), payment.getId(), null, payment.getInvoiceId(),
+                        TransactionEventType.RETURN, null, null, "responseCode=" + params.get(VNP_RESPONSE_CODE), true);
+            }
+            return paymentMapper.toReturnResponse(payment, confirmOnReturn
+                    ? "Đã ghi nhận kết quả VNPay"
+                    : "Kết quả chính thức được cập nhật qua VNPay IPN");
+        });
         return APIResponse.success("Nhận kết quả VNPay thành công", paymentReturnResponse);
     }
 
@@ -470,22 +480,23 @@ public class PaymentServiceImpl implements PaymentService {
         occurrenceFinancialRepository.saveAll(created);
     }
 
-    private IpnOutcome applyVnPayIpn(Map<String, String> params) {
+    // Kết quả VNPay đã kiểm chữ ký (IPN hoặc return) — gọi trong transaction; khóa phiên nên IPN + return không áp trùng.
+    private IpnOutcome applyVnPayResult(Map<String, String> params, TransactionEventType eventType) {
         String reference = params.get(VNP_TXN_REF);
         PaymentAttempt attempt = reference == null
                 ? null
                 : paymentAttemptRepository.findForUpdateByReference(reference).orElse(null);
         if (attempt == null) {
-            log.warn("VNPay IPN for unknown reference {}", reference);
+            log.warn("VNPay {} for unknown reference {}", eventType, reference);
             return new IpnOutcome("01", "Order not found");
         }
         Payment payment = attempt.getPayment();
         String responseCode = params.get(VNP_RESPONSE_CODE);
         paymentTransactionService.record(payment.getBookingId(), payment.getId(), null, payment.getInvoiceId(),
-                TransactionEventType.IPN, attempt.getAmount(), null, "reference=" + reference + " responseCode="
+                eventType, attempt.getAmount(), null, "reference=" + reference + " responseCode="
                         + responseCode + " transactionNo=" + params.get(VNP_TRANSACTION_NO), true);
         if (!matchesVnPayAmount(attempt, params.get(VNP_AMOUNT))) {
-            log.warn("VNPay IPN amount mismatch for {}", reference);
+            log.warn("VNPay {} amount mismatch for {}", eventType, reference);
             return new IpnOutcome("04", "Invalid amount");
         }
         if (attempt.getStatus() == PaymentStatus.SUCCESS) {

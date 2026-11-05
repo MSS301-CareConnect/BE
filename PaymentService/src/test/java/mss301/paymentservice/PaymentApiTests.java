@@ -281,6 +281,27 @@ class PaymentApiTests extends PaymentIntegrationTest {
         assertThat(retry.get("status").asString()).isEqualTo("PENDING");
     }
 
+    @Test
+    void signedReturnConfirmsPaymentWhenIpnNeverArrives() throws Exception {
+        BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE);
+        JsonNode checkout = checkout(booking);
+
+        vnPayReturn(checkout, "00")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("SUCCESS"));
+        Payment payment = paymentRepository.findByBookingIdAndPaymentType(booking.bookingId(), PaymentType.DEPOSIT)
+                .orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        assertThat(bookingFinancialRepository.findById(booking.bookingId()).orElseThrow().getStatus())
+                .isEqualTo(BookingFinancialStatus.DEPOSIT_PAID);
+
+        // Mở lại trang return hoặc IPN đến sau: không ghi nhận lần hai.
+        vnPayReturn(checkout, "00").andExpect(jsonPath("$.result.status").value("SUCCESS"));
+        ipn(checkout, "00").andExpect(jsonPath("$.RspCode").value("02"));
+        assertThat(eventsOf(booking.bookingId()).stream()
+                .filter(TransactionEventType.PAYMENT_SUCCEEDED::equals)).hasSize(1);
+    }
+
     // ===== refund-quotes (GAP_ANALYSIS §1.2) =====
 
     @Test

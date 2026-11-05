@@ -233,6 +233,19 @@ public abstract class PaymentIntegrationTest {
     }
 
     protected ResultActions ipnWith(String reference, String amountMinor, String responseCode) throws Exception {
+        Map<String, String> params = signedVnPayParams(reference, amountMinor, responseCode);
+        return mockMvc.perform(withParams(get("/api/v1/payments/vnpay/ipn"), params));
+    }
+
+    // Trình duyệt quay về FE rồi FE gọi return với đúng query đã ký của VNPay.
+    protected ResultActions vnPayReturn(JsonNode checkout, String responseCode) throws Exception {
+        Map<String, String> checkoutParams = checkoutParams(checkout);
+        Map<String, String> params = signedVnPayParams(checkoutParams.get("vnp_TxnRef"), checkoutParams.get("vnp_Amount"),
+                responseCode);
+        return mockMvc.perform(withParams(get("/api/v1/payments/vnpay/return"), params));
+    }
+
+    protected Map<String, String> signedVnPayParams(String reference, String amountMinor, String responseCode) {
         Map<String, String> params = new HashMap<>();
         params.put("vnp_TmnCode", PaymentTestServer.VNPAY_TMN_CODE);
         params.put("vnp_TxnRef", reference);
@@ -243,7 +256,7 @@ public abstract class PaymentIntegrationTest {
         params.put("vnp_PayDate", "20261102080000");
         String signed = VnPaySigner.signedQuery(params, PaymentTestServer.VNPAY_SECRET);
         params.put("vnp_SecureHash", signed.substring(signed.indexOf("vnp_SecureHash=") + "vnp_SecureHash=".length()));
-        return mockMvc.perform(withParams(get("/api/v1/payments/vnpay/ipn"), params));
+        return params;
     }
 
     protected MockHttpServletRequestBuilder withParams(MockHttpServletRequestBuilder builder, Map<String, String> params) {

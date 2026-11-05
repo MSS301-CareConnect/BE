@@ -73,6 +73,8 @@ public class PaymentProperties {
         Duration readTimeout = Duration.ofSeconds(15);
         // Job hết hạn hỏi lại VNPay (querydr) trước khi đánh EXPIRED — tắt thì chỉ đánh EXPIRED.
         boolean querydrEnabled;
+        // Return URL (đã kiểm chữ ký) cũng ghi nhận kết quả như IPN — dev localhost không nhận được IPN.
+        boolean confirmOnReturn = true;
     }
 
     @Data

@@ -51,6 +51,8 @@ payment:
     connect-timeout: ${VNPAY_CONNECT_TIMEOUT:5s}
     read-timeout: ${VNPAY_READ_TIMEOUT:15s}
     querydr-enabled: ${VNPAY_QUERYDR_ENABLED:false}
+    # Return URL (chữ ký HMAC như IPN) cũng ghi nhận kết quả, idempotent với IPN — cần khi VNPay không gọi được IPN.
+    confirm-on-return: ${VNPAY_CONFIRM_ON_RETURN:true}
   stripe:
     enabled: ${STRIPE_ENABLED:false}
     secret-key: ${STRIPE_SECRET_KEY:}

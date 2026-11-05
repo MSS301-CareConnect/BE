@@ -25,6 +25,8 @@
   (`client/ServiceTokenProvider` + `ServiceTokenInterceptor`, chỉ gắn vào `BookingClient`).
 - Ngoại lệ rule #3: `GET /api/v1/payments/vnpay/ipn` trả JSON thô `{RspCode, Message}`. Callback (IPN, return, Stripe)
   public, xác thực bằng chữ ký — có trong `SecurityConfig.PUBLIC_PATHS` + `@SecurityRequirements({})`.
+- `VNPAY_CONFIRM_ON_RETURN` (mặc định `true`, 2026-11-05): return VNPay đã kiểm chữ ký cũng ghi nhận kết quả qua cùng
+  hàm với IPN (`applyVnPayResult`, khóa phiên, idempotent) — chạy localhost VNPay không gọi được IPN. `false` → chỉ IPN.
 - Không xóa mềm: dữ liệu tiền giữ vĩnh viễn (`BaseEntity` chỉ có `created_at`, `updated_at`). `payment_transactions` là
   nhật ký **append-only** (`@Immutable`), ghi qua `PaymentTransactionService.record` (propagation MANDATORY — luôn cùng
   transaction với biến động tiền). **Mọi biến động tiền ghi một dòng**; `detail` không chứa secret / `vnp_SecureHash`.
