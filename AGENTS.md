@@ -882,7 +882,11 @@ Health:   /actuator/health
    `GET /api/v1/payments/vnpay/ipn` trả **JSON thô theo chuẩn VNPay** `{"RspCode":"00","Message":"Confirm Success"}`
    (mã `00/01/02/04/97/99`, không dùng `ErrorCode`), vì VNPay chỉ đọc đúng định dạng này để biết merchant đã nhận kết
    quả; endpoint public (chữ ký HMAC VNPay thay cho JWT). Return URL `GET /api/v1/payments/vnpay/return` vẫn trả
-   `APIResponse<T>`. `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
+   `APIResponse<T>`. *Ngoại lệ thứ ba (CareCatalogService, 2026-11-05):* ảnh minh họa dịch vụ chuẩn
+   `GET /api/v1/catalog-items/images/{mediaFileId}` trả **302** (`ResponseEntity<Void>`, `Location` = URL tải có hạn
+   của MediaService, `Cache-Control` ngắn hơn hạn URL) vì `imageUrl` được dùng thẳng trong thẻ `<img>` — trình duyệt
+   không đọc được `APIResponse`; endpoint public chỉ GET, lỗi vẫn trả `APIResponse` qua `GlobalExceptionHandler`.
+   `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
    response để đặt HTTP status. Không thêm ngoại lệ khác nếu chưa ghi vào đây kèm lý do.
 
 4. **`@JsonInclude(NON_NULL)` trên `APIResponse` là cố ý** — không bỏ.

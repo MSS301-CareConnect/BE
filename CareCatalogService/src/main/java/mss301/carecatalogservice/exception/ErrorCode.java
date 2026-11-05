@@ -24,6 +24,8 @@ public enum ErrorCode {
     SERVICE_UNAVAILABLE(3004, "Catalog service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE),
     AUTH_DEPENDENCY_UNAVAILABLE(3005, "Authentication service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE),
     CONCURRENT_UPDATE(3006, "The data was just changed by someone else, please reload and try again", HttpStatus.CONFLICT),
+    MEDIA_SERVICE_UNAVAILABLE(3007, "Image storage is temporarily unavailable, please try again later", HttpStatus.SERVICE_UNAVAILABLE),
+    SERVICE_TOKEN_UNAVAILABLE(3008, "Catalog service cannot reach the identity service right now", HttpStatus.SERVICE_UNAVAILABLE),
 
     // CARE SERVICES (Danh mục chuẩn)
     CARE_SERVICE_NOT_FOUND(3100, "Care service does not exist", HttpStatus.NOT_FOUND),
@@ -34,6 +36,10 @@ public enum ErrorCode {
     SERVICE_NOT_ACTIVE(3105, "Care service is currently inactive", HttpStatus.CONFLICT),
     SERVICES_REQUIRED(3106, "At least one service is required", HttpStatus.BAD_REQUEST),
     CARE_SERVICE_IN_USE(3110, "Standard service is in use by centers — set it to INACTIVE instead of deleting", HttpStatus.CONFLICT),
+    CATALOG_IMAGE_REQUIRED(3111, "Choose an image file to upload", HttpStatus.BAD_REQUEST),
+    CATALOG_IMAGE_INVALID(3112, "The image must be a JPG, PNG or WebP file", HttpStatus.BAD_REQUEST),
+    CATALOG_IMAGE_TOO_LARGE(3113, "The image can be at most 5 MB", HttpStatus.BAD_REQUEST),
+    CATALOG_IMAGE_NOT_FOUND(3114, "Service image does not exist", HttpStatus.NOT_FOUND),
 
     // CENTER SERVICES (Dịch vụ trung tâm)
     CENTER_SERVICE_NOT_FOUND(3200, "Center service does not exist", HttpStatus.NOT_FOUND),

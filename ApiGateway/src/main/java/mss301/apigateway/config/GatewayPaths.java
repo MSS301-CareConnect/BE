@@ -61,9 +61,11 @@ public final class GatewayPaths {
 
     // Public CHỈ với GET: VNPay gọi IPN / trình duyệt quay về return URL không mang JWT; PaymentService tự kiểm chữ ký.
     // Danh bạ trung tâm ACTIVE (SRCH-02, CR-6 2026-11-03): khách chưa đăng nhập xem và chọn trung tâm.
+    // Ảnh minh họa dịch vụ chuẩn (2026-11-05): thẻ <img> của khách chưa đăng nhập, Catalog redirect tới URL tải có hạn.
     public static final String[] PUBLIC_GET_ENDPOINTS = {
             "/api/v1/payments/vnpay/ipn", "/api/v1/payments/vnpay/return",
-            "/api/v1/care-centers/public", "/api/v1/care-centers/public/{centerId}"
+            "/api/v1/care-centers/public", "/api/v1/care-centers/public/{centerId}",
+            "/api/v1/catalog-items/images/{mediaFileId}", "/api/v1/care-services/images/{mediaFileId}"
     };
 
     // Swagger tổng hợp + health của chính gateway.

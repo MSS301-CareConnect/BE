@@ -14,6 +14,7 @@ CREATE TABLE care_services (
     description VARCHAR(1000),
     category VARCHAR(255) NOT NULL,
     status VARCHAR(50) NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    image_url VARCHAR(1000),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,

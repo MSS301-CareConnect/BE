@@ -8,6 +8,8 @@ import java.util.Set;
 public enum MediaPurpose {
     USER_AVATAR(5, Set.of("image/jpeg", "image/png", "image/webp")),
     CARE_CENTER_LOGO(5, Set.of("image/jpeg", "image/png", "image/webp")),
+    // Ảnh minh họa dịch vụ chuẩn của CareCatalogService (ADMIN tải lên, khách xem công khai qua Catalog).
+    CATALOG_ITEM_IMAGE(5, Set.of("image/jpeg", "image/png", "image/webp")),
     CAREGIVER_AVATAR(5, Set.of("image/jpeg", "image/png", "image/webp")),
     CAREGIVER_CERTIFICATE(10, Set.of("application/pdf", "image/jpeg", "image/png")),
     CARE_RECIPIENT_AVATAR(5, Set.of("image/jpeg", "image/png", "image/webp")),

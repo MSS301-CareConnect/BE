@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS media_files (
     CONSTRAINT ck_media_files_purpose CHECK (media_purpose IN (
         'USER_AVATAR',
         'CARE_CENTER_LOGO',
+        'CATALOG_ITEM_IMAGE',
         'CAREGIVER_AVATAR',
         'CAREGIVER_CERTIFICATE',
         'CARE_RECIPIENT_AVATAR',

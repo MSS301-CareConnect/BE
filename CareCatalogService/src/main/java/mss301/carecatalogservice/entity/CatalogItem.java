@@ -30,4 +30,7 @@ public class CatalogItem extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     ServiceStatus status;
+
+    @Column(name = "image_url", length = 1000)
+    String imageUrl;
 }

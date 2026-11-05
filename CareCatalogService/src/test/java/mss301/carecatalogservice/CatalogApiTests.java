@@ -109,6 +109,24 @@ class CatalogApiTests {
     }
 
     @Test
+    void createAndGetCatalogItemWithImageUrl() throws Exception {
+        String body = "{\"name\":\"Chăm sóc đặc biệt\",\"category\":\"Chăm sóc\",\"status\":\"ACTIVE\",\"imageUrl\":\"https://example.com/photo.jpg\"}";
+        String response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/catalog-items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body)
+                        .with(user("ADMIN", null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.name").value("Chăm sóc đặc biệt"))
+                .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"))
+                .andReturn().getResponse().getContentAsString();
+
+        String id = com.jayway.jsonpath.JsonPath.read(response, "$.result.id");
+        mockMvc.perform(get("/api/v1/catalog-items/" + id).with(user("CUSTOMER", null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"));
+    }
+
+    @Test
     void customerSeesOnlySellableOfferingsWithActivePlans() throws Exception {
         UUID centerId = UUID.randomUUID();
         CatalogItem bathing = saveItem("Tắm gội", ServiceStatus.ACTIVE);

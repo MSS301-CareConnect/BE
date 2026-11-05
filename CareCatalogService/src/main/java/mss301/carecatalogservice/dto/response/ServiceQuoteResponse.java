@@ -20,6 +20,8 @@ public class ServiceQuoteResponse {
 
     UUID pricePlanId;
 
+    String planName;
+
     String serviceName;
 
     PricingUnit pricingUnit;

@@ -26,9 +26,21 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
 
+  # Ảnh minh họa dịch vụ chuẩn tối đa 5 MB (service kiểm và báo CATALOG_IMAGE_TOO_LARGE); dư một chút cho phần multipart.
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 7MB
+
   cloud:
     openfeign:
-      # Chưa có Feign client (Catalog chỉ nhận lời gọi). Client mới khai báo timeout riêng ở client.config.<tên>.
+      # Client duy nhất: MediaService (ảnh minh họa). Client mới khai báo timeout riêng ở client.config.<tên>.
+      client:
+        config:
+          media:
+            connect-timeout: ${CARE_CATALOG_MEDIA_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${CARE_CATALOG_MEDIA_READ_TIMEOUT_MS:10000}
+            logger-level: none
       circuitbreaker:
         enabled: true
     circuitbreaker:
@@ -72,3 +84,16 @@ care-catalog:
   jwt:
     issuer: ${CARE_CATALOG_JWT_ISSUER}
     jwks-uri: ${CARE_CATALOG_JWT_JWKS_URI}
+
+  # Gọi service khác qua ApiGateway (Docker: http://api-gateway:8080).
+  identity:
+    url: ${CARE_CATALOG_IDENTITY_URL:http://localhost:8080}
+  media:
+    url: ${CARE_CATALOG_MEDIA_URL:${care-catalog.identity.url}}
+
+  # Token SERVICE (client-credentials) xin ở Identity qua gateway (care-catalog.identity.url); chỉ dùng cho MediaService.
+  service-client:
+    client-id: ${CARE_CATALOG_SERVICE_CLIENT_ID:}
+    client-secret: ${CARE_CATALOG_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${CARE_CATALOG_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CARE_CATALOG_SERVICE_TOKEN_READ_TIMEOUT:3s}

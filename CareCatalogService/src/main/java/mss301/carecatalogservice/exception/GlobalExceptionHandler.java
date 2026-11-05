@@ -14,6 +14,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Locale;
@@ -43,6 +45,17 @@ public class GlobalExceptionHandler {
             MissingServletRequestParameterException.class})
     public ResponseEntity<APIResponse<Void>> handlingUnreadableRequest(Exception exception) {
         return toResponse(ErrorCode.INVALID_REQUEST);
+    }
+
+    // Vượt spring.servlet.multipart.max-file-size — bị chặn trước khi tới controller.
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<APIResponse<Void>> handlingMaxUploadSize(MaxUploadSizeExceededException exception) {
+        return toResponse(ErrorCode.CATALOG_IMAGE_TOO_LARGE);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<APIResponse<Void>> handlingMissingPart(MissingServletRequestPartException exception) {
+        return toResponse(ErrorCode.CATALOG_IMAGE_REQUIRED);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

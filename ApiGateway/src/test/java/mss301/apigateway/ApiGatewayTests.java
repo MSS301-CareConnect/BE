@@ -144,6 +144,19 @@ class ApiGatewayTests {
     }
 
     @Test
+    void catalogImageIsAnonymousOnlyForGet() throws Exception {
+        UUID mediaFileId = UUID.randomUUID();
+        mockMvc.perform(get("/api/v1/catalog-items/images/" + mediaFileId)
+                        .cookie(new Cookie("access_token", "expired.or.broken")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.path").value("/api/v1/catalog-items/images/" + mediaFileId));
+        mockMvc.perform(post("/api/v1/catalog-items/images"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/catalog-items/" + mediaFileId))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void serviceTokenEndpointIsPublicAndIgnoresStaleCookie() throws Exception {
         mockMvc.perform(post("/api/v1/auth/service-token")
                         .cookie(new Cookie("access_token", "expired.or.broken"))

@@ -81,6 +81,13 @@ Get-Content -Raw schema/catalog.sql | docker compose exec -T care-catalog-db psq
   status); xóa dịch vụ trung tâm xóa mềm luôn gói con. `GET /api/v1/center-services/price-summary?careServiceId=&minPrice=&maxPrice=`
   (SERVICE, C9.2): `[{centerId, minPrice}]` của gói đang bán trong khoảng giá.
 
+- Ảnh minh họa (2026-11-05): `POST /api/v1/catalog-items/images` (*Role: ADMIN*, multipart `file`, JPG / PNG / WebP ≤ 5 MB)
+  tải ảnh lên MediaService (purpose `CATALOG_ITEM_IMAGE`) và trả `{mediaFileId, imageUrl, contentType, fileSize}`; FE gửi
+  `imageUrl` trong `CatalogItemRequest` khi tạo / sửa. `GET /api/v1/catalog-items/images/{mediaFileId}` public (không đọc
+  token, gateway `PUBLIC_GET_ENDPOINTS`) trả 302 tới URL tải có hạn, `Cache-Control` ≤ 1 giờ và ngắn hơn hạn URL. Lỗi:
+  `3111` thiếu file, `3112` sai loại, `3113` quá 5 MB, `3114` không có ảnh, `3007` MediaService / `3008` Identity lỗi (503).
+  Cần client `catalog` trong `IDENTITY_SERVICE_CLIENTS` và script `MediaService/schema/2026-11-05-catalog-item-image.sql`.
+
 ### 3. Bảng giá (`/price-plans`)
 - `POST /price-plans`: Tạo bảng giá mới cho dịch vụ trung tâm (*Role: CENTER_MANAGER*)
 - `PUT /price-plans/{id}`: Cập nhật bảng giá (*Role: CENTER_MANAGER*)

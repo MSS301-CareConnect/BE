@@ -21,7 +21,10 @@
 | `PricePlan` (`price_plans`) — gói giá HOUR / DAY / SHIFT | `PricePlanService` / `PricePlanController` | `/api/v1/price-plans` |
 
 `CatalogQuoteService` là logic báo giá dùng chung, được `CenterOfferingService.quote` gọi (không có controller riêng).
-Service hiện **không gọi service nào** (không Feign client); Booking / Provider gọi vào qua gateway.
+Booking / Provider gọi vào qua gateway. Catalog chỉ gọi **MediaService** (`client/MediaClient`, qua gateway, token SERVICE
+client `catalog` — `CARE_CATALOG_SERVICE_CLIENT_ID/SECRET`, hash ở `IDENTITY_SERVICE_CLIENTS`) để lưu ảnh minh họa dịch
+vụ chuẩn (purpose `CATALOG_ITEM_IMAGE`, 2026-11-05). `imageUrl` lưu đường dẫn cố định
+`/api/v1/catalog-items/images/{mediaFileId}` (public GET → 302 tới URL tải có hạn), không lưu URL R2 có chữ ký.
 
 ## Quy tắc nghiệp vụ (bắt buộc giữ)
 

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,6 +19,9 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import java.util.List;
 import java.util.Set;
@@ -39,6 +43,12 @@ public class SecurityConfig {
     // Endpoint public không đọc token — cookie cũ/hỏng của trình duyệt không được chặn Swagger/health.
     static List<String> PUBLIC_PREFIXES = List.of("/v3/api-docs", "/swagger-ui", "/actuator/health");
     static Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
+
+    // Ảnh minh họa dịch vụ chuẩn: CHỈ GET, không cần đăng nhập và không đọc token — cookie hết hạn của khách không được
+    // làm vỡ ảnh. Đồng bộ với GatewayPaths.PUBLIC_GET_ENDPOINTS của ApiGateway.
+    static RequestMatcher PUBLIC_GET_ENDPOINTS = new OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/catalog-items/images/{mediaFileId}"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-services/images/{mediaFileId}"));
 
     JwtDecoder jwtDecoder;
     JwtAuthorityConverter jwtAuthorityConverter;
@@ -64,6 +74,7 @@ public class SecurityConfig {
                         }))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers(PUBLIC_GET_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)
@@ -110,6 +121,9 @@ public class SecurityConfig {
             if (path.startsWith(publicPrefix)) {
                 return null;
             }
+        }
+        if (PUBLIC_GET_ENDPOINTS.matches(request)) {
+            return null;
         }
         String bearerToken = headerTokenResolver.resolve(request);
         String cookieToken = CookieUtils.read(request, CookieUtils.ACCESS);

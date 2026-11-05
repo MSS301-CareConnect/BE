@@ -35,6 +35,7 @@ public interface CenterOfferingMapper {
     @Mapping(target = "careServiceId", source = "catalogItem.id")
     @Mapping(target = "centerServiceId", source = "centerOffering.id")
     @Mapping(target = "pricePlanId", source = "pricePlan.id")
+    @Mapping(target = "planName", source = "pricePlan.planName")
     @Mapping(target = "serviceName", source = "catalogItem.name")
     @Mapping(target = "active", constant = "true")
     @Mapping(target = "finalPrice", expression = "java(pricePlan.finalPrice())")
