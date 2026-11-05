@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
+// PostgreSQL không suy ra kiểu của tham số null trong "? is null" (42P18) nên tham số tùy chọn được cast tường minh.
 public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
     Optional<WorkShift> findByIdAndDeletedAtIsNull(UUID id);
 
@@ -32,10 +33,10 @@ public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
             select s from WorkShift s
             where s.deletedAt is null
               and (:centerId is null or s.center.id = :centerId)
-              and (:status is null or s.shiftStatus = :status)
-              and (:excludedStatus is null or s.shiftStatus <> :excludedStatus)
-              and (:fromDate is null or s.workDate >= :fromDate)
-              and (:toDate is null or s.workDate <= :toDate)
+              and (cast(:status as String) is null or s.shiftStatus = :status)
+              and (cast(:excludedStatus as String) is null or s.shiftStatus <> :excludedStatus)
+              and (cast(:fromDate as LocalDate) is null or s.workDate >= :fromDate)
+              and (cast(:toDate as LocalDate) is null or s.workDate <= :toDate)
             """)
     Page<WorkShift> search(@Param("centerId") UUID centerId,
                            @Param("status") ShiftStatus status,
@@ -53,11 +54,11 @@ public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
             select s from WorkShift s
             where s.deletedAt is null
               and (:centerId is null or s.center.id = :centerId)
-              and (:excludedStatus is null or s.shiftStatus <> :excludedStatus)
-              and (:fromDate is null or s.workDate >= :fromDate)
-              and (:toDate is null or s.workDate <= :toDate)
-              and (:shiftType is null or s.shiftType = :shiftType)
-              and (:storedStatus is null or s.shiftStatus = :storedStatus)
+              and (cast(:excludedStatus as String) is null or s.shiftStatus <> :excludedStatus)
+              and (cast(:fromDate as LocalDate) is null or s.workDate >= :fromDate)
+              and (cast(:toDate as LocalDate) is null or s.workDate <= :toDate)
+              and (cast(:shiftType as String) is null or s.shiftType = :shiftType)
+              and (cast(:storedStatus as String) is null or s.shiftStatus = :storedStatus)
               and (:openOnly = false or (s.shiftStatus = mss301.providerservice.enums.ShiftStatus.OPEN
                    and (s.workDate > :today or (s.workDate = :today and s.startTime > :nowTime))
                    and (s.registrationDeadline is null or s.registrationDeadline > :now)))
@@ -95,9 +96,9 @@ public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
             select s from WorkShift s
             where s.deletedAt is null
               and s.center.id = :centerId
-              and (:fromDate is null or s.workDate >= :fromDate)
-              and (:toDate is null or s.workDate <= :toDate)
-              and (:shiftType is null or s.shiftType = :shiftType)
+              and (cast(:fromDate as LocalDate) is null or s.workDate >= :fromDate)
+              and (cast(:toDate as LocalDate) is null or s.workDate <= :toDate)
+              and (cast(:shiftType as String) is null or s.shiftType = :shiftType)
             """)
     List<WorkShift> findForStatistics(@Param("centerId") UUID centerId,
                                       @Param("fromDate") LocalDate fromDate,

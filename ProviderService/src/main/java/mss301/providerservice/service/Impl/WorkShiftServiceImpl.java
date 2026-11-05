@@ -196,13 +196,24 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         // "Sắp tới 7 ngày" không phụ thuộc khoảng ngày đang lọc.
         LocalDate today = LocalDate.ofInstant(now, ProviderTime.ZONE);
         Instant weekLater = now.plus(7, ChronoUnit.DAYS);
-        long upcoming = workShiftRepository.findActiveBetween(scopedCenterId, today, today.plusDays(7)).stream()
+        List<WorkShift> upcomingShifts = workShiftRepository.findActiveBetween(scopedCenterId, today, today.plusDays(7))
+                .stream()
                 .filter(shift -> {
                     Instant start = WorkShiftStates.start(shift);
                     return !start.isBefore(now) && start.isBefore(weekLater);
                 })
-                .count();
-        statistics.setUpcoming7Days(upcoming);
+                .toList();
+        statistics.setUpcoming7Days(upcomingShifts.size());
+        // Thiếu người: ca sắp tới (cả DRAFT chưa công bố) có số APPROVED nhỏ hơn capacity.
+        Map<UUID, Long> upcomingApproved = countByShift(upcomingShifts.stream().map(WorkShift::getId).toList(),
+                RegistrationStatus.APPROVED);
+        for (WorkShift shift : upcomingShifts) {
+            long missing = shift.getCapacity() - upcomingApproved.getOrDefault(shift.getId(), 0L);
+            if (missing > 0) {
+                statistics.setUnderstaffed7Days(statistics.getUnderstaffed7Days() + 1);
+                statistics.setMissingStaff7Days(statistics.getMissingStaff7Days() + missing);
+            }
+        }
         return APIResponse.success("Lấy thống kê ca làm việc thành công", statistics);
     }
 

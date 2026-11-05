@@ -186,7 +186,8 @@ Vòng đời ca (2026-11-05, SQL `schema/changes/2026-11-05_work_shift_lifecycle
 - `POST /centers/{centerId}/batch` — cùng ca cho 1–31 ngày khác nhau (4315), hạn đăng ký `registrationLeadMinutes` trước
   giờ bắt đầu; một ngày sai → không tạo ca nào.
 - `GET /statistics?centerId&fromDate&toDate&shiftType` (ADMIN cần `centerId`) — đếm theo trạng thái hiệu lực trên cả bộ
-  lọc, ca 7 ngày tới, đăng ký chờ duyệt, tổng capacity / đã duyệt. Danh sách thêm `shiftType`, `hasVacancy`;
+  lọc, ca 7 ngày tới, đăng ký chờ duyệt, tổng capacity / đã duyệt. `understaffed7Days` / `missingStaff7Days`
+  (2026-11-05): trong các ca 7 ngày tới (kể cả DRAFT), số ca còn thiếu người (APPROVED < capacity) và số chỗ còn trống. Danh sách thêm `shiftType`, `hasVacancy`;
   `WorkShiftResponse` thêm `pendingCount`.
 - Đăng ký: chặn khi trùng giờ một lịch đã duyệt (4401) hoặc rơi vào ngày nghỉ (4355), kiểm cả lúc đăng ký lẫn lúc duyệt.
   `GET /registrations/me` và `GET /{id}/registrations` nhận `status`; response kèm tóm tắt ca (ngày, giờ, loại, trạng
