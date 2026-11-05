@@ -452,6 +452,44 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.DUPLICATE_PRIMARY_CONTACT.getCode()));
     }
 
+    // 2026-11-05: sổ địa chỉ — thêm, sửa, liệt kê, xóa mềm; người khác không thấy; thiếu tên / tỉnh → 400.
+    @Test
+    void savedAddressesOfARecipient() throws Exception {
+        UUID recipientId = createRecipient(owner);
+        String path = "/api/v1/care-recipients/" + recipientId + "/addresses";
+        mockMvc.perform(post(path)
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Nhà con gái\",\"addressLine\":\" \",\"province\":\"Hà Nội\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ADDRESS_LINE_REQUIRED.getCode()));
+        JsonNode saved = readResult(mockMvc.perform(post(path)
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Nhà con gái\",\"addressLine\":\"9 Nguyễn Trãi\",\"ward\":\"Phường 2\","
+                                + "\"district\":\"Quận 5\",\"province\":\"TP. Hồ Chí Minh\",\"note\":\"Gọi chị Hoa\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.label").value("Nhà con gái"))
+                .andReturn());
+        String addressId = saved.get("id").asString();
+        mockMvc.perform(put(path + "/" + addressId)
+                        .header("Authorization", bearer(owner, "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Nhà chị Hoa\",\"addressLine\":\"9 Nguyễn Trãi\",\"province\":\"TP. Hồ Chí Minh\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.label").value("Nhà chị Hoa"))
+                .andExpect(jsonPath("$.result.ward").doesNotExist());
+        mockMvc.perform(get(path).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1));
+        mockMvc.perform(get(path).header("Authorization", bearer(UUID.randomUUID(), "CUSTOMER")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete(path + "/" + addressId).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(path).header("Authorization", bearer(owner, "CUSTOMER")))
+                .andExpect(jsonPath("$.result.length()").value(0));
+    }
+
     // ===== Người thân & phân quyền OWNER / EDITOR / VIEWER =====
 
     @Test

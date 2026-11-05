@@ -11,11 +11,13 @@ import mss301.carerecipientservice.client.dto.CaregiverAccessResponse;
 import mss301.carerecipientservice.dto.request.CareRecipientCreateRequest;
 import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.request.EmergencyContactRequest;
+import mss301.carerecipientservice.dto.request.RecipientAddressRequest;
 import mss301.carerecipientservice.dto.request.MedicationRequest;
 import mss301.carerecipientservice.dto.request.RecipientBatchRequest;
 import mss301.carerecipientservice.dto.request.ManagerCreateRequest;
 import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
 import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
+import mss301.carerecipientservice.dto.response.RecipientAddressResponse;
 import mss301.carerecipientservice.dto.response.MedicationResponse;
 import mss301.carerecipientservice.dto.response.ManagerInvitationResponse;
 import mss301.carerecipientservice.dto.response.MyInvitationResponse;
@@ -48,6 +50,7 @@ import mss301.carerecipientservice.repository.RecipientManagerRepository;
 import mss301.carerecipientservice.service.CareRecipientService;
 import mss301.carerecipientservice.service.RecipientManagerService;
 import mss301.carerecipientservice.service.EmergencyContactService;
+import mss301.carerecipientservice.service.RecipientAddressService;
 import mss301.carerecipientservice.service.MedicationService;
 import mss301.carerecipientservice.security.CurrentRequestIdentity;
 import mss301.carerecipientservice.service.RecipientAccessService;
@@ -87,6 +90,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     EmergencyContactMapper emergencyContactMapper;
     MedicationService medicationService;
     EmergencyContactService emergencyContactService;
+    RecipientAddressService recipientAddressService;
     RecipientManagerService recipientManagerService;
     TransactionTemplate transactionTemplate;
 
@@ -399,6 +403,28 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     @Override
     public APIResponse<EmergencyContactResponse> createEmergencyContact(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
         return emergencyContactService.create(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<List<RecipientAddressResponse>> listAddresses(UUID actorId, UUID recipientId) {
+        return recipientAddressService.list(actorId, recipientId);
+    }
+
+    @Override
+    public APIResponse<RecipientAddressResponse> createAddress(UUID actorId, UUID recipientId,
+                                                               RecipientAddressRequest request) {
+        return recipientAddressService.create(actorId, recipientId, request);
+    }
+
+    @Override
+    public APIResponse<RecipientAddressResponse> updateAddress(UUID actorId, UUID recipientId, UUID addressId,
+                                                               RecipientAddressRequest request) {
+        return recipientAddressService.update(actorId, recipientId, addressId, request);
+    }
+
+    @Override
+    public APIResponse<Void> deleteAddress(UUID actorId, UUID recipientId, UUID addressId) {
+        return recipientAddressService.delete(actorId, recipientId, addressId);
     }
 
     @Override

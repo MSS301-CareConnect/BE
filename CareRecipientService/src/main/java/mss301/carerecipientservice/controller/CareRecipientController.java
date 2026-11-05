@@ -12,6 +12,7 @@ import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.EmergencyContactResponse;
+import mss301.carerecipientservice.dto.response.RecipientAddressResponse;
 import mss301.carerecipientservice.dto.response.MedicationResponse;
 import mss301.carerecipientservice.dto.response.PageResponse;
 import mss301.carerecipientservice.dto.response.ManagerInvitationResponse;
@@ -121,6 +122,14 @@ public class CareRecipientController {
         return careRecipientService.getEmergencyContact(actorId, recipientId, contactId);
     }
 
+    @GetMapping("/{recipientId}/addresses")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<List<RecipientAddressResponse>> listAddresses(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId) {
+        return careRecipientService.listAddresses(actorId, recipientId);
+    }
+
     @GetMapping("/{recipientId}/managers")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<RecipientManagerResponse>> listManagers(
@@ -178,6 +187,15 @@ public class CareRecipientController {
         return careRecipientService.createEmergencyContact(actorId, recipientId, request);
     }
 
+    @PostMapping("/{recipientId}/addresses")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<RecipientAddressResponse> createAddress(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId,
+            @Valid @RequestBody RecipientAddressRequest request) {
+        return careRecipientService.createAddress(actorId, recipientId, request);
+    }
+
     // C-04: thay POST /{recipientId}/managers (thêm thẳng, lộ tên / SĐT người được thêm) bằng lời mời phải chấp nhận.
     @PostMapping("/{recipientId}/invitations")
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -233,6 +251,16 @@ public class CareRecipientController {
             @PathVariable UUID contactId,
             @Valid @RequestBody EmergencyContactRequest request) {
         return careRecipientService.updateEmergencyContact(actorId, recipientId, contactId, request);
+    }
+
+    @PutMapping("/{recipientId}/addresses/{addressId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<RecipientAddressResponse> updateAddress(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId,
+            @PathVariable UUID addressId,
+            @Valid @RequestBody RecipientAddressRequest request) {
+        return careRecipientService.updateAddress(actorId, recipientId, addressId, request);
     }
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
@@ -308,6 +336,15 @@ public class CareRecipientController {
             @PathVariable UUID recipientId,
             @PathVariable UUID contactId) {
         return careRecipientService.deleteEmergencyContact(actorId, recipientId, contactId);
+    }
+
+    @DeleteMapping("/{recipientId}/addresses/{addressId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<Void> deleteAddress(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID recipientId,
+            @PathVariable UUID addressId) {
+        return careRecipientService.deleteAddress(actorId, recipientId, addressId);
     }
 
     @DeleteMapping("/{recipientId}/invitations/{invitationId}")

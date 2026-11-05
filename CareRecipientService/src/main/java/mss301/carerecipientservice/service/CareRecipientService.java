@@ -60,6 +60,16 @@ public interface CareRecipientService {
 
     APIResponse<Void> deleteEmergencyContact(UUID actorId, UUID recipientId, UUID contactId);
 
+    // Sổ địa chỉ (2026-11-05)
+    APIResponse<List<RecipientAddressResponse>> listAddresses(UUID actorId, UUID recipientId);
+
+    APIResponse<RecipientAddressResponse> createAddress(UUID actorId, UUID recipientId, RecipientAddressRequest request);
+
+    APIResponse<RecipientAddressResponse> updateAddress(UUID actorId, UUID recipientId, UUID addressId,
+                                                        RecipientAddressRequest request);
+
+    APIResponse<Void> deleteAddress(UUID actorId, UUID recipientId, UUID addressId);
+
     // ===== Recipient Manager =====
     APIResponse<List<RecipientManagerResponse>> listManagers(UUID actorId, UUID recipientId);
 

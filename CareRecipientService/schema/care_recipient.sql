@@ -57,6 +57,22 @@ CREATE INDEX idx_emergency_contacts_recipient ON emergency_contacts (recipient_i
 -- Tối đa một liên hệ chính (chưa xóa mềm) trên mỗi hồ sơ.
 CREATE UNIQUE INDEX uk_emergency_contacts_primary ON emergency_contacts (recipient_id) WHERE is_primary AND deleted_at IS NULL;
 
+-- Sổ địa chỉ của người được chăm sóc (2026-11-05): nơi người bệnh có thể ở ngoài địa chỉ hồ sơ; tối đa 20 / hồ sơ.
+CREATE TABLE recipient_addresses (
+    address_id uuid PRIMARY KEY,
+    recipient_id uuid NOT NULL REFERENCES care_recipients(recipient_id),
+    label varchar(100) NOT NULL,
+    address_line varchar(255) NOT NULL,
+    ward varchar(100),
+    district varchar(100),
+    province varchar(100) NOT NULL,
+    note varchar(500),
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    deleted_at timestamptz
+);
+CREATE INDEX idx_recipient_addresses_recipient ON recipient_addresses (recipient_id) WHERE deleted_at IS NULL;
+
 CREATE TABLE medications (
     medication_id uuid PRIMARY KEY,
     recipient_id uuid NOT NULL REFERENCES care_recipients(recipient_id),

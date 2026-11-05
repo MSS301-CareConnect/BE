@@ -88,7 +88,14 @@ public enum ErrorCode {
     RECIPIENT_BATCH_TOO_LARGE(2601, "recipientId list exceeds the limit of 100 items", HttpStatus.BAD_REQUEST),
 
     // TOKEN SERVICE (client-credentials) — thiếu cấu hình / sai secret / Identity sập đều là lỗi hạ tầng với người dùng
-    SERVICE_TOKEN_UNAVAILABLE(2700, "Could not authenticate with a dependent service, please try again later", HttpStatus.SERVICE_UNAVAILABLE);
+    SERVICE_TOKEN_UNAVAILABLE(2700, "Could not authenticate with a dependent service, please try again later", HttpStatus.SERVICE_UNAVAILABLE),
+
+    // SỔ ĐỊA CHỈ (2026-11-05)
+    ADDRESS_NOT_FOUND(2800, "Saved address does not exist", HttpStatus.NOT_FOUND),
+    ADDRESS_LABEL_REQUIRED(2801, "Address name is required", HttpStatus.BAD_REQUEST),
+    ADDRESS_LINE_REQUIRED(2802, "House number and street are required", HttpStatus.BAD_REQUEST),
+    ADDRESS_PROVINCE_REQUIRED(2803, "Province / city is required", HttpStatus.BAD_REQUEST),
+    ADDRESS_BOOK_FULL(2804, "A profile can keep at most 20 saved addresses", HttpStatus.CONFLICT);
 
     private int code;
     private String message;
