@@ -47,9 +47,11 @@
    `GET /care-recipients/{id}` (CUSTOMER, ADMIN, CAREGIVER) — không tạo path theo role (`/admin`, `/caregiver`). Controller
    nhận `@CurrentRoles Set<RoleCode>` (`security/CurrentRolesArgumentResolver`, ẩn khỏi Swagger), không so chuỗi `ROLE_*`.
    Ưu tiên ADMIN → CUSTOMER → CAREGIVER. Bộ lọc chỉ của ADMIN (`createdBy`, `includeDeleted`) bị bỏ qua với CUSTOMER.
-9. **Caregiver** chỉ nhận `CareRecipientDetailResponse.careSnapshot` (mapper `toCaregiverDetailResponse`, whitelist — không
-   bao giờ kèm `profile` / thuốc / liên hệ đầy đủ) sau khi BookingService `caregiver-access` (Feign, truyền `sub` = user
-   Identity) trả `allowed`; không phân công → 404, Booking lỗi → 503 (không bao giờ đoán là được phép). Gọi Booking ngoài
+9. **Caregiver** chỉ nhận `CareRecipientDetailResponse.careSnapshot` (hồ sơ chăm sóc gồm tiền sử bệnh, thói quen ngủ,
+   chiều cao / cân nặng và thuốc đang dùng) cùng `emergencyContacts` (mọi liên hệ khẩn cấp, từ 2026-11-05) — mapper
+   `toCaregiverDetailResponse`, whitelist, không bao giờ kèm `profile` (ảnh, người tạo / sửa, version) / thuốc đã ngưng /
+   quyền — sau khi BookingService `caregiver-access` (Feign, truyền `sub` = user Identity; chỉ buổi được giao của booking
+   CONFIRMED / IN_PROGRESS) trả `allowed`; không phân công → 404, Booking lỗi → 503 (không bao giờ đoán là được phép). Gọi Booking ngoài
    transaction (`get` không `@Transactional`, phần đọc DB qua `TransactionTemplate`).
 10. **Token SERVICE**: `caregiver-access` yêu cầu `hasRole('SERVICE')` → `BookingClientConfig` dùng
    `ServiceTokenInterceptor(serviceTokenProvider)`; `ServiceTokenProvider` xin token ở `POST /api/v1/auth/service-token` qua

@@ -23,7 +23,10 @@ public class CareRecipientDetailResponse {
 
     List<EmergencyContactResponse> emergencyContacts;
 
-    // Chỉ có khi CAREGIVER được phân công xem: khi đó profile / medications / emergencyContacts luôn null (bị bỏ khỏi
-    // JSON) để caregiver không thấy nhiều hơn snapshot chăm sóc (không có tiền sử bệnh đầy đủ, mọi liên hệ…).
+    // Chỉ có khi CAREGIVER được phân công xem: khi đó profile / medications / myAccessLevel luôn null (bị bỏ khỏi JSON);
+    // emergencyContacts có mọi liên hệ khẩn cấp để caregiver gọi khi cần.
     RecipientSnapshotResponse careSnapshot;
+
+    // Chỉ có khi CAREGIVER được phân công xem: tiền sử bệnh, thói quen ngủ, chiều cao / cân nặng.
+    CaregiverCareDetailsResponse careDetails;
 }

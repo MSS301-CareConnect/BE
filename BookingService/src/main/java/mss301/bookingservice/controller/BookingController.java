@@ -26,6 +26,7 @@ import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.security.CurrentCenterId;
 import mss301.bookingservice.security.CurrentRoles;
 import mss301.bookingservice.security.CurrentUserId;
+import mss301.bookingservice.service.BookingOccurrenceService;
 import mss301.bookingservice.service.BookingService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class BookingController {
 
     BookingService bookingService;
+    BookingOccurrenceService bookingOccurrenceService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
@@ -268,5 +270,15 @@ public class BookingController {
                                                                      @PathVariable UUID occurrenceId,
                                                                      @Valid @RequestBody CaregiverAssignRequest request) {
         return bookingService.updateOccurrenceCaregiver(actorId, centerId, id, occurrenceId, request);
+    }
+
+    // Module 2 (SPEC V3): Trung tâm bố trí chuyên viên thay thế khẩn cấp
+    @PostMapping("/{id}/emergency-reassignment")
+    @PreAuthorize("hasAnyRole('CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<Void> emergencyReassignment(@CurrentUserId UUID actorId,
+                                                   @CurrentCenterId(required = false) UUID centerId,
+                                                   @PathVariable UUID id,
+                                                   @Valid @RequestBody EmergencyReassignmentRequest request) {
+        return bookingOccurrenceService.emergencyReassign(actorId, centerId, id, request);
     }
 }

@@ -44,12 +44,23 @@ class CareRecipientMapperTests {
                 .recipientId(UUID.randomUUID())
                 .fullName("Ong B")
                 .build();
-        CareRecipientDetailResponse response = careRecipientMapper.toCaregiverDetailResponse(snapshot);
+        EmergencyContact contact = new EmergencyContact();
+        contact.setFullName("Con gai");
+        contact.setPhoneNumber("0909999999");
+        CareRecipient recipient = new CareRecipient();
+        recipient.setMedicalHistory("Tieu duong");
+        recipient.setSleepHabits("Ngu som");
+        recipient.setAvatarUrl("https://example.test/a.png");
+        CareRecipientDetailResponse response = careRecipientMapper.toCaregiverDetailResponse(snapshot, recipient,
+                List.of(contact));
         assertThat(response.getCareSnapshot()).isSameAs(snapshot);
+        assertThat(response.getCareDetails().getMedicalHistory()).isEqualTo("Tieu duong");
+        assertThat(response.getCareDetails().getSleepHabits()).isEqualTo("Ngu som");
+        assertThat(response.getEmergencyContacts()).singleElement()
+                .satisfies(item -> assertThat(item.getPhoneNumber()).isEqualTo("0909999999"));
         assertThat(response.getProfile()).isNull();
         assertThat(response.getMyAccessLevel()).isNull();
         assertThat(response.getMedications()).isNull();
-        assertThat(response.getEmergencyContacts()).isNull();
     }
 
     @Test

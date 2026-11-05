@@ -857,7 +857,7 @@ class CareRecipientApiTests {
     // ===== Caregiver xem hồ sơ khi BookingService xác nhận phân công =====
 
     @Test
-    void assignedCaregiverSeesCareSnapshotOnly() throws Exception {
+    void assignedCaregiverSeesCareProfileButNotOwnerData() throws Exception {
         UUID recipientId = createRecipient(owner);
         UUID caregiver = UUID.randomUUID();
         BOOKING.assign(caregiver, recipientId);
@@ -868,11 +868,14 @@ class CareRecipientApiTests {
                 .andExpect(jsonPath("$.result.careSnapshot.allergies").value("Hải sản"))
                 .andExpect(jsonPath("$.result.careSnapshot.activeMedications[0].medicationName").value("Insulin"))
                 .andExpect(jsonPath("$.result.careSnapshot.primaryEmergencyContact.fullName").value("Con gái"))
+                // 2026-11-05: caregiver được phân công xem đủ hồ sơ chăm sóc và mọi liên hệ khẩn cấp.
                 .andExpect(jsonPath("$.result.careSnapshot.medicalHistory").doesNotExist())
-                // Không lộ nhiều hơn snapshot: không profile đầy đủ, không danh sách thuốc / liên hệ / quyền.
+                .andExpect(jsonPath("$.result.careDetails.medicalHistory").value("Tiểu đường type 2"))
+                .andExpect(jsonPath("$.result.emergencyContacts[0].fullName").value("Con gái"))
+                .andExpect(jsonPath("$.result.emergencyContacts[0].phoneNumber").value("0909999999"))
+                // Không lộ dữ liệu của chủ hồ sơ: không profile (ảnh, người tạo / sửa, version), thuốc đã ngưng, quyền.
                 .andExpect(jsonPath("$.result.profile").doesNotExist())
                 .andExpect(jsonPath("$.result.medications").doesNotExist())
-                .andExpect(jsonPath("$.result.emergencyContacts").doesNotExist())
                 .andExpect(jsonPath("$.result.myAccessLevel").doesNotExist());
         // Booking chỉ nhận token SERVICE: không lần nào token caregiver bị chuyển tiếp sang Booking.
         assertThat(BOOKING.rejectedUserTokens()).isEqualTo(rejectedBefore);

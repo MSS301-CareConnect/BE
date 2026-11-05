@@ -67,7 +67,10 @@ public final class RefundCalculator {
         };
     }
 
-    // Spec §10.2: còn ≥ refundThresholdMinutes tới giờ buổi → % trước mốc (100), ít hơn → % sau mốc (70).
+    // Spec v3 §10.2:
+    // - còn ≥ refundThresholdMinutes tới giờ buổi (>= 24h): % trước mốc (100).
+    // - từ 2h đến < 24h: % sau mốc (70).
+    // - dưới 2h (< 2h): sát giờ ca trực -> 0% hoàn (100% phí thù lao cho caregiver).
     private static Line customerCancel(Context context, OccurrenceInput occurrence, BigDecimal price, BigDecimal paid) {
         // Buổi đã bắt đầu (có session) hoặc không còn ở trạng thái chưa bắt đầu: khách không hủy được, buổi tính đủ tiền.
         boolean started = occurrence.hasSession()
@@ -82,9 +85,10 @@ public final class RefundCalculator {
             return fullRefund(occurrence, price, paid, FULL_REFUND_SYSTEM);
         }
         boolean beforeThreshold = leadSeconds >= Duration.ofMinutes(policy.getRefundThresholdMinutes()).getSeconds();
+        boolean lateForfeit = leadSeconds < Duration.ofHours(2).getSeconds();
         BigDecimal percent = beforeThreshold
                 ? policy.getRefundPercentBeforeThreshold()
-                : policy.getRefundPercentAfterThreshold();
+                : (lateForfeit ? BigDecimal.ZERO : policy.getRefundPercentAfterThreshold());
         BigDecimal refund = VndMoney.percentOf(percent.min(ONE_HUNDRED), paid).min(paid);
         return new Line(occurrence.occurrenceId(), price, paid, paid.subtract(refund), refund,
                 beforeThreshold ? BEFORE_THRESHOLD : AFTER_THRESHOLD);
@@ -99,16 +103,12 @@ public final class RefundCalculator {
     }
 
     private static Line notCancellable(OccurrenceInput occurrence, BigDecimal price, BigDecimal paid) {
-        return new Line(occurrence.occurrenceId(), price, paid, BigDecimal.ZERO, BigDecimal.ZERO, NOT_CANCELLABLE);
+        return new Line(occurrence.occurrenceId(), price, paid, paid, BigDecimal.ZERO, NOT_CANCELLABLE);
     }
 
-    /**
-     * @param paid booking đã trả khoản đầu (chưa trả / chưa có dữ liệu → mọi buổi NOT_PAID)
-     */
     public record Context(boolean paid, PolicySnapshot policy, RefundReason reason, Instant cancelledAt) {
     }
 
-    // status null = không biết trạng thái phía Booking (lệnh hoàn thật: Booking đã hủy buổi trước khi gửi).
     public record OccurrenceInput(UUID occurrenceId, Instant startAt, OccurrenceStatus status, boolean hasSession,
                                   BigDecimal priceAmount, BigDecimal paidAmount) {
     }

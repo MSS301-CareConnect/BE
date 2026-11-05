@@ -3,6 +3,7 @@ package mss301.carerecipientservice.mapper;
 import mss301.carerecipientservice.dto.request.CareRecipientCreateRequest;
 import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
+import mss301.carerecipientservice.dto.response.CaregiverCareDetailsResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
@@ -30,13 +31,20 @@ public interface CareRecipientMapper {
     // myAccessLevel / medications / emergencyContacts: tham số trùng tên thuộc tính đích → MapStruct tự map.
     @Mapping(target = "profile", source = "recipient")
     @Mapping(target = "careSnapshot", ignore = true)
+    @Mapping(target = "careDetails", ignore = true)
     CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel,
                                                  List<Medication> medications, List<EmergencyContact> emergencyContacts);
 
-    // CAREGIVER xem hồ sơ: whitelist chỉ careSnapshot — không bao giờ kèm profile / thuốc / liên hệ đầy đủ.
+    // CAREGIVER xem hồ sơ: whitelist careSnapshot + careDetails (tiền sử bệnh, giấc ngủ, chiều cao / cân nặng) + mọi liên
+    // hệ khẩn cấp — không bao giờ kèm profile (ảnh, người tạo / sửa, version), thuốc đã ngưng hay quyền.
     @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "careSnapshot", source = "careSnapshot")
-    CareRecipientDetailResponse toCaregiverDetailResponse(RecipientSnapshotResponse careSnapshot);
+    @Mapping(target = "careDetails", source = "recipient")
+    @Mapping(target = "emergencyContacts", source = "emergencyContacts")
+    CareRecipientDetailResponse toCaregiverDetailResponse(RecipientSnapshotResponse careSnapshot, CareRecipient recipient,
+                                                          List<EmergencyContact> emergencyContacts);
+
+    CaregiverCareDetailsResponse toCareDetails(CareRecipient recipient);
 
     // Admin / batch: không có quyền của người gọi.
     @Mapping(target = "age", expression = "java(calculateAge(recipient.getDateOfBirth()))")

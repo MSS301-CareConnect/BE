@@ -77,6 +77,13 @@ public enum ErrorCode {
     ADDRESS_CHANGE_TOO_LATE(5117, "Only visits starting at least 24 hours from now can get a new care address", HttpStatus.CONFLICT),
     BOOKING_EXPIRED(5116, "The booking passed its deadline and has expired", HttpStatus.CONFLICT),
 
+    // Spec v3: Đổi caregiver theo yêu cầu khách
+    CAREGIVER_CHANGE_REQUEST_NOT_FOUND(5170, "Caregiver change request does not exist", HttpStatus.NOT_FOUND),
+    CAREGIVER_CHANGE_REQUEST_NOT_PENDING(5171, "The caregiver change request is no longer pending", HttpStatus.CONFLICT),
+    TOO_MANY_CHANGE_REQUESTS(5172, "A booking can have at most 3 caregiver change requests", HttpStatus.CONFLICT),
+    CHANGE_REQUEST_TOO_LATE(5173, "Caregiver change requests must be submitted at least 12 hours before the earliest requested occurrence", HttpStatus.CONFLICT),
+    NO_REASSIGNABLE_OCCURRENCES(5174, "There are no eligible upcoming care occurrences to reassign", HttpStatus.CONFLICT),
+
     // LỊCH / BUỔI CHĂM SÓC
     BOOKING_TYPE_REQUIRED(5200, "Booking type is required (SHIFT, RECURRING, CUSTOM)", HttpStatus.BAD_REQUEST),
     START_DATE_REQUIRED(5201, "Start date is required", HttpStatus.BAD_REQUEST),
@@ -126,6 +133,11 @@ public enum ErrorCode {
     SLOT_SERVICE_MIXED(5246, "Either every time slot names its service or none does", HttpStatus.BAD_REQUEST),
     SLOT_OUTSIDE_SHIFT(5247, "Every time slot must fall within the caregiver's chosen shift", HttpStatus.BAD_REQUEST),
     CAREGIVER_TRAVEL_BUFFER_CONFLICT(5248, "The caregiver needs at least 60 minutes between two different bookings", HttpStatus.CONFLICT),
+
+    // Spec v3: Dời lịch & xác nhận thay thế khẩn cấp
+    RESCHEDULE_LEAD_TIME_TOO_SHORT(5250, "Occurrences can only be rescheduled at least 24 hours in advance", HttpStatus.CONFLICT),
+    RESCHEDULE_LIMIT_REACHED(5251, "Maximum number of reschedules reached for this care occurrence", HttpStatus.CONFLICT),
+    REPLACEMENT_CONSENT_INVALID(5252, "No emergency replacement pending customer consent on this care occurrence", HttpStatus.CONFLICT),
 
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),

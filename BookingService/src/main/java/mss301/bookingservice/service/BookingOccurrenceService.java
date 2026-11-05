@@ -56,4 +56,22 @@ public interface BookingOccurrenceService {
 
     // D21 (H-10): báo vắng không được quyết sau giờ kết thúc + 24h → hệ thống tự chấp nhận, báo khách + trung tâm.
     void autoAcceptNoShow(UUID id);
+
+    // Module 2 (SPEC V3): Trung tâm bố trí người thay thế khẩn cấp
+    APIResponse<Void> emergencyReassign(UUID actorId, UUID centerId, UUID bookingId,
+                                        mss301.bookingservice.dto.request.EmergencyReassignmentRequest request);
+
+    // Module 2 (SPEC V3): Khách phản hồi người thay thế khẩn cấp (ACCEPT, RESCHEDULE, REJECT_AND_CANCEL)
+    APIResponse<Void> consentReplacement(UUID actorId, UUID occurrenceId,
+                                         mss301.bookingservice.dto.request.ReplacementConsentRequest request);
+
+    // Module 3 (SPEC V3): Xem trước dời lịch buổi chăm sóc
+    APIResponse<mss301.bookingservice.dto.response.OccurrenceRescheduleResponse> reschedulePreview(
+            UUID actorId, Set<RoleCode> roles, UUID centerId, UUID occurrenceId,
+            mss301.bookingservice.dto.request.OccurrenceReschedulePreviewRequest request);
+
+    // Module 3 (SPEC V3): Thực hiện dời lịch buổi chăm sóc
+    APIResponse<mss301.bookingservice.dto.response.OccurrenceRescheduleResponse> reschedule(
+            UUID actorId, Set<RoleCode> roles, UUID centerId, UUID occurrenceId,
+            mss301.bookingservice.dto.request.OccurrenceRescheduleRequest request);
 }

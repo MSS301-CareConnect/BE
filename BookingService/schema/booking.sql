@@ -163,6 +163,12 @@ CREATE TABLE booking_occurrences (
     cancelled_at          timestamptz,
     cancelled_by_party    varchar(20),
     needs_reassignment    boolean      NOT NULL DEFAULT false,
+    reschedule_count      integer      NOT NULL DEFAULT 0,
+    original_start_at     timestamptz,
+    original_end_at       timestamptz,
+    is_emergency_replacement boolean   NOT NULL DEFAULT false,
+    replacement_reason    text,
+    replacement_consent_status varchar(30) DEFAULT 'NONE',
     created_at            timestamptz  NOT NULL,
     updated_at            timestamptz  NOT NULL,
     deleted_at            timestamptz,
@@ -186,6 +192,7 @@ CREATE TABLE booking_occurrences (
     CONSTRAINT ck_booking_occurrences_no_show_pair CHECK ((no_show_reported_at IS NULL) = (no_show_reported_by IS NULL)),
     CONSTRAINT ck_booking_occurrences_cancelled_by_party CHECK (
         cancelled_by_party IS NULL OR cancelled_by_party IN ('CUSTOMER', 'CENTER', 'SYSTEM', 'ADMIN')),
+    CONSTRAINT ck_booking_occurrences_consent_status CHECK (replacement_consent_status IS NULL OR replacement_consent_status IN ('NONE', 'PENDING_CUSTOMER', 'ACCEPTED', 'REJECTED_RESCHEDULE', 'REJECTED_CANCEL')),
     CONSTRAINT ck_booking_occurrences_version CHECK (version >= 0),
     -- BK-09: chốt chặn cuối chống trùng lịch caregiver (khoảng nửa mở) trên các trạng thái chiếm lịch (spec §6). Chỉ theo
     -- trạng thái buổi: booking rời trạng thái giữ chỗ luôn kéo mọi buổi chưa kết thúc về CANCELLED / EXPIRED
@@ -318,7 +325,7 @@ CREATE TABLE booking_events (
 
     CONSTRAINT ck_booking_events_type CHECK (event_type IN ('OCCURRENCE_ACKNOWLEDGED', 'OCCURRENCE_STATUS_CHANGED',
                                                             'CAREGIVER_CHANGED', 'NO_SHOW_REPORTED',
-                                                            'SERVICE_ADDRESS_CHANGED'))
+                                                            'SERVICE_ADDRESS_CHANGED', 'CAREGIVER_CHANGE_REQUESTED', 'CAREGIVER_CHANGE_APPROVED', 'CAREGIVER_CHANGE_REJECTED', 'EMERGENCY_REPLACEMENT_ASSIGNED', 'OCCURRENCE_RESCHEDULED'))
 );
 
 CREATE INDEX idx_booking_events_booking ON booking_events (booking_id, created_at);
@@ -414,7 +421,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE', 'CAREGIVER_CHANGE_REQUEST_CREATED', 'CAREGIVER_CHANGE_REQUEST_DECIDED', 'EMERGENCY_REPLACEMENT_NOTIFIED', 'OCCURRENCE_RESCHEDULED_NOTIFICATION')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),
@@ -541,3 +548,36 @@ ALTER TABLE complaints ADD CONSTRAINT fk_complaint_booking FOREIGN KEY (booking_
 ALTER TABLE complaints ADD CONSTRAINT fk_complaint_occurrence FOREIGN KEY (occurrence_id) REFERENCES booking_occurrences(occurrence_id);
 ALTER TABLE complaint_events ADD CONSTRAINT fk_complaint_event FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id);
 ALTER TABLE booking_occurrences ADD COLUMN reminder_sent_at timestamptz;
+
+
+-- Yêu cầu thay đổi caregiver từ khách hàng (2026-11-05, spec v3.0)
+CREATE TABLE caregiver_change_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    booking_id UUID NOT NULL REFERENCES bookings(booking_id),
+    customer_user_id UUID NOT NULL,
+    center_id UUID NOT NULL,
+    scope_type VARCHAR(30) NOT NULL,
+    from_date DATE,
+    reason_code VARCHAR(50) NOT NULL,
+    reason_detail TEXT,
+    preferred_caregiver_id UUID,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    reviewed_by UUID,
+    reviewed_at TIMESTAMPTZ,
+    rejection_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT ck_change_request_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED')),
+    CONSTRAINT ck_change_request_scope CHECK (scope_type IN ('ALL_REMAINING', 'SPECIFIC_OCCURRENCES', 'FROM_DATE')),
+    CONSTRAINT ck_change_request_reason CHECK (reason_code IN ('SKILL_MISMATCH', 'ATTITUDE_ISSUE', 'PUNCTUALITY_ISSUE', 'PERSONAL_PREFERENCE', 'OTHER'))
+);
+
+CREATE INDEX idx_change_requests_booking ON caregiver_change_requests(booking_id);
+CREATE INDEX idx_change_requests_center_status ON caregiver_change_requests(center_id, status);
+
+CREATE TABLE caregiver_change_request_occurrences (
+    request_id UUID NOT NULL REFERENCES caregiver_change_requests(id) ON DELETE CASCADE,
+    occurrence_id UUID NOT NULL REFERENCES booking_occurrences(occurrence_id),
+    PRIMARY KEY (request_id, occurrence_id)
+);

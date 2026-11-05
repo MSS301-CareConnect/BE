@@ -19,5 +19,10 @@ public enum NotificationType {
     // CR-2: khách / trung tâm đổi địa chỉ chăm sóc của booking.
     BOOKING_ADDRESS_CHANGED,
     // Nhắc trung tâm: booking sắp quá hạn xác nhận / phân người chăm sóc.
-    CENTER_ACTION_DUE
+    CENTER_ACTION_DUE,
+    // Spec v3: Đổi caregiver & khẩn cấp & dời lịch
+    CAREGIVER_CHANGE_REQUEST_CREATED,
+    CAREGIVER_CHANGE_REQUEST_DECIDED,
+    EMERGENCY_REPLACEMENT_NOTIFIED,
+    OCCURRENCE_RESCHEDULED_NOTIFICATION
 }

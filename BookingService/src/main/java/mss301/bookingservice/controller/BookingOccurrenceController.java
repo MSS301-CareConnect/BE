@@ -8,9 +8,13 @@ import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
+import mss301.bookingservice.dto.request.OccurrenceReschedulePreviewRequest;
+import mss301.bookingservice.dto.request.OccurrenceRescheduleRequest;
+import mss301.bookingservice.dto.request.ReplacementConsentRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
+import mss301.bookingservice.dto.response.OccurrenceRescheduleResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
@@ -82,5 +86,36 @@ public class BookingOccurrenceController {
                                                                  @PathVariable UUID id,
                                                                  @Valid @RequestBody NoShowDecisionRequest request) {
         return bookingOccurrenceService.decideNoShow(actorId, centerId, id, request);
+    }
+
+    // Module 2 (SPEC V3): Khách hàng phản hồi chuyên viên thay thế khẩn cấp (ACCEPT, RESCHEDULE, REJECT_AND_CANCEL)
+    @PostMapping("/{id}/replacement-consent")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<Void> replacementConsent(@CurrentUserId UUID actorId,
+                                                @PathVariable UUID id,
+                                                @Valid @RequestBody ReplacementConsentRequest request) {
+        return bookingOccurrenceService.consentReplacement(actorId, id, request);
+    }
+
+    // Module 3 (SPEC V3): Khách hàng hoặc trung tâm kiểm tra tính khả thi khi dời lịch
+    @PostMapping("/{id}/reschedule-preview")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<OccurrenceRescheduleResponse> reschedulePreview(@CurrentUserId UUID actorId,
+                                                                      @CurrentRoles Set<RoleCode> roles,
+                                                                      @CurrentCenterId(required = false) UUID centerId,
+                                                                      @PathVariable UUID id,
+                                                                      @Valid @RequestBody OccurrenceReschedulePreviewRequest request) {
+        return bookingOccurrenceService.reschedulePreview(actorId, roles, centerId, id, request);
+    }
+
+    // Module 3 (SPEC V3): Khách hàng hoặc trung tâm thực hiện dời lịch buổi chăm sóc
+    @PostMapping("/{id}/reschedule")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<OccurrenceRescheduleResponse> reschedule(@CurrentUserId UUID actorId,
+                                                               @CurrentRoles Set<RoleCode> roles,
+                                                               @CurrentCenterId(required = false) UUID centerId,
+                                                               @PathVariable UUID id,
+                                                               @Valid @RequestBody OccurrenceRescheduleRequest request) {
+        return bookingOccurrenceService.reschedule(actorId, roles, centerId, id, request);
     }
 }

@@ -4,6 +4,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.OccurrenceStatus;
+import mss301.bookingservice.enums.ReplacementConsentStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -52,6 +53,19 @@ public class OccurrenceResponse {
 
     // Caregiver của buổi đã bị khóa — manager cần đổi người (BK-04).
     Boolean needsReassignment;
+
+    // Spec v3: Dời lịch & thay thế người khẩn cấp
+    Integer rescheduleCount;
+
+    Instant originalStartAt;
+
+    Instant originalEndAt;
+
+    Boolean isEmergencyReplacement;
+
+    String replacementReason;
+
+    ReplacementConsentStatus replacementConsentStatus;
 
     String note;
 }

@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.MissedReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
+import mss301.bookingservice.enums.ReplacementConsentStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -124,6 +125,29 @@ public class BookingOccurrence extends BaseEntity {
     @Builder.Default
     @Column(name = "needs_reassignment", nullable = false)
     Boolean needsReassignment = false;
+
+    // Spec v3: Dời lịch (reschedule) & thay thế người khẩn cấp
+    @Builder.Default
+    @Column(name = "reschedule_count", nullable = false)
+    Integer rescheduleCount = 0;
+
+    @Column(name = "original_start_at")
+    Instant originalStartAt;
+
+    @Column(name = "original_end_at")
+    Instant originalEndAt;
+
+    @Builder.Default
+    @Column(name = "is_emergency_replacement", nullable = false)
+    Boolean isEmergencyReplacement = false;
+
+    @Column(name = "replacement_reason", columnDefinition = "text")
+    String replacementReason;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "replacement_consent_status", length = 30)
+    ReplacementConsentStatus replacementConsentStatus = ReplacementConsentStatus.NONE;
 
     @Column(name = "reminder_sent_at")
     Instant reminderSentAt;

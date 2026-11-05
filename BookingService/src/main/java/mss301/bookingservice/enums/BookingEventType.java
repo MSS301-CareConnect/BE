@@ -8,5 +8,11 @@ public enum BookingEventType {
     // Caregiver báo khách vắng mặt (OPS-06) — buổi chưa đổi trạng thái tới khi manager quyết định.
     NO_SHOW_REPORTED,
     // CR-2: địa chỉ chăm sóc của booking đổi (old_value / new_value) — áp cho các buổi chưa bắt đầu.
-    SERVICE_ADDRESS_CHANGED
+    SERVICE_ADDRESS_CHANGED,
+    // Spec v3: Đổi caregiver theo yêu cầu khách, thay thế khẩn cấp, dời lịch buổi lẻ.
+    CAREGIVER_CHANGE_REQUESTED,
+    CAREGIVER_CHANGE_APPROVED,
+    CAREGIVER_CHANGE_REJECTED,
+    EMERGENCY_REPLACEMENT_ASSIGNED,
+    OCCURRENCE_RESCHEDULED
 }

@@ -41,6 +41,10 @@ public final class NotificationTemplates {
             case BOOKING_HANDED_OVER -> "Người chăm sóc không nhận lịch, trung tâm sẽ phân người khác";
             case BOOKING_ADDRESS_CHANGED -> "Địa chỉ chăm sóc của lịch đã thay đổi";
             case CENTER_ACTION_DUE -> "Lịch đặt sắp quá hạn xử lý";
+            case CAREGIVER_CHANGE_REQUEST_CREATED -> "Có yêu cầu đổi người chăm sóc từ khách hàng";
+            case CAREGIVER_CHANGE_REQUEST_DECIDED -> "Yêu cầu đổi người chăm sóc đã được xử lý";
+            case EMERGENCY_REPLACEMENT_NOTIFIED -> "Thông báo thay đổi người chăm sóc khẩn cấp";
+            case OCCURRENCE_RESCHEDULED_NOTIFICATION -> "Buổi chăm sóc đã được dời lịch";
         };
     }
 }

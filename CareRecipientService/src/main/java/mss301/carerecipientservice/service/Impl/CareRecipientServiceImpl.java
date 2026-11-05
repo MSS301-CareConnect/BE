@@ -296,13 +296,19 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     }
 
     // Không được phân công → 404 như hồ sơ không tồn tại (không lộ sự tồn tại); Booking lỗi → 503, không bao giờ đoán
-    // là được phép. Caregiver chỉ nhận careSnapshot, không bao giờ nhận profile / thuốc / liên hệ đầy đủ.
+    // là được phép. Caregiver nhận careSnapshot (hồ sơ chăm sóc + thuốc đang dùng), careDetails (tiền sử bệnh, giấc ngủ,
+    // chiều cao / cân nặng) và mọi liên hệ khẩn cấp — chỉ khi
+    // BookingService xác nhận đang được phân công (booking CONFIRMED / IN_PROGRESS); không bao giờ nhận profile / quyền.
     private CareRecipientDetailResponse getAssignedDetail(UUID caregiverUserId, UUID id) {
         if (!checkAssigned(id, caregiverUserId)) {
             throw new AppException(ErrorCode.RECIPIENT_NOT_FOUND);
         }
-        RecipientSnapshotResponse snapshotResponse = transactionTemplate.execute(status -> buildSnapshot(id));
-        return careRecipientMapper.toCaregiverDetailResponse(snapshotResponse);
+        return transactionTemplate.execute(status -> {
+            CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
+                    .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
+            return careRecipientMapper.toCaregiverDetailResponse(toSnapshot(recipient), recipient,
+                    emergencyContactRepository.findAllByRecipient(id));
+        });
     }
 
     private boolean checkAssigned(UUID recipientId, UUID caregiverUserId) {
@@ -316,8 +322,12 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     private RecipientSnapshotResponse buildSnapshot(UUID id) {
         CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
-        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(id, true);
-        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(id).orElse(null);
+        return toSnapshot(recipient);
+    }
+
+    private RecipientSnapshotResponse toSnapshot(CareRecipient recipient) {
+        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(recipient.getId(), true);
+        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(recipient.getId()).orElse(null);
         return careRecipientMapper.toSnapshotResponse(recipient, activeMedications, primaryContact, Instant.now());
     }
 

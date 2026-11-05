@@ -63,6 +63,12 @@ public interface OccurrenceMapper {
     @Mapping(target = "cancelledByParty", ignore = true)
     @Mapping(target = "needsReassignment", constant = "false")
     @Mapping(target = "serviceAddress", ignore = true)
+    @Mapping(target = "rescheduleCount", constant = "0")
+    @Mapping(target = "originalStartAt", ignore = true)
+    @Mapping(target = "originalEndAt", ignore = true)
+    @Mapping(target = "isEmergencyReplacement", constant = "false")
+    @Mapping(target = "replacementReason", ignore = true)
+    @Mapping(target = "replacementConsentStatus", expression = "java(mss301.bookingservice.enums.ReplacementConsentStatus.NONE)")
     BookingOccurrence toOccurrence(OccurrenceSlot slot, @Context Booking booking, @Context OccurrenceStatus initialStatus);
 
     // Buổi đã lưu → khoảng thời gian để kiểm trùng lịch khi đổi caregiver.
