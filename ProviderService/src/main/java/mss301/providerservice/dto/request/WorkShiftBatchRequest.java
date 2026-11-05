@@ -47,6 +47,10 @@ public class WorkShiftBatchRequest {
     @Max(value = 50, message = "WORK_SHIFT_CAPACITY_INVALID")
     Integer capacity;
 
+    @Min(value = 1, message = "WORK_SHIFT_CAPACITY_INVALID")
+    @Max(value = 20, message = "WORK_SHIFT_CAPACITY_INVALID")
+    Integer maxBookings;
+
     @Min(value = 60, message = "WORK_SHIFT_DEADLINE_INVALID")
     @Max(value = 10080, message = "WORK_SHIFT_DEADLINE_INVALID")
     Integer registrationLeadMinutes;

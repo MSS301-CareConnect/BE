@@ -276,6 +276,10 @@ public class BookingProperties {
         @NotNull
         Duration caregiverAccessGrace = Duration.ofHours(24);
 
+        // Khách đổi địa chỉ chăm sóc cho buổi bắt đầu sau ít nhất khoảng này (2026-11-05).
+        @NotNull
+        Duration addressChangeLead = Duration.ofHours(24);
+
         // Số booking tối đa xử lý mỗi lượt quét hết hạn.
         @Min(1)
         @Max(1000)
@@ -296,5 +300,9 @@ public class BookingProperties {
         // Cửa sổ "sắp quá hạn" của thẻ hàng đợi trung tâm.
         @NotNull
         Duration dueSoonWindow = Duration.ofHours(2);
+
+        // Trừ hao di chuyển / nghỉ giữa hai booking khác nhau của cùng caregiver (2026-11-05, Owner chốt 60 phút).
+        @NotNull
+        Duration travelBuffer = Duration.ofMinutes(60);
     }
 }

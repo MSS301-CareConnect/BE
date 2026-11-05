@@ -25,6 +25,12 @@ public class OccurrenceResponse {
 
     Integer durationMinutes;
 
+    // Dịch vụ của buổi (NULL = mọi dịch vụ của booking).
+    UUID careServiceId;
+
+    // Địa chỉ riêng của buổi; NULL = địa chỉ của booking.
+    String serviceAddress;
+
     BigDecimal priceAmount;
 
     Instant actualStartAt;

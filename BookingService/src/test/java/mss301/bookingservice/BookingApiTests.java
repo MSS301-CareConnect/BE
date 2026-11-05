@@ -29,7 +29,10 @@ import mss301.bookingservice.repository.BookingStatusHistoryRepository;
 import mss301.bookingservice.service.BookingService;
 import mss301.bookingservice.support.TestPlatformServer;
 import mss301.bookingservice.support.TestPlatformServer.CaregiverIds;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -42,6 +45,7 @@ import mss301.bookingservice.enums.NotificationType;
 import org.springframework.mock.web.MockMultipartFile;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.any;
@@ -72,6 +76,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -480,11 +486,17 @@ class BookingApiTests {
         createBooking(scenario, sameRecipient, null)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.RECIPIENT_SCHEDULE_CONFLICT.getCode()));
-        // Nối tiếp đúng giờ kết thúc (10:00) không tính là trùng
+        // Booking khác nối tiếp đúng giờ kết thúc (10:00): không trùng giờ nhưng thiếu 60 phút trừ hao di chuyển (2026-11-05)
         Map<String, Object> adjacent = weeklyBody(scenario, scenario.caregiver().caregiverId(), 0);
         adjacent.put("recipientId", otherRecipient.toString());
         adjacent.put("startTime", "10:00");
         adjacent.put("endTime", "12:00");
+        createBooking(scenario, adjacent, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_TRAVEL_BUFFER_CONFLICT.getCode()));
+        // Cách đủ 60 phút (11:00) thì được
+        adjacent.put("startTime", "11:00");
+        adjacent.put("endTime", "13:00");
         createBooking(scenario, adjacent, null).andExpect(status().isOk());
     }
 
@@ -2633,6 +2645,41 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.code").value(ErrorCode.SERVICE_ADDRESS_NOT_EDITABLE.getCode()));
     }
 
+    // 2026-11-05: khách đổi địa chỉ cho một vài buổi (người bệnh ở nhà con khác vài hôm) — địa chỉ booking giữ nguyên,
+    // chỉ buổi được chọn có địa chỉ riêng; buổi không thuộc booking / không còn đổi được → 409.
+    @Test
+    void customerChangesCareAddressOfChosenVisitsOnly() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, weeklyBody(scenario, null, 0));
+        String detail = mockMvc.perform(get("/api/v1/bookings/" + bookingId)
+                        .header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<String> occurrenceIds = JsonPath.read(detail, "$.result.occurrences[*].id");
+        assertThat(occurrenceIds).hasSizeGreaterThan(1);
+        String chosen = occurrenceIds.get(1);
+
+        mockMvc.perform(patch("/api/v1/bookings/" + bookingId + "/service-address")
+                        .header("Authorization", customerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("addressLine", "9 Nguyễn Trãi", "province", "Hà Nội",
+                                "occurrenceIds", List.of(chosen)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.serviceAddress")
+                        .value("12 Lý Thường Kiệt, Phường Hàng Bài, Hoàn Kiếm, Hà Nội"))
+                .andExpect(jsonPath("$.result.occurrences[?(@.id == '" + chosen + "')].serviceAddress")
+                        .value("9 Nguyễn Trãi, Hà Nội"))
+                .andExpect(jsonPath("$.result.occurrences[?(@.serviceAddress != null)]", hasSize(1)));
+
+        mockMvc.perform(patch("/api/v1/bookings/" + bookingId + "/service-address")
+                        .header("Authorization", customerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("addressLine", "9 Nguyễn Trãi", "province", "Hà Nội",
+                                "occurrenceIds", List.of(UUID.randomUUID().toString())))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ADDRESS_CHANGE_TOO_LATE.getCode()));
+    }
+
     // Spec §5.2 / §15: không phân được caregiver đúng hạn → EXPIRED; trung tâm cũng có thể chủ động từ chối.
     @Test
     void assignmentDeadlineExpiresOrCenterRejects() throws Exception {
@@ -2675,7 +2722,8 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.occurrences[0].status").value("CANCELLED"));
     }
 
-    // Spec §4 / §6 / §15 / §16: SHIFT bắt buộc caregiver + lịch, thanh toán 100 %, một lịch chỉ một booking giữ.
+    // Spec §4 / §6 / §15 / §16: SHIFT bắt buộc caregiver + lịch, một lịch chỉ một booking giữ. 2026-11-05: SHIFT đặt cọc
+    // theo policy (30 %), phần còn lại trước ca 24h, và tự nhận (ca caregiver đã đăng ký) → chờ khách thanh toán ngay.
     @Test
     void shiftBookingRequiresScheduleAndHoldsItOnce() throws Exception {
         Scenario scenario = newScenario();
@@ -2690,13 +2738,15 @@ class BookingApiTests {
                         .content(json(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.occurrenceCount").value(1))
-                .andExpect(jsonPath("$.result.depositPercent").value(100))
-                .andExpect(jsonPath("$.result.estimatedDepositAmount").value(400000));
+                .andExpect(jsonPath("$.result.depositPercent").value(30))
+                .andExpect(jsonPath("$.result.estimatedDepositAmount").value(120000));
         createBooking(scenario, body, null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.bookingType").value("SHIFT"))
-                .andExpect(jsonPath("$.result.initialPaymentPercent").value(100))
-                .andExpect(jsonPath("$.result.remainingPaymentDueAt").doesNotExist())
+                .andExpect(jsonPath("$.result.status").value("AWAITING_INITIAL_PAYMENT"))
+                .andExpect(jsonPath("$.result.depositDueAt").exists())
+                .andExpect(jsonPath("$.result.initialPaymentPercent").value(30))
+                .andExpect(jsonPath("$.result.remainingPaymentDueAt").exists())
                 .andExpect(jsonPath("$.result.startTime").doesNotExist())
                 .andExpect(jsonPath("$.result.startDate").value(workDate.toString()))
                 .andExpect(jsonPath("$.result.occurrences.length()").value(1))
@@ -2744,6 +2794,144 @@ class BookingApiTests {
         createBooking(second, shiftBody(second, otherCaregiver.caregiverId(), cancelledSchedule), null)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_SCHEDULE_NOT_AVAILABLE.getCode()));
+    }
+
+    // 2026-11-05: ca 08:00–20:00 chia khung giờ theo gói, mỗi khung giờ một dịch vụ; booking khác cách 60 phút; tối đa
+    // maxBookings booking trên ca.
+    @Test
+    void shiftSplitsIntoServiceSlotsWithTravelBufferAndMaxBookings() throws Exception {
+        UUID centerId = PLATFORM.addCenter("ACTIVE");
+        UUID secondServiceId = UUID.randomUUID();
+        CaregiverIds caregiver = PLATFORM.addCaregiver(centerId, "VERIFIED", "ACTIVE",
+                List.of(TestPlatformServer.DEFAULT_CARE_SERVICE_ID, secondServiceId));
+        Scenario scenario = newScenarioInCenter(centerId);
+        LocalDate workDate = LocalDate.now(ZONE).plusDays(3);
+        UUID scheduleId = PLATFORM.addSchedule(centerId, caregiver.caregiverId(), workDate, "08:00", "20:00",
+                "SCHEDULED", 2);
+        UUID bathingPlan = UUID.randomUUID();
+        UUID feedingPlan = UUID.randomUUID();
+        PLATFORM.addPricePlan(bathingPlan, "SHIFT", 240, 400000, "Ca 4 giờ");
+        PLATFORM.addPricePlan(feedingPlan, "SHIFT", 240, 300000, "Ca 4 giờ tiết kiệm");
+        Map<String, Object> body = shiftBody(scenario, caregiver.caregiverId(), scheduleId);
+        body.put("services", List.of(
+                Map.of("careServiceId", scenario.careServiceId().toString(), "pricePlanId", bathingPlan.toString()),
+                Map.of("careServiceId", secondServiceId.toString(), "pricePlanId", feedingPlan.toString())));
+        body.put("slots", List.of(
+                shiftSlot(workDate, "08:00", "12:00", scenario.careServiceId()),
+                shiftSlot(workDate, "12:00", "16:00", secondServiceId)));
+
+        mockMvc.perform(post("/api/v1/bookings/quotes")
+                        .header("Authorization", customerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.occurrenceCount").value(2))
+                .andExpect(jsonPath("$.result.totalAmount").value(700000))
+                .andExpect(jsonPath("$.result.lines[0].planName").value("Ca 4 giờ"))
+                .andExpect(jsonPath("$.result.lines[0].planDurationMinutes").value(240))
+                .andExpect(jsonPath("$.result.lines[0].occurrenceCount").value(1))
+                .andExpect(jsonPath("$.result.occurrences[0].careServiceId").value(scenario.careServiceId().toString()))
+                .andExpect(jsonPath("$.result.occurrences[1].careServiceId").value(secondServiceId.toString()));
+        createBooking(scenario, body, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.occurrences.length()").value(2))
+                .andExpect(jsonPath("$.result.occurrences[0].careServiceId").value(scenario.careServiceId().toString()))
+                .andExpect(jsonPath("$.result.occurrences[1].caregiverScheduleId").value(scheduleId.toString()))
+                .andExpect(jsonPath("$.result.services[*].planName").value(
+                        Matchers.containsInAnyOrder("Ca 4 giờ", "Ca 4 giờ tiết kiệm")))
+                .andExpect(jsonPath("$.result.totalAmount").value(700000));
+
+        Scenario second = newScenarioInCenter(centerId);
+        mockMvc.perform(get("/api/v1/bookings/held-schedules")
+                        .param("caregiverId", caregiver.caregiverId().toString())
+                        .header("Authorization", customerBearer(second)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.travelBufferMinutes").value(60))
+                .andExpect(jsonPath("$.result.scheduleBookingCounts['" + scheduleId + "']").value(1))
+                .andExpect(jsonPath("$.result.busySlots.length()").value(2));
+
+        // Booking khác bắt đầu đúng 16:00 → thiếu 60 phút trừ hao; 17:00–20:00 (gói theo giờ) thì được.
+        Map<String, Object> adjacent = shiftBody(second, caregiver.caregiverId(), scheduleId);
+        adjacent.put("slots", List.of(shiftSlot(workDate, "16:00", "19:00", null)));
+        createBooking(second, adjacent, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_TRAVEL_BUFFER_CONFLICT.getCode()));
+        adjacent.put("slots", List.of(shiftSlot(workDate, "17:00", "20:00", null)));
+        createBooking(second, adjacent, null).andExpect(status().isOk());
+
+        // Ca đã đủ 2 booking → khóa.
+        Scenario third = newScenarioInCenter(centerId);
+        Map<String, Object> full = shiftBody(third, caregiver.caregiverId(), scheduleId);
+        full.put("slots", List.of(shiftSlot(workDate, "08:00", "09:00", null)));
+        createBooking(third, full, null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_SCHEDULE_NOT_AVAILABLE.getCode()));
+
+        // Quy tắc khung giờ: ngoài ca, gói cố định sai độ dài, trộn có / không dịch vụ.
+        UUID otherSchedule = PLATFORM.addSchedule(centerId, caregiver.caregiverId(), workDate.plusDays(1), "08:00",
+                "20:00", "SCHEDULED", 2);
+        Map<String, Object> outside = shiftBody(third, caregiver.caregiverId(), otherSchedule);
+        outside.put("slots", List.of(shiftSlot(workDate.plusDays(1), "18:00", "21:00", null)));
+        createBooking(third, outside, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SLOT_OUTSIDE_SHIFT.getCode()));
+        Map<String, Object> wrongLength = shiftBody(third, caregiver.caregiverId(), otherSchedule);
+        wrongLength.put("services", List.of(
+                Map.of("careServiceId", third.careServiceId().toString(), "pricePlanId", bathingPlan.toString())));
+        wrongLength.put("slots", List.of(shiftSlot(workDate.plusDays(1), "08:00", "11:00", third.careServiceId())));
+        createBooking(third, wrongLength, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRICE_PLAN_UNIT_MISMATCH.getCode()));
+        Map<String, Object> mixed = shiftBody(third, caregiver.caregiverId(), otherSchedule);
+        mixed.put("slots", List.of(shiftSlot(workDate.plusDays(1), "08:00", "10:00", third.careServiceId()),
+                shiftSlot(workDate.plusDays(1), "10:00", "12:00", null)));
+        createBooking(third, mixed, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SLOT_SERVICE_MIXED.getCode()));
+    }
+
+    // Hai dịch vụ theo giờ trong ca 08:00–20:00: 08–09 dịch vụ 1, 09–11 + 11–13 dịch vụ 2 (báo lỗi 2026-11-05).
+    @Test
+    void shiftQuotesTwoHourlyServicesWithBackToBackSlots() throws Exception {
+        UUID centerId = PLATFORM.addCenter("ACTIVE");
+        UUID secondServiceId = UUID.randomUUID();
+        CaregiverIds caregiver = PLATFORM.addCaregiver(centerId, "VERIFIED", "ACTIVE",
+                List.of(TestPlatformServer.DEFAULT_CARE_SERVICE_ID, secondServiceId));
+        Scenario scenario = newScenarioInCenter(centerId);
+        LocalDate workDate = LocalDate.now(ZONE).plusDays(3);
+        UUID scheduleId = PLATFORM.addSchedule(centerId, caregiver.caregiverId(), workDate, "08:00", "20:00",
+                "SCHEDULED", 2);
+        UUID elderlyPlan = UUID.randomUUID();
+        UUID therapyPlan = UUID.randomUUID();
+        PLATFORM.addPricePlan(elderlyPlan, "HOUR", 60, 100000, "Theo giờ");
+        PLATFORM.addPricePlan(therapyPlan, "HOUR", 60, 150000, "Buổi tập 60 phút");
+        Map<String, Object> body = shiftBody(scenario, caregiver.caregiverId(), scheduleId);
+        body.put("services", List.of(
+                Map.of("careServiceId", scenario.careServiceId().toString(), "pricePlanId", elderlyPlan.toString()),
+                Map.of("careServiceId", secondServiceId.toString(), "pricePlanId", therapyPlan.toString())));
+        body.put("slots", List.of(
+                shiftSlot(workDate, "08:00", "09:00", scenario.careServiceId()),
+                shiftSlot(workDate, "09:00", "11:00", secondServiceId),
+                shiftSlot(workDate, "11:00", "13:00", secondServiceId)));
+
+        mockMvc.perform(post("/api/v1/bookings/quotes")
+                        .header("Authorization", customerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(body)))
+                .andDo(result -> System.out.println("QUOTE-REPRO " + result.getResponse().getContentAsString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.occurrenceCount").value(3))
+                .andExpect(jsonPath("$.result.totalAmount").value(700000));
+    }
+
+    Map<String, Object> shiftSlot(LocalDate day, String start, String end, UUID careServiceId) {
+        Map<String, Object> slot = new LinkedHashMap<>();
+        slot.put("startAt", day.atTime(LocalTime.parse(start)).atZone(ZONE).toInstant().toString());
+        slot.put("endAt", day.atTime(LocalTime.parse(end)).atZone(ZONE).toInstant().toString());
+        if (careServiceId != null) {
+            slot.put("careServiceId", careServiceId.toString());
+        }
+        return slot;
     }
 
     // Spec §4 / §6 / §8: CUSTOM mỗi buổi một khung giờ, không chồng nhau, đặt trước tối thiểu theo policy (48h).
@@ -2844,6 +3032,28 @@ class BookingApiTests {
         createBooking(scenario, weeklyBody(scenario, null, 0), null)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.initialPaymentPercent").value(40));
+    }
+
+    // 2026-11-05: ca bắt đầu trong vòng mốc trả phần còn lại (24h) → không còn hạn phần còn lại, khách trả 100 % ngay.
+    @Test
+    void shiftBookedInsideTheRemainingCutoffIsPaidInFull() throws Exception {
+        Scenario scenario = newScenario();
+        ZonedDateTime start = ZonedDateTime.now(ZONE).plusHours(4).truncatedTo(ChronoUnit.HOURS);
+        Assumptions.assumeTrue(start.getHour() <= 22, "ca 1 giờ phải nằm trong cùng ngày");
+        UUID scheduleId = PLATFORM.addSchedule(scenario.centerId(), scenario.caregiver().caregiverId(),
+                start.toLocalDate(), String.format("%02d:00", start.getHour()),
+                String.format("%02d:00", start.getHour() + 1), "SCHEDULED");
+
+        createBooking(scenario, shiftBody(scenario, scenario.caregiver().caregiverId(), scheduleId), null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("AWAITING_INITIAL_PAYMENT"))
+                .andExpect(jsonPath("$.result.initialPaymentPercent").value(100))
+                .andExpect(jsonPath("$.result.remainingPaymentDueAt").doesNotExist());
+        // SHIFT tự nhận nên không nằm trong danh sách chờ caregiver trả lời.
+        mockMvc.perform(get("/api/v1/bookings/caregiver-requests")
+                        .header("Authorization", bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items.length()").value(0));
     }
 
     Map<String, Object> shiftBody(Scenario scenario, UUID caregiverId, UUID scheduleId) {

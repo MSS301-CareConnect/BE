@@ -170,6 +170,9 @@ CREATE TABLE work_shifts
     capacity              integer     NOT NULL DEFAULT 1
         CHECK (capacity > 0),
 
+    max_bookings          integer     NOT NULL DEFAULT 2
+        CHECK (max_bookings > 0),
+
     registration_deadline timestamptz,
     note                  text,
     -- 2026-11-05 (changes/2026-11-05_work_shift_lifecycle.sql): hủy ca bắt buộc lý do.

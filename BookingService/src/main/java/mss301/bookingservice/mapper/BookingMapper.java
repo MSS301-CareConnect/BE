@@ -163,17 +163,27 @@ public interface BookingMapper {
 
     CustomerProfileResponse toCustomerProfileResponse(IdentityUserResponse user);
 
-    // CR-3: đơn chờ caregiver nhận — chỉ khu vực + tuổi / giới tính từ snapshot, không hồ sơ người bệnh.
+    // CR-3: đơn chờ caregiver nhận — khu vực, tên và tình trạng sức khỏe từ snapshot; không số nhà / SĐT / thuốc chi tiết.
     @Mapping(target = "id", source = "booking.id")
     @Mapping(target = "recipientAge", source = "booking.recipientSnapshot.age")
     @Mapping(target = "recipientGender", source = "booking.recipientSnapshot.gender")
+    @Mapping(target = "recipientName", source = "booking.recipientSnapshot.fullName")
+    @Mapping(target = "mobilityLevel", source = "booking.recipientSnapshot.mobilityLevel")
+    @Mapping(target = "independenceLevel", source = "booking.recipientSnapshot.independenceLevel")
+    @Mapping(target = "chronicConditions", source = "booking.recipientSnapshot.chronicConditions")
+    @Mapping(target = "allergies", source = "booking.recipientSnapshot.allergies")
+    @Mapping(target = "careRequirements", source = "booking.recipientSnapshot.careRequirements")
+    @Mapping(target = "dietaryNotes", source = "booking.recipientSnapshot.dietaryNotes")
+    @Mapping(target = "behaviorNotes", source = "booking.recipientSnapshot.behaviorNotes")
+    @Mapping(target = "medicationCount", expression = "java(booking.getRecipientSnapshot() == null || booking.getRecipientSnapshot().getActiveMedications() == null ? 0 : booking.getRecipientSnapshot().getActiveMedications().size())")
+    @Mapping(target = "customerName", source = "customerName")
     @Mapping(target = "ward", source = "booking.recipientSnapshot.ward")
     @Mapping(target = "district", source = "booking.recipientSnapshot.district")
     @Mapping(target = "province", source = "booking.recipientSnapshot.province")
     @Mapping(target = "services", source = "services")
     @Mapping(target = "occurrences", source = "occurrences")
     CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking, List<BookingDetail> services,
-                                                               List<BookingOccurrence> occurrences);
+                                                               List<BookingOccurrence> occurrences, String customerName);
 
     // Kết quả hủy (BK-03 / BK-04) gắn vào chi tiết booking sau khi dựng.
     @BeanMapping(ignoreByDefault = true)
@@ -241,7 +251,9 @@ public interface BookingMapper {
     // Spec §3: lịch đã bị giữ + khoảng bận của caregiver (không kèm booking / khách).
     @Mapping(target = "busySlots", source = "occurrences")
     CaregiverHeldScheduleResponse toHeldScheduleResponse(UUID caregiverId, List<UUID> heldScheduleIds,
-                                                         List<BookingOccurrence> occurrences);
+                                                         List<BookingOccurrence> occurrences,
+                                                         Integer travelBufferMinutes,
+                                                         Map<UUID, Integer> scheduleBookingCounts);
 
     CaregiverHeldScheduleResponse.BusySlot toBusySlot(BookingOccurrence occurrence);
 

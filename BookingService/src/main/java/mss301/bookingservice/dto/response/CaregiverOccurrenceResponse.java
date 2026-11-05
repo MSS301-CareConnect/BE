@@ -4,9 +4,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.BookingStatus;
+import mss301.bookingservice.enums.BookingType;
 import mss301.bookingservice.enums.MissedReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +36,9 @@ public class CaregiverOccurrenceResponse {
 
     Integer durationMinutes;
 
+    // Dịch vụ của buổi (NULL = mọi dịch vụ của booking).
+    UUID careServiceId;
+
     OccurrenceStatus status;
 
     UUID caregiverId;
@@ -45,6 +50,14 @@ public class CaregiverOccurrenceResponse {
     String bookingCode;
 
     BookingStatus bookingStatus;
+
+    BookingType bookingType;
+
+    // SHIFT: lịch caregiver (ca làm việc ở ProviderService) mà buổi giữ.
+    UUID caregiverScheduleId;
+
+    // Giá trị buổi theo bảng giá lúc đặt.
+    BigDecimal priceAmount;
 
     UUID centerId;
 
@@ -82,4 +95,9 @@ public class CaregiverOccurrenceResponse {
 
     // Trạng thái care report (OPS-05, người C) — null tới khi có module report.
     String reportStatus;
+
+    // Chỉ có ở chi tiết một buổi: họ tên khách đặt (Identity) và các buổi của cùng caregiver trong booking.
+    String customerName;
+
+    List<OccurrenceResponse> bookingVisits;
 }

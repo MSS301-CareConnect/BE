@@ -10,6 +10,7 @@ import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.entity.CenterBookingPolicy;
 import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingAction;
+import mss301.bookingservice.enums.BookingType;
 import mss301.bookingservice.enums.BookingEventType;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.CancelledBy;
@@ -81,8 +82,10 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     public void recordCreated(Booking booking, UUID customerId) {
         bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, null, booking.getStatus(),
                 customerId, null, clock.instant()));
-        // CR-3: đơn đã chọn caregiver tới thẳng caregiver; trung tâm vẫn được báo để theo dõi.
-        if (booking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION) {
+        // CR-3: đơn đã chọn caregiver tới thẳng caregiver; trung tâm vẫn được báo để theo dõi. SHIFT tự nhận ngay sau đó
+        // (ca caregiver đã đăng ký) nên không gửi yêu cầu trả lời.
+        if (booking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION
+                && booking.getBookingType() != BookingType.SHIFT) {
             bookingNotificationService.notifyCaregiverRequest(booking);
         }
         bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.BOOKING_CREATED, "BOOKING", booking.getId());

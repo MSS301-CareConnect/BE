@@ -65,6 +65,13 @@ public class BookingDetail {
     @Column(name = "total_price", precision = 14, scale = 2)
     BigDecimal totalPrice;
 
+    // Tên + thời lượng gói giá lúc đặt (2026-11-05).
+    @Column(name = "plan_name", length = 150)
+    String planName;
+
+    @Column(name = "plan_duration_minutes")
+    Integer planDurationMinutes;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 

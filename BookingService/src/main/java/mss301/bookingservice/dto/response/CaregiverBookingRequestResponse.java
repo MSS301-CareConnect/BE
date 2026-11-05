@@ -14,8 +14,9 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
-// CR-3: đơn khách gửi thẳng cho caregiver. Chưa xác nhận nên chỉ lộ khu vực (phường / quận / tỉnh), tuổi và giới tính của
-// người được chăm sóc — hồ sơ đầy đủ chỉ mở khi booking CONFIRMED (AGENTS.md BookingService rule 7).
+// CR-3: đơn khách gửi thẳng cho caregiver. Chưa xác nhận nên chỉ lộ khu vực (phường / quận / tỉnh), không số nhà / SĐT /
+// liên hệ khẩn cấp / danh sách thuốc — hồ sơ đầy đủ chỉ mở khi booking CONFIRMED (AGENTS.md BookingService rule 7).
+// 2026-11-05 (chủ dự án chọn): thêm tên + tình trạng sức khỏe từ snapshot để caregiver đủ thông tin quyết định nhận.
 @Data
 @Builder
 @AllArgsConstructor
@@ -48,6 +49,28 @@ public class CaregiverBookingRequestResponse {
     Integer recipientAge;
 
     String recipientGender;
+
+    String recipientName;
+
+    String mobilityLevel;
+
+    String independenceLevel;
+
+    String chronicConditions;
+
+    String allergies;
+
+    String careRequirements;
+
+    String dietaryNotes;
+
+    String behaviorNotes;
+
+    // Chỉ số thuốc đang dùng; tên / liều mở khi booking CONFIRMED.
+    Integer medicationCount;
+
+    // Họ tên khách đặt (Identity); thiếu khi Identity lỗi.
+    String customerName;
 
     String ward;
 

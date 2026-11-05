@@ -27,8 +27,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -55,19 +58,20 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
                 if (request.getCaregiverScheduleId() == null) {
                     throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_ID_REQUIRED);
                 }
-                if (hasRecurrence || hasSlots) {
+                // 2026-11-05: slots = các khung giờ khách chọn trong ca (tùy chọn).
+                if (hasRecurrence) {
                     throw new AppException(ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
                 }
             }
             case RECURRING -> {
                 // slots đi kèm quy tắc = danh sách buổi khách đã chỉnh từ quy tắc (CR-1, 2026-11-03).
-                if (request.getCaregiverScheduleId() != null) {
+                if (request.getCaregiverScheduleId() != null || hasSlotSchedule(request)) {
                     throw new AppException(ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
                 }
                 checkRecurrenceRequired(request);
             }
             case CUSTOM -> {
-                if (request.getCaregiverScheduleId() != null || hasRecurrence) {
+                if (request.getCaregiverScheduleId() != null || hasRecurrence || hasSlotSchedule(request)) {
                     throw new AppException(ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
                 }
                 if (!hasSlots) {
@@ -90,16 +94,98 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     }
 
     @Override
-    public List<OccurrenceSlot> generateShift(BookingScheduleRequest request, ProviderScheduleResponse schedule) {
+    public List<OccurrenceSlot> generateShift(BookingScheduleRequest request,
+                                              Map<UUID, ProviderScheduleResponse> schedules) {
         checkShape(request);
-        ZoneId zone = bookingProperties.getSchedule().getTimezone();
-        // Ca của Provider theo giờ Việt Nam, kết thúc sau giờ bắt đầu trong cùng ngày (CHECK work_shifts).
-        OccurrenceSlot slot = buildSlot(1, ZonedDateTime.of(schedule.getWorkDate(), schedule.getStartTime(), zone).toInstant(),
-                ZonedDateTime.of(schedule.getWorkDate(), schedule.getEndTime(), zone).toInstant());
-        slot.setCaregiverScheduleId(schedule.getId());
-        List<OccurrenceSlot> slots = List.of(slot);
+        List<TimeSlotRequest> requestedSlots = request.getSlots();
+        List<OccurrenceSlot> slots;
+        if (requestedSlots == null || requestedSlots.isEmpty()) {
+            // Không chọn khung giờ: một buổi trọn ca như trước 2026-11-05.
+            ProviderScheduleResponse schedule = findSchedule(schedules, request.getCaregiverScheduleId());
+            OccurrenceSlot slot = buildSlot(1, toShiftStart(schedule), toShiftEnd(schedule));
+            slot.setCaregiverScheduleId(schedule.getId());
+            slot.setScheduleMaxBookings(schedule.getMaxBookings());
+            slots = List.of(slot);
+        } else {
+            slots = generateShiftSlots(request, schedules);
+        }
         checkCommonRules(slots);
         return slots;
+    }
+
+    @Override
+    public Set<UUID> collectScheduleIds(BookingScheduleRequest request) {
+        Set<UUID> scheduleIds = new LinkedHashSet<>();
+        if (request.getCaregiverScheduleId() != null) {
+            scheduleIds.add(request.getCaregiverScheduleId());
+        }
+        if (request.getSlots() != null) {
+            for (TimeSlotRequest slot : request.getSlots()) {
+                if (slot.getCaregiverScheduleId() != null) {
+                    scheduleIds.add(slot.getCaregiverScheduleId());
+                }
+            }
+        }
+        return scheduleIds;
+    }
+
+    // SHIFT có slots: mỗi khung giờ nằm gọn trong ca của nó (giờ Việt Nam); các khung giờ cùng booking không chồng nhau
+    // (checkCommonRules) nhưng được nối liền (khoảng cách 0 phút).
+    private List<OccurrenceSlot> generateShiftSlots(BookingScheduleRequest request,
+                                                    Map<UUID, ProviderScheduleResponse> schedules) {
+        List<TimeSlotRequest> requestedSlots = request.getSlots();
+        if (requestedSlots.size() > bookingProperties.getSchedule().getMaxOccurrences()) {
+            throw new AppException(ErrorCode.TOO_MANY_OCCURRENCES);
+        }
+        for (TimeSlotRequest requestedSlot : requestedSlots) {
+            if (requestedSlot.getStartAt() == null || requestedSlot.getEndAt() == null) {
+                throw new AppException(ErrorCode.INVALID_TIME_SLOT);
+            }
+        }
+        List<TimeSlotRequest> sortedSlots = requestedSlots.stream()
+                .sorted(Comparator.comparing(TimeSlotRequest::getStartAt))
+                .toList();
+        List<OccurrenceSlot> slots = new ArrayList<>();
+        for (TimeSlotRequest requestedSlot : sortedSlots) {
+            UUID scheduleId = requestedSlot.getCaregiverScheduleId() == null
+                    ? request.getCaregiverScheduleId()
+                    : requestedSlot.getCaregiverScheduleId();
+            ProviderScheduleResponse schedule = findSchedule(schedules, scheduleId);
+            OccurrenceSlot slot = buildSlot(slots.size() + 1, requestedSlot.getStartAt(), requestedSlot.getEndAt());
+            if (slot.getStartAt().isBefore(toShiftStart(schedule)) || slot.getEndAt().isAfter(toShiftEnd(schedule))) {
+                throw new AppException(ErrorCode.SLOT_OUTSIDE_SHIFT);
+            }
+            slot.setCaregiverScheduleId(schedule.getId());
+            slot.setScheduleMaxBookings(schedule.getMaxBookings());
+            slot.setCareServiceId(requestedSlot.getCareServiceId());
+            slots.add(slot);
+        }
+        return slots;
+    }
+
+    private ProviderScheduleResponse findSchedule(Map<UUID, ProviderScheduleResponse> schedules, UUID scheduleId) {
+        ProviderScheduleResponse schedule = scheduleId == null ? null : schedules.get(scheduleId);
+        if (schedule == null) {
+            throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_ID_REQUIRED);
+        }
+        return schedule;
+    }
+
+    // Ca của Provider theo giờ Việt Nam, kết thúc sau giờ bắt đầu trong cùng ngày (CHECK work_shifts).
+    private Instant toShiftStart(ProviderScheduleResponse schedule) {
+        ZoneId zone = bookingProperties.getSchedule().getTimezone();
+        return ZonedDateTime.of(schedule.getWorkDate(), schedule.getStartTime(), zone).toInstant();
+    }
+
+    private Instant toShiftEnd(ProviderScheduleResponse schedule) {
+        ZoneId zone = bookingProperties.getSchedule().getTimezone();
+        return ZonedDateTime.of(schedule.getWorkDate(), schedule.getEndTime(), zone).toInstant();
+    }
+
+    // Chỉ SHIFT gắn khung giờ vào ca caregiver.
+    private boolean hasSlotSchedule(BookingScheduleRequest request) {
+        return request.getSlots() != null && request.getSlots().stream()
+                .anyMatch(slot -> slot.getCaregiverScheduleId() != null);
     }
 
     private void checkRecurrenceRequired(BookingScheduleRequest request) {
@@ -188,7 +274,9 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
                 .toList();
         List<OccurrenceSlot> slots = new ArrayList<>();
         for (TimeSlotRequest requestedSlot : sortedSlots) {
-            slots.add(buildSlot(slots.size() + 1, requestedSlot.getStartAt(), requestedSlot.getEndAt()));
+            OccurrenceSlot slot = buildSlot(slots.size() + 1, requestedSlot.getStartAt(), requestedSlot.getEndAt());
+            slot.setCareServiceId(requestedSlot.getCareServiceId());
+            slots.add(slot);
         }
         return slots;
     }

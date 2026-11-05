@@ -152,6 +152,7 @@ public class BookingServiceImpl implements BookingService {
     static int ACCEPT_ATTEMPTS = 2;
     static int HELD_SCHEDULE_RANGE_DAYS = 31;
     static BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
+    static String SHIFT_AUTO_ACCEPT_REASON = "Tự nhận: đặt vào ca người chăm sóc đã đăng ký";
     static String CAREGIVER_TIMEOUT_REASON = "Người chăm sóc không trả lời trước hạn";
     // Trạng thái có hạn đang chạy (hàng đợi trung tâm: hạn gần nhất, sắp quá hạn).
     static Set<BookingStatus> TIMED_STATUSES = EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
@@ -208,7 +209,11 @@ public class BookingServiceImpl implements BookingService {
         // lịch rảnh.
         paymentPort.checkNoOutstandingDebt();
         checkPendingLimit(actorId);
-        RecipientSnapshot recipientSnapshot = careRecipientDirectoryService.getBookableSnapshot(request.getRecipientId(), actorId);
+        RecipientSnapshot profileSnapshot = careRecipientDirectoryService.getBookableSnapshot(request.getRecipientId(), actorId);
+        // Địa chỉ chọn lúc đặt (sổ địa chỉ) thay phần địa chỉ của snapshot; bỏ trống = địa chỉ hồ sơ.
+        RecipientSnapshot recipientSnapshot = request.getServiceAddress() == null
+                ? profileSnapshot
+                : bookingMapper.toAddressSnapshot(profileSnapshot, request.getServiceAddress());
         centerPort.checkBookable(request.getCenterId());
         List<UUID> careServiceIds = collectCareServiceIds(request.getServices());
         AssignedCaregiver caregiver = request.getCaregiverId() == null
@@ -238,9 +243,11 @@ public class BookingServiceImpl implements BookingService {
         }
         log.info("Booking {} created by customer {} with {} occurrences", savedBooking.getBookingCode(), actorId, slots.size());
         BookingDetailResponse bookingDetailResponse = toDetailResponse(savedBooking, false);
-        String message = savedBooking.getStatus() == BookingStatus.PENDING_CAREGIVER_CONFIRMATION
-                ? "Đặt lịch thành công, chờ người chăm sóc nhận lịch"
-                : "Đặt lịch thành công, chờ trung tâm xác nhận";
+        String message = switch (savedBooking.getStatus()) {
+            case AWAITING_INITIAL_PAYMENT -> "Đặt lịch thành công, ca đã được giữ — vui lòng thanh toán khoản đầu";
+            case PENDING_CAREGIVER_CONFIRMATION -> "Đặt lịch thành công, chờ người chăm sóc nhận lịch";
+            default -> "Đặt lịch thành công, chờ trung tâm xác nhận";
+        };
         return APIResponse.success(message, bookingDetailResponse);
     }
 
@@ -376,7 +383,8 @@ public class BookingServiceImpl implements BookingService {
         checkBookableTiming(request.getBookingType(), slots, policy);
         BookingQuote bookingQuote = bookingPriceCalculator.calculate(
                 careServiceCatalogPort.quote(request.getCenterId(), request.getServices()), slots);
-        BigDecimal initialPaymentPercent = resolveInitialPaymentPercent(request.getBookingType(), policy);
+        BigDecimal initialPaymentPercent = resolveInitialPaymentPercent(
+                calculateRemainingPaymentDueAt(request.getBookingType(), slots, policy), policy);
         BigDecimal estimatedDepositAmount = bookingQuote.getTotalAmount().multiply(initialPaymentPercent)
                 .divide(ONE_HUNDRED, 0, RoundingMode.HALF_UP);
         BookingQuoteResponse bookingQuoteResponse = bookingMapper.toQuoteResponse(bookingQuote, policy,
@@ -596,24 +604,66 @@ public class BookingServiceImpl implements BookingService {
         }
         Instant now = clock.instant();
         List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(id);
-        boolean visitInProgress = occurrences.stream()
-                .anyMatch(occurrence -> occurrence.getStatus() == OccurrenceStatus.IN_PROGRESS);
+        if (!BookingStatus.SCHEDULE_HOLDING.contains(booking.getStatus())) {
+            throw new AppException(ErrorCode.SERVICE_ADDRESS_NOT_EDITABLE);
+        }
+        // 2026-11-05: khách đổi cho buổi còn ≥ addressChangeLead (24h); trung tâm đổi được mọi buổi chưa bắt đầu.
+        boolean manager = isManagerOf(roles, scopeCenterId, booking);
+        Instant earliestStart = manager ? now : now.plus(bookingProperties.getSchedule().getAddressChangeLead());
         List<BookingOccurrence> upcomingOccurrences = occurrences.stream()
                 .filter(occurrence -> isFutureScheduled(occurrence, now))
                 .toList();
-        if (!BookingStatus.SCHEDULE_HOLDING.contains(booking.getStatus()) || visitInProgress
-                || upcomingOccurrences.isEmpty()) {
-            throw new AppException(ErrorCode.SERVICE_ADDRESS_NOT_EDITABLE);
+        List<BookingOccurrence> editableOccurrences = upcomingOccurrences.stream()
+                .filter(occurrence -> occurrence.getStartAt().isAfter(earliestStart))
+                .toList();
+        List<UUID> requestedIds = request.getOccurrenceIds() == null ? List.of() : request.getOccurrenceIds();
+        List<BookingOccurrence> chosenOccurrences;
+        if (requestedIds.isEmpty()) {
+            if (editableOccurrences.isEmpty()) {
+                throw new AppException(upcomingOccurrences.isEmpty()
+                        ? ErrorCode.SERVICE_ADDRESS_NOT_EDITABLE
+                        : ErrorCode.ADDRESS_CHANGE_TOO_LATE);
+            }
+            chosenOccurrences = editableOccurrences;
+        } else {
+            Set<UUID> editableIds = editableOccurrences.stream().map(BookingOccurrence::getId)
+                    .collect(Collectors.toSet());
+            if (!editableIds.containsAll(requestedIds)) {
+                throw new AppException(ErrorCode.ADDRESS_CHANGE_TOO_LATE);
+            }
+            Set<UUID> wanted = Set.copyOf(requestedIds);
+            chosenOccurrences = editableOccurrences.stream().filter(occurrence -> wanted.contains(occurrence.getId()))
+                    .toList();
         }
         String oldAddress = booking.getServiceAddress();
         RecipientSnapshot recipientSnapshot = bookingMapper.toAddressSnapshot(booking.getRecipientSnapshot(), request);
         String newAddress = bookingMapper.toServiceAddress(recipientSnapshot);
-        booking.setRecipientSnapshot(recipientSnapshot);
-        booking.setServiceAddress(newAddress);
+        if (chosenOccurrences.size() == upcomingOccurrences.size()) {
+            // Mọi buổi sắp tới chuyển sang địa chỉ mới: đổi địa chỉ của booking, buổi đã qua giữ địa chỉ cũ của chúng.
+            for (BookingOccurrence occurrence : occurrences) {
+                boolean chosen = chosenOccurrences.contains(occurrence);
+                if (chosen) {
+                    occurrence.setServiceAddress(null);
+                } else if (occurrence.getServiceAddress() == null) {
+                    occurrence.setServiceAddress(oldAddress);
+                }
+            }
+            booking.setRecipientSnapshot(recipientSnapshot);
+            booking.setServiceAddress(newAddress);
+        } else {
+            // Chỉ một số buổi (vd người bệnh ở nhà con khác vài hôm): địa chỉ riêng của buổi; trùng địa chỉ booking → bỏ.
+            for (BookingOccurrence occurrence : chosenOccurrences) {
+                occurrence.setServiceAddress(newAddress.equals(oldAddress) ? null : newAddress);
+            }
+        }
+        bookingOccurrenceRepository.saveAll(occurrences);
         String note = request.getNote() == null || request.getNote().isBlank() ? null : request.getNote().strip();
+        String eventNote = chosenOccurrences.size() == upcomingOccurrences.size()
+                ? note
+                : "Áp dụng cho " + chosenOccurrences.size() + " buổi" + (note == null ? "" : ": " + note);
         bookingEventRepository.save(bookingEventMapper.toAddressChangedEvent(booking, oldAddress, newAddress, actorId,
-                note, now));
-        List<UUID> caregiverUserIds = upcomingOccurrences.stream()
+                eventNote, now));
+        List<UUID> caregiverUserIds = chosenOccurrences.stream()
                 .map(BookingOccurrence::getCaregiverUserId)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -624,17 +674,33 @@ public class BookingServiceImpl implements BookingService {
 
     // ─── CAREGIVER: đơn khách gửi thẳng (CR-3) ────────────────────────────────
 
+    // Không @Transactional: tên khách lấy từ Identity (mạng, batch) — mỗi truy vấn repository tự chạy transaction ngắn.
     @Override
-    @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(UUID actorId, int page,
                                                                                            int size) {
         Page<Booking> bookings = bookingRepository.findByCaregiverUserIdAndStatusAndDeletedAtIsNullOrderByCreatedAtDesc(
                 actorId, BookingStatus.PENDING_CAREGIVER_CONFIRMATION, PageRequests.unsorted(page, size));
+        Map<UUID, IdentityUserResponse> customers = bookings.isEmpty()
+                ? Map.of()
+                : identityUserService.getProfiles(bookings.map(Booking::getCustomerId).getContent());
         List<CaregiverBookingRequestResponse> requestResponses = bookings.getContent().stream()
-                .map(this::toCaregiverRequestResponse)
+                .map(booking -> toCaregiverRequestResponse(booking, customerName(customers, booking)))
                 .toList();
         PageResponse<CaregiverBookingRequestResponse> pageResponse = PageResponse.of(bookings, requestResponses);
         return APIResponse.success("Lấy danh sách lịch chờ nhận thành công", pageResponse);
+    }
+
+    // Chi tiết một đơn còn chờ chính caregiver này trả lời; đã nhận / từ chối / quá hạn / người khác → 404.
+    @Override
+    public APIResponse<CaregiverBookingRequestResponse> getCaregiverRequest(UUID actorId, UUID id) {
+        Booking booking = findCaregiverRequest(actorId, id);
+        if (booking.getStatus() != BookingStatus.PENDING_CAREGIVER_CONFIRMATION) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Map<UUID, IdentityUserResponse> customers = identityUserService.getProfiles(List.of(booking.getCustomerId()));
+        CaregiverBookingRequestResponse requestResponse = toCaregiverRequestResponse(booking,
+                customerName(customers, booking));
+        return APIResponse.success("Lấy chi tiết lịch chờ nhận thành công", requestResponse);
     }
 
     @Override
@@ -712,8 +778,16 @@ public class BookingServiceImpl implements BookingService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
+        // Số booking khác nhau trên mỗi ca — giao diện so với maxBookings của ca (2026-11-05).
+        Map<UUID, Integer> scheduleBookingCounts = occurrences.stream()
+                .filter(occurrence -> occurrence.getCaregiverScheduleId() != null)
+                .collect(Collectors.groupingBy(BookingOccurrence::getCaregiverScheduleId,
+                        Collectors.collectingAndThen(
+                                Collectors.mapping(occurrence -> occurrence.getBooking().getId(), Collectors.toSet()),
+                                Set::size)));
+        int travelBufferMinutes = (int) bookingProperties.getSchedule().getTravelBuffer().toMinutes();
         CaregiverHeldScheduleResponse heldScheduleResponse = bookingMapper.toHeldScheduleResponse(caregiverId,
-                heldScheduleIds, occurrences);
+                heldScheduleIds, occurrences, travelBufferMinutes, scheduleBookingCounts);
         return APIResponse.success("Lấy lịch đã được giữ của người chăm sóc thành công", heldScheduleResponse);
     }
 
@@ -853,14 +927,15 @@ public class BookingServiceImpl implements BookingService {
         bookingRepository.lockScheduleKey(CUSTOMER_LOCK_PREFIX + actorId);
         checkPendingLimit(actorId);
         lockSchedule(caregiverId, request.getRecipientId());
-        checkScheduleNotHeld(request.getCaregiverScheduleId());
+        checkScheduleCapacity(slots);
         checkCaregiverAvailable(caregiverId, slots, null);
         checkRecipientAvailable(request.getRecipientId(), slots, null);
         ZoneId zone = bookingProperties.getSchedule().getTimezone();
         LocalDate startDate = LocalDate.ofInstant(slots.getFirst().getStartAt(), zone);
         LocalDate endDate = LocalDate.ofInstant(slots.getLast().getStartAt(), zone);
+        Instant remainingPaymentDueAt = calculateRemainingPaymentDueAt(request.getBookingType(), slots, policy);
         Booking booking = bookingMapper.toBooking(request, actorId, recipientSnapshot, caregiver, quote, startDate, endDate,
-                resolveInitialPaymentPercent(request.getBookingType(), policy));
+                resolveInitialPaymentPercent(remainingPaymentDueAt, policy));
         booking.setBookingCode(bookingCodeGenerator.generate());
         // CR-3: khách đã chọn caregiver → caregiver tự nhận / từ chối; để trung tâm chọn → trung tâm duyệt.
         booking.setStatus(caregiver == null
@@ -873,7 +948,7 @@ public class BookingServiceImpl implements BookingService {
             booking.setCenterReminderMinutes(CenterReminders.passed(
                     bookingProperties.getSchedule().getCenterReminderMinutes(), booking.getAcceptanceDueAt(), clock.instant()));
         }
-        booking.setRemainingPaymentDueAt(calculateRemainingPaymentDueAt(request.getBookingType(), slots, policy));
+        booking.setRemainingPaymentDueAt(remainingPaymentDueAt);
         booking.setCheckInEarlyMinutes(policy.getCheckInEarlyMinutes());
         booking.setCheckInLateMinutes(policy.getCheckInLateMinutes());
         booking.setIdempotencyKey(idempotencyKey);
@@ -884,6 +959,10 @@ public class BookingServiceImpl implements BookingService {
         bookingOccurrenceRepository.saveAll(occurrenceMapper.toOccurrenceList(slots, savedBooking, initialStatus));
         bookingDetailRepository.saveAll(bookingDetailMapper.toBookingDetailList(quote.getItems(), savedBooking));
         bookingLifecycleService.recordCreated(savedBooking, actorId);
+        // 2026-11-05 (chủ dự án): SHIFT đặt vào ca caregiver đã đăng ký và được duyệt → tự nhận, khách đặt cọc ngay.
+        if (request.getBookingType() == BookingType.SHIFT && caregiver != null) {
+            bookingLifecycleService.apply(savedBooking, BookingAction.CAREGIVER_ACCEPT, null, SHIFT_AUTO_ACCEPT_REASON);
+        }
         return savedBooking;
     }
 
@@ -1004,15 +1083,18 @@ public class BookingServiceImpl implements BookingService {
         return lockedBooking;
     }
 
-    // SHIFT: tra lịch caregiver ở ProviderService rồi sinh đúng một buổi; RECURRING / CUSTOM sinh từ request.
+    // SHIFT: tra các ca caregiver ở ProviderService (ca của booking + ca của từng khung giờ) rồi sinh buổi; RECURRING / CUSTOM
+    // sinh từ request.
     private List<OccurrenceSlot> generateSlots(UUID centerId, BookingScheduleRequest request) {
         if (request.getBookingType() != BookingType.SHIFT) {
             return occurrenceGenerator.generate(request);
         }
         occurrenceGenerator.checkShape(request);
-        ProviderScheduleResponse schedule = caregiverPort.findBookableSchedule(centerId, request.getCaregiverId(),
-                request.getCaregiverScheduleId());
-        return occurrenceGenerator.generateShift(request, schedule);
+        Map<UUID, ProviderScheduleResponse> schedules = new HashMap<>();
+        for (UUID scheduleId : occurrenceGenerator.collectScheduleIds(request)) {
+            schedules.put(scheduleId, caregiverPort.findBookableSchedule(centerId, request.getCaregiverId(), scheduleId));
+        }
+        return occurrenceGenerator.generateShift(request, schedules);
     }
 
     // Spec §8: buổi đầu phải cách hiện tại ít nhất min advance của loại booking; mốc chốt thanh toán (SHIFT: giờ buổi đầu,
@@ -1036,33 +1118,42 @@ public class BookingServiceImpl implements BookingService {
         return paymentCutoff;
     }
 
-    // RECURRING / CUSTOM trả xong phần còn lại trước buổi đầu (spec §9.1); SHIFT trả 100 % ngay nên không có.
+    // Phần còn lại trả xong trước buổi đầu theo mốc policy (spec §9.1). 2026-11-05: SHIFT cũng đặt cọc — nhưng ca có thể
+    // đặt sát giờ (min advance SHIFT < mốc), khi mốc đã qua thì không còn hạn phần còn lại → trả 100 % ngay.
     private Instant calculateRemainingPaymentDueAt(BookingType bookingType, List<OccurrenceSlot> slots,
                                                    CenterBookingPolicy policy) {
-        if (bookingType == BookingType.SHIFT) {
+        Instant dueAt = slots.getFirst().getStartAt().minus(Duration.ofMinutes(policy.getRemainingPaymentDueBeforeMinutes()));
+        if (bookingType == BookingType.SHIFT && !dueAt.isAfter(clock.instant())) {
             return null;
         }
-        return slots.getFirst().getStartAt().minus(Duration.ofMinutes(policy.getRemainingPaymentDueBeforeMinutes()));
+        return dueAt;
     }
 
-    // Spec §4: SHIFT thanh toán 100 %, RECURRING / CUSTOM đặt cọc theo policy.
-    private BigDecimal resolveInitialPaymentPercent(BookingType bookingType, CenterBookingPolicy policy) {
-        return bookingType == BookingType.SHIFT ? ONE_HUNDRED : policy.getDepositPercent();
+    // 2026-11-05 (chủ dự án): mọi loại đặt cọc theo policy (mặc định 30 %); không còn hạn phần còn lại → trả 100 %.
+    private BigDecimal resolveInitialPaymentPercent(Instant remainingPaymentDueAt, CenterBookingPolicy policy) {
+        return remainingPaymentDueAt == null ? ONE_HUNDRED : policy.getDepositPercent();
     }
 
     private Instant findEarlier(Instant first, Instant second) {
         return first.isBefore(second) ? first : second;
     }
 
-    // SHIFT (spec §6): một lịch caregiver chỉ một buổi đang giữ; chốt chặn cuối là uk_booking_occurrences_schedule_holding.
-    private void checkScheduleNotHeld(UUID caregiverScheduleId) {
-        if (caregiverScheduleId == null) {
-            return;
+    // SHIFT (2026-11-05): một ca nhận tối đa maxBookings booking khác nhau (work_shifts.max_bookings; Provider cũ không gửi
+    // → 1 như trước). Chạy dưới khóa caregiver (lockSchedule) nên hai booking song song không cùng lọt.
+    private void checkScheduleCapacity(List<OccurrenceSlot> slots) {
+        Map<UUID, Integer> maxBookings = new HashMap<>();
+        for (OccurrenceSlot slot : slots) {
+            if (slot.getCaregiverScheduleId() != null) {
+                maxBookings.put(slot.getCaregiverScheduleId(),
+                        slot.getScheduleMaxBookings() == null ? 1 : slot.getScheduleMaxBookings());
+            }
         }
-        boolean held = bookingOccurrenceRepository.existsByCaregiverScheduleIdAndStatusInAndDeletedAtIsNull(
-                caregiverScheduleId, OccurrenceStatus.CAREGIVER_HOLDING);
-        if (held) {
-            throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_NOT_AVAILABLE);
+        for (Map.Entry<UUID, Integer> entry : maxBookings.entrySet()) {
+            long bookingCount = bookingOccurrenceRepository.countHoldingBookings(entry.getKey(),
+                    OccurrenceStatus.CAREGIVER_HOLDING, BookingStatus.SCHEDULE_HOLDING);
+            if (bookingCount >= entry.getValue()) {
+                throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_NOT_AVAILABLE);
+            }
         }
     }
 
@@ -1424,9 +1515,18 @@ public class BookingServiceImpl implements BookingService {
     }
 
     private CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking) {
+        return toCaregiverRequestResponse(booking, null);
+    }
+
+    private CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking, String customerName) {
         return bookingMapper.toCaregiverRequestResponse(booking,
                 bookingDetailRepository.findAllByBooking(booking.getId()),
-                bookingOccurrenceRepository.findAllByBooking(booking.getId()));
+                bookingOccurrenceRepository.findAllByBooking(booking.getId()), customerName);
+    }
+
+    private static String customerName(Map<UUID, IdentityUserResponse> customers, Booking booking) {
+        IdentityUserResponse customer = customers.get(booking.getCustomerId());
+        return customer == null ? null : customer.getFullName();
     }
 
     private Booking lockCenterBooking(UUID centerId, UUID id) {
@@ -1488,14 +1588,21 @@ public class BookingServiceImpl implements BookingService {
             bookingRepository.lockScheduleKey(RECIPIENT_LOCK_PREFIX + recipientId);
         }
     }
+    // Ngoài trùng giờ, buổi của booking KHÁC phải cách ít nhất travelBuffer (2026-11-05: 60 phút trừ hao di chuyển / nghỉ);
+    // các buổi trong cùng một booking được nối liền.
     void checkCaregiverAvailable(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
         if (caregiverId == null || slots.isEmpty()) {
             return;
         }
+        Duration travelBuffer = bookingProperties.getSchedule().getTravelBuffer();
         List<BookingOccurrence> candidates = bookingOccurrenceRepository.findCaregiverOverlaps(caregiverId,
-                findRangeStart(slots), findRangeEnd(slots), OccurrenceStatus.ACTIVE, BookingStatus.SCHEDULE_HOLDING);
-        if (hasOverlap(candidates, slots, excludeBookingId)) {
+                findRangeStart(slots).minus(travelBuffer), findRangeEnd(slots).plus(travelBuffer), OccurrenceStatus.ACTIVE,
+                BookingStatus.SCHEDULE_HOLDING);
+        if (hasOverlap(candidates, slots, excludeBookingId, Duration.ZERO)) {
             throw new AppException(ErrorCode.CAREGIVER_SCHEDULE_CONFLICT);
+        }
+        if (hasOverlap(candidates, slots, excludeBookingId, travelBuffer)) {
+            throw new AppException(ErrorCode.CAREGIVER_TRAVEL_BUFFER_CONFLICT);
         }
     }
     void checkRecipientAvailable(UUID recipientId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
@@ -1504,7 +1611,7 @@ public class BookingServiceImpl implements BookingService {
         }
         List<BookingOccurrence> candidates = bookingOccurrenceRepository.findRecipientOverlaps(recipientId,
                 findRangeStart(slots), findRangeEnd(slots), OccurrenceStatus.ACTIVE, BookingStatus.SCHEDULE_HOLDING);
-        if (hasOverlap(candidates, slots, excludeBookingId)) {
+        if (hasOverlap(candidates, slots, excludeBookingId, Duration.ZERO)) {
             throw new AppException(ErrorCode.RECIPIENT_SCHEDULE_CONFLICT);
         }
     }
@@ -1514,13 +1621,16 @@ public class BookingServiceImpl implements BookingService {
         return firstStart.isBefore(secondEnd) && secondStart.isBefore(firstEnd);
     }
 
-    private boolean hasOverlap(List<BookingOccurrence> candidates, List<OccurrenceSlot> slots, UUID excludeBookingId) {
+    // buffer nới khoảng của buổi đã có ra hai phía: [start - buffer, end + buffer).
+    private boolean hasOverlap(List<BookingOccurrence> candidates, List<OccurrenceSlot> slots, UUID excludeBookingId,
+                               Duration buffer) {
         for (BookingOccurrence candidate : candidates) {
             if (excludeBookingId != null && excludeBookingId.equals(candidate.getBooking().getId())) {
                 continue;
             }
             for (OccurrenceSlot slot : slots) {
-                if (overlaps(candidate.getStartAt(), candidate.getEndAt(), slot.getStartAt(), slot.getEndAt())) {
+                if (overlaps(candidate.getStartAt().minus(buffer), candidate.getEndAt().plus(buffer), slot.getStartAt(),
+                        slot.getEndAt())) {
                     return true;
                 }
             }

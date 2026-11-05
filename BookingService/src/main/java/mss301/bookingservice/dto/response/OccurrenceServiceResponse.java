@@ -18,4 +18,9 @@ public class OccurrenceServiceResponse {
     String serviceName;
 
     UnitType unitType;
+
+    // Gói giá khách chọn và độ dài chuẩn một đơn vị của gói (phút).
+    String planName;
+
+    Integer planDurationMinutes;
 }

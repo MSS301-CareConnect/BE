@@ -43,6 +43,10 @@ public class WorkShiftRequest {
     @Max(value = 1000, message = "WORK_SHIFT_CAPACITY_INVALID")
     Integer capacity;
 
+    @Min(value = 1, message = "WORK_SHIFT_CAPACITY_INVALID")
+    @Max(value = 20, message = "WORK_SHIFT_CAPACITY_INVALID")
+    Integer maxBookings;
+
     // Bỏ trống khi tạo → mặc định giờ bắt đầu − 24h (hoặc − 1h nếu không còn kịp).
     Instant registrationDeadline;
 

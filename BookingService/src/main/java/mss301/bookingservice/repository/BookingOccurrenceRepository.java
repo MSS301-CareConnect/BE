@@ -21,9 +21,18 @@ import java.util.UUID;
 @Repository
 public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurrence, UUID> {
 
-    // SHIFT: lịch caregiver đã bị một buổi đang giữ (spec §6).
-    boolean existsByCaregiverScheduleIdAndStatusInAndDeletedAtIsNull(UUID caregiverScheduleId,
-                                                                    Collection<OccurrenceStatus> statuses);
+    // SHIFT (2026-11-05): số booking khác nhau đang giữ buổi trên một ca caregiver — so với work_shifts.max_bookings.
+    @Query("""
+            select count(distinct b.id) from BookingOccurrence o join o.booking b
+            where o.caregiverScheduleId = :caregiverScheduleId
+              and o.deletedAt is null
+              and b.deletedAt is null
+              and o.status in :occurrenceStatuses
+              and b.status in :bookingStatuses
+            """)
+    long countHoldingBookings(@Param("caregiverScheduleId") UUID caregiverScheduleId,
+                              @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
+                              @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
     @Query("select o from BookingOccurrence o where o.booking.id = :bookingId and o.deletedAt is null order by o.occurrenceNo")
     List<BookingOccurrence> findAllByBooking(@Param("bookingId") UUID bookingId);

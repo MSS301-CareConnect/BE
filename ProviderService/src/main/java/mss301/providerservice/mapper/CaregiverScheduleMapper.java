@@ -22,6 +22,7 @@ public interface CaregiverScheduleMapper {
     @Mapping(target = "workDate", source = "workShift.workDate")
     @Mapping(target = "startTime", source = "workShift.startTime")
     @Mapping(target = "endTime", source = "workShift.endTime")
+    @Mapping(target = "maxBookings", source = "workShift.maxBookings")
     ScheduleResponse toResponse(CaregiverSchedule caregiverSchedule);
 
     List<ScheduleResponse> toResponseList(List<CaregiverSchedule> caregiverSchedules);
@@ -32,6 +33,7 @@ public interface CaregiverScheduleMapper {
     @Mapping(target = "workDate", source = "workShift.workDate")
     @Mapping(target = "startTime", source = "workShift.startTime")
     @Mapping(target = "endTime", source = "workShift.endTime")
+    @Mapping(target = "maxBookings", source = "workShift.maxBookings")
     BookableScheduleResponse toBookableResponse(CaregiverSchedule caregiverSchedule);
 
     List<BookableScheduleResponse> toBookableResponseList(List<CaregiverSchedule> caregiverSchedules);

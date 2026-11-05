@@ -58,6 +58,10 @@ public class BookingCreateRequest implements BookingScheduleRequest {
     @Size(max = 2000, message = "TEXT_TOO_LONG")
     String customerNote;
 
+    // 2026-11-05: địa chỉ chăm sóc chọn lúc đặt (sổ địa chỉ của người bệnh); bỏ trống = địa chỉ trong hồ sơ.
+    @Valid
+    ServiceAddressRequest serviceAddress;
+
     @NotEmpty(message = "SERVICES_REQUIRED")
     @Size(max = 10, message = "TOO_MANY_SERVICES")
     List<@Valid @NotNull(message = "SERVICES_REQUIRED") BookingServiceRequest> services;

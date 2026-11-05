@@ -23,6 +23,9 @@ public class CareCatalogQuoteResponse {
 
     String serviceName;
 
+    // Tên gói giá (2026-11-05) — hiển thị ở "Giá từng dịch vụ".
+    String planName;
+
     String pricingUnit;
 
     Integer durationMinutes;

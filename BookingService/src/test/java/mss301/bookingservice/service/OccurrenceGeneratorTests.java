@@ -19,6 +19,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -216,15 +217,79 @@ class OccurrenceGeneratorTests {
                 .startTime(LocalTime.parse("08:00"))
                 .endTime(LocalTime.parse("12:00"))
                 .build();
-        List<OccurrenceSlot> slots = generator.generateShift(shift, schedule);
+        List<OccurrenceSlot> slots = generator.generateShift(shift, Map.of(scheduleId, schedule));
         assertThat(slots).hasSize(1);
         assertThat(slots.getFirst().getStartAt()).isEqualTo(Instant.parse("2026-10-12T01:00:00Z"));
         assertThat(slots.getFirst().getEndAt()).isEqualTo(Instant.parse("2026-10-12T05:00:00Z"));
         assertThat(slots.getFirst().getCaregiverScheduleId()).isEqualTo(scheduleId);
-        BookingCreateRequest shiftWithSlots = BookingCreateRequest.builder().bookingType(BookingType.SHIFT)
+        assertThat(slots.getFirst().getCareServiceId()).isNull();
+        BookingCreateRequest shiftWithRecurrence = BookingCreateRequest.builder().bookingType(BookingType.SHIFT)
                 .caregiverId(UUID.randomUUID()).caregiverScheduleId(scheduleId)
-                .slots(List.of(slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z"))).build();
-        assertShapeError(shiftWithSlots, ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
+                .frequency(RecurrenceFrequency.DAILY).build();
+        assertShapeError(shiftWithRecurrence, ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
+    }
+
+    @Test
+    void shiftSplitsIntoBackToBackSlotsInsideTheShift() {
+        // Ca 08:00–20:00 giờ VN (01:00Z–13:00Z): hai khung giờ nối liền 08–12 và 12–16 cho hai dịch vụ khác nhau.
+        UUID scheduleId = UUID.randomUUID();
+        UUID bathing = UUID.randomUUID();
+        UUID feeding = UUID.randomUUID();
+        ProviderScheduleResponse schedule = ProviderScheduleResponse.builder()
+                .id(scheduleId)
+                .workDate(LocalDate.parse("2026-10-12"))
+                .startTime(LocalTime.parse("08:00"))
+                .endTime(LocalTime.parse("20:00"))
+                .maxBookings(3)
+                .build();
+        BookingCreateRequest shift = BookingCreateRequest.builder().bookingType(BookingType.SHIFT)
+                .caregiverId(UUID.randomUUID()).caregiverScheduleId(scheduleId)
+                .slots(List.of(serviceSlot("2026-10-12T05:00:00Z", "2026-10-12T09:00:00Z", feeding),
+                        serviceSlot("2026-10-12T01:00:00Z", "2026-10-12T05:00:00Z", bathing)))
+                .build();
+        assertThat(generator.collectScheduleIds(shift)).containsExactly(scheduleId);
+        List<OccurrenceSlot> slots = generator.generateShift(shift, Map.of(scheduleId, schedule));
+        assertThat(slots).extracting(OccurrenceSlot::getOccurrenceNo).containsExactly(1, 2);
+        assertThat(slots).extracting(OccurrenceSlot::getCareServiceId).containsExactly(bathing, feeding);
+        assertThat(slots).extracting(OccurrenceSlot::getCaregiverScheduleId).containsOnly(scheduleId);
+        assertThat(slots).extracting(OccurrenceSlot::getScheduleMaxBookings).containsOnly(3);
+        assertThat(slots).extracting(OccurrenceSlot::getDurationMinutes).containsOnly(240);
+
+        // Vượt ra ngoài ca (19:00–21:00 giờ VN).
+        BookingCreateRequest outside = BookingCreateRequest.builder().bookingType(BookingType.SHIFT)
+                .caregiverId(UUID.randomUUID()).caregiverScheduleId(scheduleId)
+                .slots(List.of(slot("2026-10-12T12:00:00Z", "2026-10-12T14:00:00Z"))).build();
+        assertThatThrownBy(() -> generator.generateShift(outside, Map.of(scheduleId, schedule)))
+                .isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.SLOT_OUTSIDE_SHIFT);
+        // Chồng nhau trong cùng booking.
+        BookingCreateRequest overlapping = BookingCreateRequest.builder().bookingType(BookingType.SHIFT)
+                .caregiverId(UUID.randomUUID()).caregiverScheduleId(scheduleId)
+                .slots(List.of(slot("2026-10-12T01:00:00Z", "2026-10-12T05:00:00Z"),
+                        slot("2026-10-12T04:00:00Z", "2026-10-12T08:00:00Z"))).build();
+        assertThatThrownBy(() -> generator.generateShift(overlapping, Map.of(scheduleId, schedule)))
+                .isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.OCCURRENCES_OVERLAP);
+        // Ca riêng của khung giờ chỉ dành cho SHIFT.
+        TimeSlotRequest customWithSchedule = slot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z");
+        customWithSchedule.setCaregiverScheduleId(scheduleId);
+        assertShapeError(custom(customWithSchedule), ErrorCode.SCHEDULE_FIELD_NOT_ALLOWED);
+    }
+
+    @Test
+    void customKeepsServiceOfEachSlot() {
+        UUID serviceId = UUID.randomUUID();
+        List<OccurrenceSlot> slots = generator.generate(custom(
+                serviceSlot("2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z", serviceId)));
+        assertThat(slots.getFirst().getCareServiceId()).isEqualTo(serviceId);
+    }
+
+    static TimeSlotRequest serviceSlot(String startAt, String endAt, UUID careServiceId) {
+        TimeSlotRequest slot = slot(startAt, endAt);
+        slot.setCareServiceId(careServiceId);
+        return slot;
     }
 
     @Test

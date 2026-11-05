@@ -92,6 +92,59 @@ class BookingPriceCalculatorTests {
         assertThat(quote.getTotalAmount()).isEqualByComparingTo("33334");
     }
 
+    // 2026-11-05: buổi gắn dịch vụ chỉ tính dịch vụ đó; số buổi đếm riêng từng dịch vụ.
+    @Test
+    void slotTaggedWithServiceChargesOnlyThatService() {
+        ServiceQuote hourly = serviceQuote(UnitType.HOUR, 60, "100000");
+        ServiceQuote shift = serviceQuote(UnitType.SHIFT, 240, "400000");
+        List<OccurrenceSlot> slots = slots(3, 240);
+        slots.get(0).setCareServiceId(shift.getCareServiceId());
+        slots.get(1).setCareServiceId(hourly.getCareServiceId());
+        slots.get(2).setCareServiceId(shift.getCareServiceId());
+        BookingQuote quote = bookingPriceCalculator.calculate(List.of(hourly, shift), slots);
+
+        assertThat(quote.getOccurrences()).extracting(OccurrenceSlot::getPriceAmount)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("400000"), new BigDecimal("400000"), new BigDecimal("400000"));
+        assertThat(hourly.getOccurrenceCount()).isEqualTo(1);
+        assertThat(hourly.getQuantity()).isEqualByComparingTo("4");
+        assertThat(shift.getOccurrenceCount()).isEqualTo(2);
+        assertThat(shift.getTotalPrice()).isEqualByComparingTo("800000");
+        assertThat(quote.getTotalAmount()).isEqualByComparingTo("1200000");
+    }
+
+    @Test
+    void slotServicesMustBeConsistentAndMatchPlanLength() {
+        ServiceQuote hourly = serviceQuote(UnitType.HOUR, 120, "100000");
+        ServiceQuote shift = serviceQuote(UnitType.SHIFT, 240, "400000");
+        List<OccurrenceSlot> mixed = slots(2, 240);
+        mixed.get(0).setCareServiceId(shift.getCareServiceId());
+        assertCalculateError(List.of(hourly, shift), mixed, ErrorCode.SLOT_SERVICE_MIXED);
+
+        List<OccurrenceSlot> unknown = slots(1, 240);
+        unknown.get(0).setCareServiceId(UUID.randomUUID());
+        assertCalculateError(List.of(shift), unknown, ErrorCode.SLOT_SERVICE_NOT_SELECTED);
+
+        List<OccurrenceSlot> missing = slots(1, 240);
+        missing.get(0).setCareServiceId(shift.getCareServiceId());
+        assertCalculateError(List.of(hourly, shift), missing, ErrorCode.SLOT_SERVICE_WITHOUT_SLOT);
+
+        // Gói ca 4 giờ nhưng khung giờ 3 giờ; gói giờ tối thiểu 2 giờ nhưng khung 1 giờ.
+        List<OccurrenceSlot> shortShift = slots(1, 180);
+        shortShift.get(0).setCareServiceId(shift.getCareServiceId());
+        assertCalculateError(List.of(shift), shortShift, ErrorCode.PRICE_PLAN_UNIT_MISMATCH);
+        List<OccurrenceSlot> shortHour = slots(1, 60);
+        shortHour.get(0).setCareServiceId(hourly.getCareServiceId());
+        assertCalculateError(List.of(hourly), shortHour, ErrorCode.PRICE_PLAN_UNIT_MISMATCH);
+    }
+
+    private void assertCalculateError(List<ServiceQuote> services, List<OccurrenceSlot> slots, ErrorCode expected) {
+        assertThatThrownBy(() -> bookingPriceCalculator.calculate(services, slots))
+                .isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode())
+                .isEqualTo(expected);
+    }
+
     ServiceQuote serviceQuote(UnitType unitType, int planMinutes, String unitPrice) {
         return ServiceQuote.builder()
                 .careServiceId(UUID.randomUUID())

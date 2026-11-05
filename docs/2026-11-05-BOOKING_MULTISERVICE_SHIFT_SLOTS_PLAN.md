@@ -84,6 +84,11 @@ Khi tiếp tục triển khai các bước còn lại trong `BE/`, **bắt buộ
   dịch vụ của buổi, quy tắc slot), `BookingScheduleConflictTests` (trừ hao 60 phút), `BookingApiTests.shiftSplitsIntoServiceSlotsWith
   TravelBufferAndMaxBookings` + sửa `caregiverAndRecipientConflicts…` (booking khác nối liền nay bị 5248).
 
+- **Sửa lỗi phát hiện khi chạy thật (2026-11-05)**: `booking_status_history` thiếu `PENDING_CAREGIVER_CONFIRMATION` trong
+  `ck_booking_status_history_from/_to` (sót từ CR-3, 2026-11-03) → mọi booking khách chọn sẵn caregiver bị 400 `5000`. Đã sửa
+  `schema/booking.sql` + `schema/changes/2026-11-05_status_history_caregiver_confirmation.sql` (đã áp DB dev). Thêm test
+  `shiftQuotesTwoHourlyServicesWithBackToBackSlots`; FE panel Tóm tắt nay hiện lý do lỗi báo giá.
+
 ### 3.2. Các bước đã làm ở `BE/BookingService` (kế hoạch gốc)
 
 | Thứ tự | File cần chỉnh sửa / tạo mới | Nội dung chi tiết |

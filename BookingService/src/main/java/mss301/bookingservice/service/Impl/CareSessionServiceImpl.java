@@ -286,12 +286,15 @@ public class CareSessionServiceImpl implements CareSessionService {
         return careSessionMapper.toResponse(session, tasks);
     }
 
-    // Checklist: mỗi dịch vụ của booking một việc, rồi các lần uống thuốc (snapshot lúc đặt) rơi vào khung giờ buổi,
-    // theo giờ tăng dần.
+    // Checklist: mỗi dịch vụ của buổi một việc (buổi gắn dịch vụ — 2026-11-05 — chỉ dịch vụ đó; buổi không gắn thì mọi dịch vụ
+    // của booking), rồi các lần uống thuốc (snapshot lúc đặt) rơi vào khung giờ buổi, theo giờ tăng dần.
     private List<CareTask> buildTasks(CareSession session, Booking booking, BookingOccurrence occurrence) {
         List<CareTask> tasks = new ArrayList<>();
         int sortOrder = 0;
         for (BookingDetail detail : bookingDetailRepository.findAllByBooking(booking.getId())) {
+            if (occurrence.getCareServiceId() != null && !occurrence.getCareServiceId().equals(detail.getCareServiceId())) {
+                continue;
+            }
             tasks.add(careSessionMapper.toServiceTask(detail, session, CareTaskType.SERVICE, CareTaskStatus.PENDING,
                     sortOrder++));
         }

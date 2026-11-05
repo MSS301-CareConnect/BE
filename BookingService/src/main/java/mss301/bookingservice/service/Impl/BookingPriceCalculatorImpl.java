@@ -13,9 +13,13 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
@@ -27,10 +31,12 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
 
     @Override
     public BookingQuote calculate(List<ServiceQuote> services, List<OccurrenceSlot> slots) {
+        checkSlotServices(services, slots);
         for (ServiceQuote service : services) {
-            service.setOccurrenceCount(slots.size());
+            service.setOccurrenceCount(0);
             service.setQuantity(BigDecimal.ZERO);
             service.setTotalPrice(BigDecimal.ZERO);
+            service.setUnitsPerOccurrence(null);
         }
         // Mỗi dịch vụ: số đơn vị mỗi buổi → [số buổi, tiền chưa làm tròn], để báo giá ghi riêng buổi dài hơn.
         List<Map<BigDecimal, BigDecimal[]>> groups = new ArrayList<>();
@@ -38,11 +44,17 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
             groups.add(new TreeMap<>());
         }
         BigDecimal totalAmount = BigDecimal.ZERO;
-        for (int index = 0; index < slots.size(); index++) {
-            OccurrenceSlot slot = slots.get(index);
+        for (OccurrenceSlot slot : slots) {
             BigDecimal priceAmount = BigDecimal.ZERO;
             for (int serviceIndex = 0; serviceIndex < services.size(); serviceIndex++) {
                 ServiceQuote service = services.get(serviceIndex);
+                // Buổi gắn một dịch vụ (2026-11-05) chỉ tính dịch vụ đó; buổi không gắn tính mọi dịch vụ (như trước).
+                if (slot.getCareServiceId() != null && !slot.getCareServiceId().equals(service.getCareServiceId())) {
+                    continue;
+                }
+                if (slot.getCareServiceId() != null) {
+                    checkPlanDuration(service, slot.getDurationMinutes());
+                }
                 BigDecimal linePrice = calculateLinePrice(service, slot.getDurationMinutes());
                 BigDecimal units = calculateUnits(service, slot.getDurationMinutes());
                 BigDecimal[] group = groups.get(serviceIndex).computeIfAbsent(units,
@@ -51,11 +63,12 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
                 group[1] = group[1].add(linePrice);
                 // SHIFT / RECURRING: mọi buổi cùng số đơn vị. CUSTOM mỗi buổi một khung giờ → số đơn vị khác nhau thì để
                 // null (quantity vẫn là tổng đúng).
-                if (index == 0) {
+                if (service.getOccurrenceCount() == 0) {
                     service.setUnitsPerOccurrence(units);
                 } else if (service.getUnitsPerOccurrence() != null && service.getUnitsPerOccurrence().compareTo(units) != 0) {
                     service.setUnitsPerOccurrence(null);
                 }
+                service.setOccurrenceCount(service.getOccurrenceCount() + 1);
                 service.setQuantity(service.getQuantity().add(units));
                 service.setTotalPrice(service.getTotalPrice().add(linePrice));
                 priceAmount = priceAmount.add(linePrice);
@@ -82,6 +95,47 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
                 .subtotal(totalAmount)
                 .totalAmount(totalAmount)
                 .build();
+    }
+
+    // Đa dịch vụ theo khung giờ (2026-11-05): hoặc mọi buổi gắn dịch vụ, hoặc không buổi nào; dịch vụ của buổi phải nằm
+    // trong booking và mỗi dịch vụ đã chọn có ít nhất một buổi.
+    private void checkSlotServices(List<ServiceQuote> services, List<OccurrenceSlot> slots) {
+        long taggedCount = slots.stream()
+                .filter(slot -> slot.getCareServiceId() != null)
+                .count();
+        if (taggedCount == 0) {
+            return;
+        }
+        if (taggedCount != slots.size()) {
+            throw new AppException(ErrorCode.SLOT_SERVICE_MIXED);
+        }
+        Set<UUID> selectedIds = services.stream()
+                .map(ServiceQuote::getCareServiceId)
+                .collect(Collectors.toSet());
+        Set<UUID> slotServiceIds = new HashSet<>();
+        for (OccurrenceSlot slot : slots) {
+            if (!selectedIds.contains(slot.getCareServiceId())) {
+                throw new AppException(ErrorCode.SLOT_SERVICE_NOT_SELECTED);
+            }
+            slotServiceIds.add(slot.getCareServiceId());
+        }
+        if (!slotServiceIds.containsAll(selectedIds)) {
+            throw new AppException(ErrorCode.SLOT_SERVICE_WITHOUT_SLOT);
+        }
+    }
+
+    // Buổi gắn một dịch vụ: gói DAY / SHIFT có độ dài cố định → buổi phải đúng bằng; gói HOUR → ít nhất bằng thời lượng gói.
+    private void checkPlanDuration(ServiceQuote service, int occurrenceMinutes) {
+        Integer planMinutes = service.getPlanDurationMinutes();
+        if (planMinutes == null) {
+            return;
+        }
+        boolean mismatch = service.getUnitType() == UnitType.HOUR
+                ? occurrenceMinutes < planMinutes
+                : occurrenceMinutes != planMinutes;
+        if (mismatch) {
+            throw new AppException(ErrorCode.PRICE_PLAN_UNIT_MISMATCH);
+        }
     }
 
     // Spec §7.2 (Q11): HOUR = số phút / 60, không làm tròn lên giờ (90 phút = 1,5 giờ); DAY = 1; SHIFT = 1.

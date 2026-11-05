@@ -24,6 +24,8 @@ public class ServiceQuote {
 
     String serviceName;
 
+    String planName;
+
     UnitType unitType;
 
     BigDecimal unitPrice;

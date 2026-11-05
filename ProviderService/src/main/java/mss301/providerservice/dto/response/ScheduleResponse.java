@@ -24,6 +24,7 @@ public class ScheduleResponse {
     LocalDate workDate;
     LocalTime startTime;
     LocalTime endTime;
+    Integer maxBookings;
     ScheduleStatus scheduleStatus;
     UUID assignedBy;
     Instant assignedAt;

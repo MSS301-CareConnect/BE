@@ -48,7 +48,9 @@
    của người cũ). Sự kiện mức buổi ghi `booking_events`.
 1e. **Loại booking + center policy** (spec §4, §8): SHIFT / RECURRING / CUSTOM (`OccurrenceGenerator`); đặt trước tối thiểu,
    timeout xác nhận / phân công / thanh toán đầu, cọc %, hạn phần còn lại đọc từ `CenterBookingPolicyService.findEffective`
-   lúc xử lý — không hardcode. SHIFT: một lịch Provider chỉ một buổi giữ (`uk_booking_occurrences_schedule_holding`).
+   lúc xử lý — không hardcode. SHIFT (2026-11-05): ca Provider chia nhiều khung giờ (`slots`, mỗi khung có thể gắn
+   `careServiceId`), tối đa `maxBookings` booking / ca (kiểm dưới khóa caregiver), booking khác cách ≥ `travel-buffer` (60 phút);
+   buổi gắn dịch vụ chỉ tính giá + sinh checklist cho dịch vụ đó (`docs/2026-11-05-BOOKING_MULTISERVICE_SHIFT_SLOTS_PLAN.md`).
 1f. **Trả đủ trước khi chăm sóc** (spec §9.1, §14): `fullyPaidAt` chỉ do PaymentService đặt (`deposit-paid` với
    `fullyPaid`, `/remaining-paid`); check-in đòi trả đủ khi có `remainingPaymentDueAt`. Quá hạn phần còn lại do Payment
    quyết (dưới khóa hóa đơn) rồi gọi `/payment-overdue` → `EXPIRE` từ CONFIRMED; Booking không xếp hoàn tiền cho ca này.

@@ -74,6 +74,7 @@ public enum ErrorCode {
     PROVINCE_REQUIRED(5114, "Province / city is required", HttpStatus.BAD_REQUEST),
     SERVICE_ADDRESS_NOT_EDITABLE(5115, "The care address can only be changed while the booking still has upcoming occurrences and no visit is in progress", HttpStatus.CONFLICT),
     CARE_SERVICE_ID_REQUIRED(5111, "Care service is required", HttpStatus.BAD_REQUEST),
+    ADDRESS_CHANGE_TOO_LATE(5117, "Only visits starting at least 24 hours from now can get a new care address", HttpStatus.CONFLICT),
     BOOKING_EXPIRED(5116, "The booking passed its deadline and has expired", HttpStatus.CONFLICT),
 
     // LỊCH / BUỔI CHĂM SÓC
@@ -119,7 +120,12 @@ public enum ErrorCode {
     TOO_MANY_SLOTS(5233, "At most 60 time slots per check", HttpStatus.BAD_REQUEST),
     OCCURRENCE_NEEDS_REASSIGNMENT(5234, "The caregiver is no longer active; waiting for the center to reassign this occurrence", HttpStatus.CONFLICT),
     PRICE_PLAN_REQUIRED(5224, "A price plan must be selected for each service", HttpStatus.BAD_REQUEST),
-    PRICE_PLAN_UNIT_MISMATCH(5225, "Occurrence duration exceeds the duration of the selected per-shift price plan", HttpStatus.BAD_REQUEST),
+    PRICE_PLAN_UNIT_MISMATCH(5225, "Occurrence duration does not match the duration of the selected price plan", HttpStatus.BAD_REQUEST),
+    SLOT_SERVICE_NOT_SELECTED(5244, "A time slot names a service that is not part of this booking", HttpStatus.BAD_REQUEST),
+    SLOT_SERVICE_WITHOUT_SLOT(5245, "Every selected service needs at least one time slot", HttpStatus.BAD_REQUEST),
+    SLOT_SERVICE_MIXED(5246, "Either every time slot names its service or none does", HttpStatus.BAD_REQUEST),
+    SLOT_OUTSIDE_SHIFT(5247, "Every time slot must fall within the caregiver's chosen shift", HttpStatus.BAD_REQUEST),
+    CAREGIVER_TRAVEL_BUFFER_CONFLICT(5248, "The caregiver needs at least 60 minutes between two different bookings", HttpStatus.CONFLICT),
 
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),

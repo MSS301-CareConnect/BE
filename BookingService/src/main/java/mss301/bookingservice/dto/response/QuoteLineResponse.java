@@ -21,6 +21,11 @@ public class QuoteLineResponse {
 
     String serviceName;
 
+    // Gói giá khách chọn: tên + thời lượng chuẩn (phút) của một đơn vị.
+    String planName;
+
+    Integer planDurationMinutes;
+
     UnitType pricingUnit;
 
     BigDecimal unitPrice;

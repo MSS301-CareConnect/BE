@@ -72,7 +72,7 @@ public class BookingController {
         return bookingService.listHeldSchedules(caregiverId, from, to);
     }
 
-    // CR-3: đơn khách gửi thẳng cho caregiver đang chờ trả lời (chỉ khu vực, không hồ sơ người bệnh).
+    // CR-3: đơn khách gửi thẳng cho caregiver đang chờ trả lời (khu vực + tình trạng sức khỏe, không số nhà / SĐT).
     @GetMapping("/caregiver-requests")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(
@@ -80,6 +80,13 @@ public class BookingController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return bookingService.listCaregiverRequests(actorId, page, size);
+    }
+
+    @GetMapping("/caregiver-requests/{id}")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<CaregiverBookingRequestResponse> getCaregiverRequest(@CurrentUserId UUID actorId,
+                                                                           @PathVariable UUID id) {
+        return bookingService.getCaregiverRequest(actorId, id);
     }
 
     @GetMapping("/{id}")

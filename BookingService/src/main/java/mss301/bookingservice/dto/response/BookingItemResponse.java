@@ -33,4 +33,9 @@ public class BookingItemResponse {
     BigDecimal unitsPerOccurrence;
 
     BigDecimal totalPrice;
+
+    // Gói giá lúc đặt (NULL với booking cũ).
+    String planName;
+
+    Integer planDurationMinutes;
 }

@@ -62,21 +62,28 @@ public interface OccurrenceMapper {
     @Mapping(target = "cancelledAt", ignore = true)
     @Mapping(target = "cancelledByParty", ignore = true)
     @Mapping(target = "needsReassignment", constant = "false")
+    @Mapping(target = "serviceAddress", ignore = true)
     BookingOccurrence toOccurrence(OccurrenceSlot slot, @Context Booking booking, @Context OccurrenceStatus initialStatus);
 
     // Buổi đã lưu → khoảng thời gian để kiểm trùng lịch khi đổi caregiver.
     @IterableMapping(nullValueMappingStrategy = NullValueMappingStrategy.RETURN_DEFAULT)
     List<OccurrenceSlot> toSlotList(List<BookingOccurrence> occurrences);
 
+    // Giới hạn booking của ca chỉ dùng lúc tạo booking (lấy từ Provider), không có trên buổi đã lưu.
+    @Mapping(target = "scheduleMaxBookings", ignore = true)
+    OccurrenceSlot toSlot(BookingOccurrence occurrence);
+
     // Danh sách lịch của caregiver: chưa kèm snapshot người bệnh (chỉ có ở chi tiết một buổi).
     @Named("toCaregiverResponse")
     @Mapping(target = "bookingId", source = "booking.id")
     @Mapping(target = "bookingCode", source = "booking.bookingCode")
     @Mapping(target = "bookingStatus", source = "booking.status")
+    @Mapping(target = "bookingType", source = "booking.bookingType")
     @Mapping(target = "centerId", source = "booking.centerId")
     @Mapping(target = "recipientId", source = "booking.recipientId")
     @Mapping(target = "recipientName", source = "booking.recipientSnapshot.fullName")
-    @Mapping(target = "serviceAddress", source = "booking.serviceAddress")
+    // Địa chỉ riêng của buổi (nếu khách đã đổi cho buổi này), không thì địa chỉ của booking.
+    @Mapping(target = "serviceAddress", expression = "java(occurrence.getServiceAddress() != null ? occurrence.getServiceAddress() : occurrence.getBooking().getServiceAddress())")
     @Mapping(target = "customerNote", source = "booking.customerNote")
     @Mapping(target = "checkInOpensAt", expression = "java(occurrence.getStartAt().minus(Duration.ofMinutes(occurrence.getBooking().getCheckInEarlyMinutes())))")
     @Mapping(target = "checkInClosesAt", expression = "java(occurrence.getStartAt().plus(Duration.ofMinutes(occurrence.getBooking().getCheckInLateMinutes())))")
@@ -86,6 +93,8 @@ public interface OccurrenceMapper {
     @Mapping(target = "customerPhone", ignore = true)
     @Mapping(target = "sessionId", ignore = true)
     @Mapping(target = "reportStatus", ignore = true)
+    @Mapping(target = "customerName", ignore = true)
+    @Mapping(target = "bookingVisits", ignore = true)
     CaregiverOccurrenceResponse toCaregiverResponse(BookingOccurrence occurrence);
 
     @IterableMapping(qualifiedByName = "toCaregiverResponse")
@@ -108,11 +117,14 @@ public interface OccurrenceMapper {
 
     AvailabilityCheckRequest.Slot toAvailabilitySlot(OccurrenceSlot slot);
 
-    // Phần chi tiết cần dữ liệu ngoài buổi (dịch vụ của booking, SĐT khách từ Identity, session) — gắn sau khi map buổi.
+    // Phần chi tiết cần dữ liệu ngoài buổi (dịch vụ của booking, khách từ Identity, session, các buổi cùng booking) —
+    // gắn sau khi map buổi.
     @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "services", source = "services")
     @Mapping(target = "customerPhone", source = "customerPhone")
+    @Mapping(target = "customerName", source = "customerName")
     @Mapping(target = "sessionId", source = "sessionId")
-    void updateDetail(List<BookingDetail> services, String customerPhone, UUID sessionId,
-                      @MappingTarget CaregiverOccurrenceResponse response);
+    @Mapping(target = "bookingVisits", source = "bookingVisits")
+    void updateDetail(List<BookingDetail> services, String customerPhone, String customerName, UUID sessionId,
+                      List<BookingOccurrence> bookingVisits, @MappingTarget CaregiverOccurrenceResponse response);
 }

@@ -64,10 +64,18 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "caregiver_user_id")
     UUID caregiverUserId;
 
-    // SHIFT: caregiver_schedules.schedule_id bên Provider mà buổi giữ — Provider không đánh dấu đã đặt; Booking chặn hai
-    // buổi cùng giữ một lịch (uk_booking_occurrences_schedule_holding).
+    // SHIFT: caregiver_schedules.schedule_id bên Provider mà buổi giữ — Provider không đánh dấu đã đặt; Booking giới hạn
+    // số booking trên một ca theo max_bookings (2026-11-05).
     @Column(name = "caregiver_schedule_id")
     UUID caregiverScheduleId;
+
+    // Đa dịch vụ theo khung giờ (2026-11-05): buổi chỉ làm dịch vụ này; NULL = mọi dịch vụ của booking.
+    @Column(name = "care_service_id")
+    UUID careServiceId;
+
+    // Địa chỉ riêng của buổi (2026-11-05: đổi địa chỉ theo buổi); NULL = địa chỉ của booking.
+    @Column(name = "service_address", columnDefinition = "text")
+    String serviceAddress;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)

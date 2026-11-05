@@ -214,6 +214,12 @@ public final class TestPlatformServer {
     // Lịch caregiver theo giờ Việt Nam như work_shifts của Provider; status SCHEDULED / CANCELLED.
     public UUID addSchedule(UUID centerId, UUID caregiverId, LocalDate workDate, String startTime, String endTime,
                             String status) {
+        return addSchedule(centerId, caregiverId, workDate, startTime, endTime, status, null);
+    }
+
+    // maxBookings = work_shifts.max_bookings (2026-11-05); null = Provider cũ không gửi.
+    public UUID addSchedule(UUID centerId, UUID caregiverId, LocalDate workDate, String startTime, String endTime,
+                            String status, Integer maxBookings) {
         UUID id = UUID.randomUUID();
         Map<String, Object> schedule = new LinkedHashMap<>();
         schedule.put("id", id.toString());
@@ -223,6 +229,9 @@ public final class TestPlatformServer {
         schedule.put("startTime", startTime);
         schedule.put("endTime", endTime);
         schedule.put("scheduleStatus", status);
+        if (maxBookings != null) {
+            schedule.put("maxBookings", maxBookings);
+        }
         schedules.put(id, schedule);
         return id;
     }
@@ -269,7 +278,14 @@ public final class TestPlatformServer {
     }
 
     public void addPricePlan(UUID pricePlanId, String pricingUnit, int durationMinutes, long basePrice) {
+        addPricePlan(pricePlanId, pricingUnit, durationMinutes, basePrice, null);
+    }
+
+    public void addPricePlan(UUID pricePlanId, String pricingUnit, int durationMinutes, long basePrice, String planName) {
         Map<String, Object> plan = new HashMap<>();
+        if (planName != null) {
+            plan.put("planName", planName);
+        }
         plan.put("pricingUnit", pricingUnit);
         plan.put("durationMinutes", durationMinutes);
         plan.put("basePrice", basePrice);

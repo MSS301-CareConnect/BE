@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 // Một buổi trong báo giá kèm giá buổi.
 @Data
@@ -22,4 +23,9 @@ public class QuoteOccurrenceResponse {
     Instant endAt;
 
     BigDecimal priceAmount;
+
+    // Dịch vụ của buổi (NULL = mọi dịch vụ) và ca caregiver (SHIFT) mà khung giờ thuộc về.
+    UUID careServiceId;
+
+    UUID caregiverScheduleId;
 }

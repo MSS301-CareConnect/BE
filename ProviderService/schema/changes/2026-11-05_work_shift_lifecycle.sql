@@ -4,6 +4,7 @@
 -- 1. Hủy ca bắt buộc lý do; lý do được ghi lại cho caregiver đã đăng ký (đăng ký chờ duyệt → REJECTED cùng lý do).
 ALTER TABLE work_shifts ADD COLUMN IF NOT EXISTS cancellation_reason varchar(500);
 ALTER TABLE work_shifts ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
+ALTER TABLE work_shifts ADD COLUMN IF NOT EXISTS max_bookings integer NOT NULL DEFAULT 2 CHECK (max_bookings > 0);
 
 -- 2. Đưa trạng thái đã lưu về đúng trạng thái hiệu lực một lần (job WorkShiftLifecycleScheduler làm tiếp mỗi phút).
 --    Giờ ca là giờ Việt Nam: work_date + time so với now() quy đổi sang Asia/Ho_Chi_Minh.

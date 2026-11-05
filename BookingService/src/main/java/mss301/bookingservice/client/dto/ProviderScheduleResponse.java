@@ -32,4 +32,7 @@ public class ProviderScheduleResponse {
     LocalTime endTime;
 
     String scheduleStatus;
+
+    // Số booking tối đa trên ca của caregiver (work_shifts.max_bookings, 2026-11-05). NULL (Provider cũ) = 1.
+    Integer maxBookings;
 }

@@ -43,6 +43,10 @@ public class WorkShift extends BaseEntity {
     @Column(name = "capacity", nullable = false)
     Integer capacity;
 
+    @Builder.Default
+    @Column(name = "max_bookings", nullable = false)
+    Integer maxBookings = 2;
+
     @Column(name = "registration_deadline")
     Instant registrationDeadline;
 

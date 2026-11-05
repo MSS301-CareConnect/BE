@@ -1,5 +1,6 @@
 package mss301.bookingservice.service.Impl;
 
+import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingOccurrence;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
@@ -41,6 +43,10 @@ class BookingScheduleConflictTests {
 
     @Mock
     BookingOccurrenceRepository bookingOccurrenceRepository;
+
+    // Trừ hao 60 phút giữa hai booking khác nhau (mặc định của BookingProperties).
+    @Spy
+    BookingProperties bookingProperties = new BookingProperties();
 
     @InjectMocks
     BookingServiceImpl bookingService;
@@ -78,14 +84,41 @@ class BookingScheduleConflictTests {
     }
 
     @Test
-    void touchingBoundariesAreNotConflicts() {
+    void otherBookingsNeedTravelBufferButGapOfSixtyMinutesIsAllowed() {
         UUID caregiverId = UUID.randomUUID();
-        // Khoảng bao [01:00, 05:00) trả về ứng viên, nhưng không ứng viên nào giao CHÍNH XÁC với từng slot
+        // Booking khác kết thúc đúng lúc slot bắt đầu: không trùng giờ nhưng thiếu 60 phút trừ hao di chuyển.
         when(bookingOccurrenceRepository.findCaregiverOverlaps(eq(caregiverId), any(), any(), any(), any()))
+                .thenReturn(List.of(existing(UUID.randomUUID(), "2026-10-12T00:00:00Z", "2026-10-12T01:00:00Z")));
+        assertThatThrownBy(() -> bookingService.checkCaregiverAvailable(caregiverId,
+                List.of(slot("2026-10-12T01:00:00Z", "2026-10-12T02:00:00Z")), null))
+                .isInstanceOf(AppException.class)
+                .extracting(exception -> ((AppException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.CAREGIVER_TRAVEL_BUFFER_CONFLICT);
+        // Cách đúng 60 phút hai phía → được.
+        when(bookingOccurrenceRepository.findCaregiverOverlaps(eq(caregiverId), any(), any(), any(), any()))
+                .thenReturn(List.of(
+                        existing(UUID.randomUUID(), "2026-10-12T04:00:00Z", "2026-10-12T05:00:00Z"),
+                        existing(UUID.randomUUID(), "2026-10-12T00:00:00Z", "2026-10-12T01:00:00Z")));
+        assertThatCode(() -> bookingService.checkCaregiverAvailable(caregiverId,
+                List.of(slot("2026-10-12T02:00:00Z", "2026-10-12T03:00:00Z")), null))
+                .doesNotThrowAnyException();
+        // Khoảng truy vấn nới thêm 60 phút mỗi phía.
+        ArgumentCaptor<Instant> rangeStart = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> rangeEnd = ArgumentCaptor.forClass(Instant.class);
+        verify(bookingOccurrenceRepository, org.mockito.Mockito.atLeastOnce()).findCaregiverOverlaps(eq(caregiverId),
+                rangeStart.capture(), rangeEnd.capture(), any(), any());
+        assertThat(rangeStart.getValue()).isEqualTo(Instant.parse("2026-10-12T01:00:00Z"));
+        assertThat(rangeEnd.getValue()).isEqualTo(Instant.parse("2026-10-12T04:00:00Z"));
+    }
+
+    @Test
+    void touchingRecipientBoundariesAreNotConflicts() {
+        UUID recipientId = UUID.randomUUID();
+        when(bookingOccurrenceRepository.findRecipientOverlaps(eq(recipientId), any(), any(), any(), any()))
                 .thenReturn(List.of(
                         existing(UUID.randomUUID(), "2026-10-12T02:00:00Z", "2026-10-12T04:00:00Z"),
                         existing(UUID.randomUUID(), "2026-10-12T00:00:00Z", "2026-10-12T01:00:00Z")));
-        assertThatCode(() -> bookingService.checkCaregiverAvailable(caregiverId, List.of(
+        assertThatCode(() -> bookingService.checkRecipientAvailable(recipientId, List.of(
                 slot("2026-10-12T01:00:00Z", "2026-10-12T02:00:00Z"),
                 slot("2026-10-12T04:00:00Z", "2026-10-12T05:00:00Z")), null))
                 .doesNotThrowAnyException();

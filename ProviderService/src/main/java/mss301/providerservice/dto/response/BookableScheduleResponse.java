@@ -22,4 +22,5 @@ public class BookableScheduleResponse {
     LocalDate workDate;
     LocalTime startTime;
     LocalTime endTime;
+    Integer maxBookings;
 }

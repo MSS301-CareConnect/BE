@@ -25,6 +25,7 @@ public class WorkShiftResponse {
     // Trạng thái hiệu lực (util/WorkShiftStates): ca đã qua không bao giờ là OPEN.
     ShiftStatus shiftStatus;
     Integer capacity;
+    Integer maxBookings;
     long approvedCount;
     // Đăng ký đang chờ duyệt (badge "N chờ duyệt" phía trung tâm).
     long pendingCount;

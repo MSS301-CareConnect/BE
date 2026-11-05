@@ -71,6 +71,8 @@ public class WorkShiftServiceImpl implements WorkShiftService {
 
     static int MAX_PAGE_SIZE = 100;
     static int MAX_CAPACITY = 50;
+    static int DEFAULT_MAX_BOOKINGS = 2;
+    static int MAX_BOOKINGS_PER_SHIFT = 20;
     static int MAX_NOTE_LENGTH = 500;
     static int MAX_BATCH_DATES = 31;
     static int COUNT_CHUNK = 1000;
@@ -120,6 +122,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
                     .shiftType(request.getShiftType())
                     .shiftStatus(request.getShiftStatus())
                     .capacity(request.getCapacity())
+                    .maxBookings(request.getMaxBookings())
                     .registrationDeadline(deadline)
                     .note(request.getNote())
                     .build();
@@ -249,7 +252,11 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         }
         ShiftStatus target = request.getShiftStatus();
         validateTargetStatus(shift, request, target, approved, now);
+        Integer previousMaxBookings = shift.getMaxBookings();
         workShiftMapper.update(request, shift);
+        if (request.getMaxBookings() == null) {
+            shift.setMaxBookings(previousMaxBookings != null ? previousMaxBookings : DEFAULT_MAX_BOOKINGS);
+        }
         normalizeFields(shift);
         shift.setUpdatedBy(actorId);
         if (target == ShiftStatus.CANCELLED) {
@@ -455,6 +462,9 @@ public class WorkShiftServiceImpl implements WorkShiftService {
     private void normalizeFields(WorkShift shift) {
         shift.setShiftType(ShiftTypes.normalize(shift.getShiftType()));
         shift.setNote(blankToNull(shift.getNote()));
+        if (shift.getMaxBookings() == null) {
+            shift.setMaxBookings(DEFAULT_MAX_BOOKINGS);
+        }
     }
 
     /**
@@ -480,6 +490,10 @@ public class WorkShiftServiceImpl implements WorkShiftService {
             throw new AppException(ErrorCode.WORK_SHIFT_TYPE_INVALID);
         }
         boolean capacityChanged = creating || !Objects.equals(request.getCapacity(), existing.getCapacity());
+        if (request.getMaxBookings() != null
+                && (request.getMaxBookings() < 1 || request.getMaxBookings() > MAX_BOOKINGS_PER_SHIFT)) {
+            throw new AppException(ErrorCode.WORK_SHIFT_CAPACITY_INVALID);
+        }
         if (capacityChanged && (request.getCapacity() < 1 || request.getCapacity() > MAX_CAPACITY)) {
             throw new AppException(ErrorCode.WORK_SHIFT_CAPACITY_INVALID);
         }

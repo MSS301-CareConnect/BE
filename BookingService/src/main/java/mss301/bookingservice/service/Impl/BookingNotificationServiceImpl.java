@@ -68,7 +68,9 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         }
         List<UUID> recipients = new ArrayList<>();
         recipients.add(booking.getCustomerId());
-        // Caregiver vừa tự nhận / từ chối đơn thì không báo lại chính họ (CR-3).
+        // Caregiver vừa tự nhận / từ chối đơn thì không báo lại chính họ (CR-3). SHIFT tự nhận (acceptedBy NULL = hệ thống)
+        // thì caregiver chưa biết gì → báo riêng bên dưới.
+        boolean autoAccepted = action == BookingAction.CAREGIVER_ACCEPT && booking.getAcceptedBy() == null;
         boolean caregiverAction = action == BookingAction.CAREGIVER_ACCEPT || action == BookingAction.CAREGIVER_DECLINE;
         if (action != BookingAction.FINALIZE && !caregiverAction) {
             occurrences.stream().map(BookingOccurrence::getCaregiverUserId).filter(Objects::nonNull)
@@ -90,6 +92,12 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
             body += ": người chăm sóc đã chọn không nhận, trung tâm sẽ phân người khác";
         }
         notificationService.notify(recipients, type, Map.of("body", body), "BOOKING", booking.getId());
+        if (autoAccepted) {
+            List<UUID> caregiverUserIds = occurrences.stream().map(BookingOccurrence::getCaregiverUserId)
+                    .filter(Objects::nonNull).distinct().toList();
+            String caregiverBody = "Lịch " + booking.getBookingCode() + " đã được đặt vào ca của bạn, chờ khách thanh toán";
+            notificationService.notify(caregiverUserIds, type, Map.of("body", caregiverBody), "BOOKING", booking.getId());
+        }
         // Thao tác do chính trung tâm làm (xác nhận / phân công / từ chối) thì không báo lại trung tâm.
         boolean centerAction = action == BookingAction.ACCEPT || action == BookingAction.ACCEPT_WITHOUT_CAREGIVER
                 || action == BookingAction.ASSIGN_CAREGIVER || action == BookingAction.REJECT;

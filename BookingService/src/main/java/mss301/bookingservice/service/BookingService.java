@@ -95,6 +95,9 @@ public interface BookingService {
     // CR-3: CAREGIVER — đơn khách gửi thẳng cho mình đang chờ trả lời.
     APIResponse<PageResponse<CaregiverBookingRequestResponse>> listCaregiverRequests(UUID actorId, int page, int size);
 
+    // Chi tiết một đơn còn chờ caregiver trả lời (cùng phạm vi dữ liệu với danh sách).
+    APIResponse<CaregiverBookingRequestResponse> getCaregiverRequest(UUID actorId, UUID id);
+
     // CR-3: CAREGIVER nhận đơn → AWAITING_INITIAL_PAYMENT (không qua trung tâm).
     APIResponse<CaregiverBookingRequestResponse> acceptAsCaregiver(UUID actorId, UUID id);
 

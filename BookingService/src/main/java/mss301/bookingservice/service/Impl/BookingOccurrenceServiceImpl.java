@@ -56,6 +56,7 @@ import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -162,9 +163,22 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         } else {
             throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
         }
-        List<BookingDetail> services = bookingDetailRepository.findAllByBooking(booking.getId());
-        String customerPhone = resolveCustomerPhone(booking, occurrence, fullAccess);
-        occurrenceMapper.updateDetail(services, customerPhone, findSessionId(occurrence), occurrenceResponse);
+        // Buổi gắn một dịch vụ (2026-11-05) chỉ hiện dịch vụ đó.
+        List<BookingDetail> services = bookingDetailRepository.findAllByBooking(booking.getId()).stream()
+                .filter(detail -> occurrence.getCareServiceId() == null
+                        || occurrence.getCareServiceId().equals(detail.getCareServiceId()))
+                .toList();
+        IdentityUserResponse customer = identityUserService.getProfiles(List.of(booking.getCustomerId()))
+                .get(booking.getCustomerId());
+        String customerPhone = resolveCustomerPhone(customer, occurrence, fullAccess);
+        String customerName = customer == null ? null : customer.getFullName();
+        // Các buổi của cùng caregiver trong booking (manager / admin: theo caregiver của buổi đang xem).
+        List<BookingOccurrence> bookingVisits = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+                .filter(visit -> Objects.equals(visit.getCaregiverUserId(), occurrence.getCaregiverUserId()))
+                .sorted(Comparator.comparing(BookingOccurrence::getStartAt))
+                .toList();
+        occurrenceMapper.updateDetail(services, customerPhone, customerName, findSessionId(occurrence), bookingVisits,
+                occurrenceResponse);
         return APIResponse.success("Lấy chi tiết buổi chăm sóc thành công", occurrenceResponse);
     }
 
@@ -438,9 +452,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
 
     // Identity lỗi chỉ làm thiếu SĐT (không chặn caregiver xem ca). Caregiver: đủ số khi buổi bắt đầu trong 24h tới và
     // chưa kết thúc; còn lại che giữa.
-    private String resolveCustomerPhone(Booking booking, BookingOccurrence occurrence, boolean fullAccess) {
-        IdentityUserResponse customer = identityUserService.getProfiles(List.of(booking.getCustomerId()))
-                .get(booking.getCustomerId());
+    private String resolveCustomerPhone(IdentityUserResponse customer, BookingOccurrence occurrence, boolean fullAccess) {
         String phoneNumber = customer == null ? null : customer.getPhoneNumber();
         if (phoneNumber == null || fullAccess) {
             return phoneNumber;

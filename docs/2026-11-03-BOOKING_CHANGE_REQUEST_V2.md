@@ -40,7 +40,8 @@
 
 | Endpoint mới | Role | Ghi chú |
 |---|---|---|
-| `GET /bookings/caregiver-requests?page&size` | CAREGIVER | đơn chờ trả lời của chính mình; chỉ khu vực (phường/quận/tỉnh), tuổi, giới tính, ghi chú, dịch vụ, buổi, tổng tiền — **không** hồ sơ người bệnh |
+| `GET /bookings/caregiver-requests?page&size` | CAREGIVER | đơn chờ trả lời của chính mình; khu vực (phường/quận/tỉnh), ghi chú, dịch vụ, buổi, tổng tiền. **2026-11-05 (chủ dự án chọn):** thêm tên khách đặt (`customerName`), tên + tình trạng sức khỏe người được chăm sóc (`recipientName`, `mobilityLevel`, `independenceLevel`, `chronicConditions`, `allergies`, `careRequirements`, `dietaryNotes`, `behaviorNotes`, `medicationCount`). Vẫn **không** số nhà, SĐT, liên hệ khẩn cấp, tên / liều thuốc trước khi CONFIRMED |
+| `GET /bookings/caregiver-requests/{id}` | CAREGIVER | (2026-11-05) chi tiết một đơn còn chờ chính mình; đã trả lời / quá hạn / người khác → 404 |
 | `POST /bookings/{id}/caregiver-accept` | CAREGIVER | người khác → 404; quá hạn / sai trạng thái → 409 `5101` |
 | `POST /bookings/{id}/caregiver-decline` `{reason}` | CAREGIVER | |
 | `PATCH /bookings/{id}/service-address` | CUSTOMER (của mình), CENTER_MANAGER (trung tâm mình) | `{addressLine*, ward, district, province*, note}`; 400 `5113` / `5114`; 409 `5115` |
@@ -125,3 +126,24 @@ tư; token cũ / hỏng bị bỏ qua). Dịch vụ, caregiver và policy của 
 - BE (agent): `feat(provider,gateway): open the ACTIVE center directory to anonymous visitors and route /deposit-forfeitures to PaymentService 3/11`
 - FE: `feat(booking,caregiver): editable recurring visits and quick add, caregiver booking requests and kept deposits, care address change 3/11`
 - FE (agent): `feat(customer): public center directory and detail pages, explicit center switching, dark footer and restored landing photo section 3/11`
+
+## Bổ sung 2026-11-05 — chi tiết buổi cho caregiver
+
+`GET /booking-occurrences/{id}` (chi tiết) thêm `customerName`, `bookingType`, `caregiverScheduleId` (SHIFT), `priceAmount` và `bookingVisits` (các buổi của cùng caregiver trong booking, theo giờ bắt đầu); `services[]` thêm `planName`, `planDurationMinutes`. Danh sách buổi cũng có `bookingType`, `caregiverScheduleId`, `priceAmount`. Phạm vi xem hồ sơ (rule 7) không đổi.
+
+## Bổ sung 2026-11-05 (2) — cọc theo ca, tự nhận ca, đổi địa chỉ theo buổi, sổ địa chỉ
+
+Chủ dự án chốt (2026-11-05):
+
+| Hạng mục | Quy tắc mới |
+|---|---|
+| Cọc SHIFT | Mọi loại booking đặt cọc `depositPercent` của center policy (mặc định 30 %); phần còn lại hạn `buổi đầu − remainingPaymentDueBeforeMinutes` (24h). SHIFT đặt sát hơn mốc đó → không còn hạn phần còn lại → `initialPaymentPercent = 100`. PaymentService không đổi (đã dựa vào % + hạn do Booking gửi). |
+| Tự nhận SHIFT | Tạo SHIFT (ca caregiver đã đăng ký, được duyệt) → ghi `PENDING_CAREGIVER_CONFIRMATION` rồi `CAREGIVER_ACCEPT` ngay trong cùng transaction với `changedBy = NULL` (hệ thống, `acceptedBy` NULL) → `AWAITING_INITIAL_PAYMENT`, đặt hạn khoản đầu. Không gửi `CAREGIVER_REQUEST`; caregiver nhận thông báo "đã đặt vào ca của bạn". SHIFT không còn trong `GET /bookings/caregiver-requests`. |
+| Đổi địa chỉ theo buổi | `PATCH /bookings/{id}/service-address` thêm `occurrenceIds` (trống = mọi buổi còn đổi được). Khách: chỉ buổi bắt đầu sau `BOOKING_ADDRESS_CHANGE_LEAD` (24h), sai → 409 `5117 ADDRESS_CHANGE_TOO_LATE`; trung tâm: mọi buổi chưa bắt đầu. Chọn đủ mọi buổi sắp tới → đổi địa chỉ booking (buổi đã qua giữ địa chỉ cũ ở cột riêng); chọn một phần → `booking_occurrences.service_address` riêng. Bỏ điều kiện "không có buổi IN_PROGRESS" (buổi đang chạy không bị đổi). |
+| Địa chỉ lúc đặt | `BookingCreateRequest.serviceAddress` (tùy chọn) thay phần địa chỉ của snapshot. |
+| Sổ địa chỉ | CareRecipientService `recipient_addresses` (≤ 20 / hồ sơ), `GET/POST /care-recipients/{id}/addresses`, `PUT/DELETE /{addressId}`; VIEWER đọc, EDITOR/OWNER ghi; mã lỗi 2800–2804. |
+
+SQL cần áp: `BookingService/schema/changes/2026-11-05_occurrence_service_address.sql`,
+`CareRecipientService/schema/changes/2026-11-05-recipient-addresses.sql`. Test: BookingService 136 (mới:
+`shiftBookedInsideTheRemainingCutoffIsPaidInFull` — tự bỏ qua khi chạy sau 18:00 vì cần ca 1 giờ trong ngày,
+`customerChangesCareAddressOfChosenVisitsOnly`), CareRecipientService 94 (mới: `savedAddressesOfARecipient`).

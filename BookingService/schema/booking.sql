@@ -84,7 +84,6 @@ CREATE TABLE bookings (
                                                     'AWAITING_INITIAL_PAYMENT', 'CONFIRMED', 'IN_PROGRESS',
                                                     'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
     CONSTRAINT ck_bookings_date_range CHECK (end_date >= start_date),
-    CONSTRAINT ck_bookings_shift_single_day CHECK (booking_type <> 'SHIFT' OR end_date = start_date),
     -- RECURRING có khung giờ lặp, chưa hỗ trợ ca qua đêm (TODO); SHIFT / CUSTOM lưu giờ ở từng buổi.
     CONSTRAINT ck_bookings_time_range CHECK (
         (booking_type = 'RECURRING' AND start_time IS NOT NULL AND end_time IS NOT NULL AND end_time > start_time)
@@ -145,6 +144,10 @@ CREATE TABLE booking_occurrences (
     caregiver_user_id     uuid,
     -- SHIFT: lịch caregiver (ProviderService) mà buổi giữ.
     caregiver_schedule_id uuid,
+    -- Đa dịch vụ theo khung giờ (2026-11-05): buổi chỉ làm dịch vụ này; NULL = mọi dịch vụ của booking (booking cũ).
+    care_service_id       uuid,
+    -- Địa chỉ riêng của buổi khi khách / trung tâm đổi cho một số buổi (2026-11-05); NULL = bookings.service_address.
+    service_address       text,
     status                varchar(20)  NOT NULL,
     cancel_reason         text,
     note                  text,
@@ -195,8 +198,9 @@ CREATE TABLE booking_occurrences (
 CREATE INDEX idx_booking_occurrences_caregiver ON booking_occurrences (caregiver_id, start_at);
 CREATE INDEX idx_booking_occurrences_caregiver_user ON booking_occurrences (caregiver_user_id, start_at);
 CREATE INDEX idx_booking_occurrences_booking ON booking_occurrences (booking_id, start_at);
--- SHIFT (spec §6): một lịch caregiver chỉ được một buổi đang giữ — hai khách đặt cùng lúc thì một bên nhận 409.
-CREATE UNIQUE INDEX uk_booking_occurrences_schedule_holding ON booking_occurrences (caregiver_schedule_id)
+-- SHIFT (2026-11-05): một ca có thể chia nhiều khung giờ / nhiều booking (tối đa work_shifts.max_bookings, kiểm ở service
+-- dưới khóa caregiver); chống chồng giờ vẫn do ex_booking_occurrences_caregiver_slot.
+CREATE INDEX idx_booking_occurrences_schedule_holding ON booking_occurrences (caregiver_schedule_id)
     WHERE caregiver_schedule_id IS NOT NULL AND status IN ('RESERVED', 'SCHEDULED', 'ACKNOWLEDGED', 'IN_PROGRESS');
 -- Job MISSED / nhắc quyết định báo vắng (OPS-06) chỉ quét buổi chưa bắt đầu.
 CREATE INDEX idx_booking_occurrences_not_started ON booking_occurrences (start_at)
@@ -217,12 +221,16 @@ CREATE TABLE booking_details (
     quantity           numeric(12,4),
     units_per_occurrence numeric(10,4),
     total_price        numeric(14,2),
+    -- Tên + thời lượng gói giá lúc đặt (2026-11-05) để hiển thị "Giá từng dịch vụ"; NULL với booking cũ.
+    plan_name          varchar(150),
+    plan_duration_minutes integer,
     created_at         timestamptz   NOT NULL,
 
     CONSTRAINT uk_booking_details_service UNIQUE (booking_id, care_service_id),
     CONSTRAINT ck_booking_details_unit_type CHECK (unit_type IS NULL OR unit_type IN ('HOUR', 'DAY', 'SHIFT')),
     CONSTRAINT ck_booking_details_quantity CHECK (quantity IS NULL OR quantity > 0),
     CONSTRAINT ck_booking_details_units CHECK (units_per_occurrence IS NULL OR units_per_occurrence > 0),
+    CONSTRAINT ck_booking_details_plan_duration CHECK (plan_duration_minutes IS NULL OR plan_duration_minutes > 0),
     CONSTRAINT ck_booking_details_prices CHECK ((unit_price IS NULL OR unit_price >= 0)
         AND (total_price IS NULL OR total_price >= 0))
 );
@@ -241,10 +249,10 @@ CREATE TABLE booking_status_history (
     changed_at   timestamptz   NOT NULL,
 
     CONSTRAINT ck_booking_status_history_from CHECK (from_status IS NULL OR from_status IN (
-        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
+        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
         'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED')),
     CONSTRAINT ck_booking_status_history_to CHECK (to_status IN (
-        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
+        'PENDING_CENTER_CONFIRMATION', 'PENDING_CAREGIVER_CONFIRMATION', 'PENDING_CAREGIVER_ASSIGNMENT', 'AWAITING_INITIAL_PAYMENT', 'CONFIRMED',
         'IN_PROGRESS', 'COMPLETED', 'REJECTED', 'CANCELLED', 'EXPIRED'))
 );
 
