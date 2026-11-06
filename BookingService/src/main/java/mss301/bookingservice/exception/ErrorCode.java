@@ -75,6 +75,7 @@ public enum ErrorCode {
     SERVICE_ADDRESS_NOT_EDITABLE(5115, "The care address can only be changed while the booking still has upcoming occurrences and no visit is in progress", HttpStatus.CONFLICT),
     CARE_SERVICE_ID_REQUIRED(5111, "Care service is required", HttpStatus.BAD_REQUEST),
     ADDRESS_CHANGE_TOO_LATE(5117, "Only visits starting at least 24 hours from now can get a new care address", HttpStatus.CONFLICT),
+    CENTER_OUT_OF_SERVICE_AREA(5118, "Care address is outside the center's operating area", HttpStatus.BAD_REQUEST),
     BOOKING_EXPIRED(5116, "The booking passed its deadline and has expired", HttpStatus.CONFLICT),
 
     // Spec v3: Đổi caregiver theo yêu cầu khách

@@ -75,13 +75,19 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
 
     @Override
     @Transactional(readOnly = true)
-    public APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, int page, int size) {
+    public APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, UUID caregiverId,
+                                                                    ScheduleStatus status, LocalDate fromDate,
+                                                                    LocalDate toDate, int page, int size) {
         validatePage(page, size);
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new AppException(ErrorCode.SCHEDULE_RANGE_INVALID);
+        }
         CareCenter center = careCenterRepository.findByIdAndDeletedAtIsNull(centerId)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
         providerAuthorization.requireCenterManagement(center, actorId);
-        Page<CaregiverSchedule> schedulePage = caregiverScheduleRepository.findByWorkShiftCenterIdAndDeletedAtIsNull(
-                centerId, PageRequest.of(page, size, Sort.by("workShift.workDate").ascending()));
+        Sort sort = Sort.by("workShift.workDate", "workShift.startTime").ascending();
+        Page<CaregiverSchedule> schedulePage = caregiverScheduleRepository.searchByCenter(
+                centerId, caregiverId, status, fromDate, toDate, PageRequest.of(page, size, sort));
         List<ScheduleResponse> items = caregiverScheduleMapper.toResponseList(schedulePage.getContent());
         PageResponse<ScheduleResponse> pageResponse = PageResponse.of(schedulePage, items);
         return APIResponse.success("Lấy lịch người chăm sóc của trung tâm thành công", pageResponse);

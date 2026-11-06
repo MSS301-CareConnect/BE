@@ -5,6 +5,7 @@ import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.dto.response.PageResponse;
 import mss301.providerservice.dto.response.BookableScheduleResponse;
 import mss301.providerservice.dto.response.ScheduleResponse;
+import mss301.providerservice.enums.ScheduleStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -14,7 +15,10 @@ public interface CaregiverScheduleService {
 
     APIResponse<PageResponse<ScheduleResponse>> listMine(UUID actorId, int page, int size);
 
-    APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, int page, int size);
+    // Bộ lọc tùy chọn (null = bỏ qua): caregiver, trạng thái, khoảng ngày làm việc (giờ VN).
+    APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, UUID caregiverId,
+                                                             ScheduleStatus status, LocalDate fromDate,
+                                                             LocalDate toDate, int page, int size);
 
     APIResponse<ScheduleResponse> updateStatus(UUID actorId, UUID id, ScheduleStatusRequest request);
 

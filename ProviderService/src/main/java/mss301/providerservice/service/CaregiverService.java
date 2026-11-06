@@ -63,6 +63,10 @@ public interface CaregiverService {
 
     APIResponse<List<TimeOffResponse>> listTimeOffs(UUID actorId, UUID caregiverId, Instant from, Instant to);
 
+    // Ngày nghỉ của cả trung tâm (hoặc một caregiver của trung tâm) giao [from, to), sắp theo giờ bắt đầu.
+    APIResponse<PageResponse<TimeOffResponse>> listCenterTimeOffs(UUID actorId, UUID centerId, UUID caregiverId,
+                                                                  Instant from, Instant to, int page, int size);
+
     APIResponse<TimeOffResponse> createTimeOff(UUID actorId, UUID caregiverId, TimeOffRequest request);
 
     APIResponse<Void> deleteTimeOff(UUID actorId, UUID caregiverId, UUID timeOffId);

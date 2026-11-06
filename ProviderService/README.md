@@ -69,7 +69,11 @@ trung tâm trong service.
 
 ### Trung tâm — `/api/v1/care-centers`
 
-- `GET /` (ADMIN, CENTER_MANAGER) · `GET /{centerId}` · `GET /{centerId}/schedules`
+- `GET /` (ADMIN, CENTER_MANAGER) · `GET /{centerId}` · `GET /{centerId}/schedules?caregiverId=&status=&fromDate=&toDate=`
+  (2026-11-06: bộ lọc tùy chọn; `fromDate` sau `toDate` → 400 4416; sắp theo ngày rồi giờ bắt đầu; `ScheduleResponse` có
+  thêm `shiftType`) · `GET /{centerId}/time-offs?caregiverId=&from=&to=&page=&size=` (ADMIN, manager của trung tâm;
+  ngày nghỉ của mọi caregiver chưa xóa trong trung tâm giao `[from, to)`, sắp theo `startAt`, `TimeOffResponse` có thêm
+  `caregiverName`; `to` không sau `from` → 400 4000)
 - `POST /` · `PUT /{centerId}` · `PATCH /{centerId}/status` · `DELETE /{centerId}` (ADMIN)
 - Đã bỏ `PATCH /schedules/{id}/status` (trùng `PATCH /caregivers/schedules/{id}/status`).
 - **Công khai (SRCH-02, 2026-10-22; mở anonymous CR-6, 2026-11-03)** — không cần token, chỉ GET:

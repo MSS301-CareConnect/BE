@@ -118,6 +118,7 @@ public enum ErrorCode {
     SLOT_RANGE_INVALID(4413, "Invalid slot (missing time or end is not after start)", HttpStatus.BAD_REQUEST),
     CAREGIVER_ID_REQUIRED(4414, "Caregiver ID is required", HttpStatus.BAD_REQUEST),
     SCHEDULE_HAS_BOOKINGS(4415, "The schedule has assigned care occurrences and cannot be cancelled", HttpStatus.CONFLICT),
+    SCHEDULE_RANGE_INVALID(4416, "Start date must not be after end date", HttpStatus.BAD_REQUEST),
 
     IDENTITY_UNAVAILABLE(4500, "Account service is temporarily unavailable, please try again", HttpStatus.SERVICE_UNAVAILABLE),
     IDENTITY_USER_NOT_FOUND(4501, "Account does not exist", HttpStatus.NOT_FOUND),

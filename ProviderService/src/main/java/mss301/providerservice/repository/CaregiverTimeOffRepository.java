@@ -1,6 +1,8 @@
 package mss301.providerservice.repository;
 
 import mss301.providerservice.entity.CaregiverTimeOff;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -41,6 +43,31 @@ public interface CaregiverTimeOffRepository extends JpaRepository<CaregiverTimeO
     List<CaregiverTimeOff> findOverlappingForCaregivers(@Param("caregiverIds") Collection<UUID> caregiverIds,
                                                         @Param("from") Instant from,
                                                         @Param("to") Instant to);
+
+    // Ngày nghỉ của mọi caregiver chưa xóa trong trung tâm giao [from, to); caregiverId null = cả trung tâm.
+    @Query(value = """
+            select t from CaregiverTimeOff t
+            join fetch t.caregiver c
+            where t.deletedAt is null
+              and c.deletedAt is null
+              and c.center.id = :centerId
+              and (:caregiverId is null or c.id = :caregiverId)
+              and t.startAt < :to
+              and t.endAt > :from
+            """, countQuery = """
+            select count(t) from CaregiverTimeOff t
+            where t.deletedAt is null
+              and t.caregiver.deletedAt is null
+              and t.caregiver.center.id = :centerId
+              and (:caregiverId is null or t.caregiver.id = :caregiverId)
+              and t.startAt < :to
+              and t.endAt > :from
+            """)
+    Page<CaregiverTimeOff> searchByCenter(@Param("centerId") UUID centerId,
+                                          @Param("caregiverId") UUID caregiverId,
+                                          @Param("from") Instant from,
+                                          @Param("to") Instant to,
+                                          Pageable pageable);
 
     @Query("""
             select count(t) > 0 from CaregiverTimeOff t

@@ -40,6 +40,9 @@ public interface CaregiverProfileRepository extends JpaRepository<CaregiverProfi
     Page<CaregiverProfile> findByCenterIdAndDeletedAtIsNull(UUID centerId, Pageable pageable);
     Page<CaregiverProfile> findByCenterIdAndVerificationStatusAndDeletedAtIsNull(
             UUID centerId, VerificationStatus verificationStatus, Pageable pageable);
+    Page<CaregiverProfile> findByCenterIdAndVerificationStatusAndCaregiverStatusAndDeletedAtIsNull(
+            UUID centerId, VerificationStatus verificationStatus, CaregiverStatus caregiverStatus, Pageable pageable);
+
     Page<CaregiverProfile> findByCenterIdAndCaregiverStatusAndDeletedAtIsNull(
             UUID centerId, CaregiverStatus caregiverStatus, Pageable pageable);
 

@@ -14,6 +14,7 @@ import java.util.UUID;
 public class TimeOffResponse {
     UUID id;
     UUID caregiverId;
+    String caregiverName;
     Instant startAt;
     Instant endAt;
     String reason;

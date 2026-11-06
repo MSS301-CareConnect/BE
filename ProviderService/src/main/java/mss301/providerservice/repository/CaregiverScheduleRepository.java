@@ -26,6 +26,34 @@ public interface CaregiverScheduleRepository extends JpaRepository<CaregiverSche
     Page<CaregiverSchedule> findByCaregiverIdAndDeletedAtIsNull(UUID caregiverId, Pageable pageable);
     Page<CaregiverSchedule> findByWorkShiftCenterIdAndDeletedAtIsNull(UUID centerId, Pageable pageable);
 
+    // Lịch làm việc của trung tâm theo bộ lọc tùy chọn (null = bỏ qua); PostgreSQL cần cast tham số null (42P18).
+    @Query(value = """
+            select cs from CaregiverSchedule cs
+            join fetch cs.workShift ws
+            join fetch cs.caregiver c
+            where cs.deletedAt is null
+              and ws.center.id = :centerId
+              and (:caregiverId is null or c.id = :caregiverId)
+              and (cast(:status as String) is null or cs.scheduleStatus = :status)
+              and (cast(:fromDate as LocalDate) is null or ws.workDate >= :fromDate)
+              and (cast(:toDate as LocalDate) is null or ws.workDate <= :toDate)
+            """, countQuery = """
+            select count(cs) from CaregiverSchedule cs
+            join cs.workShift ws
+            where cs.deletedAt is null
+              and ws.center.id = :centerId
+              and (:caregiverId is null or cs.caregiver.id = :caregiverId)
+              and (cast(:status as String) is null or cs.scheduleStatus = :status)
+              and (cast(:fromDate as LocalDate) is null or ws.workDate >= :fromDate)
+              and (cast(:toDate as LocalDate) is null or ws.workDate <= :toDate)
+            """)
+    Page<CaregiverSchedule> searchByCenter(@Param("centerId") UUID centerId,
+                                           @Param("caregiverId") UUID caregiverId,
+                                           @Param("status") ScheduleStatus status,
+                                           @Param("fromDate") LocalDate fromDate,
+                                           @Param("toDate") LocalDate toDate,
+                                           Pageable pageable);
+
     @Query("""
             select count(cs) > 0 from CaregiverSchedule cs
             join cs.workShift ws

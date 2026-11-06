@@ -22,5 +22,7 @@ public class ProviderCenterResponse {
 
     String centerStatus;
 
+    String address;
+
     UUID managerUserId;
 }

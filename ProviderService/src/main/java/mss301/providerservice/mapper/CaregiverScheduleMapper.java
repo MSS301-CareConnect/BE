@@ -23,6 +23,7 @@ public interface CaregiverScheduleMapper {
     @Mapping(target = "startTime", source = "workShift.startTime")
     @Mapping(target = "endTime", source = "workShift.endTime")
     @Mapping(target = "maxBookings", source = "workShift.maxBookings")
+    @Mapping(target = "shiftType", source = "workShift.shiftType")
     ScheduleResponse toResponse(CaregiverSchedule caregiverSchedule);
 
     List<ScheduleResponse> toResponseList(List<CaregiverSchedule> caregiverSchedules);

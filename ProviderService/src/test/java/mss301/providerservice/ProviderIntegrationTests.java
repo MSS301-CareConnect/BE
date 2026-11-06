@@ -647,6 +647,79 @@ class ProviderIntegrationTests {
     }
 
     @Test
+    void centerWorkCalendarFiltersSchedulesAndListsTimeOffsOfTheCenter() throws Exception {
+        UUID managerId = UUID.randomUUID();
+        CareCenter center = saveCenter(managerId);
+        CaregiverProfile first = saveCaregiver(center, UUID.randomUUID());
+        CaregiverProfile second = saveCaregiver(center, UUID.randomUUID());
+        CaregiverProfile outsider = saveCaregiver(saveCenter(UUID.randomUUID()), UUID.randomUUID());
+        LocalDate day = futureDay();
+        saveSchedule(first, day, 8, 12);
+        CaregiverSchedule later = saveSchedule(first, day.plusDays(3), 13, 17);
+        later.setScheduleStatus(ScheduleStatus.CANCELLED);
+        caregiverScheduleRepository.save(later);
+        saveSchedule(second, day, 13, 17);
+        saveSchedule(outsider, day, 8, 12);
+
+        // Lọc theo caregiver + khoảng ngày + trạng thái; sắp theo ngày rồi giờ bắt đầu; kèm loại ca.
+        mockMvc.perform(get("/api/v1/care-centers/{id}/schedules", center.getId())
+                        .param("fromDate", day.toString())
+                        .param("toDate", day.toString())
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].caregiverId").value(first.getId().toString()))
+                .andExpect(jsonPath("$.result.items[1].caregiverId").value(second.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].shiftType").value("DAY"));
+        mockMvc.perform(get("/api/v1/care-centers/{id}/schedules", center.getId())
+                        .param("caregiverId", first.getId().toString())
+                        .param("status", "CANCELLED")
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].workDate").value(day.plusDays(3).toString()));
+        mockMvc.perform(get("/api/v1/care-centers/{id}/schedules", center.getId())
+                        .param("fromDate", day.plusDays(1).toString())
+                        .param("toDate", day.toString())
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SCHEDULE_RANGE_INVALID.getCode()));
+
+        // Ngày nghỉ của cả trung tâm: không lẫn trung tâm khác, kèm tên caregiver, lọc theo khoảng + caregiver.
+        for (CaregiverProfile caregiver : List.of(first, second, outsider)) {
+            mockMvc.perform(post("/api/v1/caregivers/{id}/time-offs", caregiver.getId())
+                            .with(user(caregiver.getUserId(), "CAREGIVER"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(timeOffBody(vn(day.plusDays(5), 0), vn(day.plusDays(6), 0), "Nghỉ phép")))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/v1/care-centers/{id}/time-offs", center.getId())
+                        .param("from", vn(day.plusDays(5), 8).toString())
+                        .param("to", vn(day.plusDays(5), 9).toString())
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].caregiverName").value(first.getFullName()));
+        mockMvc.perform(get("/api/v1/care-centers/{id}/time-offs", center.getId())
+                        .param("caregiverId", second.getId().toString())
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].caregiverId").value(second.getId().toString()));
+        mockMvc.perform(get("/api/v1/care-centers/{id}/time-offs", center.getId())
+                        .param("from", vn(day, 9).toString())
+                        .param("to", vn(day, 8).toString())
+                        .with(user(managerId, "CENTER_MANAGER")))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/care-centers/{id}/time-offs", center.getId())
+                        .with(user(UUID.randomUUID(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/care-centers/{id}/time-offs", center.getId())
+                        .with(user(first.getUserId(), "CAREGIVER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void bookingDownIs503WhenCaregiverCreatesTimeOff() throws Exception {
         CareCenter center = saveCenter(UUID.randomUUID());
         CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());

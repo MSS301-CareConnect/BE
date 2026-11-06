@@ -214,7 +214,7 @@ public class BookingServiceImpl implements BookingService {
         RecipientSnapshot recipientSnapshot = request.getServiceAddress() == null
                 ? profileSnapshot
                 : bookingMapper.toAddressSnapshot(profileSnapshot, request.getServiceAddress());
-        centerPort.checkBookable(request.getCenterId());
+        centerPort.checkServiceArea(request.getCenterId(), recipientSnapshot.getProvince());
         List<UUID> careServiceIds = collectCareServiceIds(request.getServices());
         AssignedCaregiver caregiver = request.getCaregiverId() == null
                 ? null
@@ -585,6 +585,9 @@ public class BookingServiceImpl implements BookingService {
     @Override
     public APIResponse<BookingDetailResponse> updateServiceAddress(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                                    UUID id, ServiceAddressRequest request) {
+        Booking bookingForCheck = bookingRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        centerPort.checkServiceArea(bookingForCheck.getCenterId(), request.getProvince());
         Booking updatedBooking = transactionTemplate.execute(status ->
                 changeServiceAddress(actorId, roles, scopeCenterId, id, request));
         log.info("Booking {} care address changed by {}", id, actorId);

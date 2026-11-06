@@ -150,7 +150,12 @@ public class CaregiverServiceImpl implements CaregiverService {
         providerAuthorization.requireCenterManagement(center, actorId);
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<CaregiverProfile> caregiverPage;
-        if (verification != null) {
+        if (verification != null && status != null) {
+            // Cả hai bộ lọc cùng lúc (trang danh sách của manager) — trước đây chỉ áp dụng verification.
+            caregiverPage = caregiverProfileRepository
+                    .findByCenterIdAndVerificationStatusAndCaregiverStatusAndDeletedAtIsNull(
+                            centerId, verification, status, pageable);
+        } else if (verification != null) {
             caregiverPage = caregiverProfileRepository.findByCenterIdAndVerificationStatusAndDeletedAtIsNull(
                     centerId, verification, pageable);
         } else if (status != null) {
@@ -386,6 +391,26 @@ public class CaregiverServiceImpl implements CaregiverService {
         List<CaregiverTimeOff> timeOffs = caregiverTimeOffRepository.findOverlapping(caregiverId, rangeStart, rangeEnd);
         List<TimeOffResponse> timeOffResponses = caregiverMapper.toTimeOffResponseList(timeOffs);
         return APIResponse.success("Lấy danh sách ngày nghỉ thành công", timeOffResponses);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<TimeOffResponse>> listCenterTimeOffs(UUID actorId, UUID centerId, UUID caregiverId,
+                                                                         Instant from, Instant to, int page, int size) {
+        validatePage(page, size);
+        Instant rangeStart = from == null ? TIME_OFF_LIST_MIN : from;
+        Instant rangeEnd = to == null ? TIME_OFF_LIST_MAX : to;
+        if (!rangeEnd.isAfter(rangeStart)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+        CareCenter center = findActiveCenter(centerId);
+        providerAuthorization.requireCenterManagement(center, actorId);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("startAt").ascending());
+        Page<CaregiverTimeOff> timeOffPage = caregiverTimeOffRepository.searchByCenter(
+                centerId, caregiverId, rangeStart, rangeEnd, pageable);
+        List<TimeOffResponse> items = caregiverMapper.toTimeOffResponseList(timeOffPage.getContent());
+        PageResponse<TimeOffResponse> pageResponse = PageResponse.of(timeOffPage, items);
+        return APIResponse.success("Lấy ngày nghỉ của trung tâm thành công", pageResponse);
     }
 
     /**

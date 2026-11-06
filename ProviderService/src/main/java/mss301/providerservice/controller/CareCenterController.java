@@ -17,14 +17,20 @@ import mss301.providerservice.dto.response.CenterCardResponse;
 import mss301.providerservice.dto.response.CenterResponse;
 import mss301.providerservice.dto.response.PageResponse;
 import mss301.providerservice.dto.response.ScheduleResponse;
+import mss301.providerservice.dto.response.TimeOffResponse;
 import mss301.providerservice.enums.CenterStatus;
+import mss301.providerservice.enums.ScheduleStatus;
 import mss301.providerservice.security.CurrentUserId;
 import mss301.providerservice.service.CareCenterService;
 import mss301.providerservice.service.CaregiverScheduleService;
+import mss301.providerservice.service.CaregiverService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @RestController
@@ -36,6 +42,7 @@ public class CareCenterController {
 
     CareCenterService careCenterService;
     CaregiverScheduleService caregiverScheduleService;
+    CaregiverService caregiverService;
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
@@ -86,9 +93,28 @@ public class CareCenterController {
     public APIResponse<PageResponse<ScheduleResponse>> listSchedules(
             @CurrentUserId UUID actorId,
             @PathVariable UUID centerId,
+            @RequestParam(required = false) UUID caregiverId,
+            @RequestParam(required = false) ScheduleStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return caregiverScheduleService.listByCenter(actorId, centerId, page, size);
+        return caregiverScheduleService.listByCenter(actorId, centerId, caregiverId, status, fromDate, toDate,
+                page, size);
+    }
+
+    // Ngày nghỉ của mọi caregiver trong trung tâm giao khoảng [from, to) — trang "Lịch làm việc" của manager.
+    @GetMapping("/{centerId}/time-offs")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<PageResponse<TimeOffResponse>> listTimeOffs(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID centerId,
+            @RequestParam(required = false) UUID caregiverId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return caregiverService.listCenterTimeOffs(actorId, centerId, caregiverId, from, to, page, size);
     }
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────

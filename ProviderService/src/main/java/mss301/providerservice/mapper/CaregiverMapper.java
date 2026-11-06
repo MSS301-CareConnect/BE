@@ -93,6 +93,7 @@ public interface CaregiverMapper {
     // ─── Ngày nghỉ + lịch rảnh (PRV-02) — entity con / giá trị dẫn xuất của aggregate CaregiverProfile ───
 
     @Mapping(target = "caregiverId", source = "caregiver.id")
+    @Mapping(target = "caregiverName", source = "caregiver.fullName")
     TimeOffResponse toTimeOffResponse(CaregiverTimeOff caregiverTimeOff);
 
     List<TimeOffResponse> toTimeOffResponseList(List<CaregiverTimeOff> caregiverTimeOffs);

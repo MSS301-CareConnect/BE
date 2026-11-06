@@ -24,6 +24,8 @@ public class ScheduleResponse {
     LocalDate workDate;
     LocalTime startTime;
     LocalTime endTime;
+    // Loại ca (MORNING / AFTERNOON / ... / CUSTOM) — để lịch làm việc của trung tâm tô màu theo ca.
+    String shiftType;
     Integer maxBookings;
     ScheduleStatus scheduleStatus;
     UUID assignedBy;
