@@ -91,6 +91,9 @@
 Notification là aggregate riêng; SSE là ngoại lệ envelope đã ghi tại rule #3 gốc. CareTask và CareSessionNote thuộc
 CareSession; report, feedback, complaint có service/controller/repository/mapper riêng. Không gọi Media/Payment
 trong transaction. Report SUBMITTED bất biến; mọi cập nhật task/note dùng khóa booking → buổi → session.
+Hoàn tác checklist (2026-11-07) dùng PATCH task hiện có với `status=PENDING`: chỉ caregiver được giao, session
+`IN_PROGRESS`; xóa `completedAt` và `skipReason`, giữ ghi chú khi PATCH không gửi `note`. Không tự đánh dấu việc đã xong;
+task hoàn tác tiếp tục chặn check-out cho tới khi DONE/SKIPPED. PENDING đã có trong enum/CHECK, không cần migration.
 Rating và complaint refund đi qua booking_outbox; refund dùng complaintId làm idempotency key.
 
 SSE registry trong RAM cho một instance; chạy nhiều instance cần broker chưa có trong phạm vi này, client dùng
