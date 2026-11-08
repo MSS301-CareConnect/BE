@@ -2053,6 +2053,113 @@ class BookingApiTests {
     }
 
     @Test
+    void careTaskUndoClearsResolutionAndKeepsCheckoutBlockedUntilResolvedAgain() throws Exception {
+        Scenario scenario = newScenario();
+        String sessionId = createRunningAftercareSession(scenario);
+        UUID sessionUuid = UUID.fromString(sessionId);
+        String caregiver = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        markAllTasksDone(sessionUuid);
+        CareTask task = careTaskRepository.findAllBySession(sessionUuid).getFirst();
+        String taskPath = "/api/v1/care-sessions/" + sessionId + "/tasks/" + task.getId();
+
+        for (CareTaskStatus resolvedStatus : List.of(CareTaskStatus.DONE, CareTaskStatus.SKIPPED)) {
+            Map<String, Object> resolved = new LinkedHashMap<>(Map.of(
+                    "status", resolvedStatus.name(), "note", "Ghi chú cần giữ sau hoàn tác"));
+            if (resolvedStatus == CareTaskStatus.SKIPPED) {
+                resolved.put("skipReason", "Người bệnh đang nghỉ");
+            }
+            mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                            .contentType(MediaType.APPLICATION_JSON).content(json(resolved)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.status").value(resolvedStatus.name()));
+            CareTask beforeUndo = careTaskRepository.findById(task.getId()).orElseThrow();
+            if (resolvedStatus == CareTaskStatus.DONE) {
+                assertThat(beforeUndo.getCompletedAt()).isNotNull();
+            } else {
+                assertThat(beforeUndo.getSkipReason()).isEqualTo("Người bệnh đang nghỉ");
+            }
+
+            mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("status", "PENDING", "skipReason", "Lý do cũ không được giữ"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.status").value("PENDING"))
+                    .andExpect(jsonPath("$.result.completedAt").doesNotExist())
+                    .andExpect(jsonPath("$.result.skipReason").doesNotExist())
+                    .andExpect(jsonPath("$.result.note").value("Ghi chú cần giữ sau hoàn tác"));
+            CareTask undone = careTaskRepository.findById(task.getId()).orElseThrow();
+            assertThat(undone.getStatus()).isEqualTo(CareTaskStatus.PENDING);
+            assertThat(undone.getCompletedAt()).isNull();
+            assertThat(undone.getSkipReason()).isNull();
+            assertThat(undone.getUpdatedBy()).isEqualTo(scenario.caregiver().userId());
+            mockMvc.perform(get("/api/v1/care-sessions/" + sessionId).header("Authorization", caregiver))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.tasks[0].status").value("PENDING"));
+            mockMvc.perform(post("/api/v1/care-sessions/" + sessionId + "/end")
+                            .header("Authorization", caregiver))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.TASKS_PENDING.getCode()));
+            // Gửi lại trạng thái đích không được làm mất ghi chú hoặc đánh dấu công việc đã xong.
+            mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                            .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "PENDING"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.status").value("PENDING"))
+                    .andExpect(jsonPath("$.result.note").value("Ghi chú cần giữ sau hoàn tác"));
+        }
+
+        mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "DONE"))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/care-sessions/" + sessionId + "/end").header("Authorization", caregiver))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "PENDING"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SESSION_NOT_IN_PROGRESS.getCode()));
+        assertThat(careTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(CareTaskStatus.DONE);
+    }
+
+    @Test
+    void careTaskUndoRequiresAssignedCaregiverAndTaskWithinThatSession() throws Exception {
+        Scenario scenario = newScenario();
+        String sessionId = createRunningAftercareSession(scenario);
+        CareTask task = careTaskRepository.findAllBySession(UUID.fromString(sessionId)).getFirst();
+        String caregiver = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        String taskPath = "/api/v1/care-sessions/" + sessionId + "/tasks/" + task.getId();
+        mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "DONE"))))
+                .andExpect(status().isOk());
+        String undo = json(Map.of("status", "PENDING"));
+        mockMvc.perform(patch(taskPath).contentType(MediaType.APPLICATION_JSON).content(undo))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(patch(taskPath).header("Authorization", customerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(undo))
+                .andExpect(status().isForbidden());
+        CaregiverIds otherCaregiver = PLATFORM.addActiveCaregiver(scenario.centerId());
+        mockMvc.perform(patch(taskPath)
+                        .header("Authorization", bearer(otherCaregiver.userId(), scenario.centerId(), "CAREGIVER"))
+                        .contentType(MediaType.APPLICATION_JSON).content(undo))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SESSION_NOT_FOUND.getCode()));
+
+        Scenario otherScenario = newScenario();
+        String otherSessionId = createRunningAftercareSession(otherScenario);
+        UUID otherTaskId = careTaskRepository.findAllBySession(UUID.fromString(otherSessionId)).getFirst().getId();
+        mockMvc.perform(patch("/api/v1/care-sessions/" + sessionId + "/tasks/" + otherTaskId)
+                        .header("Authorization", caregiver).contentType(MediaType.APPLICATION_JSON).content(undo))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.TASK_NOT_FOUND.getCode()));
+        mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "UNKNOWN"))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch(taskPath).header("Authorization", caregiver)
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        assertThat(careTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(CareTaskStatus.DONE);
+        assertThat(careTaskRepository.findById(otherTaskId).orElseThrow().getStatus()).isEqualTo(CareTaskStatus.PENDING);
+    }
+
+    @Test
     void sessionTasksNotesAndReportsEnforceLifecycleAndScope() throws Exception {
         Scenario scenario = newScenario();
         String sessionId = createRunningAftercareSession(scenario);

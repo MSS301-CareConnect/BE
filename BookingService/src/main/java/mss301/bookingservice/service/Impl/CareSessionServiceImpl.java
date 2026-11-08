@@ -351,7 +351,9 @@ public class CareSessionServiceImpl implements CareSessionService {
     @Transactional
     public APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request) {
         CareSession session = lockWritableSession(actorId, sessionId);
-        if (request.getStatus() != CareTaskStatus.DONE && request.getStatus() != CareTaskStatus.SKIPPED) {
+        if (request.getStatus() != CareTaskStatus.PENDING
+                && request.getStatus() != CareTaskStatus.DONE
+                && request.getStatus() != CareTaskStatus.SKIPPED) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
         if (request.getStatus() == CareTaskStatus.SKIPPED
@@ -361,7 +363,8 @@ public class CareSessionServiceImpl implements CareSessionService {
         CareTask task = careTaskRepository.findByIdAndSessionIdAndDeletedAtIsNull(taskId, sessionId)
                 .orElseThrow(() -> new AppException(ErrorCode.TASK_NOT_FOUND));
         task.setStatus(request.getStatus());
-        task.setNote(request.getNote());
+        // Hoàn tác chỉ đổi trạng thái; ghi chú không gửi trong PATCH phải được giữ lại.
+        careSessionMapper.updateTask(request, task);
         task.setSkipReason(request.getStatus() == CareTaskStatus.SKIPPED ? request.getSkipReason().trim() : null);
         task.setCompletedAt(request.getStatus() == CareTaskStatus.DONE ? clock.instant() : null);
         task.setUpdatedBy(actorId);

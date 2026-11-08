@@ -44,7 +44,7 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Danh mục dịch vụ chuẩn (admin); dịch vụ trung tâm cung cấp + giá theo giờ/ngày/ca | **Care catalog** (`CareCatalogService`) |
 | Tìm kiếm / lọc caregiver (kỹ năng, kinh nghiệm, giới tính, giá, đánh giá) | Đọc tổng hợp từ caregiver profile + catalog + review (chưa chốt cách làm) |
 | Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá từng buổi lấy từ Catalog, BK-01) |
-| Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; start/end, checklist, care report: giai đoạn sau) |
+| Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), hoàn tác DONE/SKIPPED về PENDING khi ca đang diễn ra, ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; checklist/hoàn tác thuộc aggregate CareSession, chỉ caregiver được giao cập nhật) |
 | Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | **Booking** (`BookingService` — review / complaint gắn với booking; route `/api/v1/feedbacks/**`, `/complaints/**`) |
 | Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — cọc, REMAINING, hoàn tiền, hóa đơn / công nợ, chính sách chỉ đọc; xem `PaymentService/AGENTS.md`. Hoa hồng / đối soát chưa làm — D15) |
 | Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | **Booking** (`BookingService` — thông báo in-app + SSE `/api/v1/notifications/stream`) |

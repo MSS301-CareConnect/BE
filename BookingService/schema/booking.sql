@@ -363,6 +363,7 @@ CREATE INDEX idx_care_sessions_booking ON care_sessions (booking_id);
 CREATE INDEX idx_care_sessions_open ON care_sessions (status) WHERE status = 'IN_PROGRESS';
 
 -- Checklist của ca: sinh lúc check-in từ dịch vụ của booking + thuốc trong snapshot (OPS-02); OPS-03 cập nhật.
+-- PATCH status=PENDING hoàn tác DONE/SKIPPED khi ca còn mở; xóa completed_at/skip_reason, giữ note nếu không gửi.
 CREATE TABLE care_tasks (
     task_id            uuid PRIMARY KEY,
     session_id         uuid          NOT NULL REFERENCES care_sessions (session_id),

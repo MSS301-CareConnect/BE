@@ -1,6 +1,7 @@
 package mss301.bookingservice.mapper;
 
 import mss301.bookingservice.dto.request.CareSessionStartRequest;
+import mss301.bookingservice.dto.request.CareTaskUpdateRequest;
 import mss301.bookingservice.dto.response.CareSessionResponse;
 import mss301.bookingservice.dto.response.CareTaskResponse;
 import mss301.bookingservice.entity.BookingDetail;
@@ -10,8 +11,11 @@ import mss301.bookingservice.entity.CareTask;
 import mss301.bookingservice.enums.CareSessionStatus;
 import mss301.bookingservice.enums.CareTaskStatus;
 import mss301.bookingservice.enums.CareTaskType;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
+import org.mapstruct.NullValuePropertyMappingStrategy;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -84,6 +88,12 @@ public interface CareSessionMapper {
     CareSessionResponse toResponse(CareSession session, List<CareTask> tasks);
 
     CareTaskResponse toTaskResponse(CareTask task);
+
+    // Trạng thái, completedAt và skipReason do service quyết định; PATCH chỉ sửa ghi chú khi được gửi.
+    @IgnoreServerManagedFields
+    @BeanMapping(ignoreByDefault = true, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "note", source = "note")
+    void updateTask(CareTaskUpdateRequest request, @MappingTarget CareTask task);
 
     @IgnoreServerManagedFields
     @Mapping(target = "session", source = "session")
