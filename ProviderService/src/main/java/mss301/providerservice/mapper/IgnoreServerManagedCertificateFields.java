@@ -20,5 +20,17 @@ import java.lang.annotation.Target;
 @Mapping(target = "centerVerifiedBy", ignore = true)
 @Mapping(target = "centerVerifiedAt", ignore = true)
 @Mapping(target = "centerVerificationReason", ignore = true)
+@Mapping(target = "aiRiskLevel", ignore = true)
+@Mapping(target = "aiWarnings", ignore = true)
+@Mapping(target = "aiExtractedText", ignore = true)
+@Mapping(target = "aiQrContent", ignore = true)
+@Mapping(target = "aiCaregiverNameMatched", ignore = true)
+@Mapping(target = "aiCertificateNameMatched", ignore = true)
+@Mapping(target = "aiIssuedByMatched", ignore = true)
+@Mapping(target = "aiCredentialNumberMatched", ignore = true)
+@Mapping(target = "aiIssuedDateMatched", ignore = true)
+@Mapping(target = "aiExpiryDateMatched", ignore = true)
+@Mapping(target = "aiExpired", ignore = true)
+@Mapping(target = "aiCheckedAt", ignore = true)
 public @interface IgnoreServerManagedCertificateFields {
 }

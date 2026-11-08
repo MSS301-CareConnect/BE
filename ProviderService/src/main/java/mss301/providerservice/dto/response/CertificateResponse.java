@@ -28,4 +28,19 @@ public class CertificateResponse {
     Long version;
     Instant createdAt;
     Instant updatedAt;
+
+    String aiRiskLevel;
+    String aiWarnings;
+    String aiExtractedText;
+    String aiQrContent;
+
+    Boolean aiCaregiverNameMatched;
+    Boolean aiCertificateNameMatched;
+    Boolean aiIssuedByMatched;
+    Boolean aiCredentialNumberMatched;
+    Boolean aiIssuedDateMatched;
+    Boolean aiExpiryDateMatched;
+    Boolean aiExpired;
+
+    Instant aiCheckedAt;
 }

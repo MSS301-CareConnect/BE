@@ -4,21 +4,27 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.providerservice.client.AIClient;
+import mss301.providerservice.client.dto.AiCertificateVerificationRequest;
+import mss301.providerservice.client.dto.AiCertificateVerificationResponse;
+import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.dto.request.CertificateRequest;
 import mss301.providerservice.dto.request.CertificateVerificationRequest;
 import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.dto.response.CertificateResponse;
 import mss301.providerservice.entity.CaregiverProfile;
 import mss301.providerservice.entity.Certificate;
-import mss301.providerservice.enums.CaregiverStatus;
-import mss301.providerservice.enums.VerificationStatus;
+import mss301.providerservice.entity.ProviderMedia;
+import mss301.providerservice.enums.*;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CertificateMapper;
 import mss301.providerservice.repository.CertificateRepository;
+import mss301.providerservice.repository.ProviderMediaRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.CaregiverService;
 import mss301.providerservice.service.CertificateService;
+import mss301.providerservice.service.ProviderMediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,12 +32,14 @@ import java.time.Instant;
 import java.time.Clock;
 import java.time.LocalDate;
 import mss301.providerservice.util.ProviderTime;
-import mss301.providerservice.enums.CertificateVerificationStatus;
 import mss301.providerservice.dto.response.PageResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.transaction.support.TransactionTemplate;
+
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -46,11 +54,16 @@ public class CertificateServiceImpl implements CertificateService {
     ProviderAuthorization providerAuthorization;
     CertificateMapper certificateMapper;
 
+    AIClient aiClient;
+    ProviderMediaRepository providerMediaRepository;
+    TransactionTemplate transactionTemplate;
+    ProviderMediaService providerMediaService;
+
     @Override
     @Transactional
     public APIResponse<CertificateResponse> create(UUID actorId, UUID caregiverId, CertificateRequest request) {
         CaregiverProfile caregiver = caregiverService.findActiveCaregiver(caregiverId);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
+        providerAuthorization.requireCaregiverSelf(caregiver, actorId);
         validateDates(request);
         Certificate certificate = certificateMapper.toCertificate(request, caregiver);
         normalizeFields(certificate);
@@ -94,7 +107,7 @@ public class CertificateServiceImpl implements CertificateService {
     @Transactional
     public APIResponse<CertificateResponse> update(UUID actorId, UUID id, CertificateRequest request) {
         Certificate certificate = lockCertificate(id);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
         checkVersion(certificate, request.getVersion());
         validateDates(request);
         certificateMapper.update(request, certificate);
@@ -107,6 +120,8 @@ public class CertificateServiceImpl implements CertificateService {
         certificate.setVerificationReason(null);
         certificate.setVerifiedAt(null);
         certificate.setVerifiedBy(null);
+        clearAiResult(certificate);
+
         Certificate savedCertificate = certificateRepository.save(certificate);
         CertificateResponse certificateResponse = certificateMapper.toResponse(savedCertificate);
         return APIResponse.success("Cập nhật chứng chỉ thành công", certificateResponse);
@@ -174,11 +189,63 @@ public class CertificateServiceImpl implements CertificateService {
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
         Certificate certificate = lockCertificate(id);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
         checkVersion(certificate, version);
         certificate.setDeletedAt(Instant.now());
         certificateRepository.save(certificate);
         return APIResponse.success("Xóa chứng chỉ thành công");
+    }
+
+    @Override
+    public APIResponse<CertificateResponse> checkWithAi(UUID actorId, UUID certificateId) {
+        Certificate certificate = findActiveCertificateWithCaregiver(certificateId);
+        providerAuthorization.requireCenterManagement(certificate.getCaregiver().getCenter(), actorId);
+
+        if (certificate.getVerificationStatus() != CertificateVerificationStatus.CENTER_VERIFIED) {
+            throw new AppException(ErrorCode.CERTIFICATE_INVALID_TRANSITION);
+        }
+
+        List<ProviderMedia> images = providerMediaRepository.findAllByOwnerTypeAndOwnerIdOrderByDisplayOrderAsc(
+                        MediaOwnerType.CERTIFICATE, certificateId)
+                .stream()
+                .filter(media -> media.getMediaFileType() == MediaFileType.IMAGE)
+                .toList();
+
+        if (images.isEmpty()) {
+            throw new AppException(ErrorCode.CERTIFICATE_AI_IMAGES_REQUIRED);
+        }
+
+        if (images.size() > 2) {
+            throw new AppException(ErrorCode.CERTIFICATE_AI_IMAGE_LIMIT_EXCEEDED);
+        }
+
+        List<String> imageUrls = providerMediaService
+                .findImageUrls(MediaOwnerType.CERTIFICATE, List.of(certificateId), 2)
+                .getOrDefault(certificateId, List.of());
+
+        if (imageUrls.size() != images.size()) {
+            throw new AppException(ErrorCode.MEDIA_SERVICE_UNAVAILABLE);
+        }
+
+        Long currentVersion = certificate.getVersion();
+
+        AiCertificateVerificationRequest aiRequest = AiCertificateVerificationRequest.builder()
+                        .certificateId(certificate.getId())
+                        .caregiverFullName(certificate.getCaregiver().getFullName())
+                        .certificateName(certificate.getCertificateName())
+                        .issuedBy(certificate.getIssuedBy())
+                        .credentialNumber(certificate.getCredentialNumber())
+                        .issuedDate(certificate.getIssuedDate())
+                        .expiryDate(certificate.getExpiryDate())
+                        .imageUrls(imageUrls)
+                        .build();
+
+        AiCertificateVerificationResponse aiResult = callAiService(aiRequest);
+
+        CertificateResponse response = transactionTemplate.execute(
+                status -> saveAiResult(certificateId, currentVersion, aiResult));
+
+        return APIResponse.success("AI checked certificate successfully", response);
     }
 
     private void checkVerificationRequest(Certificate certificate, CertificateVerificationRequest request) {
@@ -221,6 +288,85 @@ public class CertificateServiceImpl implements CertificateService {
         if (version == null || !version.equals(certificate.getVersion())) {
             throw new AppException(ErrorCode.CERTIFICATE_VERSION_CONFLICT);
         }
+    }
+
+    private Certificate findActiveCertificateWithCaregiver(
+            UUID certificateId
+    ) {
+        return certificateRepository.findWithCaregiverById(certificateId)
+                .orElseThrow(() ->
+                        new AppException(
+                                ErrorCode.CERTIFICATE_NOT_FOUND
+                        )
+                );
+    }
+
+    private AiCertificateVerificationResponse callAiService(AiCertificateVerificationRequest request) {
+        try {
+            RemoteApiResponse<AiCertificateVerificationResponse> response = aiClient.verifyCertificate(request);
+
+            if (response == null || response.getResult() == null) {
+                throw new AppException(ErrorCode.AI_SERVICE_UNAVAILABLE);
+            }
+            return response.getResult();
+
+        } catch (AppException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.error("AI certificate verification failed", exception);
+            throw new AppException(ErrorCode.AI_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    private CertificateResponse saveAiResult(UUID certificateId, Long expectedVersion, AiCertificateVerificationResponse result) {
+        Certificate certificate = lockCertificate(certificateId);
+
+        if (!Objects.equals(expectedVersion, certificate.getVersion())) {
+            throw new AppException(ErrorCode.CERTIFICATE_VERSION_CONFLICT);
+        }
+
+        if (certificate.getVerificationStatus() != CertificateVerificationStatus.CENTER_VERIFIED) {
+            throw new AppException(ErrorCode.CERTIFICATE_INVALID_TRANSITION);
+        }
+
+        certificate.setAiRiskLevel(result.getRiskLevel());
+        certificate.setAiWarnings(joinWarnings(result.getWarnings()));
+        certificate.setAiExtractedText(result.getExtractedText());
+        certificate.setAiQrContent(result.getQrContent());
+        certificate.setAiCaregiverNameMatched(result.isCaregiverNameMatched());
+        certificate.setAiCertificateNameMatched(result.isCertificateNameMatched());
+        certificate.setAiIssuedByMatched(result.isIssuedByMatched());
+        certificate.setAiCredentialNumberMatched(result.isCredentialNumberMatched());
+        certificate.setAiIssuedDateMatched(result.isIssuedDateMatched());
+        certificate.setAiExpiryDateMatched(result.isExpiryDateMatched());
+        certificate.setAiExpired(result.isExpired());
+        certificate.setAiCheckedAt(result.getCheckedAt());
+
+        Certificate saved = certificateRepository.saveAndFlush(certificate);
+        return certificateMapper.toResponse(saved);
+    }
+
+    private String joinWarnings(List<String> warnings) {
+        if (warnings == null || warnings.isEmpty()) {
+            return null;
+        }
+
+        return String.join("\n", warnings);
+    }
+
+    private void clearAiResult(Certificate certificate) {
+        certificate.setAiRiskLevel(null);
+        certificate.setAiWarnings(null);
+        certificate.setAiExtractedText(null);
+        certificate.setAiQrContent(null);
+        certificate.setAiCaregiverNameMatched(null);
+        certificate.setAiCertificateNameMatched(null);
+        certificate.setAiIssuedByMatched(null);
+        certificate.setAiCredentialNumberMatched(null);
+        certificate.setAiIssuedDateMatched(null);
+        certificate.setAiExpiryDateMatched(null);
+        certificate.setAiExpired(null);
+        certificate.setAiCheckedAt(null);
     }
 
     private String normalize(String value) {

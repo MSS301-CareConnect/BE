@@ -63,4 +63,40 @@ public class Certificate extends BaseEntity {
     @Version
     @Column(name = "version", nullable = false)
     Long version;
+
+    @Column(name = "ai_risk_level", length = 20)
+    String aiRiskLevel;
+
+    @Column(name = "ai_warnings")
+    String aiWarnings;
+
+    @Column(name = "ai_extracted_text")
+    String aiExtractedText;
+
+    @Column(name = "ai_qr_content")
+    String aiQrContent;
+
+    @Column(name = "ai_caregiver_name_matched")
+    Boolean aiCaregiverNameMatched;
+
+    @Column(name = "ai_certificate_name_matched")
+    Boolean aiCertificateNameMatched;
+
+    @Column(name = "ai_issued_by_matched")
+    Boolean aiIssuedByMatched;
+
+    @Column(name = "ai_credential_number_matched")
+    Boolean aiCredentialNumberMatched;
+
+    @Column(name = "ai_issued_date_matched")
+    Boolean aiIssuedDateMatched;
+
+    @Column(name = "ai_expiry_date_matched")
+    Boolean aiExpiryDateMatched;
+
+    @Column(name = "ai_expired")
+    Boolean aiExpired;
+
+    @Column(name = "ai_checked_at")
+    Instant aiCheckedAt;
 }

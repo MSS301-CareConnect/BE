@@ -48,6 +48,11 @@ spring:
             connect-timeout: ${PROVIDER_BOOKING_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${PROVIDER_BOOKING_READ_TIMEOUT_MS:3000}
             logger-level: none
+          ai:
+            connect-timeout: ${PROVIDER_AI_CONNECT_TIMEOUT_MS:5000}
+            read-timeout: ${PROVIDER_AI_READ_TIMEOUT_MS:60000}
+            logger-level: none
+
     circuitbreaker:
       resilience4j:
         disable-thread-pool: true
@@ -98,6 +103,9 @@ provider:
 
   media:
     url: ${PROVIDER_MEDIA_URL:http://localhost:8080}
+
+  ai:
+    url: ${PROVIDER_AI_URL:http://localhost:8080}
 
   # CareCatalogService qua ApiGateway (không cắt prefix) — kiểm offering khi gán kỹ năng caregiver.
   care-catalog:

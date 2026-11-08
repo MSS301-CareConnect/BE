@@ -26,4 +26,6 @@ public interface CertificateService {
     APIResponse<PageResponse<CertificateResponse>> listPendingAudit(UUID centerId, int page, int size);
 
     APIResponse<Void> delete(UUID actorId, UUID id, Long version);
+
+    APIResponse<CertificateResponse> checkWithAi(UUID actorId, UUID certificateId);
 }

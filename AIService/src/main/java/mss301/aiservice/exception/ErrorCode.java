@@ -84,12 +84,15 @@ public enum ErrorCode {
 
     REMOTE_SERVICE_REJECTED(8501, "Service phụ thuộc từ chối yêu cầu của AIService", HttpStatus.SERVICE_UNAVAILABLE),
 
-    GUEST_CONVERSATION_NOT_ALLOWED(
-            8111,
-            "Khách chưa đăng nhập không thể tiếp tục cuộc trò chuyện đã lưu",
-            HttpStatus.UNAUTHORIZED
-    );
+    GUEST_CONVERSATION_NOT_ALLOWED(8111, "Khách chưa đăng nhập không thể tiếp tục cuộc trò chuyện đã lưu", HttpStatus.UNAUTHORIZED),
 
+    CERTIFICATE_IMAGE_REQUIRED(8600, "Chứng chỉ phải có ít nhất một ảnh", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_IMAGE_LIMIT_EXCEEDED(8601, "Chứng chỉ chỉ được kiểm tra tối đa hai ảnh", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_IMAGE_INVALID(8602, "Không thể đọc ảnh chứng chỉ", HttpStatus.BAD_REQUEST),
+
+    VISION_SERVICE_UNAVAILABLE(8603, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE);
     int code;
     String message;
     HttpStatusCode statusCode;

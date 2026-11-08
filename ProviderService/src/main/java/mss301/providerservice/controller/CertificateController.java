@@ -1,5 +1,6 @@
 package mss301.providerservice.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -53,17 +54,29 @@ public class CertificateController {
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
     @PostMapping("/caregivers/{caregiverId}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<CertificateResponse> create(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID caregiverId,
                                                    @Valid @RequestBody CertificateRequest request) {
         return certificateService.create(actorId, caregiverId, request);
     }
 
+    @PostMapping("/{certificateId}/ai-check")
+    @PreAuthorize("hasAnyRole('CENTER_MANAGER','ADMIN')")
+    @Operation(summary = "AI kiểm tra chứng chỉ",
+            description = """
+                Chỉ thực hiện sau khi Center Manager đã xác minh chứng chỉ.
+                AI đọc nội dung ảnh, QR và so sánh với thông tin caregiver khai báo.
+                Kết quả chỉ hỗ trợ Admin, không tự động duyệt chứng chỉ.
+                """)
+    public APIResponse<CertificateResponse> checkWithAi(@CurrentUserId UUID actorId, @PathVariable UUID certificateId) {
+        return certificateService.checkWithAi(actorId, certificateId);
+    }
+
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<CertificateResponse> update(@CurrentUserId UUID actorId,
                                                    @PathVariable UUID id,
                                                    @Valid @RequestBody CertificateRequest request) {
@@ -90,10 +103,12 @@ public class CertificateController {
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
+    @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,
                                     @PathVariable UUID id,
                                     @RequestParam Long version) {
         return certificateService.delete(actorId, id, version);
     }
+
+
 }

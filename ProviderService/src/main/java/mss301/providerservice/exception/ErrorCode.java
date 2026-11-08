@@ -76,6 +76,10 @@ public enum ErrorCode {
     CERTIFICATE_VERSION_CONFLICT(4251, "The certificate was updated, please reload", HttpStatus.CONFLICT),
     CERTIFICATE_DATE_INVALID(4252, "Expiry date must be on or after the issue date", HttpStatus.BAD_REQUEST),
 
+    CERTIFICATE_AI_IMAGES_REQUIRED(4255, "Certificate must have at least one image before AI checking", HttpStatus.BAD_REQUEST),
+    CERTIFICATE_AI_IMAGE_LIMIT_EXCEEDED(4256, "AI can check at most two certificate images", HttpStatus.BAD_REQUEST),
+    AI_SERVICE_UNAVAILABLE(4704, "AI service is temporarily unavailable, please try again", HttpStatus.SERVICE_UNAVAILABLE),
+
     WORK_SHIFT_NOT_FOUND(4300, "Work shift does not exist", HttpStatus.NOT_FOUND),
     WORK_SHIFT_VERSION_CONFLICT(4301, "The work shift was updated, please reload", HttpStatus.CONFLICT),
     WORK_SHIFT_TIME_INVALID(4302, "End time must be after start time", HttpStatus.BAD_REQUEST),

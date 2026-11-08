@@ -64,7 +64,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
 
     @Override
     public APIResponse<List<ProviderMediaResponse>> upload(UUID actorId, MediaOwnerType ownerType, UUID ownerId, List<MultipartFile> files) {
-        requireOwnerAccess(actorId, ownerType, ownerId);
+        requireMediaMutationAccess(actorId, ownerType, ownerId);
         List<MultipartFile> validFiles = validateFiles(files);
         int displayOrder = providerMediaRepository.findMaximumDisplayOrder(ownerType, ownerId) + 1;
 
@@ -81,7 +81,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
                 downloads.put(uploaded.getMediaFileId(), getDownloadUrl(uploaded.getMediaFileId()));
             }
             responses = transactionTemplate.execute(status -> {
-                requireOwnerAccess(actorId, ownerType, ownerId);
+                requireMediaMutationAccess(actorId, ownerType, ownerId);
                 List<ProviderMediaResponse> items = new ArrayList<>();
                 int nextOrder = displayOrder;
                 for (MediaClientResponse uploaded : uploadedFiles) {
@@ -123,7 +123,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
 
     @Override
     public APIResponse<Void> delete(UUID actorId, MediaOwnerType ownerType, UUID ownerId, UUID mediaFileId) {
-        requireOwnerAccess(actorId, ownerType, ownerId);
+        requireMediaMutationAccess(actorId, ownerType, ownerId);
 
         ProviderMedia providerMedia = providerMediaRepository
                 .findByOwnerTypeAndOwnerIdAndMediaFileId(ownerType, ownerId, mediaFileId)
@@ -271,5 +271,17 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
                 log.warn("Failed to clean up uploaded media file {}: {}", mediaFileId, exception.getMessage());
             }
         }
+    }
+
+    private void requireMediaMutationAccess(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
+        if (ownerType == MediaOwnerType.CERTIFICATE) {
+            Certificate certificate = certificateRepository.findWithCaregiverById(ownerId)
+                    .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
+
+            providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
+            return;
+        }
+
+        requireOwnerAccess(actorId, ownerType, ownerId);
     }
 }

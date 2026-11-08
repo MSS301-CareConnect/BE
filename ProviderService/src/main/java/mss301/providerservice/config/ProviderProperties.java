@@ -45,6 +45,9 @@ public class ProviderProperties {
     @Valid
     Outbox outbox = new Outbox();
 
+    @Valid
+    AI ai = new AI();
+
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Outbox {
@@ -113,5 +116,12 @@ public class ProviderProperties {
         public boolean isConfigured() {
             return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
         }
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class AI {
+        @NotBlank
+        String url;
     }
 }
