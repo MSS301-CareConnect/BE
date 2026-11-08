@@ -1,0 +1,109 @@
+spring:
+  application:
+    name: AIService
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${AI_DB_URL}
+    username: ${AI_DB_USERNAME}
+    password: ${AI_DB_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  sql:
+    init:
+      mode: never
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  servlet:
+    multipart:
+      max-file-size: ${AI_CHAT_MAX_IMAGE_SIZE:10MB}
+      max-request-size: ${AI_CHAT_MAX_REQUEST_SIZE:20MB}
+
+  cloud:
+    openfeign:
+      client:
+        config:
+          media:
+            connect-timeout: ${AI_MEDIA_CONNECT_TIMEOUT_MS:3000}
+            read-timeout: ${AI_MEDIA_READ_TIMEOUT_MS:30000}
+            logger-level: none
+
+server:
+  port: ${AI_SERVER_PORT:8088}
+
+springdoc:
+  api-docs:
+    enabled: ${AI_SWAGGER_ENABLED:true}
+
+  swagger-ui:
+    enabled: ${AI_SWAGGER_ENABLED:true}
+    operations-sorter: method
+    tags-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+ai:
+  open-api-server-url: ${AI_OPENAPI_SERVER_URL:}
+
+  jwt:
+    issuer: ${AI_JWT_ISSUER}
+    jwks-uri: ${AI_JWT_JWKS_URI}
+
+  identity:
+    url: ${AI_IDENTITY_URL}
+
+  groq:
+    base-url: ${AI_GROQ_BASE_URL:https://api.groq.com/openai/v1}
+    api-key: ${AI_GROQ_API_KEY}
+    model: ${AI_GROQ_MODEL:qwen/qwen3.8-27b}
+
+    temperature: ${AI_GROQ_TEMPERATURE:0.3}
+    max-completion-tokens: ${AI_GROQ_MAX_COMPLETION_TOKENS:1024}
+
+    connect-timeout: ${AI_GROQ_CONNECT_TIMEOUT:5s}
+    read-timeout: ${AI_GROQ_READ_TIMEOUT:60s}
+
+  chat:
+    guest-daily-prompt-limit: ${AI_GUEST_DAILY_PROMPT_LIMIT:5}
+    guest-max-prompt-length: ${AI_GUEST_MAX_PROMPT_LENGTH:500}
+    customer-max-prompt-length: ${AI_CUSTOMER_MAX_PROMPT_LENGTH:2000}
+    max-images: ${AI_CHAT_MAX_IMAGES:3}
+    max-image-size-mb: ${AI_CHAT_MAX_IMAGE_SIZE_MB:10}
+    max-total-image-size-mb: ${AI_CHAT_MAX_TOTAL_IMAGE_SIZE_MB:20}
+    max-history-messages: ${AI_CHAT_MAX_HISTORY_MESSAGES:20}
+    guest-timezone: ${AI_GUEST_TIMEZONE:Asia/Ho_Chi_Minh}
+
+  media:
+    url: ${AI_MEDIA_URL}
+
+  service-client:
+    client-id: ${AI_SERVICE_CLIENT_ID:}
+    client-secret: ${AI_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${AI_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${AI_SERVICE_TOKEN_READ_TIMEOUT:3s}

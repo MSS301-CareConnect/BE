@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${AI_DB_NAME:-CARECONNECT_AI}
+      POSTGRES_USER: ${AI_DB_USERNAME:?Set AI_DB_USERNAME}
+      POSTGRES_PASSWORD: ${AI_DB_PASSWORD:?Set AI_DB_PASSWORD}
+
+    ports:
+      - "127.0.0.1:${AI_DB_PORT:-5448}:5432"
+
+    volumes:
+      - ai_postgres:/var/lib/postgresql/data
+
+volumes:
+  ai_postgres:
