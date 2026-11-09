@@ -6,8 +6,10 @@ import mss301.aiservice.entity.ChatConversation;
 import mss301.aiservice.entity.ChatMessage;
 import mss301.aiservice.entity.ChatMessageMedia;
 import mss301.aiservice.enums.MessageRole;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.NullValueMappingStrategy;
 
 import java.time.Instant;
 import java.util.List;
@@ -60,6 +62,8 @@ public interface ChatMapper {
     @Mapping(target = "version", ignore = true)
     ChatMessageMedia toMessageMedia(UUID chatMessageId, ChatMediaUpload media, Short sortOrder);
 
+    // Người đăng nhập có dailyPromptLimit và remainingPrompts đều null: mặc định MapStruct khi đó trả null → mất result.
+    @BeanMapping(nullValueMappingStrategy = NullValueMappingStrategy.RETURN_DEFAULT)
     ChatQuotaResponse toQuotaResponse(boolean guest, Integer dailyPromptLimit, Integer remainingPrompts,
                                       int maxPromptLength, boolean imagesAllowed, int maxImages, int maxImageSizeMb,
                                       int maxTotalImageSizeMb);
