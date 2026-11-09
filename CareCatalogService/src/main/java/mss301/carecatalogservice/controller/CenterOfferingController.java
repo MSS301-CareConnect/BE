@@ -32,7 +32,7 @@ public class CenterOfferingController {
     CenterOfferingService centerOfferingService;
 
     @GetMapping("/center/{centerId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CenterOfferingResponse>> listByCenter(@CurrentRoles Set<RoleCode> roles,
                                                                           @CurrentCenterId(required = false) UUID scopeCenterId,
                                                                           @PathVariable UUID centerId,
@@ -47,7 +47,7 @@ public class CenterOfferingController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<CenterOfferingResponse> get(@CurrentRoles Set<RoleCode> roles,
                                                    @CurrentCenterId(required = false) UUID scopeCenterId,
                                                    @PathVariable UUID id) {

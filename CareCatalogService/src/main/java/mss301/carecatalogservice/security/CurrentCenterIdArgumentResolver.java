@@ -29,6 +29,10 @@ public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentRes
         if (authentication == null
                 || !authentication.isAuthenticated()
                 || authentication instanceof AnonymousAuthenticationToken) {
+            // GET công khai (khách chưa đăng nhập) không có trung tâm; tham số bắt buộc vẫn báo chưa đăng nhập.
+            if (!parameter.getParameterAnnotation(CurrentCenterId.class).required()) {
+                return null;
+            }
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         if (authentication instanceof JwtAuthenticationToken jwtAuth) {

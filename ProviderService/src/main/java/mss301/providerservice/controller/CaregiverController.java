@@ -50,8 +50,9 @@ public class CaregiverController {
         return caregiverService.listPendingVerification(centerId, page, size);
     }
 
+    // Công khai cho cả khách chưa đăng nhập (2026-11-09): chỉ DTO thẻ, không có trường nội bộ.
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CaregiverCardResponse>> list(
             @RequestParam(required = false) UUID centerId,
             @RequestParam(required = false) String keyword,
@@ -61,8 +62,9 @@ public class CaregiverController {
     }
 
     // SRCH-01: khách tìm caregiver làm được TẤT CẢ dịch vụ đã chọn, còn rảnh cho mọi khung giờ (nếu gửi).
+    // Công khai từ 2026-11-09 (trang chi tiết dịch vụ cho khách chưa đăng nhập): chỉ trả DTO thẻ.
     @GetMapping("/search")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CaregiverCardResponse>> search(@Valid @ModelAttribute CaregiverSearchRequest request) {
         return caregiverService.search(request);
     }
@@ -109,7 +111,7 @@ public class CaregiverController {
     }
 
     @GetMapping("/{caregiverId}/public")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<CaregiverPublicResponse> getPublic(@PathVariable UUID caregiverId) {
         return caregiverService.getPublic(caregiverId);
     }

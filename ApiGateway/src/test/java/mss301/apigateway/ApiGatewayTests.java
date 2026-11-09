@@ -147,6 +147,31 @@ class ApiGatewayTests {
     }
 
     @Test
+    void guestsBrowseServicesAndCaregiversWhileTokensStillForward() throws Exception {
+        UUID id = UUID.randomUUID();
+        for (String path : List.of("/caregivers", "/caregivers/search", "/caregivers/" + id + "/public")) {
+            mockMvc.perform(get("/api/v1" + path))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.service").value("provider"));
+        }
+        for (String path : List.of("/catalog-items", "/catalog-items/" + id, "/center-services/center/" + id,
+                "/center-services/" + id, "/price-plans/center-offering/" + id)) {
+            mockMvc.perform(get("/api/v1" + path))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.service").value("care-catalog"));
+        }
+        // A signed-in admin keeps its token so the service answers with the full view.
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "ADMIN");
+        mockMvc.perform(get("/api/v1/catalog-items").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.headers.authorization").value("Bearer " + token));
+        mockMvc.perform(post("/api/v1/catalog-items"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/caregivers/" + id))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void aiChatIsPublicForPostAndConversationsNeedLogin() throws Exception {
         mockMvc.perform(post("/api/v1/ai/chat").contentType(MediaType.APPLICATION_JSON).content("{\"prompt\":\"xin chao\"}"))
                 .andExpect(status().isOk())
@@ -187,7 +212,7 @@ class ApiGatewayTests {
                 .andExpect(jsonPath("$.result.path").value("/api/v1/catalog-items/images/" + mediaFileId));
         mockMvc.perform(post("/api/v1/catalog-items/images"))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/v1/catalog-items/" + mediaFileId))
+        mockMvc.perform(get("/api/v1/price-plans/" + mediaFileId))
                 .andExpect(status().isUnauthorized());
     }
 

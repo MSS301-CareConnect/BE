@@ -29,6 +29,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,10 +65,23 @@ class CatalogApiTests {
     PricePlanRepository pricePlanRepository;
 
     @Test
-    void readEndpointsNeedAuthentication() throws Exception {
-        mockMvc.perform(get("/api/v1/catalog-items"))
-                .andExpect(status().isUnauthorized());
+    void guestsBrowseActiveCatalogButCannotWrite() throws Exception {
+        String keyword = "kw" + UUID.randomUUID().toString().substring(0, 8);
+        CatalogItem active = saveItem(keyword + " active", ServiceStatus.ACTIVE);
+        saveItem(keyword + " inactive", ServiceStatus.INACTIVE);
+
+        // Guests (no token) read like a customer: active items only, whatever status they ask for.
+        mockMvc.perform(get("/api/v1/catalog-items").param("keyword", keyword).param("status", "INACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(active.getId().toString()));
+        mockMvc.perform(get("/api/v1/catalog-items/" + active.getId()))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/center-services/center/" + UUID.randomUUID()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/price-plans/center-offering/" + UUID.randomUUID()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/catalog-items").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
     }
 

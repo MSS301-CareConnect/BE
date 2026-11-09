@@ -230,6 +230,22 @@ class ProviderIntegrationTests {
     }
 
     @Test
+    void guestsBrowseCaregiverCardsButNotFullProfiles() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+
+        mockMvc.perform(get("/api/v1/caregivers").param("centerId", center.getId().toString()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/caregivers/search").param("centerId", center.getId().toString())
+                        .param("careServiceIds", UUID.randomUUID().toString()))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(401));
+        mockMvc.perform(get("/api/v1/caregivers/{id}/public", caregiver.getId()))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(401));
+        mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void caregiverWithoutSkillsReturnsEmptyLists() throws Exception {
         CareCenter center = saveCenter(UUID.randomUUID());
         CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());

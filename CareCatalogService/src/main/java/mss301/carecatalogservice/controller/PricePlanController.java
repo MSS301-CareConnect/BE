@@ -26,7 +26,7 @@ public class PricePlanController {
     PricePlanService pricePlanService;
 
     @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
         return pricePlanService.listByCenterOffering(centerOfferingId);
     }

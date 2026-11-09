@@ -57,7 +57,9 @@ public class SecurityConfig {
             toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_AI_ENDPOINTS));
     // Public nhưng vẫn có thể mang cookie đăng nhập: gateway không xác thực, AIService tự đọc token để phân biệt khách
     // và người dùng đã đăng nhập (token hỏng → AIService trả 401, FE refresh rồi gửi lại).
-    RequestMatcher optionalAuthEndpoints = toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS);
+    RequestMatcher optionalAuthEndpoints = new OrRequestMatcher(
+            toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS));
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {

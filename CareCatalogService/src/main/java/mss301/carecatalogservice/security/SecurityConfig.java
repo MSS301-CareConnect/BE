@@ -50,6 +50,18 @@ public class SecurityConfig {
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/catalog-items/images/{mediaFileId}"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-services/images/{mediaFileId}"));
 
+    // Duyệt dịch vụ cho khách chưa đăng nhập (2026-11-09): cho phép ẩn danh nhưng VẪN đọc token nếu có, để admin /
+    // manager giữ góc nhìn đầy đủ; khách thấy như CUSTOMER. Đồng bộ với GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS.
+    static RequestMatcher OPTIONAL_AUTH_GET_ENDPOINTS = new OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/catalog-items"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/catalog-items/{id}"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/center-services/center/{centerId}"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/center-services/{id}"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET,
+                    "/api/v1/price-plans/center-offering/{centerOfferingId}"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET,
+                    "/api/v1/price-plans/center-service/{centerOfferingId}"));
+
     JwtDecoder jwtDecoder;
     JwtAuthorityConverter jwtAuthorityConverter;
     SecurityErrorHandler securityErrorHandler;
@@ -75,6 +87,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_GET_ENDPOINTS).permitAll()
+                        .requestMatchers(OPTIONAL_AUTH_GET_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)

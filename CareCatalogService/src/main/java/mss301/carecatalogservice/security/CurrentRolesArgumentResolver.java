@@ -34,8 +34,10 @@ public class CurrentRolesArgumentResolver implements HandlerMethodArgumentResolv
     public Set<RoleCode> resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                          NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        // Khách chưa đăng nhập trên các GET công khai: không có role (xem như khách hàng). Endpoint khác vẫn bị
+        // @PreAuthorize chặn trước khi tới đây.
         if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
+            return EnumSet.noneOf(RoleCode.class);
         }
         Set<RoleCode> roles = EnumSet.noneOf(RoleCode.class);
         for (GrantedAuthority authority : authentication.getAuthorities()) {

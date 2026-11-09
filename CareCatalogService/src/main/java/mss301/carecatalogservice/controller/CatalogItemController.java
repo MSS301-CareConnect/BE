@@ -34,14 +34,14 @@ public class CatalogItemController {
     CatalogItemService catalogItemService;
 
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CatalogItemResponse>> list(@CurrentRoles Set<RoleCode> roles,
                                                                @ParameterObject CatalogItemSearchRequest request) {
         return catalogItemService.list(roles, request);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<CatalogItemResponse> get(@CurrentRoles Set<RoleCode> roles, @PathVariable UUID id) {
         return catalogItemService.get(roles, id);
     }

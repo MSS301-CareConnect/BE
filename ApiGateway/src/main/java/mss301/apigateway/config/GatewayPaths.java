@@ -77,6 +77,15 @@ public final class GatewayPaths {
             "/api/v1/catalog-items/images/{mediaFileId}", "/api/v1/care-services/images/{mediaFileId}"
     };
 
+    // Duyệt dịch vụ / người chăm sóc cho khách chưa đăng nhập (2026-11-09): CHỈ GET, gateway không bắt đăng nhập nhưng
+    // vẫn kiểm và chuyển token nếu có để admin / manager giữ góc nhìn đầy đủ (service đọc role từ token khi có).
+    public static final String[] OPTIONAL_AUTH_GET_ENDPOINTS = {
+            "/api/v1/caregivers", "/api/v1/caregivers/search", "/api/v1/caregivers/{caregiverId}/public",
+            "/api/v1/catalog-items", "/api/v1/catalog-items/{id}",
+            "/api/v1/center-services/center/{centerId}", "/api/v1/center-services/{id}",
+            "/api/v1/price-plans/center-offering/{centerOfferingId}", "/api/v1/price-plans/center-service/{centerOfferingId}"
+    };
+
     // Chat AI cho khách chưa đăng nhập (3 lượt/ngày, không ảnh): AIService tự đọc cookie nếu có để nhận người dùng.
     public static final String[] PUBLIC_POST_ENDPOINTS = {
             "/api/v1/ai/chat"

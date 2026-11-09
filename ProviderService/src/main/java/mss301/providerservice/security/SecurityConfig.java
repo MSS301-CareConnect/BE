@@ -50,6 +50,13 @@ public class SecurityConfig {
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-centers/public"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-centers/public/{centerId}"));
 
+    // Danh sách và hồ sơ công khai người chăm sóc cho khách chưa đăng nhập (2026-11-09): cho phép ẩn danh nhưng VẪN đọc
+    // token nếu có. Đồng bộ với GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS.
+    static RequestMatcher OPTIONAL_AUTH_GET_ENDPOINTS = new OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers/search"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers/{caregiverId}/public"));
+
     JwtDecoder jwtDecoder;
     JwtAuthorityConverter jwtAuthorityConverter;
     SecurityErrorHandler securityErrorHandler;
@@ -75,6 +82,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_GET_ENDPOINTS).permitAll()
+                        .requestMatchers(OPTIONAL_AUTH_GET_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)
