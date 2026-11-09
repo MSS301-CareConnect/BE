@@ -256,4 +256,83 @@ VALUES ('00000000-0000-0000-0000-000000000001', 'GLOBAL', NULL, '2026-01-01T00:0
         100, 48, 'Chính sách mặc định toàn nền tảng', 0, now(), now())
 ON CONFLICT (policy_id) DO NOTHING;
 
+-- ===== Ví 4 role + rút tiền (2026-11-09, docs/2026-11-09-WALLET_PLAN.md) — khối riêng ở cuối để dễ merge =====
+-- refunds.channel: WALLET = khách tự hủy, tiền hoàn vào ví khách (dispatcher không gọi cổng).
+-- occurrence_financials.settled_at: buổi đã cộng cho ví trung tâm / nền tảng (WalletSettlementService).
+ALTER TABLE refunds ADD COLUMN IF NOT EXISTS channel varchar(20) NOT NULL DEFAULT 'GATEWAY';
+ALTER TABLE refunds DROP CONSTRAINT IF EXISTS ck_refunds_channel;
+ALTER TABLE refunds ADD CONSTRAINT ck_refunds_channel CHECK (channel IN ('GATEWAY','WALLET'));
+
+ALTER TABLE occurrence_financials ADD COLUMN IF NOT EXISTS settled_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS wallets (
+    wallet_id         uuid          PRIMARY KEY,
+    owner_type        varchar(20)   NOT NULL CONSTRAINT ck_wallets_owner_type
+                                        CHECK (owner_type IN ('CUSTOMER','CAREGIVER','CENTER','PLATFORM')),
+    owner_id          uuid          NOT NULL,
+    available_balance numeric(14,2) NOT NULL DEFAULT 0,
+    held_balance      numeric(14,2) NOT NULL DEFAULT 0 CHECK (held_balance >= 0),
+    version           bigint        NOT NULL DEFAULT 0,
+    created_at        timestamptz   NOT NULL,
+    updated_at        timestamptz   NOT NULL,
+    CONSTRAINT uk_wallets_owner UNIQUE (owner_type, owner_id),
+    -- Chỉ ví trung tâm được âm (hoàn khiếu nại sau khi đã cộng tiền buổi).
+    CONSTRAINT ck_wallets_available CHECK (owner_type = 'CENTER' OR available_balance >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+    transaction_id   uuid          PRIMARY KEY,
+    wallet_id        uuid          NOT NULL REFERENCES wallets(wallet_id),
+    type             varchar(30)   NOT NULL CONSTRAINT ck_wallet_transactions_type CHECK (type IN ('REFUND_CREDIT',
+                                       'FORFEIT_CREDIT','SERVICE_SETTLEMENT','COMMISSION_CREDIT','COMPLAINT_DEBIT',
+                                       'WITHDRAWAL_HOLD','WITHDRAWAL_RELEASE','WITHDRAWAL_PAID')),
+    amount           numeric(14,2) NOT NULL CHECK (amount > 0),
+    available_before numeric(14,2) NOT NULL,
+    available_after  numeric(14,2) NOT NULL,
+    held_before      numeric(14,2) NOT NULL,
+    held_after       numeric(14,2) NOT NULL,
+    center_id        uuid,
+    booking_id       uuid,
+    occurrence_id    uuid,
+    refund_id        uuid,
+    withdrawal_id    uuid,
+    reference_key    varchar(150)  NOT NULL,
+    note             varchar(500),
+    created_at       timestamptz   NOT NULL,
+    CONSTRAINT uk_wallet_transactions_reference UNIQUE (wallet_id, reference_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet_created ON wallet_transactions(wallet_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_center_type ON wallet_transactions(center_id, type, created_at)
+    WHERE center_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_booking ON wallet_transactions(booking_id)
+    WHERE booking_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS wallet_withdrawals (
+    withdrawal_id       uuid          PRIMARY KEY,
+    wallet_id           uuid          NOT NULL REFERENCES wallets(wallet_id),
+    requester_user_id   uuid          NOT NULL,
+    owner_type          varchar(20)   NOT NULL CHECK (owner_type IN ('CUSTOMER','CAREGIVER','CENTER')),
+    center_id           uuid,
+    amount              numeric(14,2) NOT NULL CHECK (amount > 0),
+    bank_name           varchar(100)  NOT NULL,
+    bank_account_number varchar(30)   NOT NULL,
+    account_holder_name varchar(100)  NOT NULL,
+    status              varchar(20)   NOT NULL CONSTRAINT ck_wallet_withdrawals_status
+                                          CHECK (status IN ('PENDING','APPROVED','REJECTED','COMPLETED')),
+    reject_reason       varchar(500),
+    reviewed_by         uuid,
+    reviewed_at         timestamptz,
+    transfer_reference  varchar(100),
+    completed_by        uuid,
+    completed_at        timestamptz,
+    version             bigint        NOT NULL DEFAULT 0,
+    created_at          timestamptz   NOT NULL,
+    updated_at          timestamptz   NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_wallet_created ON wallet_withdrawals(wallet_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_status_created ON wallet_withdrawals(status, created_at DESC);
+
+
 COMMIT;

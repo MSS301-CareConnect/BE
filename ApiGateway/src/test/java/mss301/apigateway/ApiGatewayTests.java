@@ -43,10 +43,12 @@ class ApiGatewayTests {
         registry.add("gateway.care-catalog-url", UPSTREAMS::careCatalogUrl);
         registry.add("gateway.media-url", UPSTREAMS::mediaUrl);
         registry.add("gateway.payment-url", UPSTREAMS::paymentUrl);
+        registry.add("gateway.ai-url", UPSTREAMS::aiUrl);
         registry.add("gateway.allowed-origins", () -> FRONTEND_ORIGIN);
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", UPSTREAMS::jwksUri);
         registry.add("spring.http.clients.read-timeout", () -> "1s");
+        registry.add("gateway.ai-read-timeout", () -> "5s");
     }
 
     @Autowired
@@ -96,7 +98,8 @@ class ApiGatewayTests {
     void paymentAndBookingOperationRoutesForwardToOwners() throws Exception {
         String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
         for (String path : List.of("/payments", "/payment-policies/effective", "/refunds", "/refund-quotes",
-                "/remaining-invoices", "/settlements", "/revenue/centers", "/deposit-forfeitures")) {
+                "/remaining-invoices", "/settlements", "/revenue/centers", "/deposit-forfeitures", "/wallets/me",
+                "/wallet-withdrawals")) {
             mockMvc.perform(get("/api/v1" + path).header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.result.service").value("payment"))
@@ -141,6 +144,38 @@ class ApiGatewayTests {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/care-centers/public/" + centerId + "/schedules"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aiChatIsPublicForPostAndConversationsNeedLogin() throws Exception {
+        mockMvc.perform(post("/api/v1/ai/chat").contentType(MediaType.APPLICATION_JSON).content("{\"prompt\":\"xin chao\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.service").value("ai"))
+                .andExpect(jsonPath("$.result.method").value("POST"))
+                .andExpect(jsonPath("$.result.body").value("{\"prompt\":\"xin chao\"}"));
+        mockMvc.perform(get("/api/v1/ai/chat/quota"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.path").value("/api/v1/ai/chat/quota"));
+        mockMvc.perform(get("/api/v1/ai/conversations"))
+                .andExpect(status().isUnauthorized());
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CAREGIVER");
+        MvcResult result = mockMvc.perform(get("/api/v1/ai/conversations?page=0")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.query").value("page=0"))
+                .andExpect(jsonPath("$.result.headers.authorization").value("Bearer " + token))
+                .andReturn();
+        // Service trả X-Request-Id riêng — proxy AI cũng phải bỏ, chỉ giữ id của gateway.
+        assertThat(result.getResponse().getHeaders("X-Request-Id")).hasSize(1);
+        assertThat(result.getResponse().getHeader("X-Request-Id")).isNotEqualTo("upstream-id-should-be-removed");
+    }
+
+    @Test
+    void aiRouteWaitsLongerThanGlobalReadTimeout() throws Exception {
+        String token = UPSTREAMS.accessToken(UUID.randomUUID(), "CUSTOMER");
+        mockMvc.perform(get("/api/v1/ai/slow").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.service").value("ai"));
     }
 
     @Test

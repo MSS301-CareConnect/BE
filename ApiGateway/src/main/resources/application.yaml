@@ -40,6 +40,8 @@ springdoc:
         url: /api-docs/media
       - name: payment
         url: /api-docs/payment
+      - name: ai
+        url: /api-docs/ai
 
 management:
   endpoints:
@@ -64,6 +66,8 @@ gateway:
   care-catalog-url: ${GATEWAY_CARE_CATALOG_URL}
   media-url: ${GATEWAY_MEDIA_URL}
   payment-url: ${GATEWAY_PAYMENT_URL}
+  ai-url: ${GATEWAY_AI_URL}
+  ai-read-timeout: ${GATEWAY_AI_READ_TIMEOUT:90s}
   sse-max-duration: ${GATEWAY_SSE_MAX_DURATION:30m}
   allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
 

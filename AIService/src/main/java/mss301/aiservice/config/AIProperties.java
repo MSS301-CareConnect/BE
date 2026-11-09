@@ -43,6 +43,9 @@ public class AIProperties {
     @Valid
     ServiceClient serviceClient = new ServiceClient();
 
+    @Valid
+    Certificate certificate = new Certificate();
+
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Jwt {
@@ -76,6 +79,9 @@ public class AIProperties {
         @NotBlank
         String model;
 
+        // Mô hình đọc ảnh chứng chỉ (phải nhận ảnh). Để trống = dùng model.
+        String visionModel = "";
+
         @DecimalMin("0.0")
         @DecimalMax("2.0")
         double temperature = 0.3;
@@ -98,7 +104,7 @@ public class AIProperties {
     public static class Chat {
 
         @Min(1)
-        int guestDailyPromptLimit = 5;
+        int guestDailyPromptLimit = 3;
 
         @Min(1)
         @Max(2000)
@@ -124,6 +130,25 @@ public class AIProperties {
         @NotNull
         ZoneId guestTimezone =
                 ZoneId.of("Asia/Ho_Chi_Minh");
+    }
+
+    // Kiểm tra chứng chỉ bằng AI (bước 4 của luồng duyệt chứng chỉ).
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Certificate {
+
+        // Groq nhận tối đa 5 ảnh mỗi request.
+        @Min(1)
+        @Max(5)
+        int maxImages = 5;
+
+        @DecimalMin("0.0")
+        @DecimalMax("1.0")
+        double temperature = 0.0;
+
+        // Múi giờ tính "hôm nay" khi xét chứng chỉ hết hạn.
+        @NotNull
+        ZoneId timezone = ZoneId.of("Asia/Ho_Chi_Minh");
     }
 
     @Data

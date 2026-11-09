@@ -35,6 +35,10 @@ import mss301.providerservice.repository.CaregiverScheduleRepository;
 import mss301.providerservice.repository.CaregiverSkillRepository;
 import mss301.providerservice.repository.CaregiverTimeOffRepository;
 import mss301.providerservice.repository.CertificateRepository;
+import mss301.providerservice.repository.ProviderMediaRepository;
+import mss301.providerservice.entity.ProviderMedia;
+import mss301.providerservice.enums.MediaFileType;
+import mss301.providerservice.enums.MediaOwnerType;
 import mss301.providerservice.repository.ShiftRegistrationRepository;
 import mss301.providerservice.repository.WorkShiftRepository;
 import mss301.providerservice.util.ProviderTime;
@@ -161,6 +165,9 @@ class ProviderIntegrationTests {
 
     @Autowired
     CertificateRepository certificateRepository;
+
+    @Autowired
+    ProviderMediaRepository providerMediaRepository;
 
     @Autowired
     Resilience4JCircuitBreakerFactory circuitBreakerFactory;
@@ -1225,11 +1232,29 @@ class ProviderIntegrationTests {
         mockMvc.perform(patch(path + "/center-verification").with(user(UUID.randomUUID(), "CENTER_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
                 .andExpect(status().isNotFound());
+        // AI đối chiếu ảnh (bước 4) → trung tâm chỉ xác nhận chứng chỉ đã có ảnh.
         mockMvc.perform(patch(path + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("CENTER_VERIFIED"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CERTIFICATE_IMAGE_REQUIRED.getCode()));
+        providerMediaRepository.saveAndFlush(ProviderMedia.builder().ownerType(MediaOwnerType.CERTIFICATE)
+                .ownerId(certificate.getId()).mediaFileId(UUID.randomUUID()).mediaFileType(MediaFileType.IMAGE)
+                .createdBy(caregiver.getUserId()).build());
+        mockMvc.perform(patch(path + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("CENTER_VERIFIED"))
+                .andExpect(jsonPath("$.result.aiCheckStatus").value("QUEUED"))
+                .andExpect(jsonPath("$.result.aiRiskLevel").doesNotExist());
+        // Chưa có kết quả AI LOW / MEDIUM → admin duyệt phải ghi lý do.
         mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CERTIFICATE_RISK_REASON_REQUIRED.getCode()));
+        mockMvc.perform(get("/api/v1/certificates/pending-audit/statistics").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.checking").value(1));
+        mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"approved\":true,\"reason\":\"Đã đối chiếu bản gốc\",\"version\":1}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("ADMIN_VERIFIED"));
         Certificate expired = certificateRepository.saveAndFlush(Certificate.builder().caregiver(caregiver).certificateName("Hết hạn")
                 .issuedBy("Cơ sở").verificationStatus(CertificateVerificationStatus.PENDING)

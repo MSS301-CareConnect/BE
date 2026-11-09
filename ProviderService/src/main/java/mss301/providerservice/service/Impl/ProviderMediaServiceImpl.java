@@ -82,6 +82,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
             }
             responses = transactionTemplate.execute(status -> {
                 requireOwnerAccess(actorId, ownerType, ownerId);
+                restartCertificateReview(ownerType, ownerId);
                 List<ProviderMediaResponse> items = new ArrayList<>();
                 int nextOrder = displayOrder;
                 for (MediaClientResponse uploaded : uploadedFiles) {
@@ -130,8 +131,24 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
 
         mediaClient.delete(mediaFileId);
-        providerMediaRepository.delete(providerMedia);
+        transactionTemplate.executeWithoutResult(status -> {
+            restartCertificateReview(ownerType, ownerId);
+            providerMediaRepository.delete(providerMedia);
+        });
         return APIResponse.success("Xóa file thành công");
+    }
+
+    // Ảnh chứng chỉ đổi → kết quả xác nhận / kiểm tra AI cũ không còn giá trị: chứng chỉ quay về chờ trung tâm.
+    private void restartCertificateReview(MediaOwnerType ownerType, UUID ownerId) {
+        if (ownerType != MediaOwnerType.CERTIFICATE) {
+            return;
+        }
+        certificateRepository.findForUpdate(ownerId).ifPresent(certificate -> {
+            if (certificate.hasReviewProgress()) {
+                certificate.restartReview();
+                certificateRepository.save(certificate);
+            }
+        });
     }
 
     @Override

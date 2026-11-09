@@ -23,6 +23,8 @@ provider:
     url: http://catalog.test
   booking:
     url: http://booking.test
+  ai:
+    url: http://ai.test
   # Job vòng đời ca chạy theo đồng hồ thật — tắt trong test để không đổi dữ liệu giữa chừng.
   work-shift:
     lifecycle-cron: "-"
@@ -32,3 +34,6 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+# Hàng chờ kiểm tra chứng chỉ bằng AI không quét trong test (gọi thẳng CertificateService.processAiCheck khi cần).
+PROVIDER_AI_CHECK_INITIAL_DELAY: 1h

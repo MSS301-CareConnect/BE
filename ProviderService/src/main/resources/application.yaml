@@ -48,6 +48,11 @@ spring:
             connect-timeout: ${PROVIDER_BOOKING_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${PROVIDER_BOOKING_READ_TIMEOUT_MS:3000}
             logger-level: none
+          # Đọc ảnh chứng chỉ có thể mất vài chục giây (Groq) — lớn hơn GATEWAY_AI_READ_TIMEOUT một chút.
+          ai:
+            connect-timeout: ${PROVIDER_AI_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${PROVIDER_AI_READ_TIMEOUT_MS:95000}
+            logger-level: none
     circuitbreaker:
       resilience4j:
         disable-thread-pool: true
@@ -106,6 +111,16 @@ provider:
   # BookingService qua ApiGateway — caregiver bận (C5.1) khi tạo ngày nghỉ / hủy lịch / tìm caregiver theo khung giờ.
   booking:
     url: ${PROVIDER_BOOKING_URL:http://localhost:8080}
+
+  # AIService qua ApiGateway — đọc ảnh chứng chỉ sau khi Center Manager xác nhận (bước 4).
+  ai:
+    url: ${PROVIDER_AI_URL:http://localhost:8080}
+
+  ai-check:
+    max-attempts: ${PROVIDER_AI_CHECK_MAX_ATTEMPTS:5}
+    lease: ${PROVIDER_AI_CHECK_LEASE:3m}
+    max-backoff: ${PROVIDER_AI_CHECK_MAX_BACKOFF:30m}
+    batch-size: ${PROVIDER_AI_CHECK_BATCH_SIZE:10}
 
   # Client-credentials xin token SERVICE ở Identity (POST /api/v1/auth/service-token, qua provider.identity.url).
   service-client:

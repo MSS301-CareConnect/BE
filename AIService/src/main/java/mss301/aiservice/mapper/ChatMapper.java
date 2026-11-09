@@ -60,6 +60,10 @@ public interface ChatMapper {
     @Mapping(target = "version", ignore = true)
     ChatMessageMedia toMessageMedia(UUID chatMessageId, ChatMediaUpload media, Short sortOrder);
 
+    ChatQuotaResponse toQuotaResponse(boolean guest, Integer dailyPromptLimit, Integer remainingPrompts,
+                                      int maxPromptLength, boolean imagesAllowed, int maxImages, int maxImageSizeMb,
+                                      int maxTotalImageSizeMb);
+
     ConversationSummaryResponse toConversationSummary(ChatConversation conversation);
 
     List<ConversationSummaryResponse> toConversationSummaries(List<ChatConversation> conversations);
@@ -78,5 +82,6 @@ public interface ChatMapper {
     @Mapping(target = "messages", source = "messages")
     @Mapping(target = "createdAt", source = "conversation.createdAt")
     @Mapping(target = "updatedAt", source = "conversation.updatedAt")
+    @Mapping(target = "version", source = "conversation.version")
     ConversationDetailResponse toConversationDetail(ChatConversation conversation, List<ChatMessageResponse> messages);
 }

@@ -66,6 +66,20 @@ public enum ErrorCode {
 
     INVALID_CONVERSATION_VERSION(8203, "Phiên bản cuộc trò chuyện không hợp lệ", HttpStatus.CONFLICT),
 
+    CONVERSATION_TITLE_REQUIRED(8204, "Please enter a conversation name", HttpStatus.BAD_REQUEST),
+
+    CONVERSATION_TITLE_TOO_LONG(8205, "Conversation name must be at most 120 characters", HttpStatus.BAD_REQUEST),
+
+    // CERTIFICATE CHECK: 8600-8699 (chỉ ProviderService gọi)
+
+    CERTIFICATE_HOLDER_NAME_REQUIRED(8600, "Certificate holder name is required", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_NAME_REQUIRED(8601, "Certificate name is required", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_IMAGE_URL_REQUIRED(8602, "Each certificate file needs a download URL", HttpStatus.BAD_REQUEST),
+
+    TOO_MANY_CERTIFICATE_IMAGES(8603, "A certificate check accepts at most 10 files", HttpStatus.BAD_REQUEST),
+
     // GROQ: 8300-8399
 
     GROQ_UNAVAILABLE(8300, "Không thể kết nối Groq, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),

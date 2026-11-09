@@ -19,6 +19,7 @@ config/     GatewayProperties (gateway.*), GatewayConfig, GatewayPaths (MỌI pa
 security/   SecurityConfig (JWT sớm + CORS), JwtConfig, JwtAuthorityConverter, SecurityErrorHandler, TokenClaims
 filter/     RequestIdFilter, GatewayRequestHeaders (before-filter cho route), TrustedClientIpHeadersFilter
 handler/    SseProxyHandler (route SSE riêng: không read timeout, không buffer)
+            LongRequestProxyHandler (route AIService /api/v1/ai/**: read timeout riêng gateway.ai-read-timeout, 2026-11-09)
 dto/response/APIResponse, exception/ErrorCode + GlobalExceptionHandler
 ```
 

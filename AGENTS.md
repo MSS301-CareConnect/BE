@@ -46,7 +46,7 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | Booking: chọn dịch vụ/thời gian/caregiver, chi phí tạm tính, xác nhận/từ chối, phân công/đổi caregiver, hủy, lịch sử, trạng thái realtime | **Booking** (`BookingService`; giá từng buổi lấy từ Catalog, BK-01) |
 | Ca chăm sóc: nhận ca, bắt đầu/kết thúc, checklist công việc (cho ăn, uống thuốc, vệ sinh…), hoàn tác DONE/SKIPPED về PENDING khi ca đang diễn ra, ghi chú tình trạng, care report | **Booking** (`BookingService` — mỗi `booking_occurrence` là một buổi; checklist/hoàn tác thuộc aggregate CareSession, chỉ caregiver được giao cập nhật) |
 | Đánh giá, phản hồi, khiếu nại cấp 1 (manager) / cấp cao (admin) | **Booking** (`BookingService` — review / complaint gắn với booking; route `/api/v1/feedbacks/**`, `/complaints/**`) |
-| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — cọc, REMAINING, hoàn tiền, hóa đơn / công nợ, chính sách chỉ đọc; xem `PaymentService/AGENTS.md`. Hoa hồng / đối soát chưa làm — D15) |
+| Đặt cọc, hoàn tiền theo % so với ngày thực hiện, hoa hồng & đối soát nền tảng ↔ trung tâm; cấu hình % (admin) | **Payment** (`PaymentService` — cọc, REMAINING, hoàn tiền, hóa đơn / công nợ, chính sách chỉ đọc; xem `PaymentService/AGENTS.md`. Ví 4 role + rút tiền + hoa hồng snapshot từ 2026-11-09 — `docs/2026-11-09-WALLET_PLAN.md`; đối soát với trung tâm vẫn chưa làm) |
 | Thông báo: lịch xác nhận / hủy / hoàn thành / có report mới / lịch mới hoặc đổi lịch | **Booking** (`BookingService` — thông báo in-app + SSE `/api/v1/notifications/stream`) |
 | File / ảnh (chứng chỉ, ảnh care report…): upload, metadata, URL tải có hạn | **Media** (`MediaService`, Cloudflare R2) |
 | Thống kê trung tâm / toàn hệ thống | Reporting (chưa chốt) |
@@ -148,7 +148,8 @@ CareConnect/
 - Mỗi service tự xác minh JWT và tự phân quyền (kể cả khi đã có gateway). Không tin header `X-User-Id` /
   `X-Roles` do client gửi.
 - **API gateway: `ApiGateway/`** — Gateway Server MVC, route `/api/v1/**` tới **cả 6 service** (Identity, CareRecipient,
-  Booking, Provider, CareCatalog, Media) **và PaymentService** (route sẵn, GW-01), **không cắt prefix** (mỗi service
+  Booking, Provider, CareCatalog, Media) **và PaymentService** (route sẵn, GW-01) **và AIService** (`/api/v1/ai/**`, proxy có read
+  timeout riêng, 2026-11-09), **không cắt prefix** (mỗi service
   tự khai báo `/api/v1`), kiểm token sớm, **chuyển nguyên** `Authorization`, cookie (`access_token`, `refresh_token`,
   `XSRF-TOKEN`) và `X-XSRF-TOKEN`; service vẫn tự xác minh. Cookie Identity `Path=/` nên không rewrite path. CORS tập trung ở gateway, gateway xóa `Origin` khi
   chuyển tiếp. Gateway xóa `X-User-*` của client và gắn lại `X-User-Id`/`X-User-Roles` từ JWT **chỉ để log**. JWKS của

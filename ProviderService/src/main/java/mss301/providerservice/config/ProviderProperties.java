@@ -45,6 +45,40 @@ public class ProviderProperties {
     @Valid
     Outbox outbox = new Outbox();
 
+    // AIService qua ApiGateway — đọc ảnh chứng chỉ (bước 4).
+    @Valid
+    Ai ai = new Ai();
+
+    // Hàng chờ kiểm tra chứng chỉ bằng AI (CertificateAiCheckScheduler).
+    @Valid
+    AiCheck aiCheck = new AiCheck();
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Ai {
+        @NotBlank
+        String url;
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class AiCheck {
+        // Số lần gọi AIService tối đa cho một lần kiểm tra trước khi đánh dấu FAILED.
+        @Min(1)
+        int maxAttempts = 5;
+
+        // Thời gian giữ việc khi đang gọi AIService; quá hạn (service chết giữa chừng) thì lần quét sau nhận lại.
+        @NotNull
+        Duration lease = Duration.ofMinutes(3);
+
+        @NotNull
+        Duration maxBackoff = Duration.ofMinutes(30);
+
+        // Số chứng chỉ xử lý mỗi lần quét.
+        @Min(1)
+        int batchSize = 10;
+    }
+
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Outbox {

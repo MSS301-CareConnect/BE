@@ -82,6 +82,8 @@ ai:
     base-url: ${AI_GROQ_BASE_URL:https://api.groq.com/openai/v1}
     api-key: ${AI_GROQ_API_KEY}
     model: ${AI_GROQ_MODEL:qwen/qwen3.8-27b}
+    # Mô hình đọc ảnh chứng chỉ (phải nhận ảnh); để trống = dùng AI_GROQ_MODEL.
+    vision-model: ${AI_GROQ_VISION_MODEL:}
 
     temperature: ${AI_GROQ_TEMPERATURE:0.3}
     max-completion-tokens: ${AI_GROQ_MAX_COMPLETION_TOKENS:1024}
@@ -90,7 +92,7 @@ ai:
     read-timeout: ${AI_GROQ_READ_TIMEOUT:60s}
 
   chat:
-    guest-daily-prompt-limit: ${AI_GUEST_DAILY_PROMPT_LIMIT:5}
+    guest-daily-prompt-limit: ${AI_GUEST_DAILY_PROMPT_LIMIT:3}
     guest-max-prompt-length: ${AI_GUEST_MAX_PROMPT_LENGTH:500}
     customer-max-prompt-length: ${AI_CUSTOMER_MAX_PROMPT_LENGTH:2000}
     max-images: ${AI_CHAT_MAX_IMAGES:3}
@@ -98,6 +100,11 @@ ai:
     max-total-image-size-mb: ${AI_CHAT_MAX_TOTAL_IMAGE_SIZE_MB:20}
     max-history-messages: ${AI_CHAT_MAX_HISTORY_MESSAGES:20}
     guest-timezone: ${AI_GUEST_TIMEZONE:Asia/Ho_Chi_Minh}
+
+  certificate:
+    max-images: ${AI_CERTIFICATE_MAX_IMAGES:5}
+    temperature: ${AI_CERTIFICATE_TEMPERATURE:0.0}
+    timezone: ${AI_CERTIFICATE_TIMEZONE:Asia/Ho_Chi_Minh}
 
   media:
     url: ${AI_MEDIA_URL}

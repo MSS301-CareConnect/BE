@@ -7,6 +7,7 @@ import mss301.paymentservice.dto.response.RefundResponse;
 import mss301.paymentservice.entity.Payment;
 import mss301.paymentservice.entity.Refund;
 import mss301.paymentservice.enums.CancelledBy;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundReason;
 import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.util.RefundCalculator;
@@ -35,7 +36,7 @@ public interface RefundMapper {
     Refund toRefund(Payment payment, UUID attemptId, UUID occurrenceId, UUID complaintId, BigDecimal amount,
                     BigDecimal feeAmount,
                     RefundReason reason, CancelledBy cancelledBy, UUID requestedBy, String idempotencyKey,
-                    RefundStatus status, Instant nextAttemptAt);
+                    RefundStatus status, Instant nextAttemptAt, RefundChannel channel);
 
     RefundResponse toResponse(Refund refund);
 

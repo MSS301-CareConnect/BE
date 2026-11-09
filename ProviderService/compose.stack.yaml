@@ -33,6 +33,7 @@ services:
       PROVIDER_CARE_CATALOG_URL: http://api-gateway:8080
       PROVIDER_BOOKING_URL: http://api-gateway:8080
       PROVIDER_MEDIA_URL: http://api-gateway:8080
+      PROVIDER_AI_URL: http://api-gateway:8080
     ports:
       - "127.0.0.1:${PROVIDER_SERVER_PORT:-8084}:8084"
     # Identity (JWKS) chỉ được gọi khi có request — không cần chờ lúc khởi động.

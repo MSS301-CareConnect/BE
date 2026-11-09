@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.apigateway.filter.GatewayRequestHeaders;
 import mss301.apigateway.filter.RequestIdFilter;
+import mss301.apigateway.handler.LongRequestProxyHandler;
 import mss301.apigateway.handler.SseProxyHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -78,6 +79,17 @@ public class RouteConfig {
         return forward("media", GatewayPaths.MEDIA_ROUTES, gatewayProperties.getMediaUrl());
     }
 
+    // AIService: proxy riêng với read timeout dài (gateway.ai-read-timeout) thay cho read timeout chung 10s.
+    @Bean
+    public RouterFunction<ServerResponse> aiRoutes(@Value("${spring.http.clients.connect-timeout:2s}") Duration connectTimeout) {
+        LongRequestProxyHandler aiProxyHandler = new LongRequestProxyHandler(gatewayProperties.getAiUrl(), connectTimeout,
+                gatewayProperties.getAiReadTimeout());
+        return route("ai")
+                .route(path(GatewayPaths.AI_ROUTES), aiProxyHandler)
+                .before(GatewayRequestHeaders.sanitize())
+                .build();
+    }
+
     // Swagger tổng hợp: swagger-ui của gateway đọc OpenAPI của từng service qua các route này.
     @Bean
     public RouterFunction<ServerResponse> apiDocsRoutes() {
@@ -89,7 +101,8 @@ public class RouteConfig {
                 .and(docs("care-catalog-api-docs", GatewayPaths.CARE_CATALOG_API_DOCS,
                         gatewayProperties.getCareCatalogUrl()))
                 .and(docs("media-api-docs", GatewayPaths.MEDIA_API_DOCS, gatewayProperties.getMediaUrl()))
-                .and(docs("payment-api-docs", GatewayPaths.PAYMENT_API_DOCS, gatewayProperties.getPaymentUrl()));
+                .and(docs("payment-api-docs", GatewayPaths.PAYMENT_API_DOCS, gatewayProperties.getPaymentUrl()))
+                .and(docs("ai-api-docs", GatewayPaths.AI_API_DOCS, gatewayProperties.getAiUrl()));
     }
 
     private RouterFunction<ServerResponse> forward(String routeId, String[] paths, String targetUrl) {

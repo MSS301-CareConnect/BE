@@ -75,6 +75,10 @@ public enum ErrorCode {
     CERTIFICATE_NOT_FOUND(4250, "Certificate does not exist", HttpStatus.NOT_FOUND),
     CERTIFICATE_VERSION_CONFLICT(4251, "The certificate was updated, please reload", HttpStatus.CONFLICT),
     CERTIFICATE_DATE_INVALID(4252, "Expiry date must be on or after the issue date", HttpStatus.BAD_REQUEST),
+    // Kiểm tra chứng chỉ bằng AI (2026-11-09).
+    CERTIFICATE_IMAGE_REQUIRED(4255, "Add at least one photo of the certificate before confirming it", HttpStatus.CONFLICT),
+    CERTIFICATE_RISK_REASON_REQUIRED(4256, "Enter a reason to approve a certificate without a low or medium AI risk result", HttpStatus.BAD_REQUEST),
+    CERTIFICATE_AI_CHECK_NOT_ALLOWED(4257, "AI can only check a certificate the center has confirmed", HttpStatus.CONFLICT),
 
     WORK_SHIFT_NOT_FOUND(4300, "Work shift does not exist", HttpStatus.NOT_FOUND),
     WORK_SHIFT_VERSION_CONFLICT(4301, "The work shift was updated, please reload", HttpStatus.CONFLICT),
@@ -134,7 +138,8 @@ public enum ErrorCode {
     SERVICE_TOKEN_UNAVAILABLE(4700, "Could not authenticate with a dependent service, please try again later", HttpStatus.SERVICE_UNAVAILABLE),
     CATALOG_UNAVAILABLE(4701, "Catalog service is temporarily unavailable, please try again", HttpStatus.SERVICE_UNAVAILABLE),
     // Spec ghi 4700 nhưng 4700 đã là SERVICE_TOKEN_UNAVAILABLE (PRV-01) → dùng 4702.
-    BOOKING_SERVICE_UNAVAILABLE(4702, "Booking service is temporarily unavailable, please try again", HttpStatus.SERVICE_UNAVAILABLE);
+    BOOKING_SERVICE_UNAVAILABLE(4702, "Booking service is temporarily unavailable, please try again", HttpStatus.SERVICE_UNAVAILABLE),
+    AI_SERVICE_UNAVAILABLE(4704, "AI service is temporarily unavailable, please try again later", HttpStatus.SERVICE_UNAVAILABLE);
     private int code;
     private String message;
     private HttpStatusCode statusCode;

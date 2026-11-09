@@ -27,6 +27,7 @@ import mss301.paymentservice.enums.InvoiceStatus;
 import mss301.paymentservice.enums.OccurrenceFinalStatus;
 import mss301.paymentservice.enums.PaymentStatus;
 import mss301.paymentservice.enums.PaymentType;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundReason;
 import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.enums.RoleCode;
@@ -43,6 +44,7 @@ import mss301.paymentservice.repository.RemainingInvoiceRepository;
 import mss301.paymentservice.service.DepositForfeitureService;
 import mss301.paymentservice.service.PaymentTransactionService;
 import mss301.paymentservice.service.RefundService;
+import mss301.paymentservice.service.WalletService;
 import mss301.paymentservice.util.RefundCalculator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -94,6 +96,7 @@ public class RefundServiceImpl implements RefundService {
     PaymentTransactionRepository paymentTransactionRepository;
     PaymentTransactionService paymentTransactionService;
     DepositForfeitureService depositForfeitureService;
+    WalletService walletService;
     RefundMapper refundMapper;
     Clock clock;
 
@@ -199,6 +202,12 @@ public class RefundServiceImpl implements RefundService {
                 log.warn("Refund {}: occurrence {} has no financial record, skipped", key, occurrenceId);
                 continue;
             }
+            if (occurrenceFinancial.getFinalStatus() != null) {
+                // Buổi đã có kết cục (hủy / vắng / hoàn tất) qua lệnh khác: không tính phí giữ cọc hay hoàn lần hai.
+                log.warn("Refund {}: occurrence {} already {}, skipped", key, occurrenceId,
+                        occurrenceFinancial.getFinalStatus());
+                continue;
+            }
             inputs.add(new RefundCalculator.OccurrenceInput(occurrenceId, occurrenceFinancial.getStartAt(), null, false,
                     occurrenceFinancial.getPriceAmount(), paidAmountOf(occurrenceFinancial)));
         }
@@ -229,6 +238,10 @@ public class RefundServiceImpl implements RefundService {
         OccurrenceFinalStatus finalStatus = request.getReason() == RefundReason.CAREGIVER_MISSED
                 ? OccurrenceFinalStatus.MISSED
                 : OccurrenceFinalStatus.CANCELLED;
+        // Ví (phương án A): khách tự hủy → tiền hoàn vào ví khách, mọi lý do khác hoàn qua cổng như cũ.
+        RefundChannel channel = request.getReason() == RefundReason.CUSTOMER_CANCEL
+                ? RefundChannel.WALLET
+                : RefundChannel.GATEWAY;
         List<Refund> refunds = new ArrayList<>(alreadyCreated);
         Instant now = clock.instant();
         for (RefundCalculator.Line line : lines) {
@@ -255,7 +268,7 @@ public class RefundServiceImpl implements RefundService {
                 remaining = remaining.subtract(part);
                 Refund refund = refundRepository.save(refundMapper.toRefund(payment, null, line.occurrenceId(), null,
                         part, fee, request.getReason(), request.getCancelledBy(), request.getRequestedBy(), key,
-                        RefundStatus.REFUND_PENDING, now));
+                        RefundStatus.REFUND_PENDING, now, channel));
                 paymentTransactionService.record(bookingId, payment.getId(), refund.getId(), null,
                         TransactionEventType.REFUND_REQUESTED, refund.getAmount(), key,
                         "reason=" + request.getReason() + " rule=" + line.rule() + " fee=" + fee, null);
@@ -312,12 +325,19 @@ public class RefundServiceImpl implements RefundService {
             }
             Refund refund = refundRepository.save(refundMapper.toRefund(payment, null, null, request.getComplaintId(), part,
                     BigDecimal.ZERO, RefundReason.COMPLAINT_ACCEPTED, CancelledBy.ADMIN, request.getDecidedBy(), key,
-                    RefundStatus.REFUND_PENDING, now));
+                    RefundStatus.REFUND_PENDING, now, RefundChannel.GATEWAY));
             paymentTransactionService.record(bookingId, payment.getId(), refund.getId(), null,
                     TransactionEventType.REFUND_REQUESTED, part, key, "complaint=" + request.getComplaintId(), null);
             refunds.add(refund);
             remaining = remaining.subtract(part);
         }
+        // Ví (mục 6): tiền thật sự hoàn cho khiếu nại (không tính phần chỉ giảm hóa đơn) trừ lại ví trung tâm nếu booking đã
+        // được cộng cho trung tâm — trung tâm có thể âm (nợ nền tảng).
+        BigDecimal refundedTotal = BigDecimal.ZERO;
+        for (Refund refund : refunds) {
+            refundedTotal = refundedTotal.add(refund.getAmount());
+        }
+        walletService.debitComplaintRefund(financial.getCenterId(), bookingId, request.getComplaintId(), refundedTotal);
         log.info("Complaint refund {} for booking {}: {} refund(s)", key, bookingId, refunds.size());
         return buildCreateResponse(refunds);
     }
@@ -357,7 +377,8 @@ public class RefundServiceImpl implements RefundService {
             return;
         }
         Refund refund = refundRepository.save(refundMapper.toRefund(payment, null, null, null, room, BigDecimal.ZERO,
-                reason, CancelledBy.SYSTEM, null, key, RefundStatus.REFUND_PENDING, clock.instant()));
+                reason, CancelledBy.SYSTEM, null, key, RefundStatus.REFUND_PENDING, clock.instant(),
+                RefundChannel.GATEWAY));
         paymentTransactionService.record(payment.getBookingId(), paymentId, refund.getId(), null,
                 TransactionEventType.REFUND_REQUESTED, room, key, "reason=" + reason, null);
         if (financial != null) {
@@ -391,7 +412,7 @@ public class RefundServiceImpl implements RefundService {
         Payment payment = attempt.getPayment();
         Refund refund = refundRepository.save(refundMapper.toRefund(payment, attempt.getId(), null, null,
                 attempt.getAmount(), BigDecimal.ZERO, reason, CancelledBy.SYSTEM, null, key, RefundStatus.REFUND_PENDING,
-                clock.instant()));
+                clock.instant(), RefundChannel.GATEWAY));
         paymentTransactionService.record(payment.getBookingId(), payment.getId(), refund.getId(), payment.getInvoiceId(),
                 TransactionEventType.REFUND_REQUESTED, attempt.getAmount(), key,
                 "reason=" + reason + " attempt=" + attempt.getReference(), null);
@@ -442,7 +463,7 @@ public class RefundServiceImpl implements RefundService {
             occurrenceFinancial.setRefundedAmount(occurrenceFinancial.getRefundedAmount().add(line.refundAmount()));
             Refund refund = refundRepository.save(refundMapper.toRefund(deposit, null, line.occurrenceId(), null,
                     line.refundAmount(), line.feeAmount(), RefundReason.PAYMENT_OVERDUE, CancelledBy.SYSTEM, null, key,
-                    RefundStatus.REFUND_PENDING, now));
+                    RefundStatus.REFUND_PENDING, now, RefundChannel.GATEWAY));
             paymentTransactionService.record(bookingId, deposit.getId(), refund.getId(), null,
                     TransactionEventType.REFUND_REQUESTED, refund.getAmount(), key,
                     "reason=PAYMENT_OVERDUE fee=" + line.feeAmount(), null);

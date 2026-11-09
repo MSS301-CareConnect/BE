@@ -9,3 +9,4 @@ include:
   - MediaService/compose.stack.yaml
   - ApiGateway/compose.stack.yaml
   - PaymentService/compose.stack.yaml
+  - AIService/compose.stack.yaml

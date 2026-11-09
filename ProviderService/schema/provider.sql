@@ -348,3 +348,31 @@ CREATE TABLE provider_outbox (
     CONSTRAINT uk_provider_outbox_event UNIQUE (center_id, event_type, sequence_no)
 );
 CREATE INDEX idx_provider_outbox_due ON provider_outbox (status, next_attempt_at);
+
+-- 2026-11-09 — Kiểm tra chứng chỉ bằng AI (xem schema/changes/2026-11-09_certificate_ai_check.sql)
+
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_check_id uuid;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_check_status varchar(20);
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_check_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_next_attempt_at timestamptz;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_risk_level varchar(20);
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_warnings jsonb;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_extracted jsonb;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_model varchar(120);
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_checked_at timestamptz;
+ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_last_error varchar(100);
+
+ALTER TABLE certificates DROP CONSTRAINT IF EXISTS certificates_ai_check_status_check;
+ALTER TABLE certificates ADD CONSTRAINT certificates_ai_check_status_check
+    CHECK (ai_check_status IS NULL OR ai_check_status IN ('QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'));
+ALTER TABLE certificates DROP CONSTRAINT IF EXISTS certificates_ai_risk_level_check;
+ALTER TABLE certificates ADD CONSTRAINT certificates_ai_risk_level_check
+    CHECK (ai_risk_level IS NULL OR ai_risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'UNDETERMINED'));
+ALTER TABLE certificates DROP CONSTRAINT IF EXISTS certificates_ai_check_attempts_check;
+ALTER TABLE certificates ADD CONSTRAINT certificates_ai_check_attempts_check CHECK (ai_check_attempts >= 0);
+
+-- Scheduler quét chứng chỉ đến lượt kiểm tra (QUEUED, hoặc PROCESSING quá hạn lease).
+CREATE INDEX IF NOT EXISTS idx_certificates_ai_check_due
+    ON certificates (ai_check_status, ai_next_attempt_at)
+    WHERE deleted_at IS NULL AND ai_check_status IN ('QUEUED', 'PROCESSING');
+

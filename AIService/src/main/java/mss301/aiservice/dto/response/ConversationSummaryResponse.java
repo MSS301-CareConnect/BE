@@ -22,4 +22,5 @@ public class ConversationSummaryResponse {
     String title;
     Instant createdAt;
     Instant updatedAt;
+    Long version;
 }

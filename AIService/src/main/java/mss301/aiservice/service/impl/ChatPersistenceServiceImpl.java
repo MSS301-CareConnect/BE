@@ -166,6 +166,27 @@ public class ChatPersistenceServiceImpl implements ChatPersistenceService {
 
     @Override
     @Transactional
+    public ChatConversation updateTitle(UUID userId, UUID conversationId, String title, Long version) {
+        ChatConversation conversation = chatConversationRepository
+                .findByConversationIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
+                .orElseThrow(() -> new AppException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (!conversation.getVersion().equals(version)) {
+            throw new AppException(ErrorCode.INVALID_CONVERSATION_VERSION);
+        }
+
+        String normalizedTitle = title == null ? "" : title.trim();
+
+        if (normalizedTitle.isEmpty()) {
+            throw new AppException(ErrorCode.CONVERSATION_TITLE_REQUIRED);
+        }
+
+        conversation.setTitle(normalizedTitle);
+        return chatConversationRepository.saveAndFlush(conversation);
+    }
+
+    @Override
+    @Transactional
     public List<UUID> deleteConversation(UUID userId, UUID conversationId) {
         ChatConversation conversation = chatConversationRepository.findByConversationIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
                         .orElseThrow(() -> new AppException(ErrorCode.CONVERSATION_NOT_FOUND));

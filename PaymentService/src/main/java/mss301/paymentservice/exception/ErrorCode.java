@@ -45,7 +45,22 @@ public enum ErrorCode {
     TEXT_TOO_LONG(6036, "Content is too long", HttpStatus.BAD_REQUEST),
     INVOICE_NOT_WAIVABLE(6037, "Only pending or overdue invoices can be waived", HttpStatus.CONFLICT),
     BOOKING_COMMAND_REJECTED(6038, "BookingService rejected the update", HttpStatus.CONFLICT),
-    OCCURRENCE_STATUS_REQUIRED(6039, "Final occurrence status is required", HttpStatus.BAD_REQUEST);
+    OCCURRENCE_STATUS_REQUIRED(6039, "Final occurrence status is required", HttpStatus.BAD_REQUEST),
+    // Ví + rút tiền (2026-11-09).
+    WALLET_NOT_FOUND(6040, "Wallet not found", HttpStatus.NOT_FOUND),
+    INSUFFICIENT_WALLET_BALANCE(6041, "The amount exceeds your available balance", HttpStatus.CONFLICT),
+    WITHDRAWAL_NOT_FOUND(6042, "Withdrawal request not found", HttpStatus.NOT_FOUND),
+    WITHDRAWAL_STATUS_INVALID(6043, "The withdrawal request is no longer in a state that allows this action",
+            HttpStatus.CONFLICT),
+    WITHDRAWAL_AMOUNT_REQUIRED(6044, "Please enter the amount to withdraw", HttpStatus.BAD_REQUEST),
+    WITHDRAWAL_AMOUNT_INVALID(6045, "The amount must be a positive whole number of dong", HttpStatus.BAD_REQUEST),
+    BANK_NAME_REQUIRED(6046, "Please enter the bank name", HttpStatus.BAD_REQUEST),
+    BANK_ACCOUNT_NUMBER_REQUIRED(6047, "Please enter the account number", HttpStatus.BAD_REQUEST),
+    BANK_ACCOUNT_NUMBER_INVALID(6048, "The account number must be 6 to 20 digits", HttpStatus.BAD_REQUEST),
+    ACCOUNT_HOLDER_NAME_REQUIRED(6049, "Please enter the account holder name", HttpStatus.BAD_REQUEST),
+    REJECT_REASON_REQUIRED(6050, "Please enter a reason for rejecting", HttpStatus.BAD_REQUEST),
+    TRANSFER_REFERENCE_REQUIRED(6051, "Please enter the bank transfer reference", HttpStatus.BAD_REQUEST),
+    WALLET_NOT_WITHDRAWABLE(6052, "This wallet cannot be withdrawn from", HttpStatus.FORBIDDEN);
 
     private final int code;
     private final String message;

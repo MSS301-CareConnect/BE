@@ -39,6 +39,7 @@ class ApiGatewayUpstreamDownTests {
         registry.add("gateway.care-catalog-url", () -> CLOSED_URL);
         registry.add("gateway.media-url", () -> CLOSED_URL);
         registry.add("gateway.payment-url", () -> CLOSED_URL);
+        registry.add("gateway.ai-url", () -> CLOSED_URL);
         registry.add("gateway.allowed-origins", () -> "https://web.test");
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", () -> CLOSED_URL + "/.well-known/jwks.json");

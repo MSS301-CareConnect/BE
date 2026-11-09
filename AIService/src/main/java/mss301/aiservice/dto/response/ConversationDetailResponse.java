@@ -24,4 +24,5 @@ public class ConversationDetailResponse {
     List<ChatMessageResponse> messages;
     Instant createdAt;
     Instant updatedAt;
+    Long version;
 }

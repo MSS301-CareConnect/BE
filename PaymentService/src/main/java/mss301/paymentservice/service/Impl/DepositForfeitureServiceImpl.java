@@ -18,6 +18,7 @@ import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.DepositForfeitureMapper;
 import mss301.paymentservice.repository.DepositForfeitureRepository;
 import mss301.paymentservice.service.DepositForfeitureService;
+import mss301.paymentservice.service.WalletService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
 
     DepositForfeitureRepository depositForfeitureRepository;
     DepositForfeitureMapper depositForfeitureMapper;
+    WalletService walletService;
 
     // MANDATORY: commit / rollback cùng lệnh hoàn tiền tạo ra phần bị giữ. Buổi đã có caregiver → caregiver hưởng toàn bộ.
     @Override
@@ -53,8 +55,10 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
         ForfeitureBeneficiary beneficiary = occurrenceFinancial.getCaregiverUserId() == null
                 ? ForfeitureBeneficiary.CENTER
                 : ForfeitureBeneficiary.CAREGIVER;
-        depositForfeitureRepository.save(depositForfeitureMapper.toForfeiture(occurrenceFinancial, paymentId, amount,
-                beneficiary, reason, rule, idempotencyKey));
+        DepositForfeiture forfeiture = depositForfeitureRepository.save(depositForfeitureMapper.toForfeiture(
+                occurrenceFinancial, paymentId, amount, beneficiary, reason, rule, idempotencyKey));
+        // Ví (I1): phần bị giữ vào ví caregiver được giao, buổi chưa phân công thì vào ví trung tâm — cùng transaction.
+        walletService.creditForfeiture(forfeiture);
         log.info("Occurrence {} of booking {}: {} kept from the customer goes to {}", occurrenceFinancial.getOccurrenceId(),
                 occurrenceFinancial.getBookingId(), amount, beneficiary);
     }

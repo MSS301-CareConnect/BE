@@ -27,5 +27,7 @@ public interface ChatPersistenceService {
 
     List<ChatMessageMedia> getMessageMedia(List<UUID> chatMessageIds);
 
+    ChatConversation updateTitle(UUID userId, UUID conversationId, String title, Long version);
+
     List<UUID> deleteConversation(UUID userId, UUID conversationId);
 }

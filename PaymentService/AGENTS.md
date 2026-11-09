@@ -72,3 +72,18 @@
 - `-Dpayment.testing.postgres=true` (+ `-Dpayment.testing.postgres-url=...`, mặc định `localhost:55497`, user `postgres`,
   password `payment_test_only`): chạy toàn bộ trên PostgreSQL thật với `schema/payment.sql` + `ddl-auto: validate`.
 - Unit test thuần: `DepositAllocatorTests`, `RefundCalculatorTests`, `VnPaySignerTest`.
+
+## Ví (2026-11-09, `../docs/2026-11-09-WALLET_PLAN.md`)
+
+- Mọi biến động số dư qua `WalletService.post` (MANDATORY, cùng transaction với sự kiện tiền): khóa dòng ví, kiểm trùng
+  `reference_key` (unique `(wallet_id, reference_key)` ở DB), kiểm số dư, ghi `wallet_transactions` kèm số dư trước / sau.
+  Không `setAvailableBalance` ở chỗ khác. Thời điểm lấy từ `Clock`.
+- Khóa sổ: `REFUND:<refundId>`, `FORFEIT:<occurrenceId>` (một buổi chỉ bị giữ cọc một lần), `SETTLE:` / `COMMISSION:<occurrenceId>`,
+  `COMPLAINT:<complaintId>`, `WD_HOLD|WD_RELEASE|WD_PAID:<withdrawalId>`.
+- Hoàn lý do `CUSTOMER_CANCEL` → `refunds.channel = WALLET`: dispatcher không gọi cổng, cộng ví khách khi đánh REFUNDED.
+  Lý do khác vẫn qua cổng. Cọc bị giữ: caregiver của buổi, chưa có người thì ví trung tâm (`DepositForfeitureServiceImpl`).
+- Buổi `COMPLETED` / `CUSTOMER_NO_SHOW` được cộng bởi `WalletSettlementScheduler` (hỏi payment-context, không cần sự kiện
+  Booking): trung tâm nhận tiền khách đã trả cho buổi − `commissionPercent` snapshot, nền tảng nhận hoa hồng. Booking cũ
+  (thu sau hoàn tất) không cộng tự động.
+- Thứ tự khóa: `booking_financials` → `payments` → ví (trung tâm trước nền tảng); `wallet_withdrawals` → ví.
+

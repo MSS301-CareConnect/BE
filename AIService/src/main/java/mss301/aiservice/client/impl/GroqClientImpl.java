@@ -34,14 +34,19 @@ public class GroqClientImpl implements GroqClient {
 
     @Override
     public GroqResult generateAnswer(List<GroqMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
+        return generateAnswer(messages, aiProperties.getGroq().getModel(), aiProperties.getGroq().getTemperature());
+    }
+
+    @Override
+    public GroqResult generateAnswer(List<GroqMessageRequest> messages, String model, double temperature) {
+        if (messages == null || messages.isEmpty() || model == null || model.isBlank()) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
         GroqChatRequest request = GroqChatRequest.builder()
-                        .model(aiProperties.getGroq().getModel())
+                        .model(model)
                         .messages(messages)
-                        .temperature(aiProperties.getGroq().getTemperature())
+                        .temperature(temperature)
                         .maxCompletionTokens(aiProperties.getGroq().getMaxCompletionTokens())
                         .stream(false)
                         .build();

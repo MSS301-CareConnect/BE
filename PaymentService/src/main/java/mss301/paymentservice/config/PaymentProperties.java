@@ -26,6 +26,7 @@ public class PaymentProperties {
     Invoice invoice = new Invoice();
     Outbox outbox = new Outbox();
     Expiry expiry = new Expiry();
+    Wallet wallet = new Wallet();
 
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -130,5 +131,14 @@ public class PaymentProperties {
         // querydr trả "chưa rõ" quá lâu → đánh EXPIRED (IPN trễ hơn nữa xử lý như trả trễ).
         Duration maxUnknown = Duration.ofHours(24);
         int batchSize = 50;
+    }
+
+    // Ví (2026-11-09): job cộng tiền buổi hoàn tất vào ví trung tâm / nền tảng.
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Wallet {
+        // Chỉ hỏi Booking về buổi đã bắt đầu quá khoảng này (buổi đang diễn ra chưa có kết cục).
+        Duration settlementGrace = Duration.ofHours(1);
+        int settlementBatchSize = 100;
     }
 }

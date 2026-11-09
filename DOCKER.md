@@ -1,6 +1,6 @@
 # Chạy toàn bộ CareConnect bằng Docker
 
-Một Compose project (`careconnect`, file [compose.yaml](compose.yaml)) chạy 7 service Spring Boot và hạ tầng riêng của
+Một Compose project (`careconnect`, file [compose.yaml](compose.yaml)) chạy 9 service Spring Boot và hạ tầng riêng của
 từng service:
 
 | Service (tên trên mạng Docker) | Port host | Ghi chú |
@@ -13,6 +13,7 @@ từng service:
 | `booking-service` | 8085 | |
 | `media-service` | 8086 | upload lên Cloudflare R2 (cần `MEDIA_R2_*` trong `.env`) |
 | `payment-service` | 8087 | Đặt cọc VNPay, IPN; cần `PaymentService/.env` (xem `.env.example`) |
+| `ai-service` | 8088 | Chatbot + đọc ảnh chứng chỉ (Groq); cần `AIService/.env` (`AI_GROQ_API_KEY`, client SERVICE `ai`) |
 | `identity-postgres` / `identity-redis` | 5441 / 6381 | |
 | `care-recipient-postgres` | 5442 | |
 | `care-catalog-postgres` | 5443 | |
@@ -20,6 +21,7 @@ từng service:
 | `booking-postgres` | 5445 | |
 | `media-postgres` | 5446 | |
 | `payment-postgres` | 5447 | |
+| `ai-postgres` | 5448 | |
 
 Port host lấy từ `.env` của service (`*_SERVER_PORT`, `*_DB_PORT`, `IDENTITY_REDIS_PORT`), mặc định như bảng, chỉ
 bind `127.0.0.1`. Trong container, service gọi nhau **qua gateway** (`http://api-gateway:8080` cho mọi `*_URL` của
@@ -28,7 +30,7 @@ service (`GATEWAY_*_URL`). Các URL `localhost` trong `.env` được ghi đè t
 
 ## Cấu trúc
 
-- `compose.yaml` — chỉ `include` 8 file `<Service>/compose.stack.yaml` (PaymentService bật từ 2026-10-28). Compose đọc biến `${...}` của mỗi file từ
+- `compose.yaml` — chỉ `include` 9 file `<Service>/compose.stack.yaml` (PaymentService bật từ 2026-10-28). Compose đọc biến `${...}` của mỗi file từ
   `<Service>/.env` cạnh nó, nên **vẫn dùng `.env` riêng từng service như trước**, không có file secret chung.
 - `<Service>/Dockerfile` — build JAR bằng Maven Wrapper của service rồi chạy trên JRE 21 (user không phải root).
   `.dockerignore` chỉ gửi `.mvn/`, `mvnw`, `pom.xml`, `src/` — `.env` và `keys/` không bao giờ vào image.
@@ -127,6 +129,10 @@ Mở psql: `docker compose exec identity-postgres psql -U <IDENTITY_DB_USERNAME>
 - PaymentService có trong stack từ 2026-10-28 (volume `paymentservice_payment_postgres`, `start.bat` tự tạo khi
   chưa có). Cần client SERVICE `payment` đăng ký trong `IDENTITY_SERVICE_CLIENTS`. E2E (`Run-E2E.ps1`) vẫn thay Payment
   bằng `scripts/e2e/payment_stub.py`.
+- AIService có trong stack từ 2026-11-09 (volume `aiservice_ai_postgres`, `start.bat` tự tạo khi chưa có; DB mới được
+  áp `AIService/schema/ai.sql`). Cần client SERVICE `ai` trong `IDENTITY_SERVICE_CLIENTS` (upload ảnh chat lên
+  MediaService) và `AI_GROQ_API_KEY`. Gateway gọi AIService bằng proxy riêng có read timeout `GATEWAY_AI_READ_TIMEOUT`
+  (mặc định 90s) vì Groq có thể trả lời chậm hơn read timeout chung 10s.
 - Port chỉ mở trên `127.0.0.1`. Thiết bị thật trong LAN (app mobile) không gọi được trực tiếp — dùng emulator
   (`10.0.2.2:8080`) hoặc đổi bind trong `compose.stack.yaml` khi cần.
 - Build image bỏ qua test (`-DskipTests`); test vẫn chạy bằng `.\mvnw.cmd test` trong từng service.

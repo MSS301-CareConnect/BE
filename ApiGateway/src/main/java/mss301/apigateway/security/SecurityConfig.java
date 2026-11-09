@@ -53,7 +53,11 @@ public class SecurityConfig {
             toMatcher(null, Stream.concat(
                     Stream.of(GatewayPaths.IDENTITY_TOKEN_FLOW_ENDPOINTS),
                     Stream.of(GatewayPaths.DOCUMENTATION_ENDPOINTS)).toArray(String[]::new)),
-            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_ENDPOINTS));
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_AI_ENDPOINTS));
+    // Public nhưng vẫn có thể mang cookie đăng nhập: gateway không xác thực, AIService tự đọc token để phân biệt khách
+    // và người dùng đã đăng nhập (token hỏng → AIService trả 401, FE refresh rồi gửi lại).
+    RequestMatcher optionalAuthEndpoints = toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS);
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -62,6 +66,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(publicEndpoints).permitAll()
+                        .requestMatchers(optionalAuthEndpoints).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)

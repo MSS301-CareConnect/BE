@@ -9,7 +9,9 @@ import mss301.aiservice.client.GroqMessageFactory;
 import mss301.aiservice.client.dto.ChatMediaUpload;
 import mss301.aiservice.client.dto.GroqMessageRequest;
 import mss301.aiservice.client.dto.GroqResult;
+import mss301.aiservice.config.AIProperties;
 import mss301.aiservice.dto.request.ChatPromptRequest;
+import mss301.aiservice.dto.request.ConversationUpdateRequest;
 import mss301.aiservice.dto.response.*;
 import mss301.aiservice.entity.ChatConversation;
 import mss301.aiservice.entity.ChatMessage;
@@ -37,6 +39,7 @@ public class ChatServiceImpl implements ChatService {
     GroqMessageFactory groqMessageFactory;
     GroqClient groqClient;
     ChatMapper chatMapper;
+    AIProperties aiProperties;
     Clock clock;
 
 
@@ -51,7 +54,24 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public APIResponse<List<ConversationSummaryResponse>> getConversations(UUID userId) {
+    public APIResponse<ChatQuotaResponse> getQuota(UUID userId, HttpServletRequest httpServletRequest) {
+        AIProperties.Chat chat = aiProperties.getChat();
+        boolean guest = userId == null;
+
+        // Khách: số lượt còn lại trong ngày, không gửi ảnh. Người đăng nhập (mọi role): không giới hạn lượt, tối đa N ảnh.
+        Integer dailyPromptLimit = guest ? chat.getGuestDailyPromptLimit() : null;
+        Integer remainingPrompts = guest ? guestUsageService.getRemainingPrompts(httpServletRequest) : null;
+        int maxPromptLength = guest ? chat.getGuestMaxPromptLength() : chat.getCustomerMaxPromptLength();
+        int maxImages = guest ? 0 : chat.getMaxImages();
+
+        ChatQuotaResponse response = chatMapper.toQuotaResponse(guest, dailyPromptLimit, remainingPrompts,
+                maxPromptLength, !guest, maxImages, chat.getMaxImageSizeMb(), chat.getMaxTotalImageSizeMb());
+
+        return APIResponse.success("Lấy hạn mức trợ lý AI thành công", response);
+    }
+
+    @Override
+    public APIResponse<List<ConversationSummaryResponse>> list(UUID userId) {
         List<ChatConversation> conversations = chatPersistenceService.getConversations(userId);
         List<ConversationSummaryResponse> responses = chatMapper.toConversationSummaries(conversations);
 
@@ -59,7 +79,7 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public APIResponse<ConversationDetailResponse> getConversation(UUID userId, UUID conversationId) {
+    public APIResponse<ConversationDetailResponse> get(UUID userId, UUID conversationId) {
         ChatConversation conversation = chatPersistenceService.getConversation(userId, conversationId);
 
         List<ChatMessage> messages = chatPersistenceService.getMessages(userId, conversationId);
@@ -102,7 +122,17 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public APIResponse<Void> deleteConversation(UUID userId, UUID conversationId) {
+    public APIResponse<ConversationSummaryResponse> update(UUID userId, UUID conversationId,
+                                                          ConversationUpdateRequest request) {
+        ChatConversation conversation = chatPersistenceService.updateTitle(userId, conversationId,
+                request.getTitle(), request.getVersion());
+        ConversationSummaryResponse response = chatMapper.toConversationSummary(conversation);
+
+        return APIResponse.success("Đổi tên cuộc trò chuyện thành công", response);
+    }
+
+    @Override
+    public APIResponse<Void> delete(UUID userId, UUID conversationId) {
         List<UUID> mediaFileIds = chatPersistenceService.deleteConversation(userId, conversationId);
         chatMediaService.deleteQuietly(mediaFileIds);
 

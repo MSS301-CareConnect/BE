@@ -54,6 +54,7 @@ public final class TestUpstreams {
     private final HttpServer careCatalogServer;
     private final HttpServer mediaServer;
     private final HttpServer paymentServer;
+    private final HttpServer aiServer;
 
     private TestUpstreams() {
         try {
@@ -71,6 +72,7 @@ public final class TestUpstreams {
             careCatalogServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             mediaServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             paymentServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            aiServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -88,6 +90,16 @@ public final class TestUpstreams {
         careCatalogServer.createContext("/", exchange -> echo(exchange, "care-catalog"));
         mediaServer.createContext("/", exchange -> echo(exchange, "media"));
         paymentServer.createContext("/", exchange -> echo(exchange, "payment"));
+        // AI chậm hơn read timeout chung của test (1s) nhưng trong ai-read-timeout → vẫn phải trả 200.
+        aiServer.createContext("/api/v1/ai/slow", exchange -> {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            echo(exchange, "ai");
+        });
+        aiServer.createContext("/", exchange -> echo(exchange, "ai"));
         // Nhiều thread: /users/slow không được chặn các request khác (JWKS…).
         identityServer.setExecutor(Executors.newCachedThreadPool());
         careRecipientServer.setExecutor(Executors.newCachedThreadPool());
@@ -96,11 +108,13 @@ public final class TestUpstreams {
         careCatalogServer.setExecutor(Executors.newCachedThreadPool());
         mediaServer.setExecutor(Executors.newCachedThreadPool());
         paymentServer.setExecutor(Executors.newCachedThreadPool());
+        aiServer.setExecutor(Executors.newCachedThreadPool());
         bookingServer.start();
         providerServer.start();
         careCatalogServer.start();
         mediaServer.start();
         paymentServer.start();
+        aiServer.start();
         identityServer.start();
         careRecipientServer.start();
     }
@@ -135,6 +149,10 @@ public final class TestUpstreams {
 
     public String paymentUrl() {
         return "http://127.0.0.1:" + paymentServer.getAddress().getPort();
+    }
+
+    public String aiUrl() {
+        return "http://127.0.0.1:" + aiServer.getAddress().getPort();
     }
 
     public String jwksUri() {
@@ -217,6 +235,7 @@ public final class TestUpstreams {
         result.put("path", exchange.getRequestURI().getPath());
         result.put("query", exchange.getRequestURI().getRawQuery());
         result.put("headers", headers);
+        result.put("body", new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("code", 200);
         envelope.put("message", "echo");

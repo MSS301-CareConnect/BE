@@ -8,7 +8,10 @@ import lombok.experimental.FieldDefaults;
 import mss301.providerservice.dto.request.CertificateRequest;
 import mss301.providerservice.dto.request.CertificateVerificationRequest;
 import mss301.providerservice.dto.response.APIResponse;
+import mss301.providerservice.dto.response.CertificatePendingAuditStatisticsResponse;
 import mss301.providerservice.dto.response.CertificateResponse;
+import mss301.providerservice.enums.CertificateAiCheckStatus;
+import mss301.providerservice.enums.CertificateRiskLevel;
 import mss301.providerservice.security.CurrentUserId;
 import mss301.providerservice.service.CertificateService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,7 +23,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/certificates")
-@Tag(name = "Certificates", description = "Quản lý chứng chỉ caregiver")
+@Tag(name = "Certificates", description = "Quản lý chứng chỉ caregiver — khai báo, trung tâm xác nhận, AI đọc ảnh, admin duyệt")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class CertificateController {
@@ -29,12 +32,22 @@ public class CertificateController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // Hàng chờ ADMIN duyệt (bước 5): chứng chỉ trung tâm đã xác nhận, kèm kết quả AI; rủi ro cao lên đầu.
     @GetMapping("/pending-audit")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<PageResponse<CertificateResponse>> listPendingAudit(@RequestParam(required = false) UUID centerId,
+                                                                           @RequestParam(required = false) CertificateRiskLevel riskLevel,
+                                                                           @RequestParam(required = false) CertificateAiCheckStatus aiCheckStatus,
                                                                            @RequestParam(defaultValue = "0") int page,
                                                                            @RequestParam(defaultValue = "20") int size) {
-        return certificateService.listPendingAudit(centerId, page, size);
+        return certificateService.listPendingAudit(centerId, riskLevel, aiCheckStatus, page, size);
+    }
+
+    @GetMapping("/pending-audit/statistics")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<CertificatePendingAuditStatisticsResponse> getPendingAuditStatistics(
+            @RequestParam(required = false) UUID centerId) {
+        return certificateService.getPendingAuditStatistics(centerId);
     }
 
     @GetMapping("/caregivers/{caregiverId}")
@@ -58,6 +71,13 @@ public class CertificateController {
                                                    @PathVariable UUID caregiverId,
                                                    @Valid @RequestBody CertificateRequest request) {
         return certificateService.create(actorId, caregiverId, request);
+    }
+
+    // Bước 4: ADMIN chạy lại kiểm tra AI (AI lỗi, hoặc muốn đọc lại ảnh). Kết quả mới thay kết quả cũ.
+    @PostMapping("/{id}/ai-check")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<CertificateResponse> startAiCheck(@CurrentUserId UUID actorId, @PathVariable UUID id) {
+        return certificateService.startAiCheck(actorId, id);
     }
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────

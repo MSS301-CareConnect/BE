@@ -79,6 +79,11 @@ payment:
     scan-interval: ${PAYMENT_EXPIRY_SCAN_INTERVAL:5m}
     grace: ${PAYMENT_EXPIRY_GRACE:5m}
     max-unknown: ${PAYMENT_EXPIRY_MAX_UNKNOWN:24h}
+  # Ví (2026-11-09): cộng tiền buổi hoàn tất vào ví trung tâm / nền tảng (hỏi payment-context của Booking).
+  wallet:
+    settlement-scan-interval: ${PAYMENT_WALLET_SETTLEMENT_SCAN_INTERVAL:10m}
+    settlement-grace: ${PAYMENT_WALLET_SETTLEMENT_GRACE:1h}
+    settlement-batch-size: ${PAYMENT_WALLET_SETTLEMENT_BATCH_SIZE:100}
 
 springdoc:
   swagger-ui:

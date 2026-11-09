@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.enums.CancelledBy;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundReason;
 import mss301.paymentservice.enums.RefundStatus;
 import org.hibernate.annotations.UuidGenerator;
@@ -80,6 +81,11 @@ public class Refund extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     RefundStatus status;
+
+    // WALLET: khách tự hủy → dispatcher cộng ví khách thay vì gọi cổng (ví 2026-11-09).
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    RefundChannel channel;
 
     @Column(name = "idempotency_key", nullable = false, length = 150)
     String idempotencyKey;

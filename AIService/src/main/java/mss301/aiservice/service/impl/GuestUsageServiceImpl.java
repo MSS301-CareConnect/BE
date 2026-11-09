@@ -74,6 +74,21 @@ public class GuestUsageServiceImpl implements GuestUsageService {
                 });
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public int getRemainingPrompts(HttpServletRequest request) {
+        String visitorHash = createVisitorHash(request);
+        LocalDate usageDate = LocalDate.now(clock.withZone(aiProperties.getChat().getGuestTimezone()));
+        int limit = aiProperties.getChat().getGuestDailyPromptLimit();
+
+        int usedPrompts = guestDailyUsageRepository
+                .readByVisitorHashAndUsageDateAndDeletedAtIsNull(visitorHash, usageDate)
+                .map(GuestDailyUsage::getPromptCount)
+                .orElse(0);
+
+        return Math.max(0, limit - usedPrompts);
+    }
+
     private GuestDailyUsage createNewUsage(String visitorHash, LocalDate usageDate) {
         return GuestDailyUsage.builder()
                 .visitorHash(visitorHash)
