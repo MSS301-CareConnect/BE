@@ -14,6 +14,16 @@ ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_model varchar(120);
 ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_checked_at timestamptz;
 ALTER TABLE certificates ADD COLUMN IF NOT EXISTS ai_last_error varchar(100);
 
+-- Gộp nhánh 2026-11-09: bản thử 2026-11-08_certificate_ai_check.sql (đã bỏ) tạo ai_warnings kiểu text. Database nào đã
+-- chạy bản đó thì đổi cột về jsonb (dữ liệu cũ không cùng định dạng nên bỏ; các cột ai_* khác của bản đó không còn dùng).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'certificates' AND column_name = 'ai_warnings' AND data_type = 'text') THEN
+        ALTER TABLE certificates ALTER COLUMN ai_warnings TYPE jsonb USING NULL;
+    END IF;
+END $$;
+
 ALTER TABLE certificates DROP CONSTRAINT IF EXISTS certificates_ai_check_status_check;
 ALTER TABLE certificates ADD CONSTRAINT certificates_ai_check_status_check
     CHECK (ai_check_status IS NULL OR ai_check_status IN ('QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'));

@@ -48,4 +48,10 @@ public class ProviderAuthorization {
         }
         requireCenterManagement(caregiver.getCenter(), actorId);
     }
+
+    public void requireCaregiverSelf(CaregiverProfile caregiver, UUID actorId) {
+        if (!actorId.equals(caregiver.getUserId())) {
+            throw new AppException(ErrorCode.CAREGIVER_ACCESS_DENIED);
+        }
+    }
 }

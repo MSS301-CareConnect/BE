@@ -91,7 +91,7 @@ public class CertificateServiceImpl implements CertificateService {
     @Transactional
     public APIResponse<CertificateResponse> create(UUID actorId, UUID caregiverId, CertificateRequest request) {
         CaregiverProfile caregiver = caregiverService.findActiveCaregiver(caregiverId);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
+        providerAuthorization.requireCaregiverSelf(caregiver, actorId);
         validateDates(request);
         Certificate certificate = certificateMapper.toCertificate(request, caregiver);
         normalizeFields(certificate);
@@ -138,7 +138,7 @@ public class CertificateServiceImpl implements CertificateService {
     @Transactional
     public APIResponse<CertificateResponse> update(UUID actorId, UUID id, CertificateRequest request) {
         Certificate certificate = lockCertificate(id);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
         checkVersion(certificate, request.getVersion());
         validateDates(request);
         certificateMapper.update(request, certificate);
@@ -298,7 +298,7 @@ public class CertificateServiceImpl implements CertificateService {
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
         Certificate certificate = lockCertificate(id);
-        providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
+        providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
         checkVersion(certificate, version);
         certificate.setDeletedAt(Instant.now());
         certificateRepository.save(certificate);
