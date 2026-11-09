@@ -56,6 +56,9 @@ CREATE TABLE bookings (
     center_reminder_minutes integer,
     -- Bên chưa làm kịp khi EXPIRED (suy từ trạng thái lúc hết hạn); NULL ở trạng thái khác.
     expired_reason      varchar(40),
+    -- 2026-11-09 tự phân công: lần thử gần nhất, lần gần nhất báo trung tâm chưa tìm được người.
+    auto_assign_attempted_at timestamptz,
+    unassigned_notified_at   timestamptz,
     confirmed_at        timestamptz,
     started_at          timestamptz,
     completed_at        timestamptz,
@@ -325,7 +328,7 @@ CREATE TABLE booking_events (
 
     CONSTRAINT ck_booking_events_type CHECK (event_type IN ('OCCURRENCE_ACKNOWLEDGED', 'OCCURRENCE_STATUS_CHANGED',
                                                             'CAREGIVER_CHANGED', 'NO_SHOW_REPORTED',
-                                                            'SERVICE_ADDRESS_CHANGED', 'CAREGIVER_CHANGE_REQUESTED', 'CAREGIVER_CHANGE_APPROVED', 'CAREGIVER_CHANGE_REJECTED', 'EMERGENCY_REPLACEMENT_ASSIGNED', 'OCCURRENCE_RESCHEDULED'))
+                                                            'SERVICE_ADDRESS_CHANGED', 'CAREGIVER_CHANGE_REQUESTED', 'CAREGIVER_CHANGE_APPROVED', 'CAREGIVER_CHANGE_REJECTED', 'EMERGENCY_REPLACEMENT_ASSIGNED', 'OCCURRENCE_RESCHEDULED', 'CAREGIVER_WITHDRAWN'))
 );
 
 CREATE INDEX idx_booking_events_booking ON booking_events (booking_id, created_at);
@@ -582,3 +585,27 @@ CREATE TABLE caregiver_change_request_occurrences (
     occurrence_id UUID NOT NULL REFERENCES booking_occurrences(occurrence_id),
     PRIMARY KEY (request_id, occurrence_id)
 );
+
+-- 2026-11-09: caregiver xin hủy buổi được giao (trước giờ bắt đầu ≥ 24h) — buổi đánh cờ needs_reassignment để Center
+-- Manager phân người khác; trạng thái xử lý suy ra từ buổi. DB đã có: schema/changes/2026-11-09_caregiver_withdrawals.sql.
+CREATE TABLE caregiver_withdrawals (
+    withdrawal_id      uuid         PRIMARY KEY,
+    booking_id         uuid         NOT NULL REFERENCES bookings (booking_id),
+    occurrence_id      uuid         NOT NULL REFERENCES booking_occurrences (occurrence_id),
+    center_id          uuid         NOT NULL,
+    caregiver_id       uuid         NOT NULL,
+    caregiver_user_id  uuid         NOT NULL,
+    reason_code        varchar(20)  NOT NULL,
+    reason_detail      text,
+    created_at         timestamptz  NOT NULL,
+    updated_at         timestamptz  NOT NULL,
+    deleted_at         timestamptz,
+    CONSTRAINT ck_caregiver_withdrawals_reason CHECK (reason_code IN ('PERSONAL', 'OTHER')),
+    CONSTRAINT ck_caregiver_withdrawals_detail CHECK (reason_code <> 'OTHER' OR btrim(coalesce(reason_detail, '')) <> '')
+);
+
+CREATE UNIQUE INDEX uk_caregiver_withdrawals_occurrence
+    ON caregiver_withdrawals (occurrence_id, caregiver_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_caregiver_withdrawals_center ON caregiver_withdrawals (center_id, created_at);
+CREATE INDEX idx_caregiver_withdrawals_caregiver ON caregiver_withdrawals (caregiver_user_id, created_at);
+CREATE INDEX idx_caregiver_withdrawals_booking ON caregiver_withdrawals (booking_id);

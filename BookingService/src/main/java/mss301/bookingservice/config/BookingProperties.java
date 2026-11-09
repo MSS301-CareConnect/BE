@@ -304,5 +304,40 @@ public class BookingProperties {
         // Trừ hao di chuyển / nghỉ giữa hai booking khác nhau của cùng caregiver (2026-11-05, Owner chốt 60 phút).
         @NotNull
         Duration travelBuffer = Duration.ofMinutes(60);
+
+        // Giữ chỗ chờ cọc (2026-11-09): booking chờ thanh toán ngay lúc đặt (SHIFT tự nhận) chỉ giữ slot trong khoảng này.
+        @NotNull
+        Duration paymentHold = Duration.ofMinutes(5);
+
+        // Khoảng ẩn sau hạn cọc cho IPN / return VNPay tới muộn: vẫn nhận deposit-paid, scheduler chưa nhả slot.
+        @NotNull
+        Duration paymentHoldGrace = Duration.ofMinutes(2);
+
+        // Chu kỳ quét riêng nhả slot hết hạn cọc (BookingExpiryScheduler đọc thẳng placeholder).
+        @NotNull
+        Duration holdScanInterval = Duration.ofSeconds(15);
+
+        // Caregiver chỉ xin hủy buổi bắt đầu sau ít nhất khoảng này (2026-11-09).
+        @NotNull
+        Duration caregiverWithdrawalLead = Duration.ofHours(24);
+
+        // Tự phân công (2026-11-09): chu kỳ quét buổi đã cọc chưa có người, thời gian chờ giữa hai lần thử cùng booking,
+        // số ứng viên tối đa tra hồ sơ để thử, chu kỳ nhắc trung tâm khi chưa tìm được người.
+        @NotNull
+        Duration autoAssignInterval = Duration.ofMinutes(1);
+
+        @NotNull
+        Duration autoAssignRetry = Duration.ofMinutes(15);
+
+        @Min(1)
+        @Max(20)
+        int autoAssignCandidates = 5;
+
+        @NotNull
+        Duration unassignedNotifyEvery = Duration.ofHours(24);
+
+        // Buổi đã cọc còn khoảng này tới giờ bắt đầu mà vẫn chưa có người → hệ thống hủy buổi, hoàn 100 % (Q-B2).
+        @NotNull
+        Duration unassignedCancelLead = Duration.ofHours(12);
     }
 }

@@ -67,20 +67,30 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     Optional<Booking> findForUpdateSkipLocked(@Param("id") UUID id);
 
     // Booking quá hạn xác nhận (trung tâm hoặc caregiver, CR-3), quá hạn phân caregiver hoặc quá hạn thanh toán khoản đầu
-    // (scheduler xử lý theo lô).
+    // (scheduler xử lý theo lô). paymentCutoff = now − grace cọc: qua cả grace mới nhả slot (2026-11-09).
     @Query("""
             select b.id from Booking b
             where b.deletedAt is null
               and ((b.status in :confirmationStatuses and b.acceptanceDueAt <= :now)
                 or (b.status = :assignmentStatus and b.assignmentDueAt <= :now)
-                or (b.status = :paymentStatus and b.depositDueAt <= :now))
+                or (b.status = :paymentStatus and b.depositDueAt <= :paymentCutoff))
             order by b.createdAt
             """)
     List<UUID> findExpirableIds(@Param("confirmationStatuses") Collection<BookingStatus> confirmationStatuses,
                                 @Param("assignmentStatus") BookingStatus assignmentStatus,
                                 @Param("paymentStatus") BookingStatus paymentStatus,
                                 @Param("now") Instant now,
+                                @Param("paymentCutoff") Instant paymentCutoff,
                                 Pageable pageable);
+
+    // Booking chờ cọc đã qua hạn + grace (paymentCutoff = now − grace) — job nhả slot giữ chỗ (2026-11-09).
+    @Query("""
+            select b.id from Booking b
+            where b.deletedAt is null and b.status = :status and b.depositDueAt <= :paymentCutoff
+            order by b.depositDueAt
+            """)
+    List<UUID> findExpiredHoldIds(@Param("status") BookingStatus status, @Param("paymentCutoff") Instant paymentCutoff,
+                                  Pageable pageable);
 
     // Booking đã trả khoản đầu, chưa trả đủ, chưa tới hạn phần còn lại — hạn gần nhất trước (nhắc 72h / 48h, M6).
     @Query("""

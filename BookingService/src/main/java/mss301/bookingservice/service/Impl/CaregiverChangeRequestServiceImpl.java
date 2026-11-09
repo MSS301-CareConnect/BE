@@ -22,11 +22,13 @@ import mss301.bookingservice.entity.CaregiverChangeRequestOccurrenceId;
 import mss301.bookingservice.enums.BookingEventType;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.CaregiverChangeRequestStatus;
+import mss301.bookingservice.enums.CaregiverChangeScopeType;
 import mss301.bookingservice.enums.NotificationType;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
+import mss301.bookingservice.mapper.BookingEventMapper;
 import mss301.bookingservice.mapper.CaregiverChangeRequestMapper;
 import mss301.bookingservice.mapper.OccurrenceMapper;
 import mss301.bookingservice.repository.BookingEventRepository;
@@ -36,6 +38,7 @@ import mss301.bookingservice.repository.CaregiverChangeRequestRepository;
 import mss301.bookingservice.service.BookingNotificationService;
 import mss301.bookingservice.service.CaregiverChangeRequestService;
 import mss301.bookingservice.service.CaregiverPort;
+import mss301.bookingservice.service.CaregiverScheduleGuard;
 import mss301.bookingservice.service.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -45,7 +48,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -53,6 +55,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -71,13 +74,19 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
     NotificationService notificationService;
     TransactionTemplate transactionTemplate;
     Clock clock;
+    BookingEventMapper bookingEventMapper;
+    CaregiverScheduleGuard caregiverScheduleGuard;
 
     static final int MAX_REQUESTS_PER_BOOKING = 3;
     static final Duration MIN_NOTICE_DURATION = Duration.ofHours(12);
 
     @Override
     public APIResponse<CaregiverChangeRequestResponse> createRequest(UUID actorId, UUID bookingId, CaregiverChangeCreateRequest request) {
-        Booking booking = bookingRepository.findById(bookingId)
+        // 2026-11-09: khách chỉ đổi caregiver cho cả booking (mọi buổi chưa diễn ra), bỏ đổi theo từng buổi / từ ngày.
+        if (request.getScopeType() != CaregiverChangeScopeType.ALL_REMAINING) {
+            throw new AppException(ErrorCode.CAREGIVER_CHANGE_SCOPE_INVALID);
+        }
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         if (!Objects.equals(booking.getCustomerId(), actorId)) {
@@ -98,55 +107,14 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
             throw new AppException(ErrorCode.TOO_MANY_CHANGE_REQUESTS);
         }
 
-        List<BookingOccurrence> activeOccurrences = occurrenceRepository.findAllByBooking(bookingId).stream()
-                .filter(o -> o.getStatus() == OccurrenceStatus.SCHEDULED || o.getStatus() == OccurrenceStatus.ACKNOWLEDGED)
-                .toList();
-
-        List<BookingOccurrence> targetOccurrences = new ArrayList<>();
-        Instant now = clock.instant();
-
-        switch (request.getScopeType()) {
-            case ALL_REMAINING -> targetOccurrences.addAll(activeOccurrences);
-            case SPECIFIC_OCCURRENCES -> {
-                if (request.getOccurrenceIds() == null || request.getOccurrenceIds().isEmpty()) {
-                    throw new AppException(ErrorCode.OCCURRENCE_ID_REQUIRED);
-                }
-                Set<UUID> requestedIds = Set.copyOf(request.getOccurrenceIds());
-                targetOccurrences.addAll(activeOccurrences.stream()
-                        .filter(o -> requestedIds.contains(o.getId()))
-                        .toList());
-            }
-            case FROM_DATE -> {
-                if (request.getFromDate() == null) {
-                    throw new AppException(ErrorCode.START_DATE_REQUIRED);
-                }
-                Instant fromInstant = request.getFromDate().atStartOfDay(ZoneId.of("UTC")).toInstant();
-                targetOccurrences.addAll(activeOccurrences.stream()
-                        .filter(o -> !o.getStartAt().isBefore(fromInstant))
-                        .toList());
-            }
-        }
-
-        if (targetOccurrences.isEmpty()) {
-            throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
-        }
-
-        Instant earliest = targetOccurrences.stream()
-                .map(BookingOccurrence::getStartAt)
-                .min(Comparator.naturalOrder())
-                .orElse(now);
-
-        if (earliest.isBefore(now.plus(MIN_NOTICE_DURATION))) {
-            throw new AppException(ErrorCode.CHANGE_REQUEST_TOO_LATE);
-        }
+        List<BookingOccurrence> targetOccurrences = findChangeableOccurrences(bookingId, null, clock.instant());
 
         CaregiverChangeRequest saved = transactionTemplate.execute(status -> {
             CaregiverChangeRequest changeRequest = CaregiverChangeRequest.builder()
                     .booking(booking)
                     .customerUserId(actorId)
                     .centerId(booking.getCenterId())
-                    .scopeType(request.getScopeType())
-                    .fromDate(request.getFromDate())
+                    .scopeType(CaregiverChangeScopeType.ALL_REMAINING)
                     .reasonCode(request.getReasonCode())
                     .reasonDetail(request.getReasonDetail())
                     .preferredCaregiverId(request.getPreferredCaregiverId())
@@ -167,6 +135,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                     .booking(booking)
                     .eventType(BookingEventType.CAREGIVER_CHANGE_REQUESTED)
                     .changedBy(actorId)
+                    .createdAt(clock.instant())
                     .reason(request.getReasonCode().name() + (request.getReasonDetail() != null ? ": " + request.getReasonDetail() : ""))
                     .build();
             eventRepository.save(event);
@@ -224,16 +193,12 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
             throw new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_PENDING);
         }
 
-        Booking booking = changeRequest.getBooking();
-
-        List<BookingOccurrence> targetOccurrences = changeRequest.getOccurrences().stream()
-                .map(CaregiverChangeRequestOccurrence::getOccurrence)
-                .filter(o -> o.getStatus() == OccurrenceStatus.SCHEDULED || o.getStatus() == OccurrenceStatus.ACKNOWLEDGED)
-                .toList();
-
-        if (targetOccurrences.isEmpty()) {
-            throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
-        }
+        UUID bookingId = changeRequest.getBooking().getId();
+        Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        // Cả booking: tính lại mọi buổi chưa diễn ra lúc duyệt (danh sách lúc gửi có thể đã cũ), trừ buổi đã thuộc người mới.
+        List<BookingOccurrence> targetOccurrences = findChangeableOccurrences(bookingId, request.getNewCaregiverId(),
+                clock.instant());
 
         List<UUID> careServiceIds = targetOccurrences.stream()
                 .map(BookingOccurrence::getCareServiceId)
@@ -245,52 +210,87 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
         List<OccurrenceSlot> slots = targetOccurrences.stream().map(occurrenceMapper::toSlot).toList();
         caregiverPort.checkAvailable(newCaregiver.getCaregiverId(), slots);
 
-        Instant now = clock.instant();
-
-        CaregiverChangeRequest updated = transactionTemplate.execute(status -> {
-            for (BookingOccurrence occurrence : targetOccurrences) {
-                UUID oldCaregiverId = occurrence.getCaregiverId();
-                occurrence.assignCaregiver(newCaregiver.getCaregiverId(), newCaregiver.getCaregiverUserId());
-                occurrenceRepository.save(occurrence);
-
-                BookingEvent event = BookingEvent.builder()
-                        .booking(booking)
-                        .occurrenceId(occurrence.getId())
-                        .eventType(BookingEventType.CAREGIVER_CHANGED)
-                        .oldCaregiverId(oldCaregiverId)
-                        .newCaregiverId(newCaregiver.getCaregiverId())
-                        .changedBy(actorId)
-                        .reason("Khách yêu cầu đổi chuyên viên: " + (request.getNote() != null ? request.getNote() : ""))
-                        .build();
-                eventRepository.save(event);
+        Set<UUID> targetIds = targetOccurrences.stream().map(BookingOccurrence::getId).collect(Collectors.toSet());
+        List<UUID> previousCaregiverUserIds = new ArrayList<>();
+        // Response dựng trong transaction: danh sách buổi của yêu cầu là lazy (ngoài transaction → LazyInitialization).
+        CaregiverChangeRequestResponse approvedResponse = transactionTemplate.execute(status -> {
+            // Thứ tự khóa booking → buổi như mọi luồng đổi caregiver; hai manager duyệt cùng lúc thì người sau thấy APPROVED.
+            Booking lockedBooking = bookingRepository.findForUpdate(bookingId)
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+            if (!BookingStatus.CAREGIVER_CHANGEABLE.contains(lockedBooking.getStatus())) {
+                throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
             }
+            CaregiverChangeRequest lockedRequest = changeRequestRepository.findById(requestId)
+                    .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_FOUND));
+            if (lockedRequest.getStatus() != CaregiverChangeRequestStatus.PENDING) {
+                throw new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_PENDING);
+            }
+            Instant now = clock.instant();
+            List<BookingOccurrence> lockedTargets = findChangeableOccurrences(bookingId, newCaregiver.getCaregiverId(), now)
+                    .stream()
+                    .filter(occurrence -> targetIds.contains(occurrence.getId()))
+                    .toList();
+            if (lockedTargets.isEmpty()) {
+                throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
+            }
+            caregiverScheduleGuard.lockCaregiver(newCaregiver.getCaregiverId());
+            caregiverScheduleGuard.checkCaregiverFree(newCaregiver.getCaregiverId(),
+                    lockedTargets.stream().map(occurrenceMapper::toSlot).toList(), bookingId);
 
-            changeRequest.setStatus(CaregiverChangeRequestStatus.APPROVED);
-            changeRequest.setReviewedBy(actorId);
-            changeRequest.setReviewedAt(now);
+            String reason = "Khách yêu cầu đổi người chăm sóc" + (request.getNote() != null ? ": " + request.getNote() : "");
+            for (BookingOccurrence occurrence : lockedTargets) {
+                if (occurrence.getCaregiverUserId() != null) {
+                    previousCaregiverUserIds.add(occurrence.getCaregiverUserId());
+                }
+                eventRepository.save(bookingEventMapper.toCaregiverChangedEvent(lockedBooking, occurrence.getId(),
+                        occurrence.getCaregiverId(), newCaregiver.getCaregiverId(), actorId, reason, now));
+                occurrence.assignCaregiver(newCaregiver.getCaregiverId(), newCaregiver.getCaregiverUserId());
+            }
+            // Mọi buổi tương lai giờ thuộc người mới → caregiver cấp booking đổi theo (danh sách / lọc theo caregiver).
+            lockedBooking.setCaregiverId(newCaregiver.getCaregiverId());
+            lockedBooking.setCaregiverUserId(newCaregiver.getCaregiverUserId());
+
+            lockedRequest.setStatus(CaregiverChangeRequestStatus.APPROVED);
+            lockedRequest.setReviewedBy(actorId);
+            lockedRequest.setReviewedAt(now);
 
             BookingEvent requestApprovedEvent = BookingEvent.builder()
-                    .booking(booking)
+                    .booking(lockedBooking)
                     .eventType(BookingEventType.CAREGIVER_CHANGE_APPROVED)
                     .newCaregiverId(newCaregiver.getCaregiverId())
                     .changedBy(actorId)
+                    .createdAt(now)
                     .reason(request.getNote())
                     .build();
             eventRepository.save(requestApprovedEvent);
 
-            return changeRequestRepository.save(changeRequest);
+            return mapper.toResponse(changeRequestRepository.save(lockedRequest));
         });
 
+        int changedCount = targetIds.size();
         notificationService.notify(
                 List.of(changeRequest.getCustomerUserId()),
                 NotificationType.CAREGIVER_CHANGE_REQUEST_DECIDED,
-                Map.of("body", "Trung tâm đã phê duyệt đổi người chăm sóc cho lịch " + booking.getBookingCode()),
+                Map.of("body", "Trung tâm đã đổi người chăm sóc cho các buổi còn lại của lịch " + booking.getBookingCode()),
                 "BOOKING",
                 booking.getId()
         );
+        List<UUID> previousRecipients = previousCaregiverUserIds.stream()
+                .distinct()
+                .filter(userId -> !userId.equals(newCaregiver.getCaregiverUserId()))
+                .toList();
+        if (!previousRecipients.isEmpty()) {
+            notificationService.notify(previousRecipients, NotificationType.CAREGIVER_UNASSIGNED,
+                    Map.of("body", "Bạn không còn phụ trách các buổi sắp tới của lịch " + booking.getBookingCode()),
+                    "BOOKING", booking.getId());
+        }
+        notificationService.notify(List.of(newCaregiver.getCaregiverUserId()), NotificationType.CAREGIVER_ASSIGNED,
+                Map.of("body", "Bạn được phân " + changedCount + " buổi của lịch " + booking.getBookingCode()),
+                "BOOKING", booking.getId());
 
-        log.info("Caregiver change request {} approved by manager {}, new caregiver: {}", requestId, actorId, newCaregiver.getCaregiverId());
-        return APIResponse.success("Phê duyệt đổi người chăm sóc thành công", mapper.toResponse(updated));
+        log.info("Caregiver change request {} approved by manager {}, new caregiver: {} ({} occurrences)", requestId,
+                actorId, newCaregiver.getCaregiverId(), changedCount);
+        return APIResponse.success("Phê duyệt đổi người chăm sóc thành công", approvedResponse);
     }
 
     @Override
@@ -318,6 +318,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                     .booking(changeRequest.getBooking())
                     .eventType(BookingEventType.CAREGIVER_CHANGE_REJECTED)
                     .changedBy(actorId)
+                    .createdAt(now)
                     .reason(request.getReason())
                     .build();
             eventRepository.save(event);
@@ -355,5 +356,26 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
 
         log.info("Caregiver change request {} cancelled by customer {}", requestId, actorId);
         return APIResponse.success("Hủy yêu cầu đổi người chăm sóc thành công", mapper.toResponse(saved));
+    }
+
+    // Buổi chưa diễn ra còn đổi được (SCHEDULED / ACKNOWLEDGED, bắt đầu sau MIN_NOTICE_DURATION), bỏ buổi đã thuộc
+    // caregiverIdToSkip. Có buổi sắp diễn ra nhưng đều sát giờ → CHANGE_REQUEST_TOO_LATE; không còn buổi nào → 5174.
+    private List<BookingOccurrence> findChangeableOccurrences(UUID bookingId, UUID caregiverIdToSkip, Instant now) {
+        List<BookingOccurrence> upcoming = occurrenceRepository.findAllByBooking(bookingId).stream()
+                .filter(occurrence -> OccurrenceStatus.WORKABLE.contains(occurrence.getStatus()))
+                .filter(occurrence -> occurrence.getStartAt().isAfter(now))
+                .filter(occurrence -> !Objects.equals(occurrence.getCaregiverId(), caregiverIdToSkip))
+                .toList();
+        if (upcoming.isEmpty()) {
+            throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
+        }
+        Instant noticeCutoff = now.plus(MIN_NOTICE_DURATION);
+        List<BookingOccurrence> changeable = upcoming.stream()
+                .filter(occurrence -> !occurrence.getStartAt().isBefore(noticeCutoff))
+                .toList();
+        if (changeable.isEmpty()) {
+            throw new AppException(ErrorCode.CHANGE_REQUEST_TOO_LATE);
+        }
+        return changeable;
     }
 }

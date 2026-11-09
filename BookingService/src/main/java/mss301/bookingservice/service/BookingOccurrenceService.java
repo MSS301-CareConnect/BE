@@ -21,9 +21,11 @@ import java.util.UUID;
  */
 public interface BookingOccurrenceService {
 
-    // CAREGIVER: lịch được giao trong [from, to] (ngày theo múi giờ booking, bỏ trống = không giới hạn), theo trang.
+    // CAREGIVER: lịch được giao trong [from, to] (ngày theo múi giờ booking, bỏ trống = không giới hạn), theo trang;
+    // bookingId (tùy chọn) = chỉ các buổi của một booking (2026-11-09).
     APIResponse<PageResponse<CaregiverOccurrenceResponse>> list(UUID actorId, LocalDate from, LocalDate to,
-                                                                OccurrenceStatus status, int page, int size);
+                                                                OccurrenceStatus status, UUID bookingId, int page,
+                                                                int size);
 
     // ADMIN / SERVICE: mọi buổi; CENTER_MANAGER: buổi của trung tâm mình; CUSTOMER: buổi thuộc booking của mình;
     // CAREGIVER: buổi được giao (snapshot người bệnh chỉ khi còn quyền — SEC-09).

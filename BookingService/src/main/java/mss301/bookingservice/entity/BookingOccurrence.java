@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.MissedReason;
+import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.ReplacementConsentStatus;
 
@@ -157,14 +158,17 @@ public class BookingOccurrence extends BaseEntity {
     Long version;
 
     // Hai id caregiver luôn đổi cùng nhau. Người mới chưa nhận ca → buổi đã ACKNOWLEDGED quay về SCHEDULED (OPS-01);
-    // buổi chưa có caregiver được giữ lịch (PENDING_ASSIGNMENT → RESERVED, spec §11.2).
+    // buổi chưa có caregiver được giữ lịch (PENDING_ASSIGNMENT → RESERVED, spec §11.2). 2026-11-09: khách cọc trước khi có
+    // người → buổi của booking đã cọc được lên lịch chính thức ngay khi gán (PENDING_ASSIGNMENT → SCHEDULED).
     public void assignCaregiver(UUID newCaregiverId, UUID newCaregiverUserId) {
         if (!Objects.equals(caregiverId, newCaregiverId) && status == OccurrenceStatus.ACKNOWLEDGED) {
             status = OccurrenceStatus.SCHEDULED;
             acknowledgedAt = null;
         }
         if (status == OccurrenceStatus.PENDING_ASSIGNMENT) {
-            status = OccurrenceStatus.RESERVED;
+            status = BookingStatus.DEPOSIT_PAID.contains(booking.getStatus())
+                    ? OccurrenceStatus.SCHEDULED
+                    : OccurrenceStatus.RESERVED;
         }
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;

@@ -124,6 +124,14 @@ public interface BookingService {
 
     List<UUID> findExpirableIds();
 
+    // Booking chờ cọc đã qua hạn + grace — job riêng chu kỳ ngắn để nhả slot giữ chỗ sớm (2026-11-09).
+    List<UUID> findExpiredHoldIds();
+
+    // Q-B2 (2026-11-09): booking đã cọc còn buổi chưa có người khi sát giờ (unassigned-cancel-lead) → hủy buổi đó, hoàn 100 %.
+    List<UUID> findUnassignedDueIds();
+
+    void cancelUnassigned(UUID id);
+
     void expire(UUID id);
 
     List<UUID> findRemainingReminderIds();

@@ -85,6 +85,7 @@ import mss301.bookingservice.service.CareRecipientDirectoryService;
 import mss301.bookingservice.service.BookingPriceCalculator;
 import mss301.bookingservice.service.CareServiceCatalogPort;
 import mss301.bookingservice.service.PaymentPort;
+import mss301.bookingservice.service.CaregiverAssignmentService;
 import mss301.bookingservice.service.CaregiverPort;
 import mss301.bookingservice.service.CenterPort;
 import mss301.bookingservice.service.CenterBookingPolicyService;
@@ -152,7 +153,8 @@ public class BookingServiceImpl implements BookingService {
     static int ACCEPT_ATTEMPTS = 2;
     static int HELD_SCHEDULE_RANGE_DAYS = 31;
     static BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
-    static String SHIFT_AUTO_ACCEPT_REASON = "Tự nhận: đặt vào ca người chăm sóc đã đăng ký";
+    static String AUTO_ASSIGN_REASON = "Hệ thống tự phân công";
+    static String UNASSIGNED_CANCEL_REASON = "Chưa tìm được người chăm sóc trước giờ bắt đầu — hoàn tiền buổi này";
     static String CAREGIVER_TIMEOUT_REASON = "Người chăm sóc không trả lời trước hạn";
     // Trạng thái có hạn đang chạy (hàng đợi trung tâm: hạn gần nhất, sắp quá hạn).
     static Set<BookingStatus> TIMED_STATUSES = EnumSet.of(BookingStatus.PENDING_CENTER_CONFIRMATION,
@@ -189,6 +191,7 @@ public class BookingServiceImpl implements BookingService {
     Clock clock;
     NotificationService notificationService;
     BookingNotificationService bookingNotificationService;
+    CaregiverAssignmentService caregiverAssignmentService;
 
     // ─── MỌI ROLE (phạm vi theo role) ─────────────────────────────────────────
 
@@ -222,6 +225,10 @@ public class BookingServiceImpl implements BookingService {
         if (caregiver != null) {
             caregiverPort.checkAvailable(caregiver.getCaregiverId(), slots);
         }
+        // 2026-11-09 (B): khách không chọn caregiver → hệ thống tìm sẵn người rảnh để 5 phút giữ chỗ giữ một người thật.
+        List<AssignedCaregiver> autoCandidates = caregiver == null
+                ? findAutoCandidates(request.getCenterId(), careServiceIds, slots)
+                : List.of();
         // Spec §8: policy đọc tại thời điểm xử lý — đặt trước tối thiểu theo loại, phải còn hạn thanh toán trong tương lai.
         CenterBookingPolicy policy = centerBookingPolicyService.findEffective(request.getCenterId());
         Instant paymentCutoff = checkBookableTiming(request.getBookingType(), slots, policy);
@@ -231,7 +238,7 @@ public class BookingServiceImpl implements BookingService {
         Booking savedBooking;
         try {
             savedBooking = transactionTemplate.execute(status -> persistBooking(actorId, request, slots, recipientSnapshot,
-                    caregiver, quote, policy, paymentCutoff, normalizedKey, requestHash));
+                    caregiver, autoCandidates, quote, policy, paymentCutoff, normalizedKey, requestHash));
         } catch (DataIntegrityViolationException e) {
             // Hai request cùng Idempotency-Key chạy song song: request thua vi phạm uk_bookings_idempotency → trả booking kia.
             if (normalizedKey == null) {
@@ -243,11 +250,9 @@ public class BookingServiceImpl implements BookingService {
         }
         log.info("Booking {} created by customer {} with {} occurrences", savedBooking.getBookingCode(), actorId, slots.size());
         BookingDetailResponse bookingDetailResponse = toDetailResponse(savedBooking, false);
-        String message = switch (savedBooking.getStatus()) {
-            case AWAITING_INITIAL_PAYMENT -> "Đặt lịch thành công, ca đã được giữ — vui lòng thanh toán khoản đầu";
-            case PENDING_CAREGIVER_CONFIRMATION -> "Đặt lịch thành công, chờ người chăm sóc nhận lịch";
-            default -> "Đặt lịch thành công, chờ trung tâm xác nhận";
-        };
+        String message = savedBooking.getCaregiverId() == null
+                ? "Đặt lịch thành công, đã giữ chỗ — vui lòng thanh toán khoản đầu, trung tâm sẽ phân người chăm sóc"
+                : "Đặt lịch thành công, đã giữ chỗ — vui lòng thanh toán khoản đầu";
         return APIResponse.success(message, bookingDetailResponse);
     }
 
@@ -804,7 +809,8 @@ public class BookingServiceImpl implements BookingService {
             return APIResponse.success("Booking đã được xác nhận đặt cọc trước đó", confirmedResponse);
         }
         BookingAction.PAY_INITIAL_PAYMENT.apply(booking.getStatus());
-        if (!clock.instant().isBefore(booking.getDepositDueAt())) {
+        // Tiền đã thu trước hạn nhưng IPN / return tới muộn: còn trong grace (scheduler chưa nhả slot) vẫn nhận.
+        if (!clock.instant().isBefore(paymentReleaseAt(booking))) {
             throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
         }
         String paymentReference = request == null ? null : request.getPaymentReference();
@@ -863,7 +869,17 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findExpirableIds() {
-        return bookingRepository.findExpirableIds(CONFIRMATION_STATUSES, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.AWAITING_INITIAL_PAYMENT, clock.instant(),
+        Instant now = clock.instant();
+        return bookingRepository.findExpirableIds(CONFIRMATION_STATUSES, BookingStatus.PENDING_CAREGIVER_ASSIGNMENT,
+                BookingStatus.AWAITING_INITIAL_PAYMENT, now, now.minus(bookingProperties.getSchedule().getPaymentHoldGrace()),
+                PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findExpiredHoldIds() {
+        Instant paymentCutoff = clock.instant().minus(bookingProperties.getSchedule().getPaymentHoldGrace());
+        return bookingRepository.findExpiredHoldIds(BookingStatus.AWAITING_INITIAL_PAYMENT, paymentCutoff,
                 PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
     }
 
@@ -908,6 +924,45 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UUID> findUnassignedDueIds() {
+        Instant startsBefore = clock.instant().plus(bookingProperties.getSchedule().getUnassignedCancelLead());
+        return bookingOccurrenceRepository.findUnassignedDueBookingIds(BookingStatus.DEPOSIT_PAID,
+                OccurrenceStatus.PENDING_ASSIGNMENT, OccurrenceStatus.NOT_STARTED, startsBefore,
+                PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
+    }
+
+    // Không đổi cách tính tiền: hủy buổi với bên hủy SYSTEM và xếp hoàn CENTER_CANCEL (100 % phần đã trả của buổi) qua
+    // outbox như trung tâm hủy; hết buổi thì đóng booking như mọi lệnh hủy.
+    @Override
+    @Transactional
+    public void cancelUnassigned(UUID id) {
+        Optional<Booking> foundBooking = bookingRepository.findForUpdateSkipLocked(id);
+        if (foundBooking.isEmpty() || !BookingStatus.DEPOSIT_PAID.contains(foundBooking.get().getStatus())) {
+            return;
+        }
+        Booking lockedBooking = foundBooking.get();
+        Instant startsBefore = clock.instant().plus(bookingProperties.getSchedule().getUnassignedCancelLead());
+        Set<UUID> occurrenceIdsWithSession = findOccurrenceIdsWithSession(id);
+        List<BookingOccurrence> targets = bookingOccurrenceRepository.findAllByBooking(id).stream()
+                .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()))
+                .filter(occurrence -> occurrence.getStatus() == OccurrenceStatus.PENDING_ASSIGNMENT
+                        || Boolean.TRUE.equals(occurrence.getNeedsReassignment()))
+                .filter(occurrence -> !occurrence.getStartAt().isAfter(startsBefore))
+                .filter(occurrence -> !occurrenceIdsWithSession.contains(occurrence.getId()))
+                .toList();
+        if (targets.isEmpty()) {
+            return;
+        }
+        List<UUID> targetIds = collectIds(targets);
+        bookingLifecycleService.cancelOccurrences(lockedBooking, targets, CancelledBy.SYSTEM, null, UNASSIGNED_CANCEL_REASON);
+        bookingLifecycleService.requestRefund(lockedBooking, targetIds, RefundReason.CENTER_CANCEL, CancelledBy.SYSTEM,
+                null, buildRefundKeySuffix(id, targetIds));
+        closeAfterCancellation(lockedBooking, BookingAction.CANCEL_BY_SYSTEM, null, UNASSIGNED_CANCEL_REASON);
+        log.info("Booking {}: {} unassigned occurrence(s) cancelled with refund", id, targets.size());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UUID> findRemainingReminderIds() {
         return bookingRepository.findRemainingPaymentReminderIds(BookingStatus.CONFIRMED, clock.instant(),
                 PageRequest.of(0, bookingProperties.getSchedule().getExpiryBatchSize()));
@@ -922,13 +977,18 @@ public class BookingServiceImpl implements BookingService {
     // ─── Private helpers ─────────────────────────────────────────────────────
 
     private Booking persistBooking(UUID actorId, BookingCreateRequest request, List<OccurrenceSlot> slots,
-                                   RecipientSnapshot recipientSnapshot, AssignedCaregiver caregiver, BookingQuote quote,
+                                   RecipientSnapshot recipientSnapshot, AssignedCaregiver chosenCaregiver,
+                                   List<AssignedCaregiver> autoCandidates, BookingQuote quote,
                                    CenterBookingPolicy policy, Instant paymentCutoff, String idempotencyKey,
                                    String requestHash) {
-        UUID caregiverId = caregiver == null ? null : caregiver.getCaregiverId();
         // Hai booking song song của cùng khách không cùng lọt giới hạn booking chờ: khóa theo khách rồi đếm lại.
         bookingRepository.lockScheduleKey(CUSTOMER_LOCK_PREFIX + actorId);
         checkPendingLimit(actorId);
+        // Thứ tự khóa khách → caregiver → người bệnh; không còn ứng viên rảnh → booking chưa có người, phân sau khi cọc.
+        AssignedCaregiver caregiver = chosenCaregiver != null
+                ? chosenCaregiver
+                : caregiverAssignmentService.pickFree(autoCandidates, slots, null).orElse(null);
+        UUID caregiverId = caregiver == null ? null : caregiver.getCaregiverId();
         lockSchedule(caregiverId, request.getRecipientId());
         checkScheduleCapacity(slots);
         checkCaregiverAvailable(caregiverId, slots, null);
@@ -940,17 +1000,12 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingMapper.toBooking(request, actorId, recipientSnapshot, caregiver, quote, startDate, endDate,
                 resolveInitialPaymentPercent(remainingPaymentDueAt, policy));
         booking.setBookingCode(bookingCodeGenerator.generate());
-        // CR-3: khách đã chọn caregiver → caregiver tự nhận / từ chối; để trung tâm chọn → trung tâm duyệt.
-        booking.setStatus(caregiver == null
-                ? BookingStatus.PENDING_CENTER_CONFIRMATION
-                : BookingStatus.PENDING_CAREGIVER_CONFIRMATION);
+        // 2026-11-09 (A): mọi booking chờ khoản đầu ngay khi đặt, có hay chưa có caregiver — giữ chỗ paymentHold (5 phút),
+        // không qua bước trung tâm / caregiver xác nhận. Caregiver nhận từng buổi sau khi được phân (ACKNOWLEDGED).
+        booking.setStatus(BookingStatus.AWAITING_INITIAL_PAYMENT);
         booking.setTimezone(zone.getId());
-        booking.setAcceptanceDueAt(findEarlier(
-                clock.instant().plus(Duration.ofMinutes(policy.getConfirmationTimeoutMinutes())), paymentCutoff));
-        if (booking.getStatus() == BookingStatus.PENDING_CENTER_CONFIRMATION) {
-            booking.setCenterReminderMinutes(CenterReminders.passed(
-                    bookingProperties.getSchedule().getCenterReminderMinutes(), booking.getAcceptanceDueAt(), clock.instant()));
-        }
+        booking.setDepositDueAt(findEarlier(clock.instant().plus(bookingProperties.getSchedule().getPaymentHold()),
+                paymentCutoff));
         booking.setRemainingPaymentDueAt(remainingPaymentDueAt);
         booking.setCheckInEarlyMinutes(policy.getCheckInEarlyMinutes());
         booking.setCheckInLateMinutes(policy.getCheckInLateMinutes());
@@ -959,13 +1014,18 @@ public class BookingServiceImpl implements BookingService {
         Booking savedBooking = bookingRepository.save(booking);
         // Spec §11.2: buổi đã gắn caregiver giữ lịch (RESERVED); chưa có caregiver chờ trung tâm phân công.
         OccurrenceStatus initialStatus = caregiver == null ? OccurrenceStatus.PENDING_ASSIGNMENT : OccurrenceStatus.RESERVED;
-        bookingOccurrenceRepository.saveAll(occurrenceMapper.toOccurrenceList(slots, savedBooking, initialStatus));
+        List<BookingOccurrence> savedOccurrences = bookingOccurrenceRepository.saveAll(
+                occurrenceMapper.toOccurrenceList(slots, savedBooking, initialStatus));
         bookingDetailRepository.saveAll(bookingDetailMapper.toBookingDetailList(quote.getItems(), savedBooking));
-        bookingLifecycleService.recordCreated(savedBooking, actorId);
-        // 2026-11-05 (chủ dự án): SHIFT đặt vào ca caregiver đã đăng ký và được duyệt → tự nhận, khách đặt cọc ngay.
-        if (request.getBookingType() == BookingType.SHIFT && caregiver != null) {
-            bookingLifecycleService.apply(savedBooking, BookingAction.CAREGIVER_ACCEPT, null, SHIFT_AUTO_ACCEPT_REASON);
+        if (chosenCaregiver == null && caregiver != null) {
+            // Lịch sử ghi rõ người do hệ thống chọn (manager vẫn đổi được).
+            Instant now = clock.instant();
+            for (BookingOccurrence occurrence : savedOccurrences) {
+                bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(savedBooking, occurrence.getId(),
+                        null, caregiver.getCaregiverId(), null, AUTO_ASSIGN_REASON, now));
+            }
         }
+        bookingLifecycleService.recordCreated(savedBooking, actorId);
         return savedBooking;
     }
 
@@ -1017,6 +1077,15 @@ public class BookingServiceImpl implements BookingService {
         if (allFutureAssigned) {
             booking.setCaregiverId(caregiver.getCaregiverId());
             booking.setCaregiverUserId(caregiver.getCaregiverUserId());
+        }
+    }
+
+    private List<AssignedCaregiver> findAutoCandidates(UUID centerId, List<UUID> careServiceIds, List<OccurrenceSlot> slots) {
+        try {
+            return caregiverAssignmentService.rankCandidates(centerId, careServiceIds, slots, Set.of());
+        } catch (AppException e) {
+            log.warn("Auto-assign candidates unavailable for center {} ({})", centerId, e.getErrorCode());
+            return List.of();
         }
     }
 
@@ -1548,9 +1617,14 @@ public class BookingServiceImpl implements BookingService {
             case PENDING_CAREGIVER_ASSIGNMENT -> booking.getAssignmentDueAt() != null
                     && !now.isBefore(booking.getAssignmentDueAt());
             case AWAITING_INITIAL_PAYMENT -> booking.getDepositDueAt() != null
-                    && !now.isBefore(booking.getDepositDueAt());
+                    && !now.isBefore(paymentReleaseAt(booking));
             default -> false;
         };
+    }
+
+    // Hạn cọc khách thấy + grace ẩn: tới mốc này mới nhả slot / từ chối xác nhận cọc (2026-11-09).
+    private Instant paymentReleaseAt(Booking booking) {
+        return booking.getDepositDueAt().plus(bookingProperties.getSchedule().getPaymentHoldGrace());
     }
 
     // ─── ĐỌC / DỰNG RESPONSE ─────────────────────────────────────────────────
@@ -1560,7 +1634,7 @@ public class BookingServiceImpl implements BookingService {
         IdentityUserResponse customer = includeCustomer
                 ? identityUserService.getProfiles(List.of(booking.getCustomerId())).get(booking.getCustomerId())
                 : null;
-        return bookingMapper.toDetailResponse(booking, details, occurrences, customer);
+        return bookingMapper.toDetailResponse(booking, details, occurrences, customer, clock.instant());
     }
     private PageResponse<BookingSummaryResponse> toPageResponse(Page<Booking> bookings, boolean includeCustomer) {
         Map<UUID, IdentityUserResponse> customerProfiles = includeCustomer

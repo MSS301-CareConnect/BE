@@ -42,6 +42,20 @@ public class BookingExpiryScheduler {
         }
     }
 
+    // Giữ chỗ chờ cọc ngắn (5 phút): quét riêng chu kỳ booking.schedule.hold-scan-interval để slot được nhả ngay sau
+    // hạn + grace thay vì chờ lượt quét chung (2026-11-09). expire kiểm lại dưới khóa nên chạy song song lượt chung an toàn.
+    @Scheduled(fixedDelayString = "${booking.schedule.hold-scan-interval:15s}",
+            initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
+    public void releaseExpiredHolds() {
+        for (UUID bookingId : bookingService.findExpiredHoldIds()) {
+            try {
+                bookingService.expire(bookingId);
+            } catch (RuntimeException e) {
+                log.error("Failed to release hold of booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
     // Nhắc trả phần còn lại theo mốc của center policy (mặc định 72h, 48h trước hạn — M6), cùng chu kỳ quét.
     @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")

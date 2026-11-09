@@ -1,5 +1,6 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.client.dto.ProviderCaregiverCardResponse;
 import mss301.bookingservice.client.dto.ProviderScheduleResponse;
 import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
@@ -24,4 +25,10 @@ public interface CaregiverPort {
     // (CAREGIVER_SCHEDULE_MISMATCH) và đang SCHEDULED (CAREGIVER_SCHEDULE_NOT_AVAILABLE). Đã bị booking khác giữ hay chưa
     // do Booking kiểm.
     ProviderScheduleResponse findBookableSchedule(UUID centerId, UUID caregiverId, UUID scheduleId);
+
+    // Tự phân công (2026-11-09): caregiver của trung tâm làm được mọi dịch vụ và rảnh MỌI buổi (lịch làm việc, ngày nghỉ,
+    // booking khác — Provider hỏi lại Booking). Kết quả chỉ để xếp hạng: Booking vẫn khóa + kiểm trùng lại khi gán.
+    // Provider lỗi → 503 PROVIDER_UNAVAILABLE.
+    List<ProviderCaregiverCardResponse> findFreeCaregivers(UUID centerId, Collection<UUID> careServiceIds,
+                                                           List<OccurrenceSlot> slots);
 }

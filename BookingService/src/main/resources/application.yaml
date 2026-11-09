@@ -146,6 +146,20 @@ booking:
     center-reminder-minutes: ${BOOKING_CENTER_REMINDER_MINUTES:720,120}
     due-soon-window: ${BOOKING_DUE_SOON_WINDOW:2h}
     travel-buffer: ${BOOKING_TRAVEL_BUFFER:60m}
+    # Giữ chỗ chờ cọc khi booking chờ thanh toán ngay lúc đặt (SHIFT tự nhận); grace ẩn cho IPN / return VNPay tới muộn;
+    # chu kỳ quét riêng nhả slot hết hạn (2026-11-09).
+    payment-hold: ${BOOKING_PAYMENT_HOLD:5m}
+    payment-hold-grace: ${BOOKING_PAYMENT_HOLD_GRACE:2m}
+    hold-scan-interval: ${BOOKING_HOLD_SCAN_INTERVAL:15s}
+    # Caregiver chỉ xin hủy buổi bắt đầu sau ít nhất khoảng này (2026-11-09).
+    caregiver-withdrawal-lead: ${BOOKING_CAREGIVER_WITHDRAWAL_LEAD:24h}
+    # Tự phân công caregiver (2026-11-09): chu kỳ quét, chờ giữa hai lần thử, số ứng viên thử, nhắc trung tâm; buổi đã cọc
+    # còn unassigned-cancel-lead tới giờ bắt đầu mà chưa có người → hủy buổi + hoàn 100 %.
+    auto-assign-interval: ${BOOKING_AUTO_ASSIGN_INTERVAL:1m}
+    auto-assign-retry: ${BOOKING_AUTO_ASSIGN_RETRY:15m}
+    auto-assign-candidates: ${BOOKING_AUTO_ASSIGN_CANDIDATES:5}
+    unassigned-notify-every: ${BOOKING_UNASSIGNED_NOTIFY_EVERY:24h}
+    unassigned-cancel-lead: ${BOOKING_UNASSIGNED_CANCEL_LEAD:12h}
 
   # Center booking policy mặc định (spec §8) cho trung tâm chưa cấu hình riêng — phút / phần trăm.
   policy-defaults:

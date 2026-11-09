@@ -17,6 +17,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -399,6 +400,10 @@ public final class TestPlatformServer {
             return;
         }
         String path = exchange.getRequestURI().getPath();
+        if (path.equals("/api/v1/caregivers/search")) {
+            writeSuccess(exchange, Map.of("items", searchCaregivers(exchange.getRequestURI().getRawQuery())));
+            return;
+        }
         if (path.startsWith("/api/v1/caregivers/schedules/")) {
             UUID scheduleId = UUID.fromString(path.substring("/api/v1/caregivers/schedules/".length()));
             writeOrNotFound(exchange, schedules.get(scheduleId), "{\"code\":4420,\"message\":\"Schedule not found\"}");
@@ -406,6 +411,33 @@ public final class TestPlatformServer {
         }
         UUID caregiverId = UUID.fromString(path.substring("/api/v1/caregivers/".length()));
         writeOrNotFound(exchange, caregivers.get(caregiverId), "{\"code\":4200,\"message\":\"Hồ sơ người chăm sóc không tồn tại\"}");
+    }
+
+    // SRCH-01 giả (tự phân công): caregiver VERIFIED + ACTIVE của trung tâm, có đủ dịch vụ, không nằm trong
+    // unavailableCaregivers. Không hỏi Booking caregiver bận — Booking tự khóa + kiểm trùng lại khi gán.
+    private List<Map<String, Object>> searchCaregivers(String rawQuery) {
+        Map<String, List<String>> params = new HashMap<>();
+        for (String pair : rawQuery == null ? new String[0] : rawQuery.split("&")) {
+            String[] parts = pair.split("=", 2);
+            String value = parts.length > 1 ? URLDecoder.decode(parts[1], StandardCharsets.UTF_8) : "";
+            for (String item : value.split(",")) {
+                params.computeIfAbsent(parts[0], key -> new ArrayList<>()).add(item);
+            }
+        }
+        String centerId = params.getOrDefault("centerId", List.of("")).getFirst();
+        List<String> serviceIds = params.getOrDefault("careServiceIds", List.of());
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map<String, Object> caregiver : caregivers.values()) {
+            Object services = caregiver.get("careServiceIds");
+            boolean coversServices = services instanceof List<?> list && list.containsAll(serviceIds);
+            if (centerId.equals(caregiver.get("centerId")) && "VERIFIED".equals(caregiver.get("verificationStatus"))
+                    && "ACTIVE".equals(caregiver.get("caregiverStatus")) && coversServices
+                    && !unavailableCaregivers.contains(UUID.fromString((String) caregiver.get("caregiverId")))) {
+                items.add(Map.of("caregiverId", caregiver.get("caregiverId"), "centerId", centerId,
+                        "ratingAverage", 4.5, "ratingCount", 2, "experienceYears", 3));
+            }
+        }
+        return items;
     }
 
     // CareCatalogService giả: báo giá đúng gói khách chọn (pricePlanId bắt buộc như Catalog thật).

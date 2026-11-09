@@ -109,7 +109,9 @@ class BookingActionTests {
     void occurrenceTransitions() {
         // Spec §11.2: chưa có caregiver → giữ lịch → lên lịch chính thức khi trả khoản đầu.
         assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.RESERVED)).isTrue();
-        assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.SCHEDULED)).isFalse();
+        // 2026-11-09: booking đã cọc khi chưa có người → gán người là lên lịch chính thức luôn.
+        assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.SCHEDULED)).isTrue();
+        assertThat(OccurrenceStatus.PENDING_ASSIGNMENT.canTransitionTo(OccurrenceStatus.IN_PROGRESS)).isFalse();
         assertThat(OccurrenceStatus.RESERVED.canTransitionTo(OccurrenceStatus.SCHEDULED)).isTrue();
         assertThat(OccurrenceStatus.RESERVED.canTransitionTo(OccurrenceStatus.EXPIRED)).isTrue();
         // CR-3: caregiver khách chọn không nhận → buổi trả lịch, chờ trung tâm phân người khác.

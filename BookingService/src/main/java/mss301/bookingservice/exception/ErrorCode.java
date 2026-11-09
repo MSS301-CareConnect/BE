@@ -82,8 +82,10 @@ public enum ErrorCode {
     CAREGIVER_CHANGE_REQUEST_NOT_FOUND(5170, "Caregiver change request does not exist", HttpStatus.NOT_FOUND),
     CAREGIVER_CHANGE_REQUEST_NOT_PENDING(5171, "The caregiver change request is no longer pending", HttpStatus.CONFLICT),
     TOO_MANY_CHANGE_REQUESTS(5172, "A booking can have at most 3 caregiver change requests", HttpStatus.CONFLICT),
-    CHANGE_REQUEST_TOO_LATE(5173, "Caregiver change requests must be submitted at least 12 hours before the earliest requested occurrence", HttpStatus.CONFLICT),
+    CHANGE_REQUEST_TOO_LATE(5173, "Only visits starting at least 12 hours from now can get a new caregiver", HttpStatus.CONFLICT),
     NO_REASSIGNABLE_OCCURRENCES(5174, "There are no eligible upcoming care occurrences to reassign", HttpStatus.CONFLICT),
+    // 2026-11-09: khách chỉ đổi caregiver cho cả booking.
+    CAREGIVER_CHANGE_SCOPE_INVALID(5175, "A caregiver change applies to every remaining visit of the booking", HttpStatus.BAD_REQUEST),
 
     // LỊCH / BUỔI CHĂM SÓC
     BOOKING_TYPE_REQUIRED(5200, "Booking type is required (SHIFT, RECURRING, CUSTOM)", HttpStatus.BAD_REQUEST),
@@ -139,6 +141,13 @@ public enum ErrorCode {
     RESCHEDULE_LEAD_TIME_TOO_SHORT(5250, "Occurrences can only be rescheduled at least 24 hours in advance", HttpStatus.CONFLICT),
     RESCHEDULE_LIMIT_REACHED(5251, "Maximum number of reschedules reached for this care occurrence", HttpStatus.CONFLICT),
     REPLACEMENT_CONSENT_INVALID(5252, "No emergency replacement pending customer consent on this care occurrence", HttpStatus.CONFLICT),
+
+    // 2026-11-09: caregiver xin hủy buổi được giao (trung tâm phân người khác).
+    WITHDRAWAL_TOO_LATE(5260, "A visit can only be cancelled at least 24 hours before it starts", HttpStatus.CONFLICT),
+    WITHDRAWAL_ALREADY_REQUESTED(5261, "You have already asked to cancel this visit", HttpStatus.CONFLICT),
+    WITHDRAWAL_NOT_ALLOWED(5262, "This visit can no longer be cancelled", HttpStatus.CONFLICT),
+    WITHDRAWAL_REASON_DETAIL_REQUIRED(5263, "Please describe the reason", HttpStatus.BAD_REQUEST),
+    WITHDRAWAL_REASON_REQUIRED(5264, "Choose a reason for cancelling", HttpStatus.BAD_REQUEST),
 
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),

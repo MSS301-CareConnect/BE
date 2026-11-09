@@ -105,7 +105,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverOccurrenceResponse>> list(UUID actorId, LocalDate from, LocalDate to,
-                                                                       OccurrenceStatus status, int page, int size) {
+                                                                       OccurrenceStatus status, UUID bookingId, int page,
+                                                                       int size) {
         PageRequest pageRequest = PageRequests.unsorted(page, size);
         if (from != null && to != null && to.isBefore(from)) {
             throw new AppException(ErrorCode.INVALID_DATE_FILTER);
@@ -116,7 +117,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         Instant rangeEnd = to == null ? UNBOUNDED_END : to.plusDays(1).atStartOfDay(zone).toInstant();
         Set<OccurrenceStatus> statuses = status == null ? EnumSet.allOf(OccurrenceStatus.class) : EnumSet.of(status);
         Page<BookingOccurrence> occurrences = bookingOccurrenceRepository.findCaregiverSchedule(actorId, rangeStart,
-                rangeEnd, statuses, BookingStatus.CAREGIVER_VISIBLE, pageRequest);
+                rangeEnd, bookingId, statuses, BookingStatus.CAREGIVER_VISIBLE, pageRequest);
         PageResponse<CaregiverOccurrenceResponse> occurrenceResponses = PageResponse.of(occurrences,
                 occurrenceMapper.toCaregiverResponseList(occurrences.getContent()));
         return APIResponse.success("Lấy lịch chăm sóc thành công", occurrenceResponses);

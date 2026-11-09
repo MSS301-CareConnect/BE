@@ -213,12 +213,12 @@ class BookingMapperTests {
                 .roles(Set.of("CUSTOMER"))
                 .build();
 
-        BookingDetailResponse detail = bookingMapper.toDetailResponse(booking, List.of(), List.of(), customer);
+        BookingDetailResponse detail = bookingMapper.toDetailResponse(booking, List.of(), List.of(), customer, null);
         assertThat(detail.getId()).isEqualTo(booking.getId());
         assertThat(detail.getStatus()).isEqualTo(BookingStatus.PENDING_CENTER_CONFIRMATION);
         assertThat(detail.getCustomer().getFullName()).isEqualTo("Khách Hàng");
         assertThat(detail.getDaysOfWeek()).containsExactly(1, 3, 5);
-        assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null).getCustomer()).isNull();
+        assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null, null).getCustomer()).isNull();
 
         List<BookingSummaryResponse> withCustomer = bookingMapper.toSummaryResponseList(List.of(booking),
                 Map.of(booking.getCustomerId(), customer), Map.of(), Map.of());

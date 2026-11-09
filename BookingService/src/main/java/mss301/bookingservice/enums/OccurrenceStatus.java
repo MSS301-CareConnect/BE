@@ -36,7 +36,9 @@ public enum OccurrenceStatus {
 
     public boolean canTransitionTo(OccurrenceStatus targetStatus) {
         return switch (this) {
-            case PENDING_ASSIGNMENT -> targetStatus == RESERVED || targetStatus == CANCELLED || targetStatus == EXPIRED;
+            // SCHEDULED: booking đã cọc khi chưa có người (2026-11-09) — gán người là lên lịch chính thức luôn.
+            case PENDING_ASSIGNMENT -> targetStatus == RESERVED || targetStatus == SCHEDULED || targetStatus == CANCELLED
+                    || targetStatus == EXPIRED;
             // PENDING_ASSIGNMENT: caregiver khách chọn không nhận đơn → trung tâm phân người khác (CR-3).
             case RESERVED -> targetStatus == SCHEDULED || targetStatus == CANCELLED || targetStatus == EXPIRED
                     || targetStatus == PENDING_ASSIGNMENT;

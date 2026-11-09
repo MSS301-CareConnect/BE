@@ -45,6 +45,11 @@ PENDING_CENTER_CONFIRMATION ─accept (có caregiver)─────────
    └─hủy──▶ CANCELLED (customer: tới CONFIRMED; trung tâm: từ AWAITING_INITIAL_PAYMENT; admin / hệ thống: mọi trạng thái giữ chỗ)
 ```
 
+- **Từ 2026-11-09** (`../docs/2026-11-09-BOOKING_HOLD_AND_CAREGIVER_WITHDRAWAL.md`): booking mới vào thẳng
+  `AWAITING_INITIAL_PAYMENT`, giữ chỗ `BOOKING_PAYMENT_HOLD` (5 phút, không quá mốc chốt) + ân hạn ẩn
+  `BOOKING_PAYMENT_HOLD_GRACE` (2 phút) rồi EXPIRED; không chọn caregiver → hệ thống tự phân công (một người / booking),
+  không ai rảnh → buổi `PENDING_ASSIGNMENT` + báo trung tâm. Hai trạng thái chờ xác nhận / chờ phân công phía trên chỉ còn
+  cho booking cũ. Response chi tiết có `serverTime` để FE đếm ngược.
 - Loại booking: `SHIFT` (một ca `caregiverScheduleId` của Provider, bắt buộc caregiver, thanh toán đầu 100 %), `RECURRING`
   (`frequency` DAILY / WEEKLY + khoảng ngày + giờ), `CUSTOM` (`slots[{startAt, endAt}]`, mỗi buổi một khung giờ, không chồng nhau).
 - `BookingAction` là state machine duy nhất; mọi đổi trạng thái qua `BookingLifecycleService` (ghi `booking_status_history`).
@@ -87,7 +92,10 @@ của mình; CAREGIVER buổi được giao. Ngoài phạm vi → 404.
 | SERVICE | `POST /api/v1/bookings/{id}/deposit-paid` `{paymentReference?, fullyPaid?}` | PaymentService xác nhận khoản thanh toán đầu (người dùng → 403); `fullyPaid = true` → `fullyPaidAt`; idempotent. TODO(PAY-08) — đổi tên thành `deposit-confirmations` |
 | SERVICE | `POST /api/v1/bookings/{id}/remaining-paid` `{paymentReference?}` | Đã trả xong phần còn lại → `fullyPaidAt` (nhận cả khi còn AWAITING_INITIAL_PAYMENT); booking đã kết thúc → 409 `5101` (Payment hoàn lại); idempotent |
 | SERVICE | `POST /api/v1/bookings/{id}/payment-overdue` | Quá hạn trả phần còn lại: CONFIRMED chưa trả đủ → EXPIRED, buổi → EXPIRED, giải phóng caregiver, không xếp hoàn (Payment đã xử lý); idempotent |
-| CAREGIVER | `GET /api/v1/booking-occurrences?from=&to=&status=&page=&size=` | **Phân trang**, `from` / `to` tùy chọn (bỏ giới hạn 62 ngày — BK-06). Buổi được giao cho chính buổi đó của booking đã xác nhận; không kèm snapshot |
+| CAREGIVER | `GET /api/v1/booking-occurrences?from=&to=&status=&bookingId=&page=&size=` | **Phân trang**, `from` / `to` tùy chọn (bỏ giới hạn 62 ngày — BK-06); `bookingId` = mọi buổi của một booking (2026-11-09). Buổi được giao cho chính buổi đó của booking đã xác nhận; không kèm snapshot; có `needsReassignment` |
+| CAREGIVER | `POST /api/v1/caregiver-withdrawals` `{occurrenceIds, reasonCode: PERSONAL\|OTHER, reasonDetail?}` | 2026-11-09: xin hủy một / nhiều buổi cùng booking, mỗi buổi còn > `BOOKING_CAREGIVER_WITHDRAWAL_LEAD` (24h); có hiệu lực ngay (buổi `needsReassignment`), báo trung tâm + khách, thử tự phân công người khác. Lỗi `5260`–`5264` |
+| CAREGIVER, CENTER_MANAGER | `GET /api/v1/caregiver-withdrawals?bookingId=&pendingOnly=&page=&size=` | Caregiver: của mình; manager: trung tâm mình; `state` PENDING / REASSIGNED / CLOSED |
+| CUSTOMER | `POST /api/v1/bookings/{id}/caregiver-change-requests` | 2026-11-09: chỉ `scopeType = ALL_REMAINING` (khác → 400 `5175`); manager duyệt `POST /api/v1/caregiver-change-requests/{id}/approve` → đổi mọi buổi còn ≥ 12h (`5173`) |
 | Mọi role (theo phạm vi) | `GET /api/v1/booking-occurrences/{id}` | ADMIN / SERVICE mọi buổi; manager buổi của trung tâm mình; khách buổi của booking mình; caregiver buổi được giao (snapshot người bệnh chỉ khi còn quyền — SEC-09). Kèm `services[]`, `specialNotes`, `customerPhone` (caregiver: che giữa trừ khi buổi bắt đầu trong 24h), `sessionId`, `missedReason`, `noShow*` |
 | SERVICE | `POST /api/v1/booking-occurrences/busy-caregivers` `{caregiverIds ≤200, slots ≤60}` | C5.1 cho Provider: caregiver đã có buổi còn hoạt động trùng một trong các khoảng → `{busyCaregiverIds}` |
 | CAREGIVER | `POST /api/v1/booking-occurrences/{id}/acknowledge` | Nhận ca (OPS-01) |
@@ -107,6 +115,8 @@ Identity của caregiver (lấy từ Provider, không nhận từ client).
 |---|---|---|
 | `BookingExpiryScheduler` | `BOOKING_EXPIRY_SCAN_INTERVAL` | PENDING_CENTER_CONFIRMATION quá hạn xác nhận / PENDING_CAREGIVER_ASSIGNMENT quá hạn phân công / AWAITING_INITIAL_PAYMENT quá hạn thanh toán đầu → EXPIRED. Cùng chu kỳ: nhắc khách trả phần còn lại tại các mốc `remainingPaymentReminderMinutes` của center policy (mặc định 72h, 48h trước hạn), mỗi mốc một lần (`REMAINING_DUE`); mốc đã qua lúc trả khoản đầu thì bỏ |
 | `OccurrenceMissedScheduler` | `BOOKING_MISSED_SCAN_INTERVAL` (5m) | Buổi chưa check-in sau `startAt + bookings.check_in_late_minutes` (center policy chụp lúc tạo, Q12), không có báo vắng, booking CONFIRMED / IN_PROGRESS → CAREGIVER_MISSED + hoàn tiền `CAREGIVER_MISSED` + chốt booking. Báo vắng chưa quyết định sau `endAt + BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` (24h) → nhắc manager một lần |
+| `BookingExpiryScheduler.releaseExpiredHolds` | `BOOKING_HOLD_SCAN_INTERVAL` (15s) | Booking giữ chỗ quá `depositDueAt + BOOKING_PAYMENT_HOLD_GRACE` → EXPIRED, nhả lịch caregiver (2026-11-09) |
+| `CaregiverAutoAssignScheduler` | `BOOKING_AUTO_ASSIGN_INTERVAL` (1m) | Booking đã trả còn buổi chưa người → tự phân công (thử lại sau `BOOKING_AUTO_ASSIGN_RETRY`, báo trung tâm tối đa mỗi `BOOKING_UNASSIGNED_NOTIFY_EVERY`); buổi đã trả chưa người còn < `BOOKING_UNASSIGNED_CANCEL_LEAD` (12h) → hủy + hoàn `CENTER_CANCEL` |
 | `CareSessionOverdueScheduler` | `BOOKING_SESSION_OVERDUE_SCAN_INTERVAL` | Session còn mở quá giờ kết thúc + 60m → nhắc một lần |
 | `BookingOutboxScheduler` | `BOOKING_OUTBOX_SCAN_INTERVAL` | Gửi lại việc sang Payment (`REMAINING_INVOICE`, `REFUND`) với backoff |
 
@@ -135,6 +145,8 @@ sau khi khóa (mỗi booking chỉ EXPIRE / CAREGIVER_MISSED một lần); outbo
 | 5226 / 5228 | `CAREGIVER_NOT_AVAILABLE` / `TOO_MANY_PENDING_BOOKINGS` | BK-02 |
 | 5229–5233 | busy-caregivers | Thiếu / quá số caregiver, slot |
 | 5242 | `BOOKING_NOT_FULLY_PAID` | Check-in khi khách chưa trả xong phần còn lại (spec §9.1, 409) |
+| 5173 / 5175 | `CHANGE_REQUEST_TOO_LATE` / `CAREGIVER_CHANGE_SCOPE_INVALID` | Đổi caregiver: buổi còn < 12h / không phải ALL_REMAINING |
+| 5260–5264 | caregiver xin hủy | `WITHDRAWAL_TOO_LATE` (< 24h), `WITHDRAWAL_ALREADY_REQUESTED`, `WITHDRAWAL_NOT_ALLOWED`, `WITHDRAWAL_REASON_DETAIL_REQUIRED`, `WITHDRAWAL_REASON_REQUIRED` |
 | 5400–5408 | phân công / trung tâm | Caregiver khác trung tâm / chưa xác minh / không hoạt động / không làm được dịch vụ, trung tâm không hoạt động… |
 | 5500 / 5501 / 5600 / 5700 | `IDENTITY_UNAVAILABLE` / `SERVICE_TOKEN_UNAVAILABLE` / `CARE_RECIPIENT_UNAVAILABLE` / `PROVIDER_UNAVAILABLE` | 503 |
 | 5800–5805 | ca chăm sóc | Không thấy, check-in trùng, ngoài giờ, còn việc chưa xong… |
@@ -149,7 +161,10 @@ Xem `.env.example` (chỉ tên + chú thích): `BOOKING_SERVER_PORT`, `BOOKING_S
 `BOOKING_PROVIDER_URL`, `BOOKING_CARE_CATALOG_URL`, `BOOKING_PAYMENT_URL` (đều là gateway) · `BOOKING_SERVICE_CLIENT_ID`,
 `BOOKING_SERVICE_CLIENT_SECRET` · `BOOKING_TIMEZONE`, `BOOKING_MAX_OCCURRENCES`, `BOOKING_MAX_SPAN_DAYS`,
 `BOOKING_POLICY_*` (mặc định center booking policy, phút / %), `BOOKING_EXPIRY_BATCH_SIZE`,
-`BOOKING_EXPIRY_SCAN_INTERVAL` · `BOOKING_MAX_PENDING_PER_CUSTOMER` · `BOOKING_SESSION_*`,
+`BOOKING_EXPIRY_SCAN_INTERVAL` · `BOOKING_PAYMENT_HOLD`, `BOOKING_PAYMENT_HOLD_GRACE`, `BOOKING_HOLD_SCAN_INTERVAL`,
+`BOOKING_CAREGIVER_WITHDRAWAL_LEAD`, `BOOKING_AUTO_ASSIGN_INTERVAL`, `BOOKING_AUTO_ASSIGN_RETRY`,
+`BOOKING_AUTO_ASSIGN_CANDIDATES`, `BOOKING_UNASSIGNED_NOTIFY_EVERY`, `BOOKING_UNASSIGNED_CANCEL_LEAD` (2026-11-09, đều có
+mặc định) · `BOOKING_MAX_PENDING_PER_CUSTOMER` · `BOOKING_SESSION_*`,
 `BOOKING_MISSED_SCAN_INTERVAL`, `BOOKING_NO_SHOW_DECISION_REMINDER_AFTER` · `BOOKING_COMPLAINT_OPEN_WINDOW`,
 `BOOKING_COMPLAINT_CUSTOMER_ESCALATE_AFTER`, `BOOKING_ADMIN_USER_IDS` (admin nhận thông báo vận hành) ·
 `BOOKING_OUTBOX_*` · `BOOKING_CANCELLATION_PREVIEW_SECRET` (khóa HMAC chung cho mọi instance; trống = khóa ngẫu nhiên

@@ -156,6 +156,14 @@ public class Booking extends BaseEntity {
     @Column(name = "center_reminder_minutes")
     Integer centerReminderMinutes;
 
+    // Tự phân công (2026-11-09): lần thử gần nhất (scheduler thử lại sau booking.schedule.auto-assign-retry) và lần gần nhất
+    // báo trung tâm "chưa tìm được người" (mỗi booking tối đa một lần / booking.schedule.unassigned-notify-every).
+    @Column(name = "auto_assign_attempted_at")
+    Instant autoAssignAttemptedAt;
+
+    @Column(name = "unassigned_notified_at")
+    Instant unassignedNotifiedAt;
+
     // Bên chưa làm kịp khi booking EXPIRED; NULL ở trạng thái khác.
     @Enumerated(EnumType.STRING)
     @Column(name = "expired_reason", length = 40)

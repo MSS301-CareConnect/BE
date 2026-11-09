@@ -159,7 +159,8 @@ public interface BookingMapper {
     @Mapping(target = "deadlineType", expression = "java(mss301.bookingservice.util.BookingDeadlines.typeOf(booking))")
     @Mapping(target = "deadlineAt", expression = "java(mss301.bookingservice.util.BookingDeadlines.dueAt(booking))")
     BookingDetailResponse toDetailResponse(Booking booking, List<BookingDetail> services,
-                                           List<BookingOccurrence> occurrences, IdentityUserResponse customer);
+                                           List<BookingOccurrence> occurrences, IdentityUserResponse customer,
+                                           Instant serverTime);
 
     CustomerProfileResponse toCustomerProfileResponse(IdentityUserResponse user);
 

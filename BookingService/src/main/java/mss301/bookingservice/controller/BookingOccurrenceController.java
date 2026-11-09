@@ -45,9 +45,10 @@ public class BookingOccurrenceController {
                                                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                                                        @RequestParam(required = false) OccurrenceStatus status,
+                                                                       @RequestParam(required = false) UUID bookingId,
                                                                        @RequestParam(defaultValue = "0") int page,
                                                                        @RequestParam(defaultValue = "20") int size) {
-        return bookingOccurrenceService.list(actorId, from, to, status, page, size);
+        return bookingOccurrenceService.list(actorId, from, to, status, bookingId, page, size);
     }
 
     @GetMapping("/{id}")
