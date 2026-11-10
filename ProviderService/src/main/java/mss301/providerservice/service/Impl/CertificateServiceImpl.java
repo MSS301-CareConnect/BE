@@ -71,6 +71,10 @@ public class CertificateServiceImpl implements CertificateService {
             Set.of(CertificateAiCheckStatus.QUEUED, CertificateAiCheckStatus.PROCESSING);
     // Admin duyệt mà không cần lý do chỉ khi AI đã trả LOW / MEDIUM.
     static Set<CertificateRiskLevel> ACCEPTABLE_RISK_LEVELS = Set.of(CertificateRiskLevel.LOW, CertificateRiskLevel.MEDIUM);
+    // Caregiver chỉ xóa chứng chỉ chưa được xác nhận hoặc đã bị từ chối (chốt 2026-11-10): chứng chỉ đang chờ admin hay
+    // đã xác minh không biến mất âm thầm khỏi hồ sơ.
+    static Set<CertificateVerificationStatus> DELETABLE_STATUSES =
+            Set.of(CertificateVerificationStatus.PENDING, CertificateVerificationStatus.REJECTED);
     static Duration FIRST_RETRY_DELAY = Duration.ofSeconds(30);
     static TypeReference<List<CertificateAiWarningResponse>> WARNING_LIST = new TypeReference<>() {
     };
@@ -300,6 +304,9 @@ public class CertificateServiceImpl implements CertificateService {
         Certificate certificate = lockCertificate(id);
         providerAuthorization.requireCaregiverSelf(certificate.getCaregiver(), actorId);
         checkVersion(certificate, version);
+        if (!DELETABLE_STATUSES.contains(certificate.getVerificationStatus())) {
+            throw new AppException(ErrorCode.CERTIFICATE_INVALID_TRANSITION);
+        }
         certificate.setDeletedAt(Instant.now());
         certificateRepository.save(certificate);
         return APIResponse.success("Xóa chứng chỉ thành công");

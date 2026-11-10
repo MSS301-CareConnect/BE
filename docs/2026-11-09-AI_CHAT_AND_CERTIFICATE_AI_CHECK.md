@@ -66,6 +66,8 @@ CRUD đầy đủ (`/api/v1/ai`, tag `AI Chat`):
   quả cũ). Lỗi: backoff 30s·2ⁿ (≤ `PROVIDER_AI_CHECK_MAX_BACKOFF`), hết `PROVIDER_AI_CHECK_MAX_ATTEMPTS` hoặc AIService trả
   400 → `FAILED`.
 - Sửa thông tin **hoặc thêm/xóa ảnh** chứng chỉ → quay về `PENDING`, xóa kết quả xác minh + AI (`Certificate.restartReview()`).
+- Caregiver **chỉ xóa** chứng chỉ `PENDING` hoặc `REJECTED` (chốt 2026-11-10); `CENTER_VERIFIED` / `ADMIN_VERIFIED` → 409
+  `4253` (`DELETABLE_STATUSES` trong `CertificateServiceImpl`).
 - API mới (ADMIN): `GET /certificates/pending-audit?riskLevel&aiCheckStatus` (HIGH → UNDETERMINED → MEDIUM → LOW → chưa có,
   rồi `centerVerifiedAt`; `aiCheckStatus=QUEUED` gồm cả PROCESSING), `GET /certificates/pending-audit/statistics`,
   `POST /certificates/{id}/ai-check` (chạy lại, chỉ khi `CENTER_VERIFIED`, 409 4257).

@@ -31,6 +31,8 @@ import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.Impl.CertificateServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -162,6 +164,30 @@ class CertificateAiCheckTests {
         assertThat(response.getAiExtracted().getHolderName()).isEqualTo("NGUYỄN VĂN AN");
         assertThat(response.getAiExtracted().getExpiryDate()).isEqualTo(LocalDate.of(2030, 1, 1));
         assertThat(response.getCertificateName()).isEqualTo("Điều dưỡng cơ bản");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CertificateVerificationStatus.class, names = {"PENDING", "REJECTED"})
+    void caregiverDeletesCertificateNotYetConfirmedOrRejected(CertificateVerificationStatus status) {
+        certificate.setVerificationStatus(status);
+
+        service.delete(certificate.getCaregiver().getUserId(), certificate.getId(), 3L);
+
+        assertThat(certificate.getDeletedAt()).isNotNull();
+        verify(certificateRepository).save(certificate);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CertificateVerificationStatus.class, names = {"CENTER_VERIFIED", "ADMIN_VERIFIED"})
+    void caregiverCannotDeleteCertificateInReviewOrVerified(CertificateVerificationStatus status) {
+        certificate.setVerificationStatus(status);
+
+        AppException error = assertThrows(AppException.class,
+                () -> service.delete(certificate.getCaregiver().getUserId(), certificate.getId(), 3L));
+
+        assertEquals(ErrorCode.CERTIFICATE_INVALID_TRANSITION, error.getErrorCode());
+        assertThat(certificate.getDeletedAt()).isNull();
+        verify(certificateRepository, never()).save(any(Certificate.class));
     }
 
     @Test
