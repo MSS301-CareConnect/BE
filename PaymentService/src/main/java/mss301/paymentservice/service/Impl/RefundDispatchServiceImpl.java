@@ -17,9 +17,11 @@ import mss301.paymentservice.enums.TransactionEventType;
 import mss301.paymentservice.gateway.RefundCommand;
 import mss301.paymentservice.gateway.RefundResult;
 import mss301.paymentservice.gateway.VnPayRefundGateway;
+import mss301.paymentservice.repository.BookingFinancialRepository;
 import mss301.paymentservice.repository.PaymentAttemptRepository;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.service.PaymentOutboxService;
 import mss301.paymentservice.service.PaymentTransactionService;
 import mss301.paymentservice.service.RefundDispatchService;
 import mss301.paymentservice.service.WalletService;
@@ -54,6 +56,8 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
     RefundRepository refundRepository;
     PaymentRepository paymentRepository;
     PaymentAttemptRepository paymentAttemptRepository;
+    BookingFinancialRepository bookingFinancialRepository;
+    PaymentOutboxService paymentOutboxService;
     VnPayRefundGateway vnPayRefundGateway;
     PaymentTransactionService paymentTransactionService;
     WalletService walletService;
@@ -147,6 +151,10 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
     }
 
     private void recordResult(UUID refundId, Claim claim, RefundResult result) {
+        // Khóa booking_financials trước (thứ tự khóa chung) để các dòng hoàn cùng booking ghi kết quả lần lượt — dòng cuối
+        // của một lệnh mới thấy cả nhóm đã xong và xếp đúng một thông báo.
+        refundRepository.findById(refundId)
+                .ifPresent(snapshot -> bookingFinancialRepository.findForUpdate(snapshot.getBookingId()));
         Refund refund = refundRepository.findForUpdate(refundId).orElse(null);
         if (refund == null || refund.getStatus() != RefundStatus.REFUND_PENDING) {
             return;
@@ -194,6 +202,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         paymentTransactionService.record(refund.getBookingId(), refund.getPaymentId(), refund.getId(), null,
                 TransactionEventType.REFUND_SUCCEEDED, refund.getAmount(), null,
                 "code=" + refund.getProviderResponseCode(), null);
+        paymentOutboxService.enqueueRefundCompleted(refund);
         log.info("Refund {} of {} on payment {} completed", refund.getId(), refund.getAmount(), refund.getPaymentId());
     }
 

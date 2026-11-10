@@ -40,6 +40,7 @@ public interface OccurrenceMapper {
 
     @IgnoreServerManagedFields
     @Mapping(target = "reminderSentAt", ignore = true)
+    @Mapping(target = "lateWarnedAt", ignore = true)
     @Mapping(target = "booking", expression = "java(booking)")
     @Mapping(target = "caregiverId", expression = "java(booking.getCaregiverId())")
     @Mapping(target = "caregiverUserId", expression = "java(booking.getCaregiverUserId())")

@@ -43,5 +43,9 @@ public interface RemainingInvoiceService {
 
     List<UUID> findOverdueCandidateIds();
 
+    // Trước khi giữ cọc vì quá hạn: caregiver của buổi có thể được phân / đổi sau lúc khách trả khoản đầu → đọc lại từ
+    // Booking (ngoài transaction). Booking lỗi thì giữ bản chụp cũ, không chặn việc xử lý quá hạn.
+    void refreshCaregivers(UUID invoiceId);
+
     void markOverdue(UUID invoiceId);
 }

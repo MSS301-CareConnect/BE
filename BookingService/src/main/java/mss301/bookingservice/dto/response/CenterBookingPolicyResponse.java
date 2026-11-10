@@ -32,6 +32,7 @@ public class CenterBookingPolicyResponse {
     Integer refundThresholdMinutes;
     BigDecimal refundPercentBeforeThreshold;
     BigDecimal refundPercentAfterThreshold;
+    Integer lateCancelNoRefundMinutes;
     BigDecimal overduePaymentForfeitPercent;
     Long version;
     Instant updatedAt;

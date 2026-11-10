@@ -1,6 +1,7 @@
 package mss301.paymentservice.service;
 
 import mss301.paymentservice.entity.Payment;
+import mss301.paymentservice.entity.Refund;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +16,10 @@ public interface PaymentOutboxService {
 
     // M1: quá hạn trả phần còn lại → Booking EXPIRED (trong transaction job quá hạn; payment = khoản đầu).
     void enqueuePaymentOverdue(Payment depositPayment, UUID invoiceId);
+
+    // 2026-11-10: mọi dòng hoàn của một lệnh (cùng idempotency key) đã REFUNDED → một thông báo cho khách (gọi trong
+    // transaction ghi kết quả hoàn, booking_financials đã khóa nên chỉ một lượt thấy "đã xong hết").
+    void enqueueRefundCompleted(Refund refund);
 
     List<UUID> findDueIds();
 

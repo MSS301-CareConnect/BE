@@ -29,6 +29,7 @@ public interface PaymentPolicyMapper {
     @Mapping(target = "refundThresholdMinutes", source = "context.refundThresholdMinutes")
     @Mapping(target = "refundPercentBeforeThreshold", source = "context.refundPercentBeforeThreshold")
     @Mapping(target = "refundPercentAfterThreshold", source = "context.refundPercentAfterThreshold")
+    @Mapping(target = "lateCancelNoRefundMinutes", source = "context.lateCancelNoRefundMinutes")
     @Mapping(target = "overduePaymentForfeitPercent", source = "context.overduePaymentForfeitPercent")
     PolicySnapshot toSnapshot(PlatformPolicy policy, BookingPaymentContextResponse context, BigDecimal depositPercent);
 }

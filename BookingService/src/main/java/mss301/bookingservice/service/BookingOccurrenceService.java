@@ -49,6 +49,12 @@ public interface BookingOccurrenceService {
 
     void markMissed(UUID id);
 
+    // 2026-11-10 — cảnh báo sớm: buổi đã tới giờ mà caregiver chưa check-in (còn trong hạn check-in trễ) → báo caregiver,
+    // trung tâm và khách một lần, trước khi job MISSED ghi nhận vắng ca.
+    List<UUID> findLateCheckInIds();
+
+    void warnLateCheckIn(UUID id);
+
     List<UUID> findShiftReminderIds();
 
     void remindShift(UUID id);

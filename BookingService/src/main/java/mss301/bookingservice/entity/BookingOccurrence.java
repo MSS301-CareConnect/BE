@@ -153,6 +153,10 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "reminder_sent_at")
     Instant reminderSentAt;
 
+    // 2026-11-10: đã cảnh báo "tới giờ mà chưa check-in" cho buổi này (một lần); xóa khi đổi người / dời lịch.
+    @Column(name = "late_warned_at")
+    Instant lateWarnedAt;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;
@@ -173,6 +177,7 @@ public class BookingOccurrence extends BaseEntity {
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;
             reminderSentAt = null;
+            lateWarnedAt = null;
             // Lịch Provider gắn với caregiver cũ (SHIFT) — người mới không giữ lịch đó.
             caregiverScheduleId = null;
         }

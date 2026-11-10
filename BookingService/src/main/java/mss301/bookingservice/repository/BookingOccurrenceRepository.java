@@ -202,6 +202,26 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                              @Param("now") Instant now,
                              Pageable pageable);
 
+    // 2026-11-10: buổi đã tới giờ, còn trong hạn check-in trễ, có caregiver nhưng chưa check-in / chưa báo vắng và chưa
+    // cảnh báo → báo sớm cho caregiver, trung tâm, khách trước khi job MISSED chạy.
+    @Query("""
+            select o.id from BookingOccurrence o join o.booking b
+            where o.deletedAt is null
+              and b.deletedAt is null
+              and o.status in :occurrenceStatuses
+              and b.status in :bookingStatuses
+              and o.caregiverUserId is not null
+              and o.lateWarnedAt is null
+              and o.noShowReportedAt is null
+              and o.startAt <= :now
+              and o.startAt + (b.checkInLateMinutes) minute > :now
+            order by o.startAt
+            """)
+    List<UUID> findLateCheckInIds(@Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
+                                  @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                  @Param("now") Instant now,
+                                  Pageable pageable);
+
     // BK-04: buổi tương lai còn hoạt động của caregiver bị khóa, chưa đánh dấu cần đổi người.
     @Query("""
             select o from BookingOccurrence o join fetch o.booking b

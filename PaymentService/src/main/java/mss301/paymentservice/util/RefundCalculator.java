@@ -22,11 +22,16 @@ public final class RefundCalculator {
     public static final String NOT_CANCELLABLE = "NOT_CANCELLABLE";
     public static final String BEFORE_THRESHOLD = "BEFORE_THRESHOLD";
     public static final String AFTER_THRESHOLD = "AFTER_THRESHOLD";
+    // Hủy sát giờ (còn dưới LATE_CANCEL_WINDOW): không hoàn — tách khỏi AFTER_THRESHOLD để màn hình không ghi "giữ một phần".
+    public static final String LATE_NO_REFUND = "LATE_NO_REFUND";
     public static final String FULL_REFUND_CENTER = "FULL_REFUND_CENTER";
     public static final String FULL_REFUND_MISSED = "FULL_REFUND_MISSED";
     public static final String FULL_REFUND_SYSTEM = "FULL_REFUND_SYSTEM";
     public static final String PAYMENT_OVERDUE = "PAYMENT_OVERDUE";
     static final BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
+    // Spec v3 §10.2 (duyệt 2026-11-05): còn dưới mốc này tới giờ buổi thì caregiver đã giữ ca, khách không được hoàn. Từ
+    // 2026-11-10 mỗi trung tâm đặt mốc riêng (lateCancelNoRefundMinutes); snapshot cũ chưa có thì dùng 120 phút.
+    static final int DEFAULT_LATE_CANCEL_MINUTES = 120;
 
     private RefundCalculator() {
     }
@@ -85,10 +90,15 @@ public final class RefundCalculator {
             return fullRefund(occurrence, price, paid, FULL_REFUND_SYSTEM);
         }
         boolean beforeThreshold = leadSeconds >= Duration.ofMinutes(policy.getRefundThresholdMinutes()).getSeconds();
-        boolean lateForfeit = leadSeconds < Duration.ofHours(2).getSeconds();
+        int lateCancelMinutes = policy.getLateCancelNoRefundMinutes() == null
+                ? DEFAULT_LATE_CANCEL_MINUTES
+                : policy.getLateCancelNoRefundMinutes();
+        if (!beforeThreshold && leadSeconds < Duration.ofMinutes(lateCancelMinutes).getSeconds()) {
+            return new Line(occurrence.occurrenceId(), price, paid, paid, BigDecimal.ZERO, LATE_NO_REFUND);
+        }
         BigDecimal percent = beforeThreshold
                 ? policy.getRefundPercentBeforeThreshold()
-                : (lateForfeit ? BigDecimal.ZERO : policy.getRefundPercentAfterThreshold());
+                : policy.getRefundPercentAfterThreshold();
         BigDecimal refund = VndMoney.percentOf(percent.min(ONE_HUNDRED), paid).min(paid);
         return new Line(occurrence.occurrenceId(), price, paid, paid.subtract(refund), refund,
                 beforeThreshold ? BEFORE_THRESHOLD : AFTER_THRESHOLD);

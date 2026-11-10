@@ -50,7 +50,12 @@ public interface WalletService {
     void settleOccurrence(OccurrenceFinancial occurrenceFinancial, BigDecimal centerAmount, BigDecimal commission);
 
     // Hoàn khiếu nại sau khi booking đã được cộng cho trung tâm → trừ ví trung tâm (trần = đã cộng − đã trừ của booking).
-    void debitComplaintRefund(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount);
+    // Trả về số đã trừ (0 khi booking chưa cộng gì cho trung tâm).
+    BigDecimal debitComplaintRefund(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount);
+
+    // Phần hoàn khiếu nại không còn ai gánh (trung tâm đã trừ hết, không còn buổi chưa đối soát) là hoa hồng nền tảng đã thu
+    // trên tiền vừa hoàn → trừ lại ví nền tảng (trần = hoa hồng đã thu − đã trừ của booking).
+    void debitComplaintCommission(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount);
 
     // Ví của chính người gọi, đã khóa (tạo nếu chưa có) — ví nền tảng không rút → WALLET_NOT_WITHDRAWABLE.
     Wallet lockOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);

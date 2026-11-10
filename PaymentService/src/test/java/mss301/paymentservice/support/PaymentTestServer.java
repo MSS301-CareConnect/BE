@@ -56,6 +56,7 @@ public final class PaymentTestServer {
     private final List<JsonNode> depositPaidBodies = new CopyOnWriteArrayList<>();
     private final List<UUID> remainingPaidCalls = new CopyOnWriteArrayList<>();
     private final List<UUID> paymentOverdueCalls = new CopyOnWriteArrayList<>();
+    private final List<JsonNode> notificationBodies = new CopyOnWriteArrayList<>();
     private final AtomicInteger depositPaidStatus = new AtomicInteger(200);
     private final AtomicReference<String> vnPayResponseCode = new AtomicReference<>("00");
     private final AtomicInteger vnPayHttpStatus = new AtomicInteger(200);
@@ -81,6 +82,7 @@ public final class PaymentTestServer {
         server.createContext("/.well-known/jwks.json", this::handleJwks);
         server.createContext("/api/v1/auth/service-token", this::handleServiceToken);
         server.createContext("/api/v1/bookings/", this::handleBookings);
+        server.createContext("/api/v1/notifications", this::handleNotifications);
         server.createContext(VNPAY_API_PATH, this::handleVnPayApi);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
@@ -103,6 +105,7 @@ public final class PaymentTestServer {
         depositPaidBodies.clear();
         remainingPaidCalls.clear();
         paymentOverdueCalls.clear();
+        notificationBodies.clear();
         depositPaidStatus.set(200);
         vnPayResponseCode.set("00");
         vnPayHttpStatus.set(200);
@@ -181,6 +184,11 @@ public final class PaymentTestServer {
 
     public List<UUID> paymentOverdueCalls() {
         return paymentOverdueCalls;
+    }
+
+    // Thông báo PaymentService gửi qua BookingService (2026-11-10: hoàn tiền xong).
+    public List<JsonNode> notificationBodies() {
+        return notificationBodies;
     }
 
     public void setDepositPaidStatus(int status) {
@@ -276,6 +284,16 @@ public final class PaymentTestServer {
             return;
         }
         write(exchange, 404, "{\"code\":404}");
+    }
+
+    private void handleNotifications(HttpExchange exchange) throws IOException {
+        String auth = exchange.getRequestHeaders().getFirst("Authorization");
+        if (auth == null || !auth.startsWith("Bearer ")) {
+            write(exchange, 401, "{\"code\":401}");
+            return;
+        }
+        notificationBodies.add(objectMapper.readTree(exchange.getRequestBody().readAllBytes()));
+        writeSuccess(exchange, Map.of("created", 1));
     }
 
     private void handleVnPayApi(HttpExchange exchange) throws IOException {

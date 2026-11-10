@@ -1,5 +1,6 @@
 package mss301.paymentservice.client;
 
+import mss301.paymentservice.client.dto.BookingNotificationRequest;
 import mss301.paymentservice.client.dto.BookingPaymentContextResponse;
 import mss301.paymentservice.client.dto.DepositPaidRequest;
 import mss301.paymentservice.client.dto.RemoteApiResponse;
@@ -26,4 +27,8 @@ public interface BookingClient {
 
     @PostMapping("/api/v1/bookings/{id}/payment-overdue")
     RemoteApiResponse<Object> markPaymentOverdue(@PathVariable("id") UUID id);
+
+    // Thông báo in-app thuộc BookingService (2026-11-10: hoàn tiền xong).
+    @PostMapping("/api/v1/notifications")
+    RemoteApiResponse<Object> createNotification(@RequestBody BookingNotificationRequest request);
 }

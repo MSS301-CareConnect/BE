@@ -63,6 +63,11 @@
    hợp lệ → từ chối cả lệnh. Booking chưa cọc chỉ hủy cả booking. `previewToken` = HMAC (không lưu DB) — lệnh hủy tính lại
    tiền ở Payment rồi so token cả trước lẫn trong transaction. Booking rời trạng thái giữ chỗ luôn kéo mọi buổi chưa kết
    thúc về CANCELLED — exclusion constraint BK-09 dựa vào bất biến này (không có cột `active_slot`).
+1g. **Vắng ca (2026-11-10, `../docs/2026-11-10-CAREGIVER_ABSENCE_AND_REFUND_REVIEW.md`)**: mọi chỗ đánh buổi
+   `CAREGIVER_MISSED` đi qua `markMissedByCaregiver` (hoàn `REFUND:CAREGIVER_MISSED:<occurrenceId>` + `CaregiverAbsenceService.record`
+   trong cùng transaction). Hồ sơ `caregiver_absences` không đụng tiền / trạng thái buổi; kết luận một lần, chỉ manager cùng
+   trung tâm. Cảnh báo sớm `CHECK_IN_LATE` một lần / buổi (`late_warned_at`). Khóa hoàn tiền của một buổi luôn chứa id buổi
+   hoặc `buildRefundKeySuffix` — không dùng chuỗi cố định.
 1d. **CAREGIVER_MISSED / báo vắng (OPS-06)**: job chỉ đánh dấu buổi không có báo vắng; báo vắng chờ manager quyết định
    (không tự quyết, chỉ nhắc). CAREGIVER_MISSED không mở lại.
 2. **Hai id caregiver luôn đi cùng nhau**: `caregiver_id` (Provider) + `caregiver_user_id` (Identity), lấy từ

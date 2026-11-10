@@ -46,6 +46,9 @@ public class PaymentContextResponse {
 
     BigDecimal refundPercentAfterThreshold;
 
+    // 2026-11-10: khách hủy còn dưới mốc này → không hoàn (PaymentService chụp vào policy_snapshot).
+    Integer lateCancelNoRefundMinutes;
+
     BigDecimal overduePaymentForfeitPercent;
 
     BigDecimal totalAmount;

@@ -104,6 +104,7 @@ public interface BookingMapper {
     @Mapping(target = "refundThresholdMinutes", source = "policy.refundThresholdMinutes")
     @Mapping(target = "refundPercentBeforeThreshold", source = "policy.refundPercentBeforeThreshold")
     @Mapping(target = "refundPercentAfterThreshold", source = "policy.refundPercentAfterThreshold")
+    @Mapping(target = "lateCancelNoRefundMinutes", source = "policy.lateCancelNoRefundMinutes")
     @Mapping(target = "overduePaymentForfeitPercent", source = "policy.overduePaymentForfeitPercent")
     PaymentContextResponse toPaymentContextResponse(Booking booking, List<BookingOccurrence> occurrences,
                                                     Instant firstStartAt, CenterBookingPolicy policy,

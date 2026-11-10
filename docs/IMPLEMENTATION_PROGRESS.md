@@ -508,3 +508,23 @@ email + manager cho trung tâm khác, ra khỏi danh sách và thống kê) như
 - Test: Provider ✅ 32 integration + 7 unit CareCenterService (thêm khôi phục, email trùng, manager đã chuyển, INACTIVE →
   ACTIVE không manager). FE ✅ 17 test thư mục `admin/centers`, typecheck + eslint sạch.
 - Còn mở: khôi phục hồ sơ người bệnh / caregiver đã lưu trữ (M-07) chưa làm — cùng mẫu này nếu chủ dự án đồng ý.
+
+## Caregiver vắng ca + rà soát hoàn tiền (2026-11-10) — XONG, chưa commit
+
+Chi tiết, bảng hoàn tiền theo tình huống và tồn đọng: `2026-11-10-CAREGIVER_ABSENCE_AND_REFUND_REVIEW.md`.
+
+- **Booking** — hồ sơ vắng ca `caregiver_absences` (giải trình, kết luận, thống kê; `/api/v1/caregiver-absences`), cảnh báo
+  sớm `CHECK_IN_LATE`, sửa khóa hoàn tiền khi khách từ chối người thay thế khẩn cấp (trước đó chỉ lần đầu được hoàn).
+- **Payment** — lỗi phía trung tâm hoàn vào ví khách, rule `LATE_NO_REFUND`, hoàn khiếu nại không trả hai lần, cọc quá
+  hạn vào đúng ví caregiver hiện tại.
+- **Gateway** — route `/api/v1/caregiver-absences/**`. **FE** — khối vắng ca cho manager / caregiver, trang admin.
+- Test: Payment 56 / 56 · Booking 150 (2 skip có sẵn) · Gateway 25 / 25.
+- Tồn đọng xử lý cùng ngày (`2026-11-10-BACKLOG_STATUS.md`): thay thế khẩn cấp kiểm lịch rảnh, thông báo
+  `REFUND_COMPLETED`, mốc "hủy sát giờ không hoàn" theo trung tâm (BE + FE), khối "Vắng ca" ở trang caregiver của quản lý,
+  màn giải trình vắng ca trên app mobile, FE hết test đỏ / lỗi eslint. SQL đã áp + rebuild booking / payment / gateway
+  2026-11-10; test trên PostgreSQL thật xanh.
+
+**Commit đề xuất:** BE `feat(booking): caregiver absence records with explanation and center conclusion, late check-in
+warning` · `fix(booking): per-visit refund key when a customer rejects an emergency replacement` · `fix(payment): refund
+center-fault cancellations to the customer wallet, no-refund rule under 2 hours, no double payout on complaint refunds` ·
+FE `feat(booking): caregiver absence queues for manager, caregiver and admin`

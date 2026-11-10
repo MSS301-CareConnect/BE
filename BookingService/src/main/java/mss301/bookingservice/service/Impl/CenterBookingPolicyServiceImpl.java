@@ -113,6 +113,10 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
         if (request.getRefundPercentAfterThreshold().compareTo(request.getRefundPercentBeforeThreshold()) > 0) {
             throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);
         }
+        // Mốc "không hoàn" nằm trong khoảng sau mốc hoàn: dài hơn mốc hoàn thì phần "% sau mốc" không bao giờ áp dụng.
+        if (request.getLateCancelNoRefundMinutes() > request.getRefundThresholdMinutes()) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);
+        }
         if (new HashSet<>(request.getRemainingPaymentReminderMinutes()).size()
                 != request.getRemainingPaymentReminderMinutes().size()) {
             throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);

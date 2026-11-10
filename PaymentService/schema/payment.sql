@@ -229,7 +229,8 @@ CREATE INDEX idx_payment_transactions_key ON payment_transactions(idempotency_ke
 CREATE TABLE payment_outbox (
     outbox_id         uuid          PRIMARY KEY,
     event_type        varchar(30)   NOT NULL CONSTRAINT ck_payment_outbox_event_type
-                                    CHECK (event_type IN ('DEPOSIT_CONFIRMATION','REMAINING_CONFIRMATION','PAYMENT_OVERDUE')),
+                                    CHECK (event_type IN ('DEPOSIT_CONFIRMATION','REMAINING_CONFIRMATION','PAYMENT_OVERDUE',
+                                                          'REFUND_COMPLETED')),
     booking_id        uuid          NOT NULL,
     payment_id        uuid          NOT NULL REFERENCES payments(payment_id),
     payment_reference varchar(100)  NOT NULL,
@@ -241,7 +242,7 @@ CREATE TABLE payment_outbox (
     version           bigint        NOT NULL DEFAULT 0,
     created_at        timestamptz   NOT NULL,
     updated_at        timestamptz   NOT NULL,
-    CONSTRAINT uk_payment_outbox_event_payment UNIQUE (event_type, payment_id)
+    CONSTRAINT uk_payment_outbox_event_payment UNIQUE (event_type, payment_id, payment_reference)
 );
 
 CREATE INDEX idx_payment_outbox_status_next ON payment_outbox(status, next_attempt_at);

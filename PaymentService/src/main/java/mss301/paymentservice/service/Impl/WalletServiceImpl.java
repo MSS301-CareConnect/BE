@@ -243,10 +243,10 @@ public class WalletServiceImpl implements WalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void debitComplaintRefund(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount) {
+    public BigDecimal debitComplaintRefund(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount) {
         Wallet wallet = walletRepository.findForUpdate(WalletOwnerType.CENTER, centerId).orElse(null);
         if (wallet == null || amount == null || amount.signum() <= 0) {
-            return;
+            return BigDecimal.ZERO;
         }
         BigDecimal settled = walletTransactionRepository.sumByBooking(wallet.getId(), bookingId,
                 WalletTransactionType.SERVICE_SETTLEMENT);
@@ -255,11 +255,34 @@ public class WalletServiceImpl implements WalletService {
         // Chỉ trừ phần trung tâm đã thực nhận của booking; booking chưa cộng gì thì tiền hoàn chưa từng vào ví trung tâm.
         BigDecimal debit = amount.min(settled.subtract(debited));
         if (debit.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        boolean posted = post(wallet, new WalletPosting(WalletTransactionType.COMPLAINT_DEBIT, debit,
+                COMPLAINT_KEY + complaintId, centerId, bookingId, null, null, null, "complaint=" + complaintId));
+        log.info("Center {} wallet debited {} for complaint {} on booking {}", centerId, debit, complaintId, bookingId);
+        return posted ? debit : BigDecimal.ZERO;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void debitComplaintCommission(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount) {
+        Wallet wallet = walletRepository.findForUpdate(WalletOwnerType.PLATFORM, PLATFORM_OWNER_ID).orElse(null);
+        if (wallet == null || amount == null || amount.signum() <= 0) {
+            return;
+        }
+        BigDecimal collected = walletTransactionRepository.sumByBooking(wallet.getId(), bookingId,
+                WalletTransactionType.COMMISSION_CREDIT);
+        BigDecimal returned = walletTransactionRepository.sumByBooking(wallet.getId(), bookingId,
+                WalletTransactionType.COMPLAINT_DEBIT);
+        // Nền tảng chỉ trả lại hoa hồng đã thu của chính booking này, không gánh thay trung tâm.
+        BigDecimal debit = amount.min(collected.subtract(returned)).min(wallet.getAvailableBalance());
+        if (debit.signum() <= 0) {
             return;
         }
         post(wallet, new WalletPosting(WalletTransactionType.COMPLAINT_DEBIT, debit, COMPLAINT_KEY + complaintId,
-                centerId, bookingId, null, null, null, "complaint=" + complaintId));
-        log.info("Center {} wallet debited {} for complaint {} on booking {}", centerId, debit, complaintId, bookingId);
+                centerId, bookingId, null, null, null, "complaint=" + complaintId + " commission"));
+        log.info("Platform wallet returned {} of commission for complaint {} on booking {}", debit, complaintId,
+                bookingId);
     }
 
     @Override

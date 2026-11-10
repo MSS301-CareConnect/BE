@@ -12,8 +12,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * OPS-06: đánh dấu MISSED buổi không ai check-in sau giờ bắt đầu + booking.session.missed-grace (tự hoàn tiền khách),
- * và nhắc manager báo vắng chưa quyết định. Mỗi buổi một transaction; lỗi một buổi không dừng lô.
+ * OPS-06: đánh dấu MISSED buổi không ai check-in sau giờ bắt đầu + check_in_late_minutes của booking (tự hoàn tiền khách,
+ * ghi hồ sơ vắng ca), cảnh báo sớm khi tới giờ mà chưa check-in (2026-11-10) và nhắc manager báo vắng chưa quyết định.
+ * Mỗi buổi một transaction; lỗi một buổi không dừng lô.
  */
 @Component
 @RequiredArgsConstructor
@@ -32,6 +33,20 @@ public class OccurrenceMissedScheduler {
                 bookingOccurrenceService.markMissed(occurrenceId);
             } catch (RuntimeException e) {
                 log.error("Failed to mark occurrence {} as MISSED ({})", occurrenceId, e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${booking.session.late-warning-scan-interval:1m}",
+            initialDelayString = "${booking.session.late-warning-scan-interval:1m}")
+    public void warnLateCheckIns() {
+        List<UUID> occurrenceIds = bookingOccurrenceService.findLateCheckInIds();
+        for (UUID occurrenceId : occurrenceIds) {
+            try {
+                bookingOccurrenceService.warnLateCheckIn(occurrenceId);
+            } catch (RuntimeException e) {
+                log.error("Failed to warn about the late check-in of occurrence {} ({})", occurrenceId,
+                        e.getClass().getSimpleName(), e);
             }
         }
     }

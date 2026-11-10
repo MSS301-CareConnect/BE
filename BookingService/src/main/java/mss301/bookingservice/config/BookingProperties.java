@@ -167,6 +167,11 @@ public class BookingProperties {
         @NotNull
         Duration missedScanInterval = Duration.ofMinutes(5);
 
+        // 2026-11-10: chu kỳ quét buổi đã tới giờ mà chưa check-in để cảnh báo sớm (OccurrenceMissedScheduler đọc thẳng
+        // placeholder; khai báo ở đây để kiểm khi khởi động).
+        @NotNull
+        Duration lateWarningScanInterval = Duration.ofMinutes(1);
+
         // D21: báo vắng chưa được quyết định sau giờ kết thúc + noShowDecisionReminderAfter → hệ thống tự chấp nhận.
         @NotNull
         Duration noShowDecisionReminderAfter = Duration.ofHours(24);
@@ -244,6 +249,10 @@ public class BookingProperties {
 
         @NotNull
         BigDecimal refundPercentAfterThreshold = BigDecimal.valueOf(70);
+
+        // 2026-11-10 (quyết định 2026-11-05): hủy còn dưới 2 giờ thì không hoàn.
+        @Min(0)
+        Integer lateCancelNoRefundMinutes = 120;
 
         @NotNull
         BigDecimal overduePaymentForfeitPercent = BigDecimal.valueOf(100);

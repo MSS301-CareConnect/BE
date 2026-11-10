@@ -24,5 +24,9 @@ public enum NotificationType {
     CAREGIVER_CHANGE_REQUEST_CREATED,
     CAREGIVER_CHANGE_REQUEST_DECIDED,
     EMERGENCY_REPLACEMENT_NOTIFIED,
-    OCCURRENCE_RESCHEDULED_NOTIFICATION
+    OCCURRENCE_RESCHEDULED_NOTIFICATION,
+    // 2026-11-10: tới giờ mà caregiver chưa check-in (cảnh báo sớm trước mốc MISSED); hồ sơ vắng ca được ghi / giải trình /
+    // kết luận.
+    CHECK_IN_LATE,
+    CAREGIVER_ABSENCE_UPDATED
 }

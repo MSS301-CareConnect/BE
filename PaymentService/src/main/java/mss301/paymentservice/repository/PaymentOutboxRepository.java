@@ -24,6 +24,9 @@ public interface PaymentOutboxRepository extends JpaRepository<PaymentOutbox, UU
 
     boolean existsByEventTypeAndPaymentId(OutboxEventType eventType, UUID paymentId);
 
+    boolean existsByEventTypeAndPaymentIdAndPaymentReference(OutboxEventType eventType, UUID paymentId,
+                                                             String paymentReference);
+
     Optional<PaymentOutbox> findByEventTypeAndPaymentId(OutboxEventType eventType, UUID paymentId);
 
     @Query("select o.id from PaymentOutbox o where o.status = :status and o.nextAttemptAt <= :now order by o.nextAttemptAt")

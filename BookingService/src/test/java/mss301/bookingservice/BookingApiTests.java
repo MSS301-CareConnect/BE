@@ -1097,7 +1097,10 @@ class BookingApiTests {
         Scenario scenario = newScenario();
         String bookingId = createAndGetId(scenario, weeklyBody(scenario, scenario.caregiver().caregiverId(), 0));
         Booking booking = bookingRepository.findById(UUID.fromString(bookingId)).orElseThrow();
+        // Từ 2026-11-09 booking có caregiver được giữ chỗ và chờ khoản đầu → hết hạn theo depositDueAt.
+        BookingStatus heldStatus = booking.getStatus();
         booking.setAcceptanceDueAt(Instant.now().minusSeconds(60));
+        booking.setDepositDueAt(Instant.now().minus(Duration.ofMinutes(3)));
         bookingRepository.save(booking);
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -1115,7 +1118,7 @@ class BookingApiTests {
         long startedAt = System.nanoTime();
         bookingExpiryService.expire(booking.getId());
         assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(5));
-        assertThat(bookingRepository.findById(booking.getId()).orElseThrow().getStatus()).isEqualTo(BookingStatus.PENDING_CENTER_CONFIRMATION);
+        assertThat(bookingRepository.findById(booking.getId()).orElseThrow().getStatus()).isEqualTo(heldStatus);
         release.countDown();
         otherInstance.join(10_000);
         bookingExpiryService.expire(booking.getId());
@@ -1817,13 +1820,16 @@ class BookingApiTests {
         String sessionId = readResult(startSession(caregiverBearer, occurrenceId)
                 .andExpect(status().isOk()).andReturn()).get("sessionId").asString();
 
-        // Mới quá giờ kết thúc 3h → chưa tự đóng.
+        // Mới quá giờ kết thúc 3h → chưa tự đóng. Dời cả giờ bắt đầu: PostgreSQL chặn end_at <= start_at
+        // (ck_booking_occurrences_range).
         BookingOccurrence occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setStartAt(Instant.now().minus(Duration.ofHours(5)));
         occurrence.setEndAt(Instant.now().minus(Duration.ofHours(3)));
         bookingOccurrenceRepository.save(occurrence);
         assertThat(careSessionService.findAutoCloseIds()).doesNotContain(UUID.fromString(sessionId));
 
         occurrence = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        occurrence.setStartAt(Instant.now().minus(Duration.ofHours(7)));
         occurrence.setEndAt(Instant.now().minus(Duration.ofHours(5)));
         bookingOccurrenceRepository.save(occurrence);
         assertThat(careSessionService.findAutoCloseIds()).contains(UUID.fromString(sessionId));
@@ -3385,6 +3391,7 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.shiftMinAdvanceMinutes").value(120))
                 .andExpect(jsonPath("$.result.recurringMinAdvanceMinutes").value(2880))
                 .andExpect(jsonPath("$.result.refundPercentAfterThreshold").value(70))
+                .andExpect(jsonPath("$.result.lateCancelNoRefundMinutes").value(120))
                 .andExpect(jsonPath("$.result.overduePaymentForfeitPercent").value(100))
                 .andExpect(jsonPath("$.result.remainingPaymentReminderMinutes[0]").value(4320));
 
@@ -3403,6 +3410,20 @@ class BookingApiTests {
                         .contentType(MediaType.APPLICATION_JSON).content(json(inconsistent)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_BOOKING_POLICY.getCode()));
+        // Mốc "không hoàn" dài hơn mốc hoàn → 400; thiếu → 400.
+        Map<String, Object> lateTooLong = policyBody(40, null);
+        lateTooLong.put("refundThresholdMinutes", 60);
+        lateTooLong.put("lateCancelNoRefundMinutes", 90);
+        mockMvc.perform(put(policyUrl).header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(lateTooLong)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_BOOKING_POLICY.getCode()));
+        Map<String, Object> lateMissing = policyBody(40, null);
+        lateMissing.remove("lateCancelNoRefundMinutes");
+        mockMvc.perform(put(policyUrl).header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(lateMissing)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.BOOKING_POLICY_VALUE_REQUIRED.getCode()));
         mockMvc.perform(put(policyUrl).header("Authorization", managerBearer(scenario))
                         .contentType(MediaType.APPLICATION_JSON).content(json(policy)))
                 .andExpect(status().isOk())
@@ -3492,6 +3513,7 @@ class BookingApiTests {
         body.put("refundThresholdMinutes", 1440);
         body.put("refundPercentBeforeThreshold", 100);
         body.put("refundPercentAfterThreshold", 70);
+        body.put("lateCancelNoRefundMinutes", 120);
         body.put("overduePaymentForfeitPercent", 100);
         if (version != null) {
             body.put("version", version);
@@ -3635,6 +3657,7 @@ class BookingApiTests {
                 .andExpect(jsonPath("$.result.refundThresholdMinutes").value(1440))
                 .andExpect(jsonPath("$.result.refundPercentBeforeThreshold").value(100))
                 .andExpect(jsonPath("$.result.refundPercentAfterThreshold").value(70))
+                .andExpect(jsonPath("$.result.lateCancelNoRefundMinutes").value(120))
                 .andExpect(jsonPath("$.result.overduePaymentForfeitPercent").value(100));
 
         mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/payment-overdue")
@@ -3737,6 +3760,247 @@ class BookingApiTests {
                         .header("Authorization", serviceBearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.allowed").value(expected));
+    }
+
+    // ─── 2026-11-10: caregiver vắng ca — cảnh báo sớm, hồ sơ vắng ca, giải trình, kết luận ───
+
+    @Test
+    void lateCheckInWarnsOnceThenMissedVisitOpensAnAbsenceTheCaregiverExplainsAndTheManagerConcludes() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 2));
+        acceptAndConfirm(scenario, bookingId, null);
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId));
+        UUID first = occurrences.get(0).getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+
+        // Chưa tới giờ → chưa cảnh báo. Tới giờ (trong 30' check-in trễ) → cảnh báo đúng một lần cho caregiver, khách và
+        // manager của trung tâm.
+        assertThat(bookingOccurrenceService.findLateCheckInIds()).doesNotContain(first);
+        moveStartAgo(first, 5);
+        assertThat(bookingOccurrenceService.findLateCheckInIds()).contains(first);
+        bookingOccurrenceService.warnLateCheckIn(first);
+        bookingOccurrenceService.warnLateCheckIn(first);
+        assertThat(bookingOccurrenceService.findLateCheckInIds()).doesNotContain(first);
+        assertThat(notificationRepository.findAll())
+                .filteredOn(notification -> first.equals(notification.getRefId())
+                        && notification.getType() == NotificationType.CHECK_IN_LATE)
+                .extracting(notification -> notification.getRecipientUserId())
+                .hasSize(3)
+                .contains(scenario.caregiver().userId(), scenario.customerId());
+
+        // Quá hạn check-in → CAREGIVER_MISSED, hoàn tiền một lần, hồ sơ vắng ca PENDING (job chạy lại không ghi trùng).
+        moveStartAgo(first, 40);
+        bookingOccurrenceService.markMissed(first);
+        bookingOccurrenceService.markMissed(first);
+        assertThat(PLATFORM.refundKeys()).filteredOn(("REFUND:CAREGIVER_MISSED:" + first)::equals).hasSize(1);
+        JsonNode absences = readResult(mockMvc.perform(get("/api/v1/caregiver-absences")
+                        .header("Authorization", managerBearer(scenario)).param("bookingId", bookingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[0].source").value("MISSED_CHECK_IN"))
+                .andExpect(jsonPath("$.result.items[0].occurrenceId").value(first.toString()))
+                .andExpect(jsonPath("$.result.items[0].caregiverId").value(scenario.caregiver().caregiverId().toString()))
+                .andReturn());
+        String absenceId = absences.get("items").get(0).get("id").asString();
+        // Khách được báo tiền hoàn vào ví; caregiver được báo cần giải trình.
+        assertThat(notificationRepository.findAll()).anyMatch(notification -> first.equals(notification.getRefId())
+                && notification.getType() == NotificationType.OCCURRENCE_MISSED
+                && notification.getRecipientUserId().equals(scenario.customerId())
+                && notification.getBody().contains("hoàn vào ví"));
+        assertThat(notificationRepository.findAll()).anyMatch(notification -> first.equals(notification.getRefId())
+                && notification.getType() == NotificationType.CAREGIVER_ABSENCE_UPDATED
+                && notification.getRecipientUserId().equals(scenario.caregiver().userId()));
+
+        // Phạm vi: khách 403; caregiver khác / manager trung tâm khác 404; admin xem được nhưng không kết luận.
+        mockMvc.perform(get("/api/v1/caregiver-absences").header("Authorization", customerBearer(scenario)))
+                .andExpect(status().isForbidden());
+        String otherCaregiver = bearer(PLATFORM.addActiveCaregiver(scenario.centerId()).userId(), scenario.centerId(),
+                "CAREGIVER");
+        mockMvc.perform(get("/api/v1/caregiver-absences/" + absenceId).header("Authorization", otherCaregiver))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_ABSENCE_NOT_FOUND.getCode()));
+        mockMvc.perform(get("/api/v1/caregiver-absences").header("Authorization", otherCaregiver))
+                .andExpect(jsonPath("$.result.items.length()").value(0));
+        String otherManager = bearer(UUID.randomUUID(), PLATFORM.addCenter("ACTIVE"), "CENTER_MANAGER");
+        mockMvc.perform(get("/api/v1/caregiver-absences/" + absenceId).header("Authorization", otherManager))
+                .andExpect(status().isNotFound());
+        concludeAbsence(otherManager, absenceId, "CONFIRMED", null).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/caregiver-absences/" + absenceId).header("Authorization", adminBearer()))
+                .andExpect(status().isOk());
+        concludeAbsence(adminBearer(), absenceId, "CONFIRMED", null).andExpect(status().isForbidden());
+
+        // Giải trình: quá ngắn 400, người khác 404, đúng người gửi (và sửa) được khi chưa kết luận.
+        explainAbsence(caregiverBearer, absenceId, "ngắn")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ABSENCE_EXPLANATION_REQUIRED.getCode()));
+        explainAbsence(otherCaregiver, absenceId, "Tôi bị tai nạn trên đường đến nhà khách").andExpect(status().isNotFound());
+        explainAbsence(caregiverBearer, absenceId, "Tôi bị tai nạn trên đường đến nhà khách")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.explanation").value("Tôi bị tai nạn trên đường đến nhà khách"))
+                .andExpect(jsonPath("$.result.explainedAt").exists());
+
+        // Kết luận: PENDING không hợp lệ; miễn trừ cần ghi chú; kết luận một lần, sau đó khóa giải trình.
+        concludeAbsence(managerBearer(scenario), absenceId, "PENDING", null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ABSENCE_DECISION_REQUIRED.getCode()));
+        concludeAbsence(managerBearer(scenario), absenceId, "EXCUSED", " ")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ABSENCE_CONCLUSION_NOTE_REQUIRED.getCode()));
+        concludeAbsence(managerBearer(scenario), absenceId, "EXCUSED", "Có giấy xác nhận của bệnh viện")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("EXCUSED"))
+                .andExpect(jsonPath("$.result.concludedAt").exists());
+        concludeAbsence(managerBearer(scenario), absenceId, "CONFIRMED", null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_ABSENCE_ALREADY_CONCLUDED.getCode()));
+        explainAbsence(caregiverBearer, absenceId, "Bổ sung thêm giải trình sau khi đã kết luận")
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(get("/api/v1/caregiver-absences/statistics").header("Authorization", managerBearer(scenario))
+                        .param("caregiverId", scenario.caregiver().caregiverId().toString()))
+                .andExpect(jsonPath("$.result.excused").value(1))
+                .andExpect(jsonPath("$.result.pending").value(0))
+                .andExpect(jsonPath("$.result.total").value(1));
+        mockMvc.perform(get("/api/v1/caregiver-absences").header("Authorization", caregiverBearer)
+                        .param("status", "EXCUSED"))
+                .andExpect(jsonPath("$.result.items.length()").value(1));
+    }
+
+    @Test
+    void rejectedNoShowReportRecordsAnAbsenceAndTheManagerConfirmsIt() throws Exception {
+        Scenario scenario = newScenario();
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        moveStartAgo(occurrenceId, 10);
+        reportNoShow(caregiverBearer, occurrenceId, "Khách không có nhà, đã gọi ba lần").andExpect(status().isOk());
+        // Đã báo khách vắng thì không cảnh báo "chưa check-in" nữa.
+        assertThat(bookingOccurrenceService.findLateCheckInIds()).doesNotContain(occurrenceId);
+        decideNoShow(managerBearer(scenario), occurrenceId, false).andExpect(status().isOk());
+
+        JsonNode absence = readResult(mockMvc.perform(get("/api/v1/caregiver-absences")
+                        .header("Authorization", managerBearer(scenario)).param("status", "PENDING")
+                        .param("bookingId", bookingId))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].source").value("NO_SHOW_REPORT_REJECTED"))
+                .andReturn()).get("items").get(0);
+        concludeAbsence(managerBearer(scenario), absence.get("id").asString(), "CONFIRMED", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.status").value("CONFIRMED"));
+        mockMvc.perform(get("/api/v1/caregiver-absences/statistics").header("Authorization", adminBearer())
+                        .param("centerId", scenario.centerId().toString()))
+                .andExpect(jsonPath("$.result.confirmed").value(1));
+    }
+
+    // Trước 2026-11-10 khóa hoàn tiền của luồng này là một chuỗi cố định → chỉ lần đầu tiên trên toàn hệ thống được hoàn.
+    @Test
+    void rejectingAnEmergencyReplacementRefundsEveryVisitWithItsOwnKeyAndClosesTheBooking() throws Exception {
+        Scenario scenario = newScenario();
+        CaregiverIds replacement = PLATFORM.addActiveCaregiver(scenario.centerId());
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 2));
+        acceptAndConfirm(scenario, bookingId, null);
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId));
+        UUID first = occurrences.get(0).getId();
+        UUID second = occurrences.get(1).getId();
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/emergency-reassignment")
+                        .header("Authorization", managerBearer(scenario))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("occurrenceIds", List.of(first.toString(), second.toString()),
+                                "newCaregiverId", replacement.caregiverId().toString(), "reason", "Người cũ bị ốm"))))
+                .andExpect(status().isOk());
+
+        // Khách khác → 404; khách từ chối từng buổi → mỗi buổi một lệnh hoàn riêng; bấm lại → 409, không hoàn thêm.
+        replacementConsent(bearer(UUID.randomUUID(), null, "CUSTOMER"), first, "REJECT_AND_CANCEL")
+                .andExpect(status().isNotFound());
+        replacementConsent(customerBearer(scenario), first, "REJECT_AND_CANCEL").andExpect(status().isOk());
+        replacementConsent(customerBearer(scenario), first, "REJECT_AND_CANCEL")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.REPLACEMENT_CONSENT_INVALID.getCode()));
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("CONFIRMED"));
+        replacementConsent(customerBearer(scenario), second, "REJECT_AND_CANCEL").andExpect(status().isOk());
+
+        assertThat(PLATFORM.refundKeys()).filteredOn(("REFUND:CENTER_CANCEL:" + first)::equals).hasSize(1);
+        assertThat(PLATFORM.refundKeys()).filteredOn(("REFUND:CENTER_CANCEL:" + second)::equals).hasSize(1);
+        BookingOccurrence cancelled = bookingOccurrenceRepository.findById(first).orElseThrow();
+        assertThat(cancelled.getStatus()).isEqualTo(OccurrenceStatus.CANCELLED);
+        assertThat(cancelled.getCancelledByParty()).isEqualTo(CancelledBy.CENTER);
+        assertThat(cancelled.getCancelledAt()).isNotNull();
+        // Không còn buổi nào → booking đóng, không treo CONFIRMED.
+        mockMvc.perform(get("/api/v1/bookings/" + bookingId).header("Authorization", customerBearer(scenario)))
+                .andExpect(jsonPath("$.result.status").value("CANCELLED"));
+    }
+
+    // 2026-11-10: người thay thế khẩn cấp phải rảnh — trước đó không kiểm, có thể giao một người hai nơi cùng giờ.
+    @Test
+    void emergencyReplacementRejectsACaregiverAlreadyBookedAtTheSameTime() throws Exception {
+        Scenario scenario = newScenario();
+        Scenario other = newScenarioInCenter(scenario.centerId());
+        String bookingId = createAndGetId(scenario, dailyBody(scenario, scenario.caregiver().caregiverId(), 1));
+        acceptAndConfirm(scenario, bookingId, null);
+        // Người thay thế đã nhận một booking khác đúng khung giờ đó.
+        String otherBookingId = createAndGetId(other, dailyBody(other, other.caregiver().caregiverId(), 1));
+        acceptAndConfirm(other, otherBookingId, null);
+        UUID occurrenceId = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId)).getFirst().getId();
+
+        emergencyReassign(scenario, bookingId, occurrenceId, other.caregiver().caregiverId())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CAREGIVER_SCHEDULE_CONFLICT.getCode()));
+        assertThat(bookingOccurrenceRepository.findById(occurrenceId).orElseThrow().getCaregiverId())
+                .isEqualTo(scenario.caregiver().caregiverId());
+
+        // Người rảnh thì được; giao lại cho chính người đó → không còn buổi nào để thay.
+        CaregiverIds free = PLATFORM.addActiveCaregiver(scenario.centerId());
+        emergencyReassign(scenario, bookingId, occurrenceId, free.caregiverId()).andExpect(status().isOk());
+        BookingOccurrence replaced = bookingOccurrenceRepository.findById(occurrenceId).orElseThrow();
+        assertThat(replaced.getCaregiverId()).isEqualTo(free.caregiverId());
+        assertThat(replaced.getCaregiverUserId()).isEqualTo(free.userId());
+        assertThat(replaced.getReplacementConsentStatus()).hasToString("PENDING_CUSTOMER");
+        emergencyReassign(scenario, bookingId, occurrenceId, free.caregiverId())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.NO_REASSIGNABLE_OCCURRENCES.getCode()));
+        // Manager trung tâm khác → 404.
+        mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/emergency-reassignment")
+                        .header("Authorization", bearer(UUID.randomUUID(), PLATFORM.addCenter("ACTIVE"), "CENTER_MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("occurrenceIds", List.of(occurrenceId.toString()),
+                                "newCaregiverId", free.caregiverId().toString(), "reason", "Ốm"))))
+                .andExpect(status().isNotFound());
+    }
+
+    ResultActions emergencyReassign(Scenario scenario, String bookingId, UUID occurrenceId, UUID caregiverId)
+            throws Exception {
+        return mockMvc.perform(post("/api/v1/bookings/" + bookingId + "/emergency-reassignment")
+                .header("Authorization", managerBearer(scenario))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("occurrenceIds", List.of(occurrenceId.toString()),
+                        "newCaregiverId", caregiverId.toString(), "reason", "Người cũ bị ốm"))));
+    }
+
+    ResultActions explainAbsence(String bearer, String absenceId, String explanation) throws Exception {
+        return mockMvc.perform(post("/api/v1/caregiver-absences/" + absenceId + "/explanation")
+                .header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("explanation", explanation))));
+    }
+
+    ResultActions concludeAbsence(String bearer, String absenceId, String decision, String note) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("decision", decision);
+        body.put("note", note);
+        return mockMvc.perform(post("/api/v1/caregiver-absences/" + absenceId + "/conclusion")
+                .header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(body)));
+    }
+
+    ResultActions replacementConsent(String bearer, UUID occurrenceId, String action) throws Exception {
+        return mockMvc.perform(post("/api/v1/booking-occurrences/" + occurrenceId + "/replacement-consent")
+                .header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("action", action))));
     }
 
     // Token client-credentials của service khác (IAM-01): roles=[SERVICE], sub = client_uuid.

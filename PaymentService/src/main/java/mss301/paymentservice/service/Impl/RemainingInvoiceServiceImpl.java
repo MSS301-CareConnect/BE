@@ -6,6 +6,9 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.paymentservice.client.BookingClient;
+import mss301.paymentservice.client.dto.BookingPaymentContextResponse;
+import mss301.paymentservice.client.dto.RemoteApiResponse;
 import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.dto.request.CreateCheckoutRequest;
 import mss301.paymentservice.dto.request.RemainingInvoiceRequest;
@@ -87,6 +90,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
     RemainingInvoiceMapper remainingInvoiceMapper;
     PaymentMapper paymentMapper;
     PaymentProperties paymentProperties;
+    BookingClient bookingClient;
     TransactionTemplate transactionTemplate;
     Clock clock;
 
@@ -274,6 +278,45 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
     public List<UUID> findOverdueCandidateIds() {
         return remainingInvoiceRepository.findDueIds(InvoiceStatus.PENDING, clock.instant(),
                 PageRequest.of(0, paymentProperties.getInvoice().getBatchSize()));
+    }
+
+    // Không @Transactional: gọi Booking qua mạng trước, ghi bằng transaction ngắn (rule #24).
+    @Override
+    public void refreshCaregivers(UUID invoiceId) {
+        RemainingInvoice invoice = remainingInvoiceRepository.findById(invoiceId).orElse(null);
+        if (invoice == null || invoice.getStatus() != InvoiceStatus.PENDING) {
+            return;
+        }
+        UUID bookingId = invoice.getBookingId();
+        BookingPaymentContextResponse context;
+        try {
+            RemoteApiResponse<BookingPaymentContextResponse> response = bookingClient.getPaymentContext(bookingId);
+            context = response == null ? null : response.getResult();
+        } catch (RuntimeException e) {
+            log.warn("Caregivers of booking {} not refreshed before the overdue check ({})", bookingId,
+                    e.getClass().getSimpleName());
+            return;
+        }
+        if (context == null || context.getOccurrences() == null) {
+            return;
+        }
+        Map<UUID, BookingPaymentContextResponse.Occurrence> contextOccurrences = new HashMap<>();
+        for (BookingPaymentContextResponse.Occurrence occurrence : context.getOccurrences()) {
+            contextOccurrences.put(occurrence.getOccurrenceId(), occurrence);
+        }
+        transactionTemplate.executeWithoutResult(status -> {
+            // Cùng thứ tự khóa với mọi lệnh tiền của booking.
+            if (bookingFinancialRepository.findForUpdate(bookingId).isEmpty()) {
+                return;
+            }
+            for (OccurrenceFinancial occurrenceFinancial : occurrenceFinancialRepository.findAllByBookingId(bookingId)) {
+                BookingPaymentContextResponse.Occurrence occurrence = contextOccurrences.get(
+                        occurrenceFinancial.getOccurrenceId());
+                if (occurrence != null && occurrenceFinancial.getFinalStatus() == null) {
+                    occurrenceFinancial.assignCaregiver(occurrence.getCaregiverId(), occurrence.getCaregiverUserId());
+                }
+            }
+        });
     }
 
     @Override

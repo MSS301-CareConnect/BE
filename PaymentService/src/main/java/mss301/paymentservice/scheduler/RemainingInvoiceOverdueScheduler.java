@@ -25,6 +25,7 @@ public class RemainingInvoiceOverdueScheduler {
         List<UUID> invoiceIds = remainingInvoiceService.findOverdueCandidateIds();
         for (UUID invoiceId : invoiceIds) {
             try {
+                remainingInvoiceService.refreshCaregivers(invoiceId);
                 remainingInvoiceService.markOverdue(invoiceId);
             } catch (RuntimeException e) {
                 log.error("Overdue marking crashed for invoice {} ({})", invoiceId, e.getClass().getSimpleName(), e);

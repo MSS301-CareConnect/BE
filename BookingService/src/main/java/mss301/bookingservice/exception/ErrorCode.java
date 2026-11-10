@@ -149,6 +149,13 @@ public enum ErrorCode {
     WITHDRAWAL_REASON_DETAIL_REQUIRED(5263, "Please describe the reason", HttpStatus.BAD_REQUEST),
     WITHDRAWAL_REASON_REQUIRED(5264, "Choose a reason for cancelling", HttpStatus.BAD_REQUEST),
 
+    // 2026-11-10: hồ sơ caregiver vắng ca (giải trình + kết luận của trung tâm).
+    CAREGIVER_ABSENCE_NOT_FOUND(5270, "Absence record does not exist", HttpStatus.NOT_FOUND),
+    CAREGIVER_ABSENCE_ALREADY_CONCLUDED(5271, "The center has already concluded this absence", HttpStatus.CONFLICT),
+    ABSENCE_EXPLANATION_REQUIRED(5272, "Describe what happened (10–1000 characters)", HttpStatus.BAD_REQUEST),
+    ABSENCE_DECISION_REQUIRED(5273, "Choose whether the absence is excused or confirmed", HttpStatus.BAD_REQUEST),
+    ABSENCE_CONCLUSION_NOTE_REQUIRED(5274, "A note is required when excusing an absence", HttpStatus.BAD_REQUEST),
+
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),
     CAREGIVER_ID_REQUIRED(5401, "Caregiver is required", HttpStatus.BAD_REQUEST),

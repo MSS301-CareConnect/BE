@@ -49,5 +49,8 @@ public class PolicySnapshot {
 
     BigDecimal refundPercentAfterThreshold;
 
+    // 2026-11-10: null ở snapshot cũ → RefundCalculator dùng 120 phút (luật đã áp từ 2026-11-05).
+    Integer lateCancelNoRefundMinutes;
+
     BigDecimal overduePaymentForfeitPercent;
 }

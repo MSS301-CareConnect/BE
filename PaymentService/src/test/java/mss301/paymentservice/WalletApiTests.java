@@ -11,9 +11,11 @@ import mss301.paymentservice.enums.WalletOwnerType;
 import mss301.paymentservice.enums.WalletTransactionType;
 import mss301.paymentservice.repository.OccurrenceFinancialRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.repository.RemainingInvoiceRepository;
 import mss301.paymentservice.repository.WalletRepository;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.service.RefundDispatchService;
+import mss301.paymentservice.service.RemainingInvoiceService;
 import mss301.paymentservice.service.WalletSettlementService;
 import mss301.paymentservice.support.PaymentIntegrationTest;
 import mss301.paymentservice.support.PaymentTestServer;
@@ -40,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // Ví 2026-11-09: hoàn vào ví khi khách hủy, cọc bị giữ → caregiver / trung tâm, rút tiền, cộng tiền buổi hoàn tất, trừ khiếu nại.
+// 2026-11-10: lỗi phía trung tâm (caregiver vắng, trung tâm hủy) cũng hoàn vào ví; hoàn khiếu nại không trả hai lần.
 class WalletApiTests extends PaymentIntegrationTest {
     static final long PRICE = 1_000_000L;
     static final String FROM = "2000-01-01T00:00:00Z";
@@ -63,6 +66,12 @@ class WalletApiTests extends PaymentIntegrationTest {
 
     @Autowired
     WalletTransactionRepository walletTransactionRepository;
+
+    @Autowired
+    RemainingInvoiceRepository remainingInvoiceRepository;
+
+    @Autowired
+    RemainingInvoiceService remainingInvoiceService;
 
     @Test
     void customerCancelRefundsIntoWalletAndKeptDepositGoesToCaregiverOrCenter() throws Exception {
@@ -141,11 +150,181 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.forfeitIncome").value(90000))
                 .andExpect(jsonPath("$.result.bookingCount").value(1));
 
-        // Trung tâm hủy → hoàn 100 % qua cổng như cũ.
+        // Lý do hệ thống (không phải lỗi trung tâm) → vẫn hoàn 100 % qua cổng.
         CancelSetup other = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
-        createRefund("REFUND:CENTER_CANCEL:w2", other.bookingId(), other.occurrenceIds(), "CENTER_CANCEL", BASE);
+        createRefund("REFUND:EXPIRED:w2", other.bookingId(), other.occurrenceIds(), "EXPIRED", BASE);
         assertThat(refundRepository.findAllByBookingIdOrderByCreatedAtAsc(other.bookingId()))
                 .allSatisfy(refund -> assertThat(refund.getChannel()).isEqualTo(RefundChannel.GATEWAY));
+    }
+
+    // 2026-11-10: caregiver vắng / trung tâm hủy → khách nhận lại 100 % tiền buổi vào ví ngay, không ai được giữ phần nào,
+    // buổi vắng không được cộng cho trung tâm.
+    @Test
+    void caregiverMissedAndCenterCancelRefundTheWholeVisitIntoTheCustomerWallet() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID caregiverUserId = UUID.randomUUID();
+        CancelSetup setup = paidBooking(customerId, centerId, caregiverUserId, BASE.plus(Duration.ofHours(5)));
+        UUID missed = setup.occurrenceIds().get(0);
+        UUID cancelled = setup.occurrenceIds().get(1);
+
+        // Buổi 1: quá hạn check-in, Booking báo CAREGIVER_MISSED (gửi lại cùng key không hoàn trùng).
+        Instant missedAt = BASE.plus(Duration.ofHours(5)).plus(Duration.ofMinutes(30));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            createRefund("REFUND:CAREGIVER_MISSED:" + missed, setup.bookingId(), List.of(missed), "CAREGIVER_MISSED",
+                    missedAt);
+        }
+        // Buổi 2: trung tâm hủy sát giờ — vẫn hoàn đủ.
+        createRefund("REFUND:CENTER_CANCEL:" + cancelled, setup.bookingId(), List.of(cancelled), "CENTER_CANCEL",
+                missedAt);
+
+        List<Refund> refunds = refundRepository.findAllByBookingIdOrderByCreatedAtAsc(setup.bookingId());
+        assertThat(refunds).hasSize(2).allSatisfy(refund -> {
+            assertThat(refund.getChannel()).isEqualTo(RefundChannel.WALLET);
+            assertThat(refund.getAmount()).isEqualByComparingTo("300000");
+            assertThat(refund.getFeeAmount()).isEqualByComparingTo("0");
+        });
+        assertThat(occurrenceFinancialRepository.findById(missed).orElseThrow().getFinalStatus()).hasToString("MISSED");
+
+        paymentProperties.getRefund().setMode(RefundMode.VNPAY);
+        dispatchDueRefunds();
+        assertThat(SERVER.vnPayRequests()).isEmpty();
+        assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("600000");
+        assertThat(balanceOf(WalletOwnerType.CAREGIVER, caregiverUserId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        mockMvc.perform(get("/api/v1/refunds").header("Authorization", customer(customerId)))
+                .andExpect(jsonPath("$.result.items.length()").value(2))
+                .andExpect(jsonPath("$.result.items[0].channel").value("WALLET"))
+                .andExpect(jsonPath("$.result.items[0].status").value("REFUNDED"));
+
+        // Job cộng tiền buổi thấy CAREGIVER_MISSED → không cộng cho trung tâm / nền tảng.
+        clock.set(BASE.plus(Duration.ofDays(2)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+    }
+
+    // 2026-11-10: một lệnh hoàn (cùng idempotency key, nhiều buổi) → đúng một thông báo cho khách, ghi tổng tiền và nơi tiền về;
+    // dispatch lại không gửi thêm.
+    @Test
+    void customerIsNotifiedOncePerCompletedRefundOrder() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        CancelSetup walletSetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:CENTER_CANCEL:n1", walletSetup.bookingId(), walletSetup.occurrenceIds(), "CENTER_CANCEL",
+                BASE);
+        CancelSetup gatewaySetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:EXPIRED:n2", gatewaySetup.bookingId(), gatewaySetup.occurrenceIds(), "EXPIRED", BASE);
+
+        dispatchDueRefunds();
+        dispatchDueRefunds();
+
+        assertThat(SERVER.notificationBodies()).hasSize(2);
+        JsonNode wallet = SERVER.notificationBodies().stream()
+                .filter(body -> body.get("refId").asString().equals(walletSetup.bookingId().toString()))
+                .findFirst().orElseThrow();
+        assertThat(wallet.get("type").asString()).isEqualTo("REFUND_COMPLETED");
+        assertThat(wallet.get("refType").asString()).isEqualTo("BOOKING");
+        assertThat(wallet.get("recipientUserIds").get(0).asString()).isEqualTo(customerId.toString());
+        // Hai buổi × 300.000 gộp trong một thông báo.
+        assertThat(wallet.get("body").asString()).contains("600.000").contains("ví CareConnect");
+        JsonNode gateway = SERVER.notificationBodies().stream()
+                .filter(body -> body.get("refId").asString().equals(gatewaySetup.bookingId().toString()))
+                .findFirst().orElseThrow();
+        assertThat(gateway.get("body").asString()).contains("phương thức thanh toán");
+
+        // Lệnh hoàn chưa xong hết (một dòng còn chờ) thì chưa báo.
+        paymentProperties.getRefund().setMode(RefundMode.VNPAY);
+        SERVER.setVnPayResponse("00", 503, 0);
+        CancelSetup pendingSetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:EXPIRED:n3", pendingSetup.bookingId(), pendingSetup.occurrenceIds(), "EXPIRED", BASE);
+        dispatchDueRefunds();
+        assertThat(SERVER.notificationBodies()).hasSize(2);
+    }
+
+    // 2026-11-10: hoàn khiếu nại không được trả hai lần — trung tâm trả lại phần đã nhận, phần còn lại trừ vào buổi chưa
+    // đối soát (để lúc cộng buổi đó không tính lại), hết buổi thì nền tảng trả lại hoa hồng đã thu.
+    @Test
+    void complaintRefundIsNotPaidTwiceAcrossSettledAndUnsettledVisits() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(1 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        SERVER.setPaymentTerms(bookingId, 100, null);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        BigDecimal platformBefore = balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER);
+
+        // Buổi 1 xong và đã cộng (trung tâm 900.000, hoa hồng 100.000); buổi 2 chưa diễn ra.
+        occurrences.get(0).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(1)).plus(Duration.ofHours(3)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("900000");
+
+        // Hoàn khiếu nại 1.000.000: trung tâm trả lại 900.000, 100.000 còn lại ghi vào buổi 2 (chưa đối soát).
+        complaint(bookingId, UUID.randomUUID(), "1000000").andExpect(status().isOk());
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(1)).orElseThrow().getRefundedAmount())
+                .isEqualByComparingTo("100000");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("100000");
+
+        // Buổi 2 xong: chỉ còn 900.000 của khách → trung tâm 810.000, hoa hồng 90.000. Tổng chi = đúng 2.000.000 đã thu.
+        occurrences.get(1).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(3)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("810000");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("190000");
+
+        // Hoàn tiếp 1.000.000 khi mọi buổi đã đối soát: trung tâm trả 810.000, nền tảng trả lại 190.000 hoa hồng.
+        complaint(bookingId, UUID.randomUUID(), "1000000").andExpect(status().isOk());
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("0");
+    }
+
+    // 2026-11-10: buổi được phân người SAU khi khách trả khoản đầu — cọc bị giữ vì quá hạn phải vào ví caregiver đang được
+    // giao (đọc lại từ Booking trước khi xử lý quá hạn), không vào ví trung tâm theo bản chụp cũ.
+    @Test
+    void overdueForfeitGoesToTheCaregiverAssignedAfterTheDeposit() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID caregiverUserId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(5 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        Instant dueAt = BASE.plus(Duration.ofDays(2));
+        SERVER.setPaymentTerms(bookingId, 30, dueAt);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(0)).orElseThrow().getCaregiverUserId())
+                .isNull();
+
+        // Sau khi trả cọc, hệ thống tự phân người cho buổi 1; buổi 2 vẫn chưa có người.
+        occurrences.get(0).put("caregiverId", UUID.randomUUID().toString());
+        occurrences.get(0).put("caregiverUserId", caregiverUserId.toString());
+        clock.set(dueAt);
+        UUID invoiceId = remainingInvoiceRepository.findByBookingId(bookingId).orElseThrow().getId();
+        remainingInvoiceService.refreshCaregivers(invoiceId);
+        remainingInvoiceService.markOverdue(invoiceId);
+
+        // Giữ 100 % cọc (300.000 mỗi buổi): buổi 1 → caregiver, buổi 2 → trung tâm.
+        assertThat(balanceOf(WalletOwnerType.CAREGIVER, caregiverUserId)).isEqualByComparingTo("300000");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("300000");
+
+        // Booking lỗi lúc đọc lại → vẫn xử lý được quá hạn bằng bản chụp cũ (không ném lỗi).
+        remainingInvoiceService.refreshCaregivers(UUID.randomUUID());
     }
 
     @Test

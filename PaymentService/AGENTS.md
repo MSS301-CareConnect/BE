@@ -80,8 +80,10 @@
   Không `setAvailableBalance` ở chỗ khác. Thời điểm lấy từ `Clock`.
 - Khóa sổ: `REFUND:<refundId>`, `FORFEIT:<occurrenceId>` (một buổi chỉ bị giữ cọc một lần), `SETTLE:` / `COMMISSION:<occurrenceId>`,
   `COMPLAINT:<complaintId>`, `WD_HOLD|WD_RELEASE|WD_PAID:<withdrawalId>`.
-- Hoàn lý do `CUSTOMER_CANCEL` → `refunds.channel = WALLET`: dispatcher không gọi cổng, cộng ví khách khi đánh REFUNDED.
-  Lý do khác vẫn qua cổng. Cọc bị giữ: caregiver của buổi, chưa có người thì ví trung tâm (`DepositForfeitureServiceImpl`).
+- Hoàn lý do `CUSTOMER_CANCEL` và (2026-11-10) lỗi phía trung tâm `CAREGIVER_MISSED` / `CENTER_CANCEL` / `CENTER_REJECT` /
+  `CENTER_LOCKED` → `refunds.channel = WALLET`: dispatcher không gọi cổng, cộng ví khách khi đánh REFUNDED.
+  Lý do khác vẫn qua cổng. Khách hủy còn dưới 2 giờ → rule `LATE_NO_REFUND` (hoàn 0, vẫn ghi cọc bị giữ). Hoàn khiếu nại:
+  trừ ví trung tâm → ghi `refunded_amount` vào buổi chưa đối soát → trừ lại hoa hồng nền tảng (không trả hai lần). Cọc bị giữ: caregiver của buổi, chưa có người thì ví trung tâm (`DepositForfeitureServiceImpl`).
 - Buổi `COMPLETED` / `CUSTOMER_NO_SHOW` được cộng bởi `WalletSettlementScheduler` (hỏi payment-context, không cần sự kiện
   Booking): trung tâm nhận tiền khách đã trả cho buổi − `commissionPercent` snapshot, nền tảng nhận hoa hồng. Booking cũ
   (thu sau hoàn tất) không cộng tự động.

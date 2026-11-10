@@ -287,6 +287,8 @@ CREATE TABLE center_booking_policies (
     refund_threshold_minutes               integer       NOT NULL,
     refund_percent_before_threshold        numeric(5,2)  NOT NULL,
     refund_percent_after_threshold         numeric(5,2)  NOT NULL,
+    -- 2026-11-10: khách hủy còn dưới mốc này → không hoàn (≤ refund_threshold_minutes).
+    late_cancel_no_refund_minutes          integer       NOT NULL DEFAULT 120,
     overdue_payment_forfeit_percent        numeric(5,2)  NOT NULL,
     updated_by                             uuid,
     created_at                             timestamptz   NOT NULL,
@@ -301,6 +303,8 @@ CREATE TABLE center_booking_policies (
         AND confirmation_timeout_minutes > 0 AND assignment_timeout_minutes > 0
         AND initial_payment_timeout_minutes > 0 AND remaining_payment_due_before_minutes >= 0
         AND check_in_early_minutes >= 0 AND check_in_late_minutes >= 0 AND refund_threshold_minutes >= 0),
+    CONSTRAINT ck_center_booking_policies_late_cancel CHECK (
+        late_cancel_no_refund_minutes BETWEEN 0 AND refund_threshold_minutes),
     CONSTRAINT ck_center_booking_policies_percents CHECK (deposit_percent > 0 AND deposit_percent <= 100
         AND refund_percent_before_threshold BETWEEN 0 AND 100
         AND refund_percent_after_threshold BETWEEN 0 AND refund_percent_before_threshold
@@ -425,7 +429,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE', 'CAREGIVER_CHANGE_REQUEST_CREATED', 'CAREGIVER_CHANGE_REQUEST_DECIDED', 'EMERGENCY_REPLACEMENT_NOTIFIED', 'OCCURRENCE_RESCHEDULED_NOTIFICATION')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE', 'CAREGIVER_CHANGE_REQUEST_CREATED', 'CAREGIVER_CHANGE_REQUEST_DECIDED', 'EMERGENCY_REPLACEMENT_NOTIFIED', 'OCCURRENCE_RESCHEDULED_NOTIFICATION', 'CHECK_IN_LATE', 'CAREGIVER_ABSENCE_UPDATED')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),
@@ -552,6 +556,8 @@ ALTER TABLE complaints ADD CONSTRAINT fk_complaint_booking FOREIGN KEY (booking_
 ALTER TABLE complaints ADD CONSTRAINT fk_complaint_occurrence FOREIGN KEY (occurrence_id) REFERENCES booking_occurrences(occurrence_id);
 ALTER TABLE complaint_events ADD CONSTRAINT fk_complaint_event FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id);
 ALTER TABLE booking_occurrences ADD COLUMN reminder_sent_at timestamptz;
+-- 2026-11-10: đã cảnh báo "tới giờ mà caregiver chưa check-in" (một lần mỗi buổi, xóa khi đổi người / dời lịch).
+ALTER TABLE booking_occurrences ADD COLUMN late_warned_at timestamptz;
 
 
 -- Yêu cầu thay đổi caregiver từ khách hàng (2026-11-05, spec v3.0)
@@ -609,3 +615,40 @@ CREATE UNIQUE INDEX uk_caregiver_withdrawals_occurrence
 CREATE INDEX idx_caregiver_withdrawals_center ON caregiver_withdrawals (center_id, created_at);
 CREATE INDEX idx_caregiver_withdrawals_caregiver ON caregiver_withdrawals (caregiver_user_id, created_at);
 CREATE INDEX idx_caregiver_withdrawals_booking ON caregiver_withdrawals (booking_id);
+
+-- 2026-11-10: hồ sơ caregiver vắng ca — mỗi buổi CAREGIVER_MISSED có caregiver = một dòng; caregiver giải trình, Center
+-- Manager kết luận (EXCUSED / CONFIRMED). Tiền không nằm ở đây (khách đã được hoàn 100 % qua outbox REFUND).
+-- DB đã có: schema/changes/2026-11-10_caregiver_absences.sql.
+CREATE TABLE caregiver_absences (
+    absence_id         uuid         PRIMARY KEY,
+    booking_id         uuid         NOT NULL REFERENCES bookings (booking_id),
+    occurrence_id      uuid         NOT NULL REFERENCES booking_occurrences (occurrence_id),
+    center_id          uuid         NOT NULL,
+    caregiver_id       uuid         NOT NULL,
+    caregiver_user_id  uuid         NOT NULL,
+    source             varchar(30)  NOT NULL,
+    status             varchar(20)  NOT NULL,
+    explanation        text,
+    explained_at       timestamptz,
+    conclusion_note    text,
+    concluded_by       uuid,
+    concluded_at       timestamptz,
+    version            bigint       NOT NULL DEFAULT 0,
+    created_at         timestamptz  NOT NULL,
+    updated_at         timestamptz  NOT NULL,
+    deleted_at         timestamptz,
+    CONSTRAINT ck_caregiver_absences_source CHECK (source IN ('MISSED_CHECK_IN', 'NO_SHOW_REPORT_REJECTED')),
+    CONSTRAINT ck_caregiver_absences_status CHECK (status IN ('PENDING', 'EXCUSED', 'CONFIRMED')),
+    CONSTRAINT ck_caregiver_absences_explanation CHECK ((explanation IS NULL) = (explained_at IS NULL)),
+    CONSTRAINT ck_caregiver_absences_concluded CHECK ((status = 'PENDING') = (concluded_at IS NULL)),
+    CONSTRAINT ck_caregiver_absences_excused_note CHECK (
+        status <> 'EXCUSED' OR btrim(coalesce(conclusion_note, '')) <> ''),
+    CONSTRAINT ck_caregiver_absences_version CHECK (version >= 0)
+);
+
+CREATE UNIQUE INDEX uk_caregiver_absences_occurrence
+    ON caregiver_absences (occurrence_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_caregiver_absences_center ON caregiver_absences (center_id, status, created_at);
+CREATE INDEX idx_caregiver_absences_caregiver ON caregiver_absences (caregiver_id, created_at);
+CREATE INDEX idx_caregiver_absences_caregiver_user ON caregiver_absences (caregiver_user_id, created_at);
+CREATE INDEX idx_caregiver_absences_booking ON caregiver_absences (booking_id);
