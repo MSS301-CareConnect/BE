@@ -1,0 +1,47 @@
+# Mảnh Compose của AIService cho stack tổng — chỉ dùng qua ../compose.yaml (project "careconnect").
+# ${...} lấy từ AIService/.env; environment chỉ ghi đè địa chỉ sang tên service trên mạng Docker.
+services:
+  ai-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${AI_DB_NAME:-CARECONNECT_AI}
+      POSTGRES_USER: ${AI_DB_USERNAME:?Set AI_DB_USERNAME in AIService/.env}
+      POSTGRES_PASSWORD: ${AI_DB_PASSWORD:?Set AI_DB_PASSWORD in AIService/.env}
+    ports:
+      - "127.0.0.1:${AI_DB_PORT:-5448}:5432"
+    volumes:
+      - ai_postgres:/var/lib/postgresql/data
+      - ./schema/ai.sql:/docker-entrypoint-initdb.d/01-ai.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ai-service:
+    build: .
+    image: careconnect/ai-service:dev
+    env_file: .env
+    environment:
+      AI_SERVER_PORT: "8088"
+      AI_DB_URL: jdbc:postgresql://ai-postgres:5432/${AI_DB_NAME:-CARECONNECT_AI}
+      AI_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      # Service token và MediaService đều đi qua gateway (gateway là cổng duy nhất cho Feign giữa các service).
+      AI_IDENTITY_URL: http://api-gateway:8080
+      AI_MEDIA_URL: http://api-gateway:8080
+    ports:
+      - "127.0.0.1:${AI_SERVER_PORT:-8088}:8088"
+    depends_on:
+      ai-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8088/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+volumes:
+  ai_postgres:
+    name: aiservice_ai_postgres
+    external: true

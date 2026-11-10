@@ -1,0 +1,214 @@
+spring:
+  application:
+    name: BookingService
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${BOOKING_DB_URL}
+    username: ${BOOKING_DB_USERNAME}
+    password: ${BOOKING_DB_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  sql:
+    init:
+      mode: never
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          identity:
+            connect-timeout: ${BOOKING_IDENTITY_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_IDENTITY_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          care-recipient:
+            connect-timeout: ${BOOKING_CARE_RECIPIENT_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_CARE_RECIPIENT_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          provider:
+            connect-timeout: ${BOOKING_PROVIDER_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_PROVIDER_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          care-catalog:
+            connect-timeout: ${BOOKING_CARE_CATALOG_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_CARE_CATALOG_READ_TIMEOUT_MS:3000}
+            logger-level: none
+          media:
+            connect-timeout: ${BOOKING_MEDIA_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_MEDIA_READ_TIMEOUT_MS:10000}
+            logger-level: none
+          payment:
+            connect-timeout: ${BOOKING_PAYMENT_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${BOOKING_PAYMENT_READ_TIMEOUT_MS:3000}
+            logger-level: none
+    circuitbreaker:
+      # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
+      resilience4j:
+        disable-thread-pool: true
+        disable-time-limiter: true
+      bulkhead:
+        resilience4j:
+          enabled: false
+
+server:
+  port: ${BOOKING_SERVER_PORT:8085}
+
+springdoc:
+  api-docs:
+    enabled: ${BOOKING_SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${BOOKING_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+booking:
+  media:
+    url: ${BOOKING_MEDIA_URL:${booking.provider.url}}
+  open-api-server-url: ${BOOKING_OPENAPI_SERVER_URL:}
+
+  jwt:
+    issuer: ${BOOKING_JWT_ISSUER}
+    jwks-uri: ${BOOKING_JWT_JWKS_URI}
+
+  identity:
+    url: ${BOOKING_IDENTITY_URL}
+
+  care-recipient:
+    url: ${BOOKING_CARE_RECIPIENT_URL}
+
+  provider:
+    url: ${BOOKING_PROVIDER_URL}
+
+  care-catalog:
+    url: ${BOOKING_CARE_CATALOG_URL:${BOOKING_CATALOG_URL}}
+
+  payment:
+    url: ${BOOKING_PAYMENT_URL}
+
+  # Token SERVICE (client-credentials) xin ở Identity qua gateway (booking.identity.url).
+  service-client:
+    client-id: ${BOOKING_SERVICE_CLIENT_ID:}
+    client-secret: ${BOOKING_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${BOOKING_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${BOOKING_SERVICE_TOKEN_READ_TIMEOUT:3s}
+
+  # Số booking chưa trả khoản đầu (PENDING_CENTER_CONFIRMATION / PENDING_CAREGIVER_ASSIGNMENT /
+  # AWAITING_INITIAL_PAYMENT) tối đa một khách giữ cùng lúc (BK-02).
+  max-pending-per-customer: ${BOOKING_MAX_PENDING_PER_CUSTOMER:3}
+
+  # Quy tắc lịch (docs/2026-10-09-PLAN_BOOKING.md §9). Duration dạng 12h, 30m, PT24H…
+  schedule:
+    timezone: ${BOOKING_TIMEZONE:Asia/Ho_Chi_Minh}
+    max-occurrences: ${BOOKING_MAX_OCCURRENCES:60}
+    max-span-days: ${BOOKING_MAX_SPAN_DAYS:90}
+    # L-08: buổi đầu bắt đầu trong vòng 90 ngày; mỗi buổi dài ít nhất 1 giờ.
+    max-advance-days: ${BOOKING_MAX_ADVANCE_DAYS:90}
+    min-occurrence-duration: ${BOOKING_MIN_OCCURRENCE_DURATION:1h}
+    # Caregiver còn xem hồ sơ người bệnh bao lâu sau khi buổi COMPLETED kết thúc (BK-07).
+    caregiver-access-grace: ${BOOKING_CAREGIVER_ACCESS_GRACE:24h}
+    # Khách đổi địa chỉ chăm sóc chỉ cho buổi còn ít nhất khoảng này (2026-11-05).
+    address-change-lead: ${BOOKING_ADDRESS_CHANGE_LEAD:24h}
+    expiry-batch-size: ${BOOKING_EXPIRY_BATCH_SIZE:100}
+    # Chu kỳ quét booking quá hạn duyệt / quá hạn cọc (BookingExpiryScheduler); lượt đầu sau khởi động.
+    expiry-scan-interval: ${BOOKING_EXPIRY_SCAN_INTERVAL:1m}
+    expiry-initial-delay: ${BOOKING_EXPIRY_INITIAL_DELAY:30s}
+    # Nhắc trung tâm trước hạn xác nhận / phân công (phút trước hạn) và cửa sổ "sắp quá hạn" của hàng đợi.
+    center-reminder-minutes: ${BOOKING_CENTER_REMINDER_MINUTES:720,120}
+    due-soon-window: ${BOOKING_DUE_SOON_WINDOW:2h}
+    travel-buffer: ${BOOKING_TRAVEL_BUFFER:60m}
+    # Giữ chỗ chờ cọc khi booking chờ thanh toán ngay lúc đặt (SHIFT tự nhận); grace ẩn cho IPN / return VNPay tới muộn;
+    # chu kỳ quét riêng nhả slot hết hạn (2026-11-09).
+    payment-hold: ${BOOKING_PAYMENT_HOLD:5m}
+    payment-hold-grace: ${BOOKING_PAYMENT_HOLD_GRACE:2m}
+    hold-scan-interval: ${BOOKING_HOLD_SCAN_INTERVAL:15s}
+    # Caregiver chỉ xin hủy buổi bắt đầu sau ít nhất khoảng này (2026-11-09).
+    caregiver-withdrawal-lead: ${BOOKING_CAREGIVER_WITHDRAWAL_LEAD:24h}
+    # Tự phân công caregiver (2026-11-09): chu kỳ quét, chờ giữa hai lần thử, số ứng viên thử, nhắc trung tâm; buổi đã cọc
+    # còn unassigned-cancel-lead tới giờ bắt đầu mà chưa có người → hủy buổi + hoàn 100 %.
+    auto-assign-interval: ${BOOKING_AUTO_ASSIGN_INTERVAL:1m}
+    auto-assign-retry: ${BOOKING_AUTO_ASSIGN_RETRY:15m}
+    auto-assign-candidates: ${BOOKING_AUTO_ASSIGN_CANDIDATES:5}
+    unassigned-notify-every: ${BOOKING_UNASSIGNED_NOTIFY_EVERY:24h}
+    unassigned-cancel-lead: ${BOOKING_UNASSIGNED_CANCEL_LEAD:12h}
+
+  # Center booking policy mặc định (spec §8) cho trung tâm chưa cấu hình riêng — phút / phần trăm.
+  policy-defaults:
+    shift-min-advance-minutes: ${BOOKING_POLICY_SHIFT_MIN_ADVANCE_MINUTES:120}
+    recurring-min-advance-minutes: ${BOOKING_POLICY_RECURRING_MIN_ADVANCE_MINUTES:2880}
+    custom-min-advance-minutes: ${BOOKING_POLICY_CUSTOM_MIN_ADVANCE_MINUTES:2880}
+    confirmation-timeout-minutes: ${BOOKING_POLICY_CONFIRMATION_TIMEOUT_MINUTES:1440}
+    assignment-timeout-minutes: ${BOOKING_POLICY_ASSIGNMENT_TIMEOUT_MINUTES:1440}
+    initial-payment-timeout-minutes: ${BOOKING_POLICY_INITIAL_PAYMENT_TIMEOUT_MINUTES:1440}
+    remaining-payment-due-before-minutes: ${BOOKING_POLICY_REMAINING_PAYMENT_DUE_BEFORE_MINUTES:1440}
+    remaining-payment-reminder-minutes: ${BOOKING_POLICY_REMAINING_PAYMENT_REMINDER_MINUTES:4320,2880}
+    deposit-percent: ${BOOKING_POLICY_DEPOSIT_PERCENT:30}
+    check-in-early-minutes: ${BOOKING_POLICY_CHECK_IN_EARLY_MINUTES:30}
+    check-in-late-minutes: ${BOOKING_POLICY_CHECK_IN_LATE_MINUTES:30}
+    refund-threshold-minutes: ${BOOKING_POLICY_REFUND_THRESHOLD_MINUTES:1440}
+    refund-percent-before-threshold: ${BOOKING_POLICY_REFUND_PERCENT_BEFORE_THRESHOLD:100}
+    refund-percent-after-threshold: ${BOOKING_POLICY_REFUND_PERCENT_AFTER_THRESHOLD:70}
+    overdue-payment-forfeit-percent: ${BOOKING_POLICY_OVERDUE_PAYMENT_FORFEIT_PERCENT:100}
+
+  # Ca chăm sóc (OPS-02 / OPS-04): nhắc session quên kết thúc sau giờ kết thúc + 60 phút. Cửa sổ check-in và mốc MISSED
+  # lấy từ center policy (check-in-early / late-minutes) chụp trên booking (Q12).
+  session:
+    overdue-reminder-after: ${BOOKING_SESSION_OVERDUE_REMINDER_AFTER:60m}
+    overdue-scan-interval: ${BOOKING_SESSION_OVERDUE_SCAN_INTERVAL:5m}
+    # D21: ca quên check-out tự đóng sau giờ kết thúc buổi + 4h (COMPLETED, cờ auto_closed, báo trung tâm).
+    auto-close-after: ${BOOKING_SESSION_AUTO_CLOSE_AFTER:4h}
+    # D22 / Q12: chưa check-in sau giờ bắt đầu + check_in_late_minutes → MISSED (hoàn 100 % phần đã trả của buổi).
+    missed-scan-interval: ${BOOKING_MISSED_SCAN_INTERVAL:5m}
+    no-show-decision-reminder-after: ${BOOKING_NO_SHOW_DECISION_REMINDER_AFTER:24h}
+
+  # BK-03: previewToken hủy booking ký HMAC, hạn 10 phút. Production phải đặt khóa chung cho mọi instance.
+  cancellation:
+    preview-secret: ${BOOKING_CANCELLATION_PREVIEW_SECRET:}
+    preview-ttl: ${BOOKING_CANCELLATION_PREVIEW_TTL:10m}
+
+  # D20 (H-09): mở khiếu nại trong 7 ngày sau buổi; khách chuyển admin khi trung tâm chưa xử lý sau 48h.
+  complaint:
+    open-window: ${BOOKING_COMPLAINT_OPEN_WINDOW:7d}
+    customer-escalate-after: ${BOOKING_COMPLAINT_CUSTOMER_ESCALATE_AFTER:48h}
+
+  # Admin nhận thông báo khiếu nại chuyển cấp / outbox FAILED (UUID Identity, cách nhau dấu phẩy).
+  notification:
+    admin-user-ids: ${BOOKING_ADMIN_USER_IDS:}
+
+  # booking_outbox: gửi lại việc sang service khác (hóa đơn REMAINING…) khi bên nhận lỗi.
+  outbox:
+    scan-interval: ${BOOKING_OUTBOX_SCAN_INTERVAL:30s}
+    batch-size: ${BOOKING_OUTBOX_BATCH_SIZE:50}
+    max-attempts: ${BOOKING_OUTBOX_MAX_ATTEMPTS:10}
+    base-backoff: ${BOOKING_OUTBOX_BASE_BACKOFF:30s}
+    max-backoff: ${BOOKING_OUTBOX_MAX_BACKOFF:1h}
+    claim-lease: ${BOOKING_OUTBOX_CLAIM_LEASE:2m}

@@ -2,6 +2,7 @@ package mss301.carerecipientservice.config;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.ToString;
@@ -9,15 +10,17 @@ import lombok.experimental.FieldDefaults;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-// care-recipient.* trong application.yaml — URL/issuer bắt buộc cấu hình qua env, app fail khi khởi động nếu thiếu.
+import java.time.Duration;
+
+/**
+ * Cấu hình nghiệp vụ của CareRecipientService (prefix: care-recipient). Mọi giá trị đọc từ application.yaml (trỏ sang
+ * biến môi trường).
+ */
 @Data
 @Validated
 @ConfigurationProperties("care-recipient")
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CareRecipientProperties {
-    // Secret cho /internal/** của service này (Booking… gọi vào). Để trống = khóa toàn bộ API nội bộ (fail-closed).
-    @ToString.Exclude
-    String internalSecret = "";
 
     // URL server cho OpenAPI khi đứng sau gateway (vd /api/v1). Để trống = mặc định của springdoc.
     String openApiServerUrl = "";
@@ -27,6 +30,14 @@ public class CareRecipientProperties {
 
     @Valid
     Identity identity = new Identity();
+
+    @Valid
+    Booking booking = new Booking();
+
+    // Danh tính máy của CareRecipientService để xin token SERVICE (gọi Booking caregiver-access). Bỏ trống được khi
+    // chạy độc lập — lời gọi cần token sẽ trả 503 SERVICE_TOKEN_UNAVAILABLE.
+    @Valid
+    ServiceClient serviceClient = new ServiceClient();
 
     @Data
     @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -46,9 +57,32 @@ public class CareRecipientProperties {
         // Base URL IdentityService cho Feign (không có service discovery).
         @NotBlank
         String url;
+    }
 
-        // Giá trị IDENTITY_INTERNAL_SECRET của IdentityService, gửi qua header X-Internal-Secret.
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class Booking {
+        // Base URL BookingService cho Feign (caregiver-access — quyền xem hồ sơ của caregiver).
+        @NotBlank
+        String url;
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class ServiceClient {
+        String clientId = "";
+
         @ToString.Exclude
-        String internalSecret = "";
+        String clientSecret = "";
+
+        @NotNull
+        Duration connectTimeout = Duration.ofSeconds(2);
+
+        @NotNull
+        Duration readTimeout = Duration.ofSeconds(3);
+
+        public boolean isConfigured() {
+            return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
+        }
     }
 }

@@ -6,20 +6,24 @@ Không có DB/Redis. Quy ước: `../AGENTS.md`; phần riêng: `AGENTS.md`.
 
 ## Định tuyến
 
-Gateway **cắt prefix `/api/v1`** rồi chuyển nguyên phần còn lại (kể cả query string, body, method).
+Gateway **giữ nguyên path** (`/api/v1/...` ở gateway = path ở service; mỗi service tự khai báo `/api/v1`). Nguồn duy nhất
+cho path: `config/GatewayPaths`.
 
-| Path ngoài (gateway) | Service | Path trong service |
-|---|---|---|
-| `/api/v1/auth/**` | IdentityService | `/auth/**` |
-| `/api/v1/users/**` | IdentityService | `/users/**` |
-| `/api/v1/roles/**`, `/api/v1/permissions/**` | IdentityService | `/roles/**`, `/permissions/**` |
-| `/api/v1/care-recipients/**` | CareRecipientService | `/care-recipients/**` |
-| `/api/v1/admin/care-recipients/**` | CareRecipientService | `/admin/care-recipients/**` |
-| `/api-docs/identity`, `/api-docs/care-recipient` | từng service | `/v3/api-docs` (Swagger tổng hợp) |
+| Path (gateway = service) | Service |
+|---|---|
+| `/api/v1/auth/**`, `/users/**`, `/roles/**`, `/permissions/**` | IdentityService |
+| `/api/v1/care-recipients/**` | CareRecipientService |
+| `/api/v1/bookings/**`, `/booking-occurrences/**`, `/notifications/**`, `/care-sessions/**`, `/care-reports/**`, `/feedbacks/**`, `/complaints/**`, `/statistics/**` | BookingService |
+| `/api/v1/care-centers/**`, `/caregivers/**`, `/work-shifts/**`, `/certificates/**`, `/provider-media/**` | ProviderService |
+| `/api/v1/catalog-items/**`, `/care-services/**`, `/center-services/**`, `/price-plans/**` | CareCatalogService |
+| `/api/v1/media/**` | MediaService |
+| `/api/v1/payments/**`, `/payment-policies/**`, `/refunds/**`, `/refund-quotes/**`, `/remaining-invoices/**`, `/settlements/**`, `/revenue/**`, `/deposit-forfeitures/**` | PaymentService (`GATEWAY_PAYMENT_URL`, GW-01 2026-10-22) |
+| `/api-docs/{identity,care-recipient,booking,provider,care-catalog,media,payment}` | `/v3/api-docs` của từng service (Swagger tổng hợp) |
 
-- **Không** có route tới `/internal/**` hay `/.well-known/jwks.json` (service gọi trực tiếp nhau).
-- Mọi path có segment `internal` (dạng thô hoặc đã decode, không phân biệt hoa thường) → **404** ngay, trước xác thực.
-  URL không chuẩn hóa (`..`, `%2e`, `;`…) bị firewall Spring Security từ chối → 400 `9000`.
+- **SSE** `GET /api/v1/notifications/stream` đi route riêng (`handler/SseProxyHandler`): chỉ giới hạn thời gian chờ header
+  phản hồi (= `GATEWAY_READ_TIMEOUT`), sau đó chép từng chunk + flush ngay (không buffer, `X-Accel-Buffering: no`),
+  đóng sau `GATEWAY_SSE_MAX_DURATION` (mặc định 30m) — EventSource tự nối lại với `Last-Event-ID`.
+- **Không** có route tới `/internal/**` hay `/.well-known/jwks.json` (JWKS service gọi trực tiếp Identity).
 - Path không thuộc route nào → 404 (`401` nếu chưa đăng nhập).
 
 ## Xác thực tại gateway
@@ -28,10 +32,13 @@ Gateway **cắt prefix `/api/v1`** rồi chuyển nguyên phần còn lại (k�
   `aud` chứa `careconnect-api`, `token_type=access`, `exp/iat/jti`, `sub` UUID. Service phía sau **vẫn tự xác minh**;
   gateway không kiểm blacklist/trạng thái tài khoản (việc của Identity).
 - Endpoint public (gateway không đọc token — cookie cũ không chặn được login/refresh/logout):
-  `/api/v1/auth/{login,refresh,logout,csrf}`, `/api/v1/auth/mobile/{login,refresh,logout}`,
-  `/api/v1/users/{register,register/verify,register/resend-otp,forgot-password,reset-password}`, Swagger
-  (`/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`, `/api-docs/**`), `/actuator/health/**`.
-- Header client gửi bị xóa trước khi chuyển tiếp: mọi `X-User-*`, `X-Internal-Secret`, `Origin`. Gateway gắn lại
+  `/api/v1/auth/{login,refresh,logout,csrf,register,register/verify,register/resend-otp,verify-email,forgot-password,reset-password}`,
+  `/api/v1/auth/mobile/{login,refresh,logout}`, **`POST /api/v1/auth/service-token`** (token SERVICE), **chỉ GET**
+  `/api/v1/payments/vnpay/ipn` và `/api/v1/payments/vnpay/return` (PaymentService tự kiểm chữ ký VNPay), Swagger
+  (`/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`, `/api-docs/**`), `/actuator/health/**`, **chỉ GET**
+  `/api/v1/care-centers/public` và `/api/v1/care-centers/public/{centerId}` (danh bạ trung tâm ACTIVE, SRCH-02 — mở
+  public ngày 2026-11-03, CR-6; ProviderService cũng permit và không đọc token ở hai path này).
+- Header client gửi bị xóa trước khi chuyển tiếp: mọi `X-User-*`, mọi `X-Service-*`, `X-Internal-Secret`, `Origin`. Gateway gắn lại
   `X-User-Id` (= `sub`) và `X-User-Roles` (roles, phân tách dấu phẩy) từ token đã xác minh — **chỉ để log/tracing**,
   service không phân quyền theo header này. (Không có `X-User-Email`: JWT không chứa email.)
 - Chuyển nguyên `Authorization`, `Cookie` (`access_token`, `refresh_token`, `XSRF-TOKEN`), `X-XSRF-TOKEN`, và
@@ -48,8 +55,8 @@ IdentityService đặt `access_token`, `refresh_token`, `XSRF-TOKEN` với `Http
 ## CORS
 
 Tập trung tại gateway: `GATEWAY_ALLOWED_ORIGINS` (danh sách, không wildcard), credentials bật, methods
-GET/POST/PUT/PATCH/DELETE/OPTIONS, headers `Authorization`, `Content-Type`, `X-XSRF-TOKEN`, `X-Request-Id`; expose
-`X-Request-Id`. Gateway xóa `Origin` khi chuyển tiếp nên CORS của service không thêm header trùng (CORS của
+GET/POST/PUT/PATCH/DELETE/OPTIONS, headers `Authorization`, `Content-Type`, `X-XSRF-TOKEN`, `X-Request-Id`,
+`X-Client-Type`, `X-Device-Id`, `Idempotency-Key`, `X-Refresh-Token`, `Last-Event-ID`; expose `X-Request-Id`, `Deprecation`. Gateway xóa `Origin` khi chuyển tiếp nên CORS của service không thêm header trùng (CORS của
 IdentityService giữ nguyên cho trường hợp gọi trực tiếp khi dev). Origin không cho phép → 403.
 
 ## Lỗi (envelope `APIResponse`)
@@ -83,13 +90,15 @@ Tùy chọn chạy trong container từ JAR (gọi service trên host qua `host.
 | Biến | Ý nghĩa |
 |---|---|
 | `GATEWAY_SERVER_PORT`, `GATEWAY_SWAGGER_ENABLED` | Port, bật Swagger tổng hợp `/swagger-ui.html` |
-| `GATEWAY_IDENTITY_URL`, `GATEWAY_CARE_RECIPIENT_URL` | Base URL service phía sau |
+| `GATEWAY_IDENTITY_URL`, `GATEWAY_CARE_RECIPIENT_URL`, `GATEWAY_BOOKING_URL`, `GATEWAY_PROVIDER_URL`, `GATEWAY_CARE_CATALOG_URL`, `GATEWAY_MEDIA_URL`, `GATEWAY_PAYMENT_URL` | Base URL service phía sau (bắt buộc) |
+| `GATEWAY_SSE_MAX_DURATION` | Thời lượng tối đa một kết nối SSE (mặc định `30m`) |
 | `GATEWAY_CONNECT_TIMEOUT`, `GATEWAY_READ_TIMEOUT` | Timeout (Duration) khi chuyển tiếp |
 | `GATEWAY_JWT_ISSUER`, `GATEWAY_JWT_JWKS_URI` | Phải khớp IdentityService |
 | `GATEWAY_ALLOWED_ORIGINS` | Origin FE (CORS + credentials) |
 
-Swagger tổng hợp: `http://localhost:8080/swagger-ui.html` (chọn `identity` / `care-recipient`). Đặt
-`IDENTITY_OPENAPI_SERVER_URL=/api/v1` và `CARE_RECIPIENT_OPENAPI_SERVER_URL=/api/v1` để "Try it out" gọi qua gateway.
+Swagger tổng hợp: `http://localhost:8080/swagger-ui.html` (chọn `identity` / `care-recipient` / `booking`). Đặt
+`IDENTITY_OPENAPI_SERVER_URL=/api/v1`, `CARE_RECIPIENT_OPENAPI_SERVER_URL=/api/v1`, `BOOKING_OPENAPI_SERVER_URL=/api/v1`
+để "Try it out" gọi qua gateway.
 
 FE (`FE-careconnect`): Vite proxy hiện cắt `/api` rồi gọi thẳng service. Khi dùng gateway: `API_PROXY_TARGET=http://localhost:8080`
 và rewrite `/api` → `/api/v1` (hoặc đặt `VITE_API_BASE_URL=/api/v1` và bỏ rewrite) — thay đổi phía FE, chưa làm.
@@ -101,6 +110,16 @@ cắt prefix, token sai/thiếu/refresh/sai audience, endpoint public bỏ qua c
 (login/ghi có CSRF/refresh), thay `X-User-*`, request id, chặn `/internal`, CORS + bỏ `Origin`, Swagger tổng hợp,
 timeout 504, upstream tắt 503, JWKS không truy cập được 503. E2E toàn hệ thống: `..\scripts\e2e\Run-E2E.ps1`; kết quả: `../docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md` §7.
 
+2026-10-09: **16/16** — thêm route BookingService (4 prefix + Idempotency-Key đi qua), `/caregiver/care-recipients`
+tới CareRecipient, `/caregiver/schedules` không bị route nhầm, chặn `/internal/bookings/**`. Test 404 cũ đổi path ví dụ
+từ `/api/v1/bookings` (nay đã có route) sang `/api/v1/unknown-resources`.
+
+2026-10-22 (GW-01): **20/20** — route Payment + nhóm route vận hành của Booking, IPN/return VNPay public chỉ với GET
+(POST → 401), `/auth/service-token` public bỏ qua cookie cũ, xóa `X-Service-*`, preflight cho `Idempotency-Key` /
+`Last-Event-ID`, SSE không bị cắt bởi read timeout 1s và không lặp `X-Request-Id`.
+
 ## Chưa làm
 
 Rate limiting (chưa chốt); cache JWKS khi Identity tắt lâu hơn thời gian cache (token mới sẽ nhận 503).
+
+IAM-03 (2026-10-24): X-Forwarded-For được ghi đè từ remoteAddr tại HTTP header filter cuối; Forwarded do client gửi bị xóa. Identity chỉ tin XFF từ IP gateway được cấu hình trong IDENTITY_TRUSTED_PROXIES.

@@ -22,12 +22,26 @@ springdoc:
     enabled: ${GATEWAY_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${GATEWAY_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
     urls-primary-name: identity
     urls:
       - name: identity
         url: /api-docs/identity
       - name: care-recipient
         url: /api-docs/care-recipient
+      - name: booking
+        url: /api-docs/booking
+      - name: provider
+        url: /api-docs/provider
+      - name: care-catalog
+        url: /api-docs/care-catalog
+      - name: media
+        url: /api-docs/media
+      - name: payment
+        url: /api-docs/payment
+      - name: ai
+        url: /api-docs/ai
 
 management:
   endpoints:
@@ -47,6 +61,14 @@ logging:
 gateway:
   identity-url: ${GATEWAY_IDENTITY_URL}
   care-recipient-url: ${GATEWAY_CARE_RECIPIENT_URL}
+  booking-url: ${GATEWAY_BOOKING_URL}
+  provider-url: ${GATEWAY_PROVIDER_URL}
+  care-catalog-url: ${GATEWAY_CARE_CATALOG_URL}
+  media-url: ${GATEWAY_MEDIA_URL}
+  payment-url: ${GATEWAY_PAYMENT_URL}
+  ai-url: ${GATEWAY_AI_URL}
+  ai-read-timeout: ${GATEWAY_AI_READ_TIMEOUT:90s}
+  sse-max-duration: ${GATEWAY_SSE_MAX_DURATION:30m}
   allowed-origins: ${GATEWAY_ALLOWED_ORIGINS}
 
   jwt:

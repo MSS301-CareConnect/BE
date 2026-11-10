@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${BOOKING_DB_NAME:-CARECONNECT_BOOKING}
+      POSTGRES_USER: ${BOOKING_DB_USERNAME:?Set BOOKING_DB_USERNAME}
+      POSTGRES_PASSWORD: ${BOOKING_DB_PASSWORD:?Set BOOKING_DB_PASSWORD}
+
+    ports:
+      - "127.0.0.1:${BOOKING_DB_PORT:-5445}:5432"
+
+    volumes:
+      - booking_postgres:/var/lib/postgresql/data
+
+volumes:
+  booking_postgres:

@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -39,7 +40,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @Import(TestIdentityState.class)
 class IdentityServiceApplicationTests {
     static final String PASSWORD="CareConnect9!";
-    static final String INTERNAL_SECRET="internal-test-secret-0123456789abcdef";
+    static final String SERVICE_SECRET="booking-test-secret";
+    // Compose escape ($$) để kiểm luôn bước chuẩn hóa của ServiceClientInitializer.
+    static final String SERVICE_CLIENTS="booking:"+new BCryptPasswordEncoder(4).encode(SERVICE_SECRET).replace("$","$$")
+            +",payment:"+new BCryptPasswordEncoder(4).encode("payment-test-secret");
     static final Path KEY_DIRECTORY;
     static String pgSchema;
     static {
@@ -70,12 +74,12 @@ class IdentityServiceApplicationTests {
         p.add("identity.issuer",()->"https://identity.test"); p.add("identity.audience",()->"careconnect-identity"); p.add("identity.key-id",()->"test-key");
         p.add("identity.private-key",()->KEY_DIRECTORY.resolve("private.pem").toUri().toString()); p.add("identity.public-key",()->KEY_DIRECTORY.resolve("public.pem").toUri().toString());
         p.add("identity.access-ttl",()->"15m"); p.add("identity.refresh-ttl",()->"7d"); p.add("identity.otp-ttl",()->"5m"); p.add("identity.otp-cooldown",()->"60s");
+        p.add("identity.service-clients",()->SERVICE_CLIENTS); p.add("identity.service-token-ttl",()->"10m");
         p.add("identity.otp-max-attempts",()->5); p.add("identity.allowed-origins",()->"https://web.test"); p.add("identity.cookie-secure",()->true);
-        p.add("identity.internal-secret",()->INTERNAL_SECRET);
     }
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
-    @Autowired AccountService accounts;
+    @Autowired UserService accounts;
     @Autowired JwtService tokens;
     @Autowired JwtEncoder encoder;
     @Autowired IdentityStateService state;
@@ -83,6 +87,7 @@ class IdentityServiceApplicationTests {
     @Autowired RoleRepository roles;
     @Autowired UserRoleRepository assignments;
     @Autowired PasswordEncoder passwords;
+    @Autowired ServiceClientRepository serviceClients;
     @Autowired TransactionTemplate tx;
     @Autowired IdentityProperties properties;
     @Autowired mss301.identityservice.security.IdentityAuthenticationConverter authenticationConverter;
@@ -109,7 +114,7 @@ class IdentityServiceApplicationTests {
     UserResponse manager(UUID center) { return accounts.provision(admin.getId(),ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Manager").roleCode(RoleCode.CENTER_MANAGER).centerId(center).build()).getResult(); }
     UserResponse caregiver(UserResponse manager) { return accounts.provision(manager.getId(),ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Caregiver").roleCode(RoleCode.CAREGIVER).build()).getResult(); }
     String sendRegistration(String address) throws Exception {
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json").content(body(RegisterRequest.builder().email(address.toUpperCase()).fullName("Test").password(PASSWORD).build()))).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(body(RegisterRequest.builder().email(address.toUpperCase()).fullName("Test").password(PASSWORD).build()))).andExpect(status().isOk());
         var code=org.mockito.ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(address),code.capture()); return code.getValue();
     }
     @AfterAll static void cleanupKeys() throws Exception { Files.deleteIfExists(KEY_DIRECTORY.resolve("private.pem")); Files.deleteIfExists(KEY_DIRECTORY.resolve("public.pem")); Files.deleteIfExists(KEY_DIRECTORY);
@@ -118,36 +123,120 @@ class IdentityServiceApplicationTests {
         }
     }
 
+    String serviceToken(String clientId,String secret) throws Exception {
+        String response=mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId",clientId,"clientSecret",secret))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return json.readTree(response).path("result").path("accessToken").asText();
+    }
+
+    @Test void serviceTokenCarriesServiceRoleAndNoRefresh() throws Exception {
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.result.expiresInSeconds").value(600)).andExpect(jsonPath("$.result.refreshToken").doesNotExist())
+                .andExpect(cookie().doesNotExist("access_token")).andExpect(cookie().doesNotExist("refresh_token"));
+        Jwt jwt=tokens.parseAccess(serviceToken("booking",SERVICE_SECRET));
+        ServiceClient client=serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow();
+        assertThat(jwt.getSubject()).isEqualTo(client.getId().toString());
+        assertThat(jwt.getClaimAsStringList("roles")).containsExactly("SERVICE");
+        assertThat(jwt.getClaimAsStringList("permissions")).isEmpty();
+        assertThat(jwt.getClaimAsString("client_id")).isEqualTo("booking");
+        assertThat(jwt.getAudience()).contains("careconnect-identity","careconnect-api");
+        assertThat(client.getSecretHash()).startsWith("$2a$").doesNotContain("$$");
+    }
+
+    @Test void serviceTokenRejectsWrongSecretAndUnknownClientWithSameError() throws Exception {
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","wrong"))))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1114));
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","ghost","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1114));
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","","clientSecret",""))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test void serviceTokenIsRateLimitedPerClient() throws Exception {
+        for (int i=0;i<5;i++) {
+            mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","payment","clientSecret","wrong"))))
+                    .andExpect(status().isUnauthorized());
+        }
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","payment","clientSecret","payment-test-secret"))))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    // H-13: kẻ tấn công đoán sai secret từ IP khác không khóa được client của service thật.
+    @Test void serviceTokenLockoutIsPerIpSoOutsidersCannotBlockAService() throws Exception {
+        for (int i=0;i<6;i++) {
+            mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })
+                            .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","guess"+i))))
+                    .andExpect(status().is4xxClientError());
+        }
+        mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })
+                        .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isTooManyRequests());
+        mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                .andExpect(status().isOk());
+        // X-Forwarded-For chỉ được tin từ proxy tin cậy: client ngoài không giả IP của gateway để khóa hộ.
+        mvc.perform(post("/api/v1/auth/service-token").with(request -> { request.setRemoteAddr("203.0.113.10"); return request; })
+                        .header("X-Forwarded-For","127.0.0.1")
+                        .contentType("application/json").content(body(Map.of("clientId","booking","clientSecret","guess"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void serviceTokenIsNotAUser() throws Exception {
+        String token=serviceToken("booking",SERVICE_SECRET);
+        int status=mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+token)).andReturn().getResponse().getStatus();
+        assertThat(status).isIn(403,404);
+        mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token)).andExpect(status().isForbidden());
+    }
+
+    @Test void disabledServiceClientCannotGetOrUseTokens() throws Exception {
+        String token=serviceToken("booking",SERVICE_SECRET);
+        tx.executeWithoutResult(s->serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow().setActive(false));
+        try {
+            mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token)).andExpect(status().isUnauthorized());
+            mvc.perform(post("/api/v1/auth/service-token").contentType("application/json").content(body(Map.of("clientId","booking","clientSecret",SERVICE_SECRET))))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1117));
+        } finally {
+            tx.executeWithoutResult(s->serviceClients.findByClientIdAndDeletedAtIsNull("booking").orElseThrow().setActive(true));
+        }
+    }
+
+    @Test void serviceRoleCannotBeProvisionedOrCreated() throws Exception {
+        mvc.perform(post("/api/v1/users").header("Authorization","Bearer "+token(admin)).contentType("application/json")
+                .content(body(Map.of("email",UUID.randomUUID()+"@example.test","fullName","Robot","roleCode","SERVICE")))).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/roles").header("Authorization","Bearer "+token(admin)).contentType("application/json")
+                .content(body(Map.of("roleCode","SERVICE","roleName","Fake service")))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1101));
+        assertThat(roles.findByRoleCodeAndDeletedAtIsNull("SERVICE")).isEmpty();
+    }
+
     @Test void missingTokenIs401() throws Exception {
-        mvc.perform(get("/users/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(401));
+        mvc.perform(get("/api/v1/users/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(401));
     }
 
     @Test void invalidSignatureIs401() throws Exception {
-        mvc.perform(get("/users/me").header("Authorization","Bearer invalid.jwt.value")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer invalid.jwt.value")).andExpect(status().isUnauthorized());
     }
 
     @Test void meContainsNoPassword() throws Exception {
-        mvc.perform(get("/users/me").header("Authorization","Bearer "+token(customer))).andExpect(status().isOk()).andExpect(jsonPath("$.result.id").value(customer.getId().toString())).andExpect(jsonPath("$.result.password").doesNotExist()).andExpect(jsonPath("$.result.roles[0]").value("CUSTOMER"));
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+token(customer))).andExpect(status().isOk()).andExpect(jsonPath("$.result.id").value(customer.getId().toString())).andExpect(jsonPath("$.result.password").doesNotExist()).andExpect(jsonPath("$.result.roles[0]").value("CUSTOMER"));
     }
 
     @Test void customerCannotReadOtherUsers() throws Exception {
-        mvc.perform(get("/users").header("Authorization","Bearer "+token(customer))).andExpect(status().isForbidden());
-        mvc.perform(get("/users/"+admin.getId()).header("Authorization","Bearer "+token(customer))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token(customer))).andExpect(status().isForbidden());
     }
 
     @Test void signupRejectsRoleInjection() throws Exception {
         Map<String,Object> request=new HashMap<>(Map.of("email","a@example.test","password",PASSWORD,"fullName","Test","roleCode","ADMIN"));
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json").content(body(request))).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(body(request))).andExpect(status().isBadRequest());
     }
 
     @Test void weakPasswordIs400() throws Exception {
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json").content(body(RegisterRequest.builder().email("test@example.test").fullName("Test").password("weak").build()))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1074));
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(body(RegisterRequest.builder().email("test@example.test").fullName("Test").password("weak").build()))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1074));
     }
 
     @Test void webLoginRequiresCsrf() throws Exception {
-        mvc.perform(post("/auth/login").contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1111));
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1111));
         // Trình duyệt có cookie (vd XSRF-TOKEN cũ) vẫn phải gửi header CSRF ở endpoint đăng ký / quên mật khẩu.
-        mvc.perform(post("/users/forgot-password").cookie(new Cookie("XSRF-TOKEN", "browser-token")).contentType("application/json").content(body(EmailRequest.builder().email(customer.getEmail()).build()))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1111));
+        mvc.perform(post("/api/v1/auth/forgot-password").cookie(new Cookie("XSRF-TOKEN", "browser-token")).contentType("application/json").content(body(EmailRequest.builder().email(customer.getEmail()).build()))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1111));
     }
 
     // ===== Mobile: đăng ký / OTP / quên-đặt lại mật khẩu không cần CSRF khi request không mang cookie nào =====
@@ -155,23 +244,23 @@ class IdentityServiceApplicationTests {
     @Test
     void cookielessAccountEndpointsSkipCsrf() throws Exception {
         String address = UUID.randomUUID() + "@example.test";
-        mvc.perform(post("/users/register")
+        mvc.perform(post("/api/v1/auth/register")
                         .contentType("application/json")
                         .content(body(RegisterRequest.builder().email(address).fullName("Mobile").password(PASSWORD).build())))
                 .andExpect(status().isOk());
-        mvc.perform(post("/users/register/resend-otp")
+        mvc.perform(post("/api/v1/auth/register/resend-otp")
                         .contentType("application/json")
                         .content(body(EmailRequest.builder().email(address).build())))
                 .andExpect(status().isTooManyRequests());
-        mvc.perform(post("/users/register/verify")
+        mvc.perform(post("/api/v1/auth/register/verify")
                         .contentType("application/json")
                         .content(body(VerifyOtpRequest.builder().email(address).otpCode("000000").build())))
                 .andExpect(status().isBadRequest());
-        mvc.perform(post("/users/forgot-password")
+        mvc.perform(post("/api/v1/auth/forgot-password")
                         .contentType("application/json")
                         .content(body(EmailRequest.builder().email(customer.getEmail()).build())))
                 .andExpect(status().isOk());
-        mvc.perform(post("/users/reset-password")
+        mvc.perform(post("/api/v1/auth/reset-password")
                         .contentType("application/json")
                         .content(body(ResetPasswordRequest.builder().email(customer.getEmail()).otpCode("000000").newPassword(PASSWORD).build())))
                 .andExpect(status().isBadRequest());
@@ -180,118 +269,117 @@ class IdentityServiceApplicationTests {
     @Test
     void cookielessExemptionDoesNotCoverOtherEndpoints() throws Exception {
         // Login web (đặt cookie) và các endpoint ghi khác vẫn cần CSRF khi không có bearer, kể cả không có cookie.
-        mvc.perform(post("/auth/login").contentType("application/json")
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json")
                         .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(1111));
-        mvc.perform(post("/auth/refresh"))
+        mvc.perform(post("/api/v1/auth/refresh"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(1111));
     }
 
     @Test void missingPermissionKeepsGenericForbiddenCode() throws Exception {
-        mvc.perform(get("/users").header("Authorization","Bearer "+token(customer))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(403));
+        mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+token(customer))).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(403));
     }
 
     @Test void openApiDocumentsCsrfHeaderOnWriteOperations() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.components.securitySchemes.csrf.in").value("header"))
                 .andExpect(jsonPath("$.components.securitySchemes.csrf.name").value("X-XSRF-TOKEN"))
-                .andExpect(jsonPath("$.paths['/auth/login'].post.security[0].csrf").exists())
-                .andExpect(jsonPath("$.paths['/auth/login'].post.security[0].bearerAuth").doesNotExist())
-                .andExpect(jsonPath("$.paths['/users/register'].post.security[0].csrf").exists())
-                .andExpect(jsonPath("$.paths['/users/me'].put.security[0].csrf").exists())
-                .andExpect(jsonPath("$.paths['/users/me'].put.security[0].bearerAuth").exists())
-                .andExpect(jsonPath("$.paths['/users/me'].get.security").doesNotExist())
-                .andExpect(jsonPath("$.paths['/auth/mobile/login'].post.security[0].csrf").doesNotExist());
+                .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.security[0].csrf").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.security[0].bearerAuth").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/register'].post.security[0].csrf").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/users/me'].put.security[0].csrf").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/users/me'].put.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/users/me'].get.security").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/mobile/login'].post.security[0].csrf").doesNotExist());
     }
 
     @Test void webLoginUsesCookies() throws Exception {
-        mvc.perform(post("/auth/login").with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andExpect(cookie().httpOnly("access_token",true)).andExpect(cookie().secure("refresh_token",true)).andExpect(jsonPath("$.result.accessToken").doesNotExist()).andExpect(jsonPath("$.result.refreshToken").doesNotExist());
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andExpect(cookie().httpOnly("access_token",true)).andExpect(cookie().secure("refresh_token",true)).andExpect(cookie().path("refresh_token", "/api/v1/auth/refresh")).andExpect(jsonPath("$.result.accessToken").doesNotExist()).andExpect(jsonPath("$.result.refreshToken").doesNotExist());
     }
 
     @Test void staleCookieDoesNotBlockLogin() throws Exception {
-        mvc.perform(post("/auth/login").cookie(new Cookie("access_token","bad.token")).with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(new Cookie("access_token","bad.token")).with(csrf()).contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk());
     }
 
     @Test void mobileRefreshCannotReplay() throws Exception {
-        MvcResult result=mvc.perform(post("/auth/mobile/login").contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andReturn();
+        MvcResult result=mvc.perform(post("/api/v1/auth/mobile/login").contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build()))).andExpect(status().isOk()).andReturn();
         String refresh=json.readTree(result.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
         String request=body(RefreshRequest.builder().refreshToken(refresh).build());
-        mvc.perform(post("/auth/mobile/refresh").contentType("application/json").content(request)).andExpect(status().isOk());
-        mvc.perform(post("/auth/mobile/refresh").contentType("application/json").content(request)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/mobile/refresh").contentType("application/json").content(request)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/mobile/refresh").contentType("application/json").content(request)).andExpect(status().isUnauthorized());
     }
 
     @Test void refreshCannotAuthenticateResources() throws Exception {
-        mvc.perform(get("/users/me").header("Authorization","Bearer "+tokens.issue(customer,0,TokenType.REFRESH).getTokenValue())).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+tokens.issue(customer,0,TokenType.REFRESH).getTokenValue())).andExpect(status().isUnauthorized());
     }
 
     @Test void invalidClaimsAre401() throws Exception {
         for(String scenario:List.of("expired","issuer","audience","subject")) {
             Instant now=Instant.now(); JwtClaimsSet claims=JwtClaimsSet.builder().issuer(scenario.equals("issuer")?"https://wrong.test":properties.getIssuer()).subject(scenario.equals("subject")?"not-uuid":customer.getId().toString()).audience(List.of(scenario.equals("audience")?"wrong":properties.getAudience())).issuedAt(now.minusSeconds(3600)).expiresAt(scenario.equals("expired")?now.minusSeconds(120):now.plusSeconds(600)).id(UUID.randomUUID().toString()).claim("authz_version",0).claim("token_type","access").build();
             String access=encoder.encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).keyId(properties.getKeyId()).build(),claims)).getTokenValue();
-            mvc.perform(get("/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
+            mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
         }
     }
 
     @Test void lockedAccountAndRefreshAreRejected() throws Exception {
         String access=token(customer); Jwt refresh=tokens.issue(customer,0,TokenType.REFRESH); state.storeRefresh(refresh.getId(),customer.getId(),Duration.ofHours(1));
-        accounts.updateStatus(admin.getId(),customer.getId(),UserStatus.LOCKED);
-        mvc.perform(get("/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
-        mvc.perform(post("/auth/mobile/refresh").contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isUnauthorized());
+        accounts.updateStatus(admin.getId(),customer.getId(),UserStatus.LOCKED,"Kiểm thử khóa");
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/mobile/refresh").contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isUnauthorized());
     }
 
     @Test void managerScopeIsEnforced() throws Exception {
         UserResponse manager=manager(UUID.randomUUID()); UserResponse own=caregiver(manager); UserResponse other=caregiver(manager(UUID.randomUUID()));
-        mvc.perform(get("/users/"+own.getId()).header("Authorization","Bearer "+token(manager))).andExpect(status().isOk());
-        mvc.perform(get("/users/"+other.getId()).header("Authorization","Bearer "+token(manager))).andExpect(status().isForbidden());
-        mvc.perform(patch("/users/"+other.getId()+"/status?status=LOCKED").header("Authorization","Bearer "+token(manager))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/users/"+own.getId()).header("Authorization","Bearer "+token(manager))).andExpect(status().isOk());
+        mvc.perform(patch("/api/v1/users/"+other.getId()+"/status?status=LOCKED").header("Authorization","Bearer "+token(manager))).andExpect(status().isForbidden());
     }
 
     @Test void managerCannotElevateOrCrossProvision() throws Exception {
         UserResponse manager=manager(UUID.randomUUID());
-        for(RoleCode role:List.of(RoleCode.ADMIN,RoleCode.CENTER_MANAGER,RoleCode.CAREGIVER)) mvc.perform(post("/users").header("Authorization","Bearer "+token(manager)).contentType("application/json").content(body(ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Test").roleCode(role).centerId(UUID.randomUUID()).build()))).andExpect(status().is4xxClientError());
+        for(RoleCode role:List.of(RoleCode.ADMIN,RoleCode.CENTER_MANAGER,RoleCode.CAREGIVER)) mvc.perform(post("/api/v1/users").header("Authorization","Bearer "+token(manager)).contentType("application/json").content(body(ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Test").roleCode(role).centerId(UUID.randomUUID()).build()))).andExpect(status().is4xxClientError());
     }
 
     @Test void caregiverCenterComesFromManager() throws Exception {
-        UserResponse manager=manager(UUID.randomUUID()); mvc.perform(post("/users").header("Authorization","Bearer "+token(manager)).contentType("application/json").content(body(ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Test").roleCode(RoleCode.CAREGIVER).build()))).andExpect(status().isOk()).andExpect(jsonPath("$.result.centerId").value(manager.getCenterId().toString()));
+        UserResponse manager=manager(UUID.randomUUID()); mvc.perform(post("/api/v1/users").header("Authorization","Bearer "+token(manager)).contentType("application/json").content(body(ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Test").roleCode(RoleCode.CAREGIVER).build()))).andExpect(status().isOk()).andExpect(jsonPath("$.result.centerId").value(manager.getCenterId().toString()));
     }
 
     @Test void registrationOtpIsSingleUse() throws Exception {
         String address=UUID.randomUUID()+"@example.test"; String code=sendRegistration(address); assertThat(users.existsByEmailIgnoreCase(address)).isFalse();
         String request=body(VerifyOtpRequest.builder().email(address).otpCode(code).build());
-        mvc.perform(post("/users/register/verify").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk()).andExpect(jsonPath("$.result.roles[0]").value("CUSTOMER"));
-        mvc.perform(post("/users/register/verify").with(csrf()).contentType("application/json").content(request)).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/auth/register/verify").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk()).andExpect(jsonPath("$.result.roles[0]").value("CUSTOMER"));
+        mvc.perform(post("/api/v1/auth/register/verify").with(csrf()).contentType("application/json").content(request)).andExpect(status().isBadRequest());
     }
 
     @Test void wrongOtpExhaustsAttempts() throws Exception {
         String address=UUID.randomUUID()+"@example.test"; String code=sendRegistration(address); String wrong=code.equals("000000")?"111111":"000000";
-        for(int i=1;i<=5;i++) mvc.perform(post("/users/register/verify").with(csrf()).contentType("application/json").content(body(VerifyOtpRequest.builder().email(address).otpCode(wrong).build()))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(i==5?1072:1063));
-        mvc.perform(post("/users/register/verify").with(csrf()).contentType("application/json").content(body(VerifyOtpRequest.builder().email(address).otpCode(code).build()))).andExpect(status().isBadRequest());
+        for(int i=1;i<=5;i++) mvc.perform(post("/api/v1/auth/register/verify").with(csrf()).contentType("application/json").content(body(VerifyOtpRequest.builder().email(address).otpCode(wrong).build()))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(i==5?1072:1063));
+        mvc.perform(post("/api/v1/auth/register/verify").with(csrf()).contentType("application/json").content(body(VerifyOtpRequest.builder().email(address).otpCode(code).build()))).andExpect(status().isBadRequest());
     }
 
     @Test void passwordResetRevokesSessions() throws Exception {
-        String access=token(customer); mvc.perform(post("/users/forgot-password").with(csrf()).contentType("application/json").content(body(EmailRequest.builder().email(customer.getEmail()).build()))).andExpect(status().isOk());
+        String access=token(customer); mvc.perform(post("/api/v1/auth/forgot-password").with(csrf()).contentType("application/json").content(body(EmailRequest.builder().email(customer.getEmail()).build()))).andExpect(status().isOk());
         var code=org.mockito.ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(customer.getEmail()),code.capture());
         String request=body(ResetPasswordRequest.builder().email(customer.getEmail()).otpCode(code.getValue()).newPassword("NewPassword9!").build());
-        mvc.perform(post("/users/reset-password").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk());
-        mvc.perform(get("/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
-        mvc.perform(post("/users/reset-password").with(csrf()).contentType("application/json").content(request)).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/auth/reset-password").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/reset-password").with(csrf()).contentType("application/json").content(request)).andExpect(status().isBadRequest());
     }
 
     @Test void revokedRoleIsNotTrustedFromJwt() throws Exception {
         String access=token(admin); UUID roleId=roles.findByRoleCodeAndDeletedAtIsNull("ADMIN").orElseThrow().getId(); accounts.revoke(admin.getId(),admin.getId(),roleId);
-        mvc.perform(get("/users").header("Authorization","Bearer "+access)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/users").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
     }
 
     @Test void softDeletePreservesDataAndBlocksAuthentication() throws Exception {
-        String access=token(customer); accounts.delete(admin.getId(),customer.getId()); mvc.perform(get("/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
+        String access=token(customer); accounts.delete(admin.getId(),customer.getId()); mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
         assertThat(users.findById(customer.getId()).orElseThrow().getDeletedAt()).isNotNull(); assertThat(users.findByIdAndDeletedAtIsNull(customer.getId())).isEmpty();
     }
 
     @Test void invalidEnumAndUuidAre400() throws Exception {
-        mvc.perform(patch("/users/"+customer.getId()+"/status?status=INVALID").header("Authorization","Bearer "+token(admin))).andExpect(status().isBadRequest());
-        mvc.perform(get("/users/not-uuid").header("Authorization","Bearer "+token(admin))).andExpect(status().isBadRequest());
+        mvc.perform(patch("/api/v1/users/"+customer.getId()+"/status?status=INVALID").header("Authorization","Bearer "+token(admin))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/users/not-uuid").header("Authorization","Bearer "+token(admin))).andExpect(status().isBadRequest());
     }
 
     @Test void jwksOnlyContainsPublicMaterial() throws Exception {
@@ -304,13 +392,13 @@ class IdentityServiceApplicationTests {
     }
 
     @Test void conflictingTokenTransportsAreRejected() throws Exception {
-        mvc.perform(get("/users/me").cookie(new Cookie("access_token",token(customer))).header("Authorization","Bearer "+token(admin))).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").cookie(new Cookie("access_token",token(customer))).header("Authorization","Bearer "+token(admin))).andExpect(status().isUnauthorized());
     }
 
     @Test void logoutRevokesAccessAndRefresh() throws Exception {
         Jwt refresh=tokens.issue(customer,0,TokenType.REFRESH); state.storeRefresh(refresh.getId(),customer.getId(),Duration.ofHours(1)); String access=token(customer);
-        mvc.perform(post("/auth/mobile/logout").header("Authorization","Bearer "+access).contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isOk());
-        mvc.perform(get("/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized()); assertThat(state.consumeRefresh(refresh.getId(),customer.getId())).isFalse();
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization","Bearer "+access).contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh.getTokenValue()).build()))).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
     }
 
     @Test void concurrentRefreshHasOneWinner() throws Exception {
@@ -359,27 +447,27 @@ class IdentityServiceApplicationTests {
         }
     }
     @Test void unicodePasswordExceedingBcryptByteLimitIs400() throws Exception {
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json")
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json")
                 .content(body(RegisterRequest.builder().email("test@example.test").fullName("Test").password("Aa9!" + "é".repeat(40)).build())))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1074));
     }
     @Test void realCsrfTokenAllowsWebLogin() throws Exception {
-        var csrfResponse = mvc.perform(get("/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
+        var csrfResponse = mvc.perform(get("/api/v1/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
         String csrfToken = json.readTree(csrfResponse.getContentAsString()).path("result").path("token").asString();
-        mvc.perform(post("/auth/login").cookie(csrfResponse.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", csrfToken)
+        mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(csrfResponse.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", csrfToken)
                 .contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
                 .andExpect(status().isOk());
     }
     @Test void profileUpdatesAreScopedAndDoNotOverwriteRoles() throws Exception {
         UserResponse manager = manager(UUID.randomUUID()); UserResponse own = caregiver(manager); UserResponse other = caregiver(manager(UUID.randomUUID()));
         String request = body(UpdateProfileRequest.builder().fullName("Updated caregiver").build());
-        mvc.perform(put("/users/" + own.getId()).header("Authorization", "Bearer " + token(manager)).contentType("application/json").content(request))
+        mvc.perform(put("/api/v1/users/" + own.getId()).header("Authorization", "Bearer " + token(manager)).contentType("application/json").content(request))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.roles[0]").value("CAREGIVER"));
-        mvc.perform(put("/users/" + other.getId()).header("Authorization", "Bearer " + token(manager)).contentType("application/json").content(request)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/users/" + other.getId()).header("Authorization", "Bearer " + token(manager)).contentType("application/json").content(request)).andExpect(status().isForbidden());
     }
     @Test void webCookieMutationStillNeedsCsrfWithBearerHeader() throws Exception {
         String access = token(customer);
-        mvc.perform(put("/users/me").cookie(new Cookie("access_token", access)).header("Authorization", "Bearer " + access)
+        mvc.perform(put("/api/v1/users/me").cookie(new Cookie("access_token", access)).header("Authorization", "Bearer " + access)
                 .contentType("application/json").content(body(UpdateProfileRequest.builder().fullName("Updated").build())))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(1111));
     }
@@ -388,37 +476,37 @@ class IdentityServiceApplicationTests {
         doThrow(new mss301.identityservice.exception.AppException(mss301.identityservice.exception.ErrorCode.EMAIL_DELIVERY_FAILED)).doNothing()
                 .when(email).sendOtp(eq(address), anyString());
         String request = body(RegisterRequest.builder().email(address).fullName("Test").password(PASSWORD).build());
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json").content(request)).andExpect(status().isServiceUnavailable());
-        mvc.perform(post("/users/register").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk());
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(request)).andExpect(status().isServiceUnavailable());
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk());
     }
 
     @Test void managerListOnlyContainsOwnCaregivers() throws Exception {
         UserResponse manager = manager(UUID.randomUUID()); UserResponse own = caregiver(manager); caregiver(manager(UUID.randomUUID()));
-        mvc.perform(get("/users").header("Authorization", "Bearer " + token(manager)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.result.length()").value(1))
-                .andExpect(jsonPath("$.result[0].id").value(own.getId().toString()));
+        mvc.perform(get("/api/v1/users").header("Authorization", "Bearer " + token(manager)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.content.length()").value(1))
+                .andExpect(jsonPath("$.result.content[0].id").value(own.getId().toString()));
     }
     @Test void longLoginPasswordReturns401() throws Exception {
-        mvc.perform(post("/auth/mobile/login").contentType("application/json")
+        mvc.perform(post("/api/v1/auth/mobile/login").contentType("application/json")
                 .content(body(LoginRequest.builder().email(customer.getEmail()).password("é".repeat(100)).build())))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test void webCsrfSurvivesReadsAndRotatesOnRefresh() throws Exception {
-        var initial = mvc.perform(get("/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
+        var initial = mvc.perform(get("/api/v1/auth/csrf")).andExpect(status().isOk()).andReturn().getResponse();
         String before = json.readTree(initial.getContentAsString()).path("result").path("token").asString();
-        var login = mvc.perform(post("/auth/login").cookie(initial.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", before)
+        var login = mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "web").cookie(initial.getCookie("XSRF-TOKEN")).header("X-XSRF-TOKEN", before)
                 .contentType("application/json").content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
                 .andExpect(status().isOk()).andReturn().getResponse();
         String after = json.readTree(login.getContentAsString()).path("result").path("csrfToken").asString();
         assertThat(after).isNotEqualTo(before);
-        var me = mvc.perform(get("/users/me").cookie(login.getCookies())).andExpect(status().isOk()).andReturn().getResponse();
+        var me = mvc.perform(get("/api/v1/users/me").cookie(login.getCookies())).andExpect(status().isOk()).andReturn().getResponse();
         assertThat(me.getCookie("XSRF-TOKEN")).isNull();
-        var refreshed = mvc.perform(post("/auth/refresh").cookie(login.getCookies()).header("X-XSRF-TOKEN", after))
+        var refreshed = mvc.perform(post("/api/v1/auth/refresh").header("X-Client-Type", "web").cookie(login.getCookies()).header("X-XSRF-TOKEN", after))
                 .andExpect(status().isOk()).andReturn().getResponse();
         String next = json.readTree(refreshed.getContentAsString()).path("result").path("csrfToken").asString();
         assertThat(next).isNotEqualTo(after);
-        mvc.perform(post("/auth/logout").cookie(refreshed.getCookies()).header("X-XSRF-TOKEN", next))
+        mvc.perform(post("/api/v1/auth/logout").header("X-Client-Type", "web").cookie(refreshed.getCookies()).header("X-XSRF-TOKEN", next))
                 .andExpect(status().isOk()).andExpect(cookie().maxAge("XSRF-TOKEN", 0));
     }
 
@@ -445,14 +533,14 @@ class IdentityServiceApplicationTests {
     }
 
     @Test void dependencyFailureIs503AndNotInvalidCredentials() throws Exception {
-        Object original = org.springframework.test.util.ReflectionTestUtils.getField(authenticationConverter, "identityStateService");
-        IdentityStateService failing = mock(IdentityStateService.class);
-        when(failing.isBlacklisted(anyString())).thenThrow(new mss301.identityservice.exception.AppException(mss301.identityservice.exception.ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE));
+        Object original = org.springframework.test.util.ReflectionTestUtils.getField(authenticationConverter, "tokenStore");
+        TokenStore failing = mock(TokenStore.class);
+        when(failing.isAccessTokenBlacklisted(anyString())).thenThrow(new mss301.identityservice.exception.AppException(mss301.identityservice.exception.ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE));
         try {
-            org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "identityStateService", failing);
-            mvc.perform(get("/users/me").header("Authorization", "Bearer " + token(customer)))
+            org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "tokenStore", failing);
+            mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + token(customer)))
                     .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value(1105));
-        } finally { org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "identityStateService", original); }
+        } finally { org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "tokenStore", original); }
     }
 
     // ===== Audience chung careconnect-api =====
@@ -480,65 +568,56 @@ class IdentityServiceApplicationTests {
                 .build();
         JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).keyId(properties.getKeyId()).build();
         String legacyToken = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
-        mvc.perform(get("/users/me").header("Authorization", "Bearer " + legacyToken))
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + legacyToken))
                 .andExpect(status().isOk());
     }
 
-    // ===== Internal API /internal/** =====
+    // ===== Inter-Service / Public User Lookup Endpoints =====
 
     @Test
-    void internalApiRejectsMissingOrWrongSecret() throws Exception {
-        mvc.perform(get("/internal/users/" + customer.getId()))
+    void userLookupEndpointsRequireAuthentication() throws Exception {
+        mvc.perform(get("/api/v1/users/" + customer.getId()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401));
-        mvc.perform(get("/internal/users/" + customer.getId()).header("X-Internal-Secret", "wrong"))
-                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void internalApiDoesNotAcceptUserBearerToken() throws Exception {
-        mvc.perform(get("/internal/users/" + customer.getId()).header("Authorization", "Bearer " + token(admin)))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void internalGetReturnsProfileAndRolesWithoutSecrets() throws Exception {
-        mvc.perform(get("/internal/users/" + customer.getId()).header("X-Internal-Secret", INTERNAL_SECRET))
+    void userLookupReturnsProfileAndRolesWithoutSecrets() throws Exception {
+        mvc.perform(get("/api/v1/users/" + customer.getId()).header("Authorization", "Bearer " + token(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.id").value(customer.getId().toString()))
                 .andExpect(jsonPath("$.result.email").value(customer.getEmail()))
                 .andExpect(jsonPath("$.result.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.result.roles[0]").value("CUSTOMER"))
-                .andExpect(jsonPath("$.result.password").doesNotExist())
-                .andExpect(jsonPath("$.result.permissions").doesNotExist());
-        mvc.perform(get("/internal/users/" + UUID.randomUUID()).header("X-Internal-Secret", INTERNAL_SECRET))
+                .andExpect(jsonPath("$.result.password").doesNotExist());
+        mvc.perform(get("/api/v1/users/" + UUID.randomUUID()).header("Authorization", "Bearer " + token(admin)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(1016));
     }
 
     @Test
-    void internalGetByEmailNormalizesAndValidates() throws Exception {
-        mvc.perform(get("/internal/users/by-email")
+    void userLookupByEmailNormalizesAndValidates() throws Exception {
+        mvc.perform(get("/api/v1/users/by-email")
                         .param("email", "  " + customer.getEmail().toUpperCase(Locale.ROOT) + " ")
-                        .header("X-Internal-Secret", INTERNAL_SECRET))
+                        .header("Authorization", "Bearer " + token(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.id").value(customer.getId().toString()));
-        mvc.perform(get("/internal/users/by-email")
+        mvc.perform(get("/api/v1/users/by-email")
                         .param("email", "nobody@example.test")
-                        .header("X-Internal-Secret", INTERNAL_SECRET))
+                        .header("Authorization", "Bearer " + token(admin)))
                 .andExpect(status().isNotFound());
-        mvc.perform(get("/internal/users/by-email").header("X-Internal-Secret", INTERNAL_SECRET))
+        mvc.perform(get("/api/v1/users/by-email").header("Authorization", "Bearer " + token(admin)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(1011));
     }
 
     @Test
-    void internalBatchSkipsUnknownAndNeedsNoCsrf() throws Exception {
+    void userBatchSkipsUnknownAndNeedsNoCsrf() throws Exception {
         String requestBody = body(UserBatchRequest.builder()
                 .userIds(List.of(customer.getId(), admin.getId(), UUID.randomUUID(), customer.getId()))
                 .build());
-        mvc.perform(post("/internal/users/batch")
-                        .header("X-Internal-Secret", INTERNAL_SECRET)
+        mvc.perform(post("/api/v1/users/batch")
+                        .header("Authorization", "Bearer " + token(admin))
                         .contentType("application/json")
                         .content(requestBody))
                 .andExpect(status().isOk())
@@ -546,19 +625,19 @@ class IdentityServiceApplicationTests {
     }
 
     @Test
-    void internalBatchValidatesSize() throws Exception {
+    void userBatchValidatesSize() throws Exception {
         List<UUID> tooMany = new ArrayList<>();
         for (int i = 0; i < 101; i++) {
             tooMany.add(UUID.randomUUID());
         }
-        mvc.perform(post("/internal/users/batch")
-                        .header("X-Internal-Secret", INTERNAL_SECRET)
+        mvc.perform(post("/api/v1/users/batch")
+                        .header("Authorization", "Bearer " + token(admin))
                         .contentType("application/json")
                         .content(body(UserBatchRequest.builder().userIds(tooMany).build())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(1113));
-        mvc.perform(post("/internal/users/batch")
-                        .header("X-Internal-Secret", INTERNAL_SECRET)
+        mvc.perform(post("/api/v1/users/batch")
+                        .header("Authorization", "Bearer " + token(admin))
                         .contentType("application/json")
                         .content(body(UserBatchRequest.builder().userIds(List.of()).build())))
                 .andExpect(status().isBadRequest())
@@ -566,11 +645,357 @@ class IdentityServiceApplicationTests {
     }
 
     @Test
-    void openApiDocumentsInternalSecretWithoutCsrf() throws Exception {
-        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.components.securitySchemes.internalSecret.name").value("X-Internal-Secret"))
-                .andExpect(jsonPath("$.paths['/internal/users/batch'].post.security[0].internalSecret").exists())
-                .andExpect(jsonPath("$.paths['/internal/users/batch'].post.security[0].csrf").doesNotExist())
-                .andExpect(jsonPath("$.paths['/internal/users/batch'].post.security[0].bearerAuth").doesNotExist());
+    void userInterServiceEndpointsEnforceAuthAndExcludeSoftDeleted() throws Exception {
+        // 1. Unauthenticated checks
+        mvc.perform(get("/api/v1/users/" + customer.getId()))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/by-email").param("email", customer.getEmail()))
+                .andExpect(status().isUnauthorized());
+        // POST without Bearer and without CSRF is blocked by CSRF filter (403)
+        mvc.perform(post("/api/v1/users/batch")
+                        .contentType("application/json")
+                        .content(body(UserBatchRequest.builder().userIds(List.of(customer.getId())).build())))
+                .andExpect(status().isForbidden());
+        // POST with invalid Bearer token bypasses CSRF and is rejected by Resource Server (401)
+        mvc.perform(post("/api/v1/users/batch")
+                        .header("Authorization", "Bearer invalid-token")
+                        .contentType("application/json")
+                        .content(body(UserBatchRequest.builder().userIds(List.of(customer.getId())).build())))
+                .andExpect(status().isUnauthorized());
+
+        // 2. Provision a new customer to test soft deletion
+        String victimEmail = "soft-deleted-" + UUID.randomUUID() + "@example.test";
+        String createBody = body(ProvisionRequest.builder()
+                .email(victimEmail)
+                .fullName("Victim User")
+                .roleCode(RoleCode.CUSTOMER)
+                .build());
+        MvcResult res = mvc.perform(post("/api/v1/users")
+                        .header("Authorization", "Bearer " + token(admin))
+                        .contentType("application/json")
+                        .content(createBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        UUID victimId = UUID.fromString(json.readTree(res.getResponse().getContentAsString()).get("result").get("id").asString());
+
+        // Verify active
+        mvc.perform(get("/api/v1/users/" + victimId).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/users/by-email").param("email", victimEmail).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isOk());
+
+        // Soft delete victim
+        mvc.perform(delete("/api/v1/users/" + victimId).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isOk());
+
+        // 3. Verify inter-service endpoints now reject/exclude victim
+        mvc.perform(get("/api/v1/users/" + victimId).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(1016));
+
+        mvc.perform(get("/api/v1/users/by-email").param("email", victimEmail).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(1016));
+
+        mvc.perform(post("/api/v1/users/batch")
+                        .header("Authorization", "Bearer " + token(admin))
+                        .contentType("application/json")
+                        .content(body(UserBatchRequest.builder().userIds(List.of(victimId, customer.getId())).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].id").value(customer.getId().toString()));
     }
+
+    @Test void unifiedMobileAuthFlow() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .header("X-Device-Id", "Pixel-8")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessToken").exists())
+                .andExpect(jsonPath("$.result.refreshToken").exists())
+                .andExpect(jsonPath("$.result.user.email").value(customer.getEmail()))
+                .andExpect(cookie().doesNotExist("access_token"))
+                .andReturn();
+
+        String access = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String refresh = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // 1. Check me
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.id").value(customer.getId().toString()));
+
+        // 2. Check sessions
+        mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].deviceId").value("Pixel-8"))
+                .andExpect(jsonPath("$.result[0].isCurrent").value(true));
+
+        // 3. Refresh rotation
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh).build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.accessToken").exists())
+                .andExpect(jsonPath("$.result.refreshToken").exists())
+                .andReturn();
+
+        String newAccess = json.readTree(refreshResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String newRefresh = json.readTree(refreshResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+        assertThat(newRefresh).isNotEqualTo(refresh);
+
+        // 4. Logout
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .header("Authorization", "Bearer " + newAccess)
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(newRefresh).build())))
+                .andExpect(status().isOk());
+
+        // Access token is blacklisted
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + newAccess))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void unifiedRefreshTokenReuseDetection() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String refresh1 = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Rotate once: refresh1 -> refresh2
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh1).build())))
+                .andExpect(status().isOk());
+
+        // Replay old refresh1 -> must be 401
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(refresh1).build())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void unifiedSessionRevocationAndPermission() throws Exception {
+        // Customer session
+        MvcResult custLogin = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String custAccess = json.readTree(custLogin.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+
+        MvcResult sessResult = mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isOk())
+                .andReturn();
+        String sessionId = json.readTree(sessResult.getResponse().getContentAsString()).path("result").get(0).path("sessionId").asString();
+
+        // Admin cannot delete customer's session -> 403 Forbidden
+        mvc.perform(delete("/api/v1/auth/sessions/" + sessionId).header("Authorization", "Bearer " + token(admin)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(1084));
+
+        // Customer deletes own session -> 200 OK
+        mvc.perform(delete("/api/v1/auth/sessions/" + sessionId).header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isOk());
+
+        // Session list is now empty
+        mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + custAccess))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void unifiedLoginRateLimiting() throws Exception {
+        String testEmail = UUID.randomUUID() + "@example.test";
+        // Create user
+        accounts.createVerified(RegisterRequest.builder().email(testEmail).fullName("Rate User").password(passwords.encode(PASSWORD)).build());
+
+        // 5 failed logins
+        for (int i = 0; i < 5; i++) {
+            mvc.perform(post("/api/v1/auth/login")
+                            .header("X-Client-Type", "mobile")
+                            .contentType("application/json")
+                            .content(body(LoginRequest.builder().email(testEmail).password("WrongPassword9!").build())))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        // 6th attempt -> 429 Too Many Requests
+        mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(testEmail).password("WrongPassword9!").build())))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value(1082));
+    }
+
+    @Test void unifiedLogoutAllTerminatesSessions() throws Exception {
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String access = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+
+        String refresh = json.readTree(loginResult.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Phiên thứ hai trên thiết bị khác
+        MvcResult otherLogin = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String otherAccess = json.readTree(otherLogin.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        String otherRefresh = json.readTree(otherLogin.getResponse().getContentAsString()).path("result").path("refreshToken").asString();
+
+        // Logout với allSessions = true (thay cho /logout-all cũ)
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .header("Authorization", "Bearer " + access)
+                        .contentType("application/json")
+                        .content(body(LogoutRequest.builder().refreshToken(refresh).allSessions(true).build())))
+                .andExpect(status().isOk());
+
+        // Mọi phiên đều mất hiệu lực
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + otherAccess))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(RefreshRequest.builder().refreshToken(otherRefresh).build())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void logoutAllSessionsWithoutValidTokenIsRejected() throws Exception {
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LogoutRequest.builder().refreshToken("bogus").allSessions(true).build())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void deprecatedMobileEndpointsHaveDeprecationHeader() throws Exception {
+        mvc.perform(post("/api/v1/auth/mobile/login")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("Deprecation"));
+    }
+
+    String[] loginTokens(UserResponse user) throws Exception {
+        MvcResult result = mvc.perform(post("/api/v1/auth/login").header("X-Client-Type", "mobile")
+                        .contentType("application/json").content(body(LoginRequest.builder().email(user.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk()).andReturn();
+        var response = json.readTree(result.getResponse().getContentAsString()).path("result");
+        return new String[]{response.path("accessToken").asText(), response.path("refreshToken").asText()};
+    }
+
+    ResultActions refreshOpaque(String refresh) throws Exception {
+        return mvc.perform(post("/api/v1/auth/refresh").header("X-Client-Type", "mobile")
+                .contentType("application/json").content(body(RefreshRequest.builder().refreshToken(refresh).build())));
+    }
+
+    @Test
+    void opaqueRefreshCannotSurvivePasswordChange() throws Exception {
+        String[] session = loginTokens(customer);
+        accounts.changePassword(customer.getId(), ChangePasswordRequest.builder().currentPassword(PASSWORD).newPassword("NewPassword9!").build());
+        refreshOpaque(session[1]).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + session[0])).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void opaqueRefreshCannotSurviveLockAndUnlock() throws Exception {
+        String[] session = loginTokens(customer);
+        accounts.updateStatus(admin.getId(), customer.getId(), UserStatus.LOCKED, "Kiểm thử");
+        accounts.updateStatus(admin.getId(), customer.getId(), UserStatus.ACTIVE, null);
+        refreshOpaque(session[1]).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rotatedRefreshReuseRevokesEverySession() throws Exception {
+        String[] first = loginTokens(customer);
+        String[] other = loginTokens(customer);
+        MvcResult rotated = refreshOpaque(first[1]).andExpect(status().isOk()).andReturn();
+        String next = json.readTree(rotated.getResponse().getContentAsString()).path("result").path("refreshToken").asText();
+        refreshOpaque(first[1]).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(1085));
+        refreshOpaque(next).andExpect(status().isUnauthorized());
+        refreshOpaque(other[1]).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + other[0])).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentOpaqueRefreshHasOneHttpWinner() throws Exception {
+        String[] session = loginTokens(customer);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            CountDownLatch start = new CountDownLatch(1);
+            Callable<Integer> call = () -> {
+                start.await();
+                return refreshOpaque(session[1]).andReturn().getResponse().getStatus();
+            };
+            Future<Integer> first = executor.submit(call);
+            Future<Integer> second = executor.submit(call);
+            start.countDown();
+            assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 401);
+        }
+    }
+
+    @Test
+    void lookupsEnforceScopeAndHidePermissions() throws Exception {
+        mvc.perform(get("/api/v1/users/" + admin.getId()).header("Authorization", "Bearer " + token(customer)))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/users/by-email").param("email", admin.getEmail()).header("Authorization", "Bearer " + token(customer)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/users/" + customer.getId()).header("Authorization", "Bearer " + token(customer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.permissions").doesNotExist());
+        mvc.perform(get("/api/v1/users/" + customer.getId()).header("Authorization", "Bearer " + serviceToken("booking", SERVICE_SECRET)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.permissions").isArray());
+    }
+
+    @Test
+    void lockingRequiresReasonAndCenterUnlockPreservesAdminLock() throws Exception {
+        UUID centerId = UUID.randomUUID();
+        UserResponse manager = manager(centerId);
+        UserResponse lockedCaregiver = caregiver(manager);
+        UserResponse activeCaregiver = caregiver(manager);
+        mvc.perform(patch("/api/v1/users/" + lockedCaregiver.getId() + "/status").header("Authorization", "Bearer " + token(admin))
+                .contentType("application/json").content(body(Map.of("status", "LOCKED"))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1118));
+        accounts.updateStatus(admin.getId(), lockedCaregiver.getId(), UserStatus.LOCKED, "Khóa riêng");
+        String service = serviceToken("booking", SERVICE_SECRET);
+        mvc.perform(patch("/api/v1/users/centers/" + centerId + "/status").header("Authorization", "Bearer " + service)
+                .contentType("application/json").content(body(Map.of("status", "LOCKED", "reason", "Khóa trung tâm"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.affectedUsers").value(2));
+        mvc.perform(patch("/api/v1/users/centers/" + centerId + "/status").header("Authorization", "Bearer " + service)
+                .contentType("application/json").content(body(Map.of("status", "ACTIVE"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.affectedUsers").value(2));
+        assertThat(users.findById(lockedCaregiver.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.LOCKED);
+        assertThat(users.findById(activeCaregiver.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.ACTIVE);
+    }
+    @Test
+    void sessionIpIgnoresForwardedHeaderFromUntrustedPeer() throws Exception {
+        MvcResult login = mvc.perform(post("/api/v1/auth/login")
+                        .with(request -> { request.setRemoteAddr("203.0.113.10"); return request; })
+                        .header("X-Forwarded-For", "198.51.100.2")
+                        .header("X-Client-Type", "mobile")
+                        .contentType("application/json")
+                        .content(body(LoginRequest.builder().email(customer.getEmail()).password(PASSWORD).build())))
+                .andExpect(status().isOk()).andReturn();
+        String access = json.readTree(login.getResponse().getContentAsString()).path("result").path("accessToken").asString();
+        mvc.perform(get("/api/v1/auth/sessions").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result[0].ip").value("203.0.113.10"));
+    }
+
 }

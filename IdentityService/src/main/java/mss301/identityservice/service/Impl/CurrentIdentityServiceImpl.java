@@ -3,6 +3,7 @@ package mss301.identityservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import mss301.identityservice.dto.response.AuthenticatedUser;
 import mss301.identityservice.dto.response.UserResponse;
 import mss301.identityservice.entity.User;
 import mss301.identityservice.enums.UserStatus;
@@ -34,5 +35,16 @@ public class CurrentIdentityServiceImpl implements CurrentIdentityService {
             throw new BadCredentialsException("Account/session is no longer active");
         }
         return userMapper.toResponse(user);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AuthenticatedUser getActiveAuthenticatedUser(UUID userId) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BadCredentialsException("Invalid account"));
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new BadCredentialsException("Account/session is no longer active");
+        }
+        return userMapper.toAuthenticatedUser(user);
     }
 }

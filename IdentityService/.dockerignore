@@ -1,0 +1,7 @@
+# Chỉ gửi những gì cần để build JAR (xem Dockerfile). Không bao giờ đưa secret/khóa vào image.
+*
+!.mvn/
+!mvnw
+!pom.xml
+!src/
+.mvn/wrapper/maven-wrapper.jar

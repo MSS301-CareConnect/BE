@@ -3,6 +3,7 @@ package mss301.carerecipientservice.mapper;
 import mss301.carerecipientservice.dto.request.CareRecipientCreateRequest;
 import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
+import mss301.carerecipientservice.dto.response.CaregiverCareDetailsResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
@@ -11,6 +12,7 @@ import mss301.carerecipientservice.entity.EmergencyContact;
 import mss301.carerecipientservice.entity.Medication;
 import mss301.carerecipientservice.entity.RecipientManager;
 import mss301.carerecipientservice.enums.RecipientAccessLevel;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -28,16 +30,29 @@ public interface CareRecipientMapper {
 
     // myAccessLevel / medications / emergencyContacts: tham số trùng tên thuộc tính đích → MapStruct tự map.
     @Mapping(target = "profile", source = "recipient")
+    @Mapping(target = "careSnapshot", ignore = true)
+    @Mapping(target = "careDetails", ignore = true)
     CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel,
                                                  List<Medication> medications, List<EmergencyContact> emergencyContacts);
 
-    // Admin / API nội bộ batch: không có quyền của người gọi.
+    // CAREGIVER xem hồ sơ: whitelist careSnapshot + careDetails (tiền sử bệnh, giấc ngủ, chiều cao / cân nặng) + mọi liên
+    // hệ khẩn cấp — không bao giờ kèm profile (ảnh, người tạo / sửa, version), thuốc đã ngưng hay quyền.
+    @BeanMapping(ignoreByDefault = true)
+    @Mapping(target = "careSnapshot", source = "careSnapshot")
+    @Mapping(target = "careDetails", source = "recipient")
+    @Mapping(target = "emergencyContacts", source = "emergencyContacts")
+    CareRecipientDetailResponse toCaregiverDetailResponse(RecipientSnapshotResponse careSnapshot, CareRecipient recipient,
+                                                          List<EmergencyContact> emergencyContacts);
+
+    CaregiverCareDetailsResponse toCareDetails(CareRecipient recipient);
+
+    // Admin / batch: không có quyền của người gọi.
     @Mapping(target = "age", expression = "java(calculateAge(recipient.getDateOfBirth()))")
     @Mapping(target = "myAccessLevel", ignore = true)
     @Mapping(target = "primaryManager", ignore = true)
     CareRecipientSummaryResponse toSummaryResponse(CareRecipient recipient);
 
-    // Admin + API nội bộ /internal/care-recipients/batch.
+    // Admin (GET /care-recipients) + POST /care-recipients/batch.
     List<CareRecipientSummaryResponse> toSummaryResponseList(List<CareRecipient> recipients);
 
     // Danh sách của customer. id/createdAt có ở cả hai nguồn → chỉ rõ lấy từ hồ sơ.
@@ -48,7 +63,7 @@ public interface CareRecipientMapper {
     @Mapping(target = "primaryManager", source = "membership.primary")
     CareRecipientSummaryResponse toSummaryResponse(CareRecipient recipient, RecipientManager membership);
 
-    // API nội bộ /internal/care-recipients/{id}/snapshot. fullName/phoneNumber có ở cả hồ sơ lẫn liên hệ khẩn cấp
+    // GET /care-recipients/{id}/snapshot và nhánh CAREGIVER của GET /care-recipients/{id}. fullName/phoneNumber có ở cả hồ sơ lẫn liên hệ khẩn cấp
     // → chỉ rõ lấy từ hồ sơ; activeMedications/primaryEmergencyContact/snapshotAt: tham số trùng tên → tự map.
     @Mapping(target = "recipientId", source = "recipient.id")
     @Mapping(target = "fullName", source = "recipient.fullName")

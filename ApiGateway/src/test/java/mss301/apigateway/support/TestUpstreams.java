@@ -49,6 +49,12 @@ public final class TestUpstreams {
     private final RSAKey signingKey;
     private final HttpServer identityServer;
     private final HttpServer careRecipientServer;
+    private final HttpServer bookingServer;
+    private final HttpServer providerServer;
+    private final HttpServer careCatalogServer;
+    private final HttpServer mediaServer;
+    private final HttpServer paymentServer;
+    private final HttpServer aiServer;
 
     private TestUpstreams() {
         try {
@@ -61,20 +67,54 @@ public final class TestUpstreams {
                     .build();
             identityServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             careRecipientServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            bookingServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            providerServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            careCatalogServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            mediaServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            paymentServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            aiServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new ExceptionInInitializerError(e);
         }
         identityServer.createContext("/.well-known/jwks.json",
                 exchange -> write(exchange, 200, new JWKSet(signingKey.toPublicJWK()).toString(), Map.of()));
-        identityServer.createContext("/auth/login", this::handleLogin);
-        identityServer.createContext("/users/slow", this::handleSlow);
+        identityServer.createContext("/api/v1/auth/login", this::handleLogin);
+        identityServer.createContext("/api/v1/users/slow", this::handleSlow);
         identityServer.createContext("/v3/api-docs", exchange -> write(exchange, 200,
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"CareConnect IdentityService\"}}", Map.of()));
         identityServer.createContext("/", exchange -> echo(exchange, "identity"));
         careRecipientServer.createContext("/", exchange -> echo(exchange, "care-recipient"));
+        bookingServer.createContext("/api/v1/notifications/stream", this::handleStream);
+        bookingServer.createContext("/", exchange -> echo(exchange, "booking"));
+        providerServer.createContext("/", exchange -> echo(exchange, "provider"));
+        careCatalogServer.createContext("/", exchange -> echo(exchange, "care-catalog"));
+        mediaServer.createContext("/", exchange -> echo(exchange, "media"));
+        paymentServer.createContext("/", exchange -> echo(exchange, "payment"));
+        // AI chậm hơn read timeout chung của test (1s) nhưng trong ai-read-timeout → vẫn phải trả 200.
+        aiServer.createContext("/api/v1/ai/slow", exchange -> {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            echo(exchange, "ai");
+        });
+        aiServer.createContext("/", exchange -> echo(exchange, "ai"));
         // Nhiều thread: /users/slow không được chặn các request khác (JWKS…).
         identityServer.setExecutor(Executors.newCachedThreadPool());
         careRecipientServer.setExecutor(Executors.newCachedThreadPool());
+        bookingServer.setExecutor(Executors.newCachedThreadPool());
+        providerServer.setExecutor(Executors.newCachedThreadPool());
+        careCatalogServer.setExecutor(Executors.newCachedThreadPool());
+        mediaServer.setExecutor(Executors.newCachedThreadPool());
+        paymentServer.setExecutor(Executors.newCachedThreadPool());
+        aiServer.setExecutor(Executors.newCachedThreadPool());
+        bookingServer.start();
+        providerServer.start();
+        careCatalogServer.start();
+        mediaServer.start();
+        paymentServer.start();
+        aiServer.start();
         identityServer.start();
         careRecipientServer.start();
     }
@@ -89,6 +129,30 @@ public final class TestUpstreams {
 
     public String careRecipientUrl() {
         return "http://127.0.0.1:" + careRecipientServer.getAddress().getPort();
+    }
+
+    public String bookingUrl() {
+        return "http://127.0.0.1:" + bookingServer.getAddress().getPort();
+    }
+
+    public String providerUrl() {
+        return "http://127.0.0.1:" + providerServer.getAddress().getPort();
+    }
+
+    public String careCatalogUrl() {
+        return "http://127.0.0.1:" + careCatalogServer.getAddress().getPort();
+    }
+
+    public String mediaUrl() {
+        return "http://127.0.0.1:" + mediaServer.getAddress().getPort();
+    }
+
+    public String paymentUrl() {
+        return "http://127.0.0.1:" + paymentServer.getAddress().getPort();
+    }
+
+    public String aiUrl() {
+        return "http://127.0.0.1:" + aiServer.getAddress().getPort();
     }
 
     public String jwksUri() {
@@ -134,6 +198,24 @@ public final class TestUpstreams {
         write(exchange, 200, "{\"code\":200,\"message\":\"Đăng nhập thành công\",\"result\":{\"csrfToken\":\"new-csrf\"}}", Map.of());
     }
 
+    // SSE giả: hai sự kiện cách nhau lâu hơn read timeout của test (1s), echo lại Last-Event-ID và Authorization.
+    private void handleStream(HttpExchange exchange) throws IOException {
+        receivedPaths.add(exchange.getRequestURI().getPath());
+        exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+        exchange.getResponseHeaders().add("X-Request-Id", "upstream-id-should-be-removed");
+        exchange.sendResponseHeaders(200, 0);
+        String lastEventId = exchange.getRequestHeaders().getFirst("Last-Event-ID");
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(("id: 1\nevent: heartbeat\ndata: last=" + lastEventId + "\n\n").getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            Thread.sleep(1500);
+            output.write(("id: 2\nevent: notification\ndata: auth=" + (authorization != null) + "\n\n").getBytes(StandardCharsets.UTF_8));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private void handleSlow(HttpExchange exchange) throws IOException {
         try {
             Thread.sleep(3000);
@@ -153,6 +235,7 @@ public final class TestUpstreams {
         result.put("path", exchange.getRequestURI().getPath());
         result.put("query", exchange.getRequestURI().getRawQuery());
         result.put("headers", headers);
+        result.put("body", new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("code", 200);
         envelope.put("message", "echo");

@@ -24,4 +24,6 @@ public class AuthenticationResponse {
     String refreshToken;
 
     long expiresInSeconds;
+
+    UserResponse user;
 }

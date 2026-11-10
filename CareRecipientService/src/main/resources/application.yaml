@@ -36,6 +36,10 @@ spring:
             connect-timeout: ${CARE_RECIPIENT_IDENTITY_CONNECT_TIMEOUT_MS:2000}
             read-timeout: ${CARE_RECIPIENT_IDENTITY_READ_TIMEOUT_MS:3000}
             logger-level: none
+          booking:
+            connect-timeout: ${CARE_RECIPIENT_BOOKING_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${CARE_RECIPIENT_BOOKING_READ_TIMEOUT_MS:3000}
+            logger-level: none
     circuitbreaker:
       # Chạy lời gọi trên chính thread request (giữ MDC requestId); timeout do connect/read timeout của Feign.
       resilience4j:
@@ -53,6 +57,8 @@ springdoc:
     enabled: ${CARE_RECIPIENT_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${CARE_RECIPIENT_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:
@@ -70,7 +76,6 @@ logging:
     correlation: "[%X{requestId:-}] "
 
 care-recipient:
-  internal-secret: ${CARE_RECIPIENT_INTERNAL_SECRET:}
   open-api-server-url: ${CARE_RECIPIENT_OPENAPI_SERVER_URL:}
 
   jwt:
@@ -79,4 +84,14 @@ care-recipient:
 
   identity:
     url: ${CARE_RECIPIENT_IDENTITY_URL}
-    internal-secret: ${CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET:}
+
+  # Caregiver xem hồ sơ: hỏi BookingService có đang được phân công không (GET /api/v1/bookings/caregiver-access).
+  booking:
+    url: ${CARE_RECIPIENT_BOOKING_URL}
+
+  # Token SERVICE (client-credentials) xin ở IdentityService qua gateway (identity.url) — dùng cho Booking caregiver-access.
+  service-client:
+    client-id: ${CARE_RECIPIENT_SERVICE_CLIENT_ID:}
+    client-secret: ${CARE_RECIPIENT_SERVICE_CLIENT_SECRET:}
+    connect-timeout: ${CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CARE_RECIPIENT_SERVICE_TOKEN_READ_TIMEOUT:3s}

@@ -9,7 +9,7 @@
 | Thư mục / artifact | `CareConnect/CareRecipientService/` · `mss301:CareRecipientService:0.0.1-SNAPSHOT` |
 | Base package | `mss301.carerecipientservice` |
 | Port / env prefix | `8082` / `CARE_RECIPIENT_` |
-| Dải `ErrorCode` | **2000–2999** (+ 401/403/404/9999 dùng chung) — 20xx chung, 21xx hồ sơ, 22xx thuốc, 23xx liên hệ khẩn cấp, 24xx người quản lý, 25xx tích hợp Identity, 26xx API nội bộ |
+| Dải `ErrorCode` | **2000–2999** (+ 401/403/404/9999 dùng chung) — 20xx chung, 21xx hồ sơ, 22xx thuốc, 23xx liên hệ khẩn cấp, 24xx người quản lý, 25xx tích hợp Identity / Booking, 26xx API phục vụ service khác (batch), 27xx token SERVICE (`2700` `SERVICE_TOKEN_UNAVAILABLE`) |
 | DB | PostgreSQL riêng `127.0.0.1:5442`, `schema/care_recipient.sql` (áp tay, không Flyway). Không Redis |
 
 ## Khác với IdentityService
@@ -40,8 +40,26 @@
    không được đoán khi Identity lỗi → 503.
 6. `PageResponse.of(page, items)` và `APIResponse.success(...)` là wrapper chung (không qua MapStruct); mọi entity ↔ DTO
    qua mapper.
-7. API nội bộ `/internal/**` có chain bảo mật riêng (`InternalSecurityConfig`, header `X-Internal-Secret`), không nhận JWT.
+7. Không còn `/internal/**` / `X-Internal-Secret`. API phục vụ service khác (`/{id}/snapshot`, `/{id}/access`, `/batch`)
+   nằm chung `CareRecipientController` dưới `/api/v1/care-recipients`. `/access` chỉ `hasRole('SERVICE')`; `/snapshot` cho SERVICE/ADMIN hoặc CUSTOMER có quyền VIEWER trở lên;
+   batch CUSTOMER lọc theo membership, ngoài phạm vi không trả dữ liệu. BookingService gọi bằng token SERVICE.
+8. **Một API / aggregate, phạm vi theo role trong service (2026-10-22)**: `GET /care-recipients` (CUSTOMER, ADMIN) và
+   `GET /care-recipients/{id}` (CUSTOMER, ADMIN, CAREGIVER) — không tạo path theo role (`/admin`, `/caregiver`). Controller
+   nhận `@CurrentRoles Set<RoleCode>` (`security/CurrentRolesArgumentResolver`, ẩn khỏi Swagger), không so chuỗi `ROLE_*`.
+   Ưu tiên ADMIN → CUSTOMER → CAREGIVER. Bộ lọc chỉ của ADMIN (`createdBy`, `includeDeleted`) bị bỏ qua với CUSTOMER.
+9. **Caregiver** chỉ nhận `CareRecipientDetailResponse.careSnapshot` (hồ sơ chăm sóc gồm tiền sử bệnh, thói quen ngủ,
+   chiều cao / cân nặng và thuốc đang dùng) cùng `emergencyContacts` (mọi liên hệ khẩn cấp, từ 2026-11-05) — mapper
+   `toCaregiverDetailResponse`, whitelist, không bao giờ kèm `profile` (ảnh, người tạo / sửa, version) / thuốc đã ngưng /
+   quyền — sau khi BookingService `caregiver-access` (Feign, truyền `sub` = user Identity; chỉ buổi được giao của booking
+   CONFIRMED / IN_PROGRESS) trả `allowed`; không phân công → 404, Booking lỗi → 503 (không bao giờ đoán là được phép). Gọi Booking ngoài
+   transaction (`get` không `@Transactional`, phần đọc DB qua `TransactionTemplate`).
+10. **Token SERVICE**: `caregiver-access` yêu cầu `hasRole('SERVICE')` → `BookingClientConfig` dùng
+   `ServiceTokenInterceptor(serviceTokenProvider)`; `ServiceTokenProvider` xin token ở `POST /api/v1/auth/service-token` qua
+   gateway (`care-recipient.identity.url`), cache tới 60s trước hạn. Env `CARE_RECIPIENT_SERVICE_CLIENT_ID/SECRET`,
+   `CARE_RECIPIENT_SERVICE_TOKEN_CONNECT_TIMEOUT/READ_TIMEOUT`. IdentityClient cũng dùng SERVICE để tra cứu by-email/batch (IAM-04).
 
 ## TODO đã biết
 
-Đồng bộ người quản lý khi user bị khóa/xóa (event); quyền caregiver (Booking); audit; Flyway (đợt chung).
+Đồng bộ người quản lý khi user bị khóa/xóa (event); audit. Không dùng Flyway.
+
+INACTIVE: chỉ OWNER sửa thông tin hồ sơ; mọi ghi thuốc/liên hệ trả 409 RECIPIENT_INACTIVE (2701) tới khi ACTIVE.

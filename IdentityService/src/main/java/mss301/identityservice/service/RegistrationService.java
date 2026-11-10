@@ -12,7 +12,7 @@ public interface RegistrationService {
     // Đăng ký CUSTOMER 2 bước: gửi OTP → xác thực → tạo tài khoản
     APIResponse<OtpResponse> register(RegisterRequest request);
 
-    APIResponse<OtpResponse> resend(EmailRequest request);
+    APIResponse<OtpResponse> resendOtp(EmailRequest request);
 
     APIResponse<UserResponse> verify(VerifyOtpRequest request);
 

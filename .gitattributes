@@ -1,0 +1,4 @@
+# Script Windows luôn CRLF (cmd.exe đọc nhãn/goto sai với LF); file chạy trong container Linux luôn LF.
+*.bat text eol=crlf
+Dockerfile text eol=lf
+compose*.yaml text eol=lf

@@ -14,20 +14,20 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * API nội bộ của IdentityService (/internal/users/**). Không có service discovery → URL qua env
- * CARE_RECIPIENT_IDENTITY_URL; header X-Internal-Secret, timeout, ErrorDecoder ở {@link IdentityClientConfig};
+ * IdentityService (/api/v1/users/**, qua ApiGateway). Không có service discovery → URL qua env
+ * CARE_RECIPIENT_IDENTITY_URL; chuyển tiếp token người dùng, ErrorDecoder ở {@link IdentityClientConfig};
  * circuit breaker + fallback ở {@link IdentityClientFallbackFactory}. Dùng qua IdentityUserService, không gọi trực tiếp.
  */
 @FeignClient(name = "identity", url = "${care-recipient.identity.url}",
         configuration = IdentityClientConfig.class, fallbackFactory = IdentityClientFallbackFactory.class)
 public interface IdentityClient {
 
-    @GetMapping("/internal/users/{userId}")
+    @GetMapping("/api/v1/users/{userId}")
     IdentityApiResponse<IdentityUserResponse> get(@PathVariable("userId") UUID userId);
 
-    @GetMapping("/internal/users/by-email")
+    @GetMapping("/api/v1/users/by-email")
     IdentityApiResponse<IdentityUserResponse> getByEmail(@RequestParam("email") String email);
 
-    @PostMapping("/internal/users/batch")
+    @PostMapping("/api/v1/users/batch")
     IdentityApiResponse<List<IdentityUserResponse>> list(@RequestBody IdentityUserBatchRequest request);
 }

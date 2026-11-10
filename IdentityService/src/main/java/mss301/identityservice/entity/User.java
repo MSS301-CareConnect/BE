@@ -37,6 +37,12 @@ public class User extends BaseEntity {
     @Enumerated(EnumType.STRING)
     UserStatus status;
 
+    @Column(name = "status_reason", length = 500)
+    String statusReason;
+
+    @Column(name = "lock_source", length = 20)
+    String lockSource;
+
     // External center identity; no cross-service FK or center business data.
     @Column(name = "center_id")
     UUID centerId;

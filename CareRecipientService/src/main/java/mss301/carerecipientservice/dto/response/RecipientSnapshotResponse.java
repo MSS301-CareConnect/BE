@@ -14,7 +14,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-// Dữ liệu cho Booking / caregiver được phân công (API nội bộ). Không có lịch sử bệnh đầy đủ ngoài các field cần chăm sóc.
+// Dữ liệu cho Booking / caregiver được phân công (API nội bộ). Không có lịch sử bệnh đầy đủ ngoài các field cần chăm sóc —
+// caregiver được phân công nhận thêm CaregiverCareDetailsResponse riêng trong GET /care-recipients/{id}.
 @Data
 @Builder
 @AllArgsConstructor

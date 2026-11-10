@@ -1,0 +1,28 @@
+package mss301.bookingservice.client;
+
+import mss301.bookingservice.client.dto.RecipientAccessResponse;
+import mss301.bookingservice.client.dto.RemoteApiResponse;
+import mss301.bookingservice.dto.response.RecipientSnapshot;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.UUID;
+
+/**
+ * API của CareRecipientService (/api/v1/care-recipients/**): kiểm quyền khách trên hồ sơ và lấy snapshot
+ * lúc đặt lịch, bằng token SERVICE của Booking (hai endpoint này chỉ cho SERVICE). Dùng qua CareRecipientDirectoryService.
+ */
+@FeignClient(name = "care-recipient", url = "${booking.care-recipient.url}",
+        configuration = CareRecipientClientConfig.class, fallbackFactory = CareRecipientClientFallbackFactory.class)
+public interface CareRecipientClient {
+
+    @GetMapping("/api/v1/care-recipients/{recipientId}/access")
+    RemoteApiResponse<RecipientAccessResponse> checkAccess(@PathVariable("recipientId") UUID recipientId,
+                                                           @RequestParam("userId") UUID userId,
+                                                           @RequestParam("minLevel") String minLevel);
+
+    @GetMapping("/api/v1/care-recipients/{recipientId}/snapshot")
+    RemoteApiResponse<RecipientSnapshot> getSnapshot(@PathVariable("recipientId") UUID recipientId);
+}

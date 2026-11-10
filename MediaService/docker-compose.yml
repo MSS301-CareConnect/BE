@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MEDIA_DB_NAME:-CARECONNECT_MEDIA}
+      POSTGRES_USER: ${MEDIA_DB_USERNAME:?Set MEDIA_DB_USERNAME}
+      POSTGRES_PASSWORD: ${MEDIA_DB_PASSWORD:?Set MEDIA_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${MEDIA_DB_PORT:-5446}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MEDIA_DB_USERNAME:-postgres} -d ${MEDIA_DB_NAME:-CARECONNECT_MEDIA}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - media_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  media_postgres_data:

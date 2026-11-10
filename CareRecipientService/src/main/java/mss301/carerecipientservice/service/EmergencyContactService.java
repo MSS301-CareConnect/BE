@@ -14,9 +14,11 @@ public interface EmergencyContactService {
 
     APIResponse<EmergencyContactResponse> get(UUID actorId, UUID recipientId, UUID id);
 
-    APIResponse<EmergencyContactResponse> update(UUID actorId, UUID recipientId, UUID id, EmergencyContactRequest request);
+    APIResponse<EmergencyContactResponse> update(UUID actorId, UUID recipientId, UUID id,
+                                                        EmergencyContactRequest request);
 
     APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id);
 
     APIResponse<EmergencyContactResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id);
+
 }

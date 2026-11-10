@@ -6,6 +6,7 @@ import mss301.carerecipientservice.dto.request.CareRecipientUpdateRequest;
 import mss301.carerecipientservice.dto.request.EmergencyContactRequest;
 import mss301.carerecipientservice.dto.request.ManagerUpdateRequest;
 import mss301.carerecipientservice.dto.request.MedicationRequest;
+import mss301.carerecipientservice.dto.response.CareRecipientDetailResponse;
 import mss301.carerecipientservice.dto.response.CareRecipientSummaryResponse;
 import mss301.carerecipientservice.dto.response.RecipientManagerResponse;
 import mss301.carerecipientservice.dto.response.RecipientSnapshotResponse;
@@ -36,6 +37,31 @@ class CareRecipientMapperTests {
     private final EmergencyContactMapper emergencyContactMapper = new EmergencyContactMapperImpl();
     private final CareRecipientMapper careRecipientMapper = new CareRecipientMapperImpl(medicationMapper, emergencyContactMapper);
     private final RecipientManagerMapper recipientManagerMapper = new RecipientManagerMapperImpl();
+
+    @Test
+    void caregiverDetailOnlyCarriesSnapshot() {
+        RecipientSnapshotResponse snapshot = RecipientSnapshotResponse.builder()
+                .recipientId(UUID.randomUUID())
+                .fullName("Ong B")
+                .build();
+        EmergencyContact contact = new EmergencyContact();
+        contact.setFullName("Con gai");
+        contact.setPhoneNumber("0909999999");
+        CareRecipient recipient = new CareRecipient();
+        recipient.setMedicalHistory("Tieu duong");
+        recipient.setSleepHabits("Ngu som");
+        recipient.setAvatarUrl("https://example.test/a.png");
+        CareRecipientDetailResponse response = careRecipientMapper.toCaregiverDetailResponse(snapshot, recipient,
+                List.of(contact));
+        assertThat(response.getCareSnapshot()).isSameAs(snapshot);
+        assertThat(response.getCareDetails().getMedicalHistory()).isEqualTo("Tieu duong");
+        assertThat(response.getCareDetails().getSleepHabits()).isEqualTo("Ngu som");
+        assertThat(response.getEmergencyContacts()).singleElement()
+                .satisfies(item -> assertThat(item.getPhoneNumber()).isEqualTo("0909999999"));
+        assertThat(response.getProfile()).isNull();
+        assertThat(response.getMyAccessLevel()).isNull();
+        assertThat(response.getMedications()).isNull();
+    }
 
     @Test
     void managerResponseWithoutProfileOnlyHasLocalData() {

@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/roles")
+@RequestMapping("/api/v1/roles")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @PreAuthorize("hasRole('ADMIN') and hasAuthority('role:manage')")

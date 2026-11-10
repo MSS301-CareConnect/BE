@@ -25,8 +25,8 @@ public class IdentityErrorDecoder implements ErrorDecoder {
             return new AppException(ErrorCode.IDENTITY_USER_NOT_FOUND);
         }
         if (status == UNAUTHORIZED || status == FORBIDDEN) {
-            // Sai/thiếu CARE_RECIPIENT_IDENTITY_INTERNAL_SECRET — lỗi cấu hình, cần người vận hành xử lý.
-            log.error("IdentityService rejected internal credentials (HTTP {}) for {}", status, methodKey);
+            // Token người dùng được chuyển tiếp bị Identity từ chối (hết hạn / thiếu quyền) — không đoán, coi như Identity lỗi.
+            log.error("IdentityService rejected forwarded credentials (HTTP {}) for {}", status, methodKey);
         } else if (status >= SERVER_ERROR) {
             log.warn("IdentityService error (HTTP {}) for {}", status, methodKey);
         } else {

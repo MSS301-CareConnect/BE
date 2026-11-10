@@ -7,9 +7,9 @@ Java 21 / Spring Boot 4.1.1. Port mặc định **8081**. Service sở hữu tà
 - Đăng ký CUSTOMER bằng OTP email Brevo; chỉ tạo tài khoản sau xác thực. OTP hash, TTL, cooldown, giới hạn thử và claim một lần trên Redis.
 - Login web bằng HttpOnly cookies; login mobile bằng bearer/access + refresh trong body. CSRF bắt buộc cho web, kể cả refresh/logout; request bearer thuần không dùng cookie được miễn CSRF.
 - JWT RS256, `sub=userId`, `iss`, `aud`, `jti`, `token_type`, `authz_version`; access có `roles`, `permissions`, `center_id` khi có. JWKS chỉ công bố public key.
-- `aud` của **access token** = `["careconnect-identity", "careconnect-api"]`; refresh token chỉ có `careconnect-identity`. IdentityService kiểm `careconnect-identity`; các service backend khác và ApiGateway kiểm `careconnect-api` (audience chung, hằng `TokenClaims.API_AUDIENCE`). Access token phát trước khi thêm `careconnect-api` vẫn hợp lệ tại IdentityService tới khi hết hạn; gateway/service khác trả 401 với token đó → client refresh.
-- API nội bộ `/internal/users/**` cho service khác, xác thực bằng header `X-Internal-Secret` (chain bảo mật riêng, không JWT/cookie/CSRF).
-- Refresh JWT lưu `jti` trên Redis, rotation nguyên tử; logout thu hồi refresh và blacklist access được gửi. Logout all/đổi mật khẩu/reset/khóa/xóa mềm tăng `authz_version`.
+- `aud` của **access token** = `["careconnect-identity", "careconnect-api"]`; refresh opaque không có audience. IdentityService kiểm `careconnect-identity`; các service backend khác và ApiGateway kiểm `careconnect-api` (audience chung, hằng `TokenClaims.API_AUDIENCE`). Access token phát trước khi thêm `careconnect-api` vẫn hợp lệ tại IdentityService tới khi hết hạn; gateway/service khác trả 401 với token đó → client refresh.
+- Token SERVICE (client-credentials, IAM-01 2026-10-22): `POST /auth/service-token` cho service khác gọi endpoint `hasRole('SERVICE')`; không còn `/internal/**` / `X-Internal-Secret`.
+- Refresh opaque: Redis chỉ giữ SHA-256 hash + user/session/authzVersion; Lua rotate nguyên tử. Reuse thu hồi mọi phiên. Đổi mật khẩu/reset/khóa/thu hồi role tăng version và xóa phiên; access có `sid` bị chặn khi phiên đã xóa.
 - Mỗi request tại IdentityService kiểm account/status/version và nạp quyền hiện hành từ DB; token không giữ được quyền đã thu hồi tại service này.
 - ADMIN tạo CUSTOMER/manager; manager tạo và quản lý caregiver trong trung tâm của mình. ADMIN xem toàn bộ tài khoản, manager chỉ danh sách caregiver cùng trung tâm; CUSTOMER/CAREGIVER chỉ hồ sơ cá nhân.
 - Gán/thu hồi role, tạo role bổ sung và cấu hình permissions của role bổ sung. Bốn role nền tảng có responsibilities/grants cố định trong bản này; không đổi permissions của built-in roles qua API. Permission catalog hiện chỉ gồm các thao tác IdentityService đã triển khai.
@@ -77,6 +77,7 @@ API nghiệp vụ trả `APIResponse<T>` `{code,message,result}`; errors giữ H
 | Method / path | Hành vi / quyền |
 |---|---|
 | `GET /auth/csrf` | Public; trả token/headerName, đặt cookie CSRF |
+| `POST /auth/service-token` | Public, không CSRF, không cookie; `clientId,clientSecret` → `{accessToken,tokenType:"Bearer",expiresInSeconds}`. Sai clientId hay secret đều 401 `1114`; client tắt 401 `1117`; 5 lần sai / 15 phút theo clientId → 429 `1082` |
 | `POST /users/register` | Public + CSRF (*); `email,password,fullName,phoneNumber?`; gửi OTP |
 | `POST /users/register/resend-otp` | Public + CSRF (*); `email`; cần pending registration còn hạn |
 | `POST /users/register/verify` | Public + CSRF (*); `email,otpCode`; tạo CUSTOMER, chưa tự login |
@@ -84,11 +85,9 @@ API nghiệp vụ trả `APIResponse<T>` `{code,message,result}`; errors giữ H
 | `POST /users/reset-password` | Public + CSRF (*); `email,otpCode,newPassword`; OTP được consume trực tiếp trong thao tác reset |
 | `POST /auth/login` | Public + CSRF; `email,password`; HttpOnly access/refresh cookies, không trả token trong body |
 | `POST /auth/refresh` | Public + CSRF; refresh cookie, rotate cả hai token |
-| `POST /auth/logout` | Public + CSRF; refresh/access cookies, clear cookies; token đã hết hạn vẫn logout được |
+| `POST /auth/logout` | Public; một endpoint cho cả web và mobile. Web (`X-Client-Type: web`, + CSRF): refresh/access cookies, clear cookies. Mobile: `refreshToken` trong body (hoặc `X-Refresh-Token`), access trong bearer header để blacklist. Token đã hết hạn vẫn logout được. Body `allSessions: true` → đăng xuất mọi phiên (xóa mọi session Redis + tăng `authz_version`); cần refresh còn hiệu lực hoặc access hợp lệ, không có → 401 |
 | `POST /auth/mobile/login` | Public JSON; `email,password`; trả access/refresh, không đặt auth cookies |
 | `POST /auth/mobile/refresh` | Public JSON; `refreshToken`; rotate |
-| `POST /auth/mobile/logout` | Public JSON; `refreshToken`; gửi access trong bearer header để blacklist |
-| `POST /auth/logout-all` | Authenticated; tăng version, clear cookies |
 | `GET /users/me`, `PUT /users/me` | Authenticated; chỉ đọc/sửa tài khoản mình; update `fullName?,phoneNumber?` |
 | `POST /users/me/change-password` | Authenticated; `currentPassword,newPassword`; thu hồi phiên cũ |
 | `GET /users?page=0&size=20` | ADMIN: toàn hệ thống; manager: caregiver cùng trung tâm; size 1–100 |
@@ -102,17 +101,20 @@ API nghiệp vụ trả `APIResponse<T>` `{code,message,result}`; errors giữ H
 | `PUT /roles/{id}/permissions` | ADMIN + `role:manage`; `permissionIds[]`; thay grants của role bổ sung |
 | `GET /permissions` | ADMIN + `role:manage`; danh mục supported permissions |
 
-### API nội bộ (service-to-service)
+### Token SERVICE (client-credentials, IAM-01)
 
-Chỉ gọi trực tiếp giữa các service; **ApiGateway chặn `/internal/**`**. Header bắt buộc `X-Internal-Secret: <IDENTITY_INTERNAL_SECRET>` (so sánh constant-time). Secret trống → mọi request `/internal/**` bị 401 (fail-closed). Không nhận bearer token người dùng; không cần CSRF.
+Service nghiệp vụ gọi nhau qua gateway; endpoint chỉ dành cho service khác dùng `@PreAuthorize("hasRole('SERVICE')")`.
 
-| Method / path | Hành vi |
-|---|---|
-| `GET /internal/users/{userId}` | `{id,email,fullName,phoneNumber,status,roles}`; user đã xóa mềm / không có → 404 `1016`. User `LOCKED` vẫn trả về kèm `status`. |
-| `GET /internal/users/by-email?email=` | Email được trim + lowercase; thiếu → 400 `1011`; không có → 404 `1016`. |
-| `POST /internal/users/batch` | Body `{"userIds":[...]}` (1–100, lỗi `1112`/`1113`); trả các user tìm thấy, bỏ qua id không có / đã xóa mềm, id trùng chỉ trả một lần. |
-
-Response không có permissions, centerId, password hay dữ liệu phiên. Sai/thiếu secret → 401 `401`.
+- Bảng `service_clients` (entity `ServiceClient extends BaseEntity`: `client_uuid`, `client_id` unique trong bản ghi chưa xóa mềm, `secret_hash` BCrypt, `active`, `description`, `created_at/updated_at/deleted_at`) seed idempotent
+  lúc khởi động từ `IDENTITY_SERVICE_CLIENTS=booking:<bcrypt>,payment:<bcrypt>` (đổi hash = xoay secret; client bỏ khỏi
+  env **không** tự bị tắt — tắt bằng `active=false` trong DB). Sinh secret + hash: `.\scripts\New-ServiceClient.ps1 <clientId>`;
+  qua Docker Compose viết `$` thành `$$` (service tự đổi lại).
+- Token: RS256, `sub` = `client_uuid`, `roles=["SERVICE"]`, `permissions=[]`, `client_id`, `aud=[careconnect-identity, careconnect-api]`,
+  `token_type=access`, `authz_version=0`, TTL `IDENTITY_SERVICE_TOKEN_TTL` (mặc định 10m). **Không** có refresh token.
+- Tại IdentityService, token có `client_id` không tra bảng `users`: client phải còn `active` (tắt → 401 ngay), quyền duy nhất
+  `ROLE_SERVICE` (gọi `/users/me` → 404, `/users` → 403). Service khác xác minh offline như mọi access token.
+- `SERVICE` có trong `RoleCode` nhưng **không** seed vào bảng `roles`, không provision được (`POST /users` → 400 `1101`) và
+  không tạo được role tùy chỉnh trùng tên (`POST /roles` → 400 `1101`).
 
 Provision request: `email,fullName,phoneNumber?,roleCode,centerId?`. Manager tạo caregiver thì service lấy `centerId` từ manager; centerId khác bị từ chối. ADMIN tạo manager cần `centerId`. Tài khoản provision chưa có password; người nhận dùng forgot/reset password với OTP để tự đặt password. Trong bản này IdentityService chưa gọi CenterService để xác minh trung tâm tồn tại; ADMIN phải chọn UUID hợp lệ từ domain trung tâm khi tích hợp UI/service đó.
 
@@ -122,7 +124,7 @@ Profile update bỏ qua field null; không có semantics xóa phone bằng null.
 
 ## Tích hợp các service sau
 
-- Đi qua **ApiGateway** (`../ApiGateway`, port 8080): mọi path ở bảng API contract có prefix `/api/v1` (gateway cắt prefix); `/internal/**` và JWKS không mở qua gateway. Cookie `Path=/` dùng được qua gateway, không cần rewrite.
+- Đi qua **ApiGateway** (`../ApiGateway`, port 8080): mọi path ở bảng API contract có prefix `/api/v1` — gateway **không** cắt prefix (path ở gateway = path ở service); JWKS không mở qua gateway, `/internal/**` đã bỏ hẳn. Cookie `Path=/` dùng được qua gateway, không cần rewrite.
 
 - **Access TTL nên giữ ngắn (10–15 phút).** Service khác (CareRecipient, gateway…) xác minh JWT offline và **không** nạp lại quyền/trạng thái theo thời gian thực như IdentityService: tài khoản bị khóa / thu hồi role vẫn gọi được service khác tới khi access token hết hạn.
 - Khi đứng sau ApiGateway, đặt `IDENTITY_OPENAPI_SERVER_URL=/api/v1` để Swagger có server "Qua API gateway"; bỏ trống khi chạy độc lập.
@@ -164,3 +166,13 @@ docker stop careconnect-identity-verify-pg careconnect-identity-verify-redis
 Đợi PostgreSQL sẵn sàng trước chạy test. Suite tạo schema có UUID riêng rồi dọn schema đó; không chạy flags này trỏ vào DB production. Tests bao gồm auth/token claims, web cookie/CSRF, role và center isolation, revocation/soft delete, OTP/refresh replay và concurrent consumption, unique email, password reset, bootstrap guard/admin cuối cùng và Brevo adapter bằng HTTP server local. Brevo account thật chưa được kiểm chứng nếu chưa có key/sender hợp lệ.
 
 Khi triển khai production đặt `IDENTITY_SWAGGER_ENABLED=false`, `IDENTITY_COOKIE_SECURE=true` và dùng HTTPS; secret/key từ cấu hình triển khai và Redis có persistence phù hợp cho refresh/blacklist. Không cần file application theo profile riêng. Tạo schema/change script theo runbook; không bật tự động create/update database.
+
+## Aftercare — IAM-02/03/04/05/06, STAT-01 (2026-10-24)
+
+- `GET /api/v1/users` trả `result.content` + page/size/totalElements/totalPages; lọc role/status/centerId/keyword, sort whitelist. Manager chỉ caregiver thuần trong trung tâm mình.
+- `GET /users/{id}` và batch: ADMIN/SERVICE toàn bộ, user chính mình, manager cùng trung tâm; ngoài phạm vi 404. By-email chỉ ADMIN/SERVICE. Lookup người khác không lộ permissions.
+- `PATCH /users/{id}/status` body `{status,reason}`; LOCKED cần lý do. Query status cũ giữ thêm một sprint (lý do tương thích được sinh mặc định).
+- `PATCH /users/centers/{centerId}/status` SERVICE/ADMIN: chỉ mở các tài khoản có lock_source=CENTER, không mở tài khoản admin khóa riêng.
+- `GET /users/statistics?from=&to=` ADMIN: role/status counts và khách mới; ngày giờ VN, tối đa 366 ngày.
+- `IDENTITY_TRUSTED_PROXIES` là danh sách IP proxy tin cậy, mặc định `127.0.0.1,::1`; chỉ đọc X-Forwarded-For khi remoteAddr có trong danh sách. Docker cần cấu hình IP gateway ổn định phù hợp mạng triển khai. Gateway ghi đè XFF từ peer thật.
+- Database đang có: áp dụng `schema/2026-10-24-user-status.sql` trước khi chạy bản mới. Xem [hướng dẫn chung](../docs/2026-10-24-AFTERCARE_IMPLEMENTATION.md).

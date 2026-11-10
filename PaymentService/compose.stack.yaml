@@ -1,0 +1,44 @@
+services:
+  payment-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${PAYMENT_DB_NAME:-CARECONNECT_PAYMENT}
+      POSTGRES_USER: ${PAYMENT_DB_USERNAME:?Set PAYMENT_DB_USERNAME in PaymentService/.env}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:?Set PAYMENT_DB_PASSWORD in PaymentService/.env}
+    ports:
+      - "127.0.0.1:${PAYMENT_DB_PORT:-5447}:5432"
+    volumes:
+      - payment_postgres:/var/lib/postgresql/data
+      - ./schema/payment.sql:/docker-entrypoint-initdb.d/01-payment.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  payment-service:
+    build: .
+    image: careconnect/payment-service:dev
+    env_file: .env
+    environment:
+      PAYMENT_SERVER_PORT: "8087"
+      PAYMENT_DB_URL: jdbc:postgresql://payment-postgres:5432/${PAYMENT_DB_NAME:-CARECONNECT_PAYMENT}
+      PAYMENT_JWT_JWKS_URI: http://identity-service:8081/.well-known/jwks.json
+      PAYMENT_IDENTITY_URL: http://api-gateway:8080
+      PAYMENT_BOOKING_URL: http://api-gateway:8080
+    ports:
+      - "127.0.0.1:${PAYMENT_SERVER_PORT:-8087}:8087"
+    depends_on:
+      payment-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8087/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+volumes:
+  payment_postgres:
+    name: paymentservice_payment_postgres
+    external: true

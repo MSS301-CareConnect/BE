@@ -39,6 +39,8 @@ springdoc:
     enabled: ${IDENTITY_SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${IDENTITY_SWAGGER_ENABLED:true}
+    operationsSorter: method
+    tagsSorter: alpha
 
 management:
   endpoints:
@@ -59,13 +61,15 @@ identity:
   public-key: ${IDENTITY_JWT_PUBLIC_KEY}
   access-ttl: ${IDENTITY_ACCESS_TTL}
   refresh-ttl: ${IDENTITY_REFRESH_TTL}
+  service-token-ttl: ${IDENTITY_SERVICE_TOKEN_TTL:10m}
+  service-clients: ${IDENTITY_SERVICE_CLIENTS:}
   otp-ttl: ${IDENTITY_OTP_TTL}
   otp-cooldown: ${IDENTITY_OTP_COOLDOWN}
   otp-max-attempts: ${IDENTITY_OTP_MAX_ATTEMPTS}
   allowed-origins: ${IDENTITY_ALLOWED_ORIGINS}
+  trusted-proxies: ${IDENTITY_TRUSTED_PROXIES:127.0.0.1,::1}
   cookie-secure: ${IDENTITY_COOKIE_SECURE:true}
   cookie-same-site: ${IDENTITY_COOKIE_SAME_SITE:Lax}
-  internal-secret: ${IDENTITY_INTERNAL_SECRET:}
   open-api-server-url: ${IDENTITY_OPENAPI_SERVER_URL:}
 
   brevo:

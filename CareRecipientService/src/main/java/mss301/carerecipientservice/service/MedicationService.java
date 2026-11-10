@@ -19,4 +19,5 @@ public interface MedicationService {
     APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id);
 
     APIResponse<MedicationResponse> updateActive(UUID actorId, UUID recipientId, UUID id, boolean active);
+
 }

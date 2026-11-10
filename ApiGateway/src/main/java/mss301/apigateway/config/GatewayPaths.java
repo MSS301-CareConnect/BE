@@ -2,32 +2,109 @@ package mss301.apigateway.config;
 
 /**
  * Đường dẫn public của gateway — một nguồn duy nhất cho route (RouteConfig) và bảo mật (SecurityConfig).
- * Gateway cắt prefix /api/v1 rồi chuyển tiếp nguyên phần còn lại cho service.
+ * Mọi service tự khai báo prefix /api/v1 nên gateway chuyển tiếp nguyên path, không cắt prefix.
  */
 public final class GatewayPaths {
     public static final String API_PREFIX = "/api/v1";
-    public static final int API_PREFIX_SEGMENTS = 2;
 
     public static final String[] IDENTITY_ROUTES = {
             "/api/v1/auth/**", "/api/v1/users/**", "/api/v1/roles/**", "/api/v1/permissions/**"
     };
 
     public static final String[] CARE_RECIPIENT_ROUTES = {
-            "/api/v1/care-recipients/**", "/api/v1/admin/care-recipients/**"
+            "/api/v1/care-recipients/**"
+    };
+
+    // BookingService sở hữu cả vận hành ca (care session / report), đánh giá, khiếu nại, thông báo và thống kê.
+    public static final String[] BOOKING_ROUTES = {
+            "/api/v1/bookings/**", "/api/v1/booking-occurrences/**",
+            "/api/v1/notifications/**", "/api/v1/care-sessions/**", "/api/v1/care-reports/**",
+            "/api/v1/feedbacks/**", "/api/v1/complaints/**", "/api/v1/statistics/**",
+            // Center booking policy (spec booking v1.0 §8).
+            "/api/v1/center-booking-policies/**",
+            // H-08: admin xử lý outbox FAILED.
+            "/api/v1/booking-outbox/**",
+            // Spec v3: manager duyệt / từ chối yêu cầu đổi caregiver của khách; 2026-11-09: caregiver xin hủy buổi.
+            "/api/v1/caregiver-change-requests/**", "/api/v1/caregiver-withdrawals/**"
+    };
+
+    // SSE thông báo: route riêng không read timeout, không buffer (SseProxyHandler), xếp TRƯỚC route booking chung.
+    public static final String NOTIFICATION_STREAM = "/api/v1/notifications/stream";
+
+    public static final String[] PAYMENT_ROUTES = {
+            "/api/v1/payments/**", "/api/v1/payment-policies/**", "/api/v1/refunds/**", "/api/v1/refund-quotes/**",
+            "/api/v1/remaining-invoices/**", "/api/v1/settlements/**", "/api/v1/revenue/**",
+            "/api/v1/deposit-forfeitures/**",
+            // 2026-11-09: ví + yêu cầu rút tiền.
+            "/api/v1/wallets/**", "/api/v1/wallet-withdrawals/**"
+    };
+
+    public static final String[] PROVIDER_ROUTES = {
+            "/api/v1/care-centers/**", "/api/v1/caregivers/**", "/api/v1/work-shifts/**",
+            "/api/v1/certificates/**", "/api/v1/provider-media/**", "/api/v1/provider-outbox/**"
+    };
+
+    public static final String[] CARE_CATALOG_ROUTES = {
+            "/api/v1/catalog-items/**", "/api/v1/care-services/**", "/api/v1/center-services/**",
+            "/api/v1/price-plans/**"
+    };
+
+    public static final String[] MEDIA_ROUTES = {
+            "/api/v1/media/**"
+    };
+
+    // AIService (chat + đọc ảnh chứng chỉ): route riêng có read timeout dài (LongRequestProxyHandler, gateway.ai-read-timeout).
+    public static final String[] AI_ROUTES = {
+            "/api/v1/ai/**"
     };
 
     // Luồng tự xử lý token của IdentityService (đăng nhập/refresh/đăng xuất/đăng ký/quên mật khẩu) — gateway không đọc
     // token ở đây để cookie cũ/hỏng không chặn được login/refresh/logout (giống SecurityConfig của Identity).
     public static final String[] IDENTITY_TOKEN_FLOW_ENDPOINTS = {
             "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/csrf",
-            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh", "/api/v1/auth/mobile/logout",
-            "/api/v1/users/register", "/api/v1/users/register/verify", "/api/v1/users/register/resend-otp",
-            "/api/v1/users/forgot-password", "/api/v1/users/reset-password"
+            "/api/v1/auth/mobile/login", "/api/v1/auth/mobile/refresh",
+            "/api/v1/auth/register", "/api/v1/auth/register/verify", "/api/v1/auth/register/resend-otp",
+            "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+            "/api/v1/auth/service-token"
+    };
+
+    // Public CHỈ với GET: VNPay gọi IPN / trình duyệt quay về return URL không mang JWT; PaymentService tự kiểm chữ ký.
+    // Danh bạ trung tâm ACTIVE (SRCH-02, CR-6 2026-11-03): khách chưa đăng nhập xem và chọn trung tâm.
+    // Ảnh minh họa dịch vụ chuẩn (2026-11-05): thẻ <img> của khách chưa đăng nhập, Catalog redirect tới URL tải có hạn.
+    public static final String[] PUBLIC_GET_ENDPOINTS = {
+            "/api/v1/payments/vnpay/ipn", "/api/v1/payments/vnpay/return",
+            "/api/v1/care-centers/public", "/api/v1/care-centers/public/{centerId}",
+            "/api/v1/catalog-items/images/{mediaFileId}", "/api/v1/care-services/images/{mediaFileId}"
+    };
+
+    // Duyệt dịch vụ / người chăm sóc cho khách chưa đăng nhập (2026-11-09): CHỈ GET, gateway không bắt đăng nhập nhưng
+    // vẫn kiểm và chuyển token nếu có để admin / manager giữ góc nhìn đầy đủ (service đọc role từ token khi có).
+    public static final String[] OPTIONAL_AUTH_GET_ENDPOINTS = {
+            "/api/v1/caregivers", "/api/v1/caregivers/search", "/api/v1/caregivers/{caregiverId}/public",
+            "/api/v1/catalog-items", "/api/v1/catalog-items/{id}",
+            "/api/v1/center-services/center/{centerId}", "/api/v1/center-services/{id}",
+            "/api/v1/price-plans/center-offering/{centerOfferingId}", "/api/v1/price-plans/center-service/{centerOfferingId}"
+    };
+
+    // Chat AI cho khách chưa đăng nhập (3 lượt/ngày, không ảnh): AIService tự đọc cookie nếu có để nhận người dùng.
+    public static final String[] PUBLIC_POST_ENDPOINTS = {
+            "/api/v1/ai/chat"
+    };
+
+    // Hạn mức chat AI còn lại của khách / giới hạn ảnh — đọc trước khi gửi câu hỏi đầu tiên.
+    public static final String[] PUBLIC_GET_AI_ENDPOINTS = {
+            "/api/v1/ai/chat/quota"
     };
 
     // Swagger tổng hợp + health của chính gateway.
     public static final String IDENTITY_API_DOCS = "/api-docs/identity";
     public static final String CARE_RECIPIENT_API_DOCS = "/api-docs/care-recipient";
+    public static final String BOOKING_API_DOCS = "/api-docs/booking";
+    public static final String PROVIDER_API_DOCS = "/api-docs/provider";
+    public static final String CARE_CATALOG_API_DOCS = "/api-docs/care-catalog";
+    public static final String MEDIA_API_DOCS = "/api-docs/media";
+    public static final String PAYMENT_API_DOCS = "/api-docs/payment";
+    public static final String AI_API_DOCS = "/api-docs/ai";
     public static final String[] DOCUMENTATION_ENDPOINTS = {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };

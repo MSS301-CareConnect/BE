@@ -15,9 +15,9 @@ import mss301.carerecipientservice.exception.ErrorCode;
 import mss301.carerecipientservice.mapper.EmergencyContactMapper;
 import mss301.carerecipientservice.repository.CareRecipientRepository;
 import mss301.carerecipientservice.repository.EmergencyContactRepository;
-import mss301.carerecipientservice.service.EmergencyContactService;
 import mss301.carerecipientservice.service.RecipientAccessService;
 import org.springframework.stereotype.Service;
+import mss301.carerecipientservice.service.EmergencyContactService;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -36,10 +36,11 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
     RecipientAccessService recipientAccessService;
     EmergencyContactMapper emergencyContactMapper;
 
-    @Override
     @Transactional
+    @Override
     public APIResponse<EmergencyContactResponse> create(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         CareRecipient recipient = lockRecipient(recipientId);
         if (Boolean.TRUE.equals(request.getPrimary())) {
             clearPrimary(recipientId, null);
@@ -51,8 +52,8 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Thêm liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional(readOnly = true)
+    @Override
     public APIResponse<List<EmergencyContactResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         List<EmergencyContact> emergencyContacts = emergencyContactRepository.findAllByRecipient(recipientId);
@@ -60,8 +61,8 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Lấy danh sách liên hệ khẩn cấp thành công", emergencyContactResponses);
     }
 
-    @Override
     @Transactional(readOnly = true)
+    @Override
     public APIResponse<EmergencyContactResponse> get(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         EmergencyContact emergencyContact = findContact(recipientId, id);
@@ -69,11 +70,12 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Lấy liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional
+    @Override
     public APIResponse<EmergencyContactResponse> update(UUID actorId, UUID recipientId, UUID id,
                                                         EmergencyContactRequest request) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         lockRecipient(recipientId);
         EmergencyContact emergencyContact = findContact(recipientId, id);
         // primary null = giữ nguyên; true = thành liên hệ chính; false = bỏ cờ chính.
@@ -89,10 +91,11 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Cập nhật liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
-    @Override
     @Transactional
+    @Override
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         lockRecipient(recipientId);
         EmergencyContact emergencyContact = findContact(recipientId, id);
         // Xóa mềm liên hệ chính → hồ sơ tạm không có liên hệ chính cho tới khi người quản lý chọn lại.
@@ -102,10 +105,11 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Xóa liên hệ khẩn cấp thành công");
     }
 
-    @Override
     @Transactional
+    @Override
     public APIResponse<EmergencyContactResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.EDITOR);
+        recipientAccessService.checkActiveForWrite(recipientId);
         lockRecipient(recipientId);
         EmergencyContact emergencyContact = findContact(recipientId, id);
         clearPrimary(recipientId, id);

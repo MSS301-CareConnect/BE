@@ -4,7 +4,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 /**
- * Kết quả kiểm tra thông tin đăng nhập — dùng nội bộ giữa AccountService và AuthenticationService
+ * Kết quả kiểm tra thông tin đăng nhập — dùng nội bộ giữa UserService và AuthenticationService
  * để phát token, không trả thẳng ra client.
  */
 @Data

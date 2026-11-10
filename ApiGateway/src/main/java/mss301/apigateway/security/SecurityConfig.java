@@ -11,6 +11,7 @@ import mss301.apigateway.filter.RequestIdFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -48,9 +49,17 @@ public class SecurityConfig {
     JwtAuthorityConverter jwtAuthorityConverter;
     SecurityErrorHandler securityErrorHandler;
     DefaultBearerTokenResolver headerTokenResolver = new DefaultBearerTokenResolver();
-    RequestMatcher publicEndpoints = toMatcher(Stream.concat(
-            Stream.of(GatewayPaths.IDENTITY_TOKEN_FLOW_ENDPOINTS),
-            Stream.of(GatewayPaths.DOCUMENTATION_ENDPOINTS)).toArray(String[]::new));
+    RequestMatcher publicEndpoints = new OrRequestMatcher(
+            toMatcher(null, Stream.concat(
+                    Stream.of(GatewayPaths.IDENTITY_TOKEN_FLOW_ENDPOINTS),
+                    Stream.of(GatewayPaths.DOCUMENTATION_ENDPOINTS)).toArray(String[]::new)),
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_AI_ENDPOINTS));
+    // Public nhưng vẫn có thể mang cookie đăng nhập: gateway không xác thực, AIService tự đọc token để phân biệt khách
+    // và người dùng đã đăng nhập (token hỏng → AIService trả 401, FE refresh rồi gửi lại).
+    RequestMatcher optionalAuthEndpoints = new OrRequestMatcher(
+            toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS));
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -59,6 +68,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(publicEndpoints).permitAll()
+                        .requestMatchers(optionalAuthEndpoints).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)
@@ -90,8 +100,9 @@ public class SecurityConfig {
         cors.setAllowedOrigins(gatewayProperties.getAllowedOrigins());
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-                TokenClaims.CSRF_HEADER, RequestIdFilter.HEADER));
-        cors.setExposedHeaders(List.of(RequestIdFilter.HEADER));
+                TokenClaims.CSRF_HEADER, RequestIdFilter.HEADER, "X-Client-Type", "X-Device-Id",
+                "Idempotency-Key", "X-Refresh-Token", "Last-Event-ID"));
+        cors.setExposedHeaders(List.of(RequestIdFilter.HEADER, "Deprecation"));
         cors.setAllowCredentials(true);
         cors.setMaxAge(CORS_MAX_AGE_SECONDS);
         cors.validateAllowCredentials();
@@ -126,10 +137,11 @@ public class SecurityConfig {
         return null;
     }
 
-    private static RequestMatcher toMatcher(String[] patterns) {
+    // method null = mọi HTTP method.
+    private static RequestMatcher toMatcher(HttpMethod method, String[] patterns) {
         List<RequestMatcher> matchers = new ArrayList<>();
         for (String pattern : patterns) {
-            matchers.add(PathPatternRequestMatcher.withDefaults().matcher(pattern));
+            matchers.add(PathPatternRequestMatcher.withDefaults().matcher(method, pattern));
         }
         return new OrRequestMatcher(matchers);
     }

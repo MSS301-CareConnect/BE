@@ -43,6 +43,10 @@ public class DataInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         Map<String, Permission> catalog = seedPermissions();
         for (RoleCode roleCode : RoleCode.values()) {
+            // SERVICE chỉ tồn tại trong token client-credentials, không phải role gán được cho user.
+            if (roleCode == RoleCode.SERVICE) {
+                continue;
+            }
             if (roleRepository.findByRoleCodeAndDeletedAtIsNull(roleCode.name()).isPresent()) {
                 continue;
             }

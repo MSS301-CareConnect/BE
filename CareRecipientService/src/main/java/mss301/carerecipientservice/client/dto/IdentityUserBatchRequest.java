@@ -6,7 +6,7 @@ import lombok.experimental.FieldDefaults;
 import java.util.List;
 import java.util.UUID;
 
-// Body của POST /internal/users/batch (IdentityService giới hạn 100 id / lần).
+// Body của POST /api/v1/users/batch (IdentityService giới hạn 100 id / lần).
 @Data
 @Builder
 @AllArgsConstructor
