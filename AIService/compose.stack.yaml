@@ -29,6 +29,7 @@ services:
       # Service token và MediaService đều đi qua gateway (gateway là cổng duy nhất cho Feign giữa các service).
       AI_IDENTITY_URL: http://api-gateway:8080
       AI_MEDIA_URL: http://api-gateway:8080
+      AI_STROKE_MODEL_URL: http://stroke-model-service:8090
     ports:
       - "127.0.0.1:${AI_SERVER_PORT:-8088}:8088"
     depends_on:
