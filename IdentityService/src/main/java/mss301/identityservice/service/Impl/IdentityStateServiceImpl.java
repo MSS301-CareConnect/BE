@@ -58,6 +58,7 @@ public class IdentityStateServiceImpl implements IdentityStateService {
     StringRedisTemplate stringRedisTemplate;
     IdentityProperties identityProperties;
 
+    // Lưu jti refresh token → userId trên Redis với TTL.
     @Override
     public void storeRefresh(String jti, UUID userId, Duration ttl) {
         execute(() -> {
@@ -66,6 +67,7 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         });
     }
 
+    // Dùng jti refresh token một lần (Lua, nguyên tử).
     @Override
     public boolean consumeRefresh(String jti, UUID userId) {
         Long result = execute(() -> stringRedisTemplate.execute(CONSUME_REFRESH_SCRIPT,
@@ -73,23 +75,13 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         return Long.valueOf(1).equals(result);
     }
 
-    @Override
-    public void blacklist(String jti, Duration ttl) {
-        // Token đã hết hạn thì không cần blacklist.
-        if (ttl.isNegative() || ttl.isZero()) {
-            return;
-        }
-        execute(() -> {
-            stringRedisTemplate.opsForValue().set(RedisKeys.BLACKLIST + jti, BLACKLISTED_VALUE, ttl);
-            return null;
-        });
-    }
-
+    // Kiểm tra access token jti có trong blacklist.
     @Override
     public boolean isBlacklisted(String jti) {
         return Boolean.TRUE.equals(execute(() -> stringRedisTemplate.hasKey(RedisKeys.BLACKLIST + jti)));
     }
 
+    // Bắt đầu phiên OTP (Lua): lưu dữ liệu chờ và đặt thời gian chờ gửi lại.
     @Override
     public boolean beginOtp(String purpose, String email, Map<String, String> data) {
         List<String> args = new ArrayList<>();
@@ -105,6 +97,7 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         return Long.valueOf(1).equals(result);
     }
 
+    // Đọc dữ liệu phiên OTP đang chờ.
     @Override
     public Map<String, String> getOtp(String purpose, String email) {
         Map<Object, Object> values = execute(() -> stringRedisTemplate.opsForHash().entries(otpKey(purpose, email)));
@@ -113,6 +106,7 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         return result;
     }
 
+    // Dùng OTP một lần nếu đúng mã (Lua, nguyên tử).
     @Override
     public boolean consumeOtp(String purpose, String email, String expectedHash) {
         Long result = execute(() -> stringRedisTemplate.execute(CONSUME_OTP_SCRIPT,
@@ -120,6 +114,7 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         return Long.valueOf(1).equals(result);
     }
 
+    // Tăng số lần nhập sai OTP, quá giới hạn thì hủy OTP.
     @Override
     public int failOtp(String purpose, String email, String expectedHash) {
         Long result = execute(() -> stringRedisTemplate.execute(FAIL_OTP_SCRIPT,
@@ -127,12 +122,14 @@ public class IdentityStateServiceImpl implements IdentityStateService {
         return result == null ? -1 : result.intValue();
     }
 
+    // Xóa phiên OTP và thời gian chờ gửi lại.
     @Override
     public void clearOtp(String purpose, String email) {
         String otpKey = otpKey(purpose, email);
         execute(() -> stringRedisTemplate.delete(List.of(otpKey, otpKey + RedisKeys.COOLDOWN_SUFFIX)));
     }
 
+    // Key Redis của phiên OTP theo mục đích và email.
     private String otpKey(String purpose, String email) {
         return RedisKeys.OTP + purpose + ":" + email;
     }

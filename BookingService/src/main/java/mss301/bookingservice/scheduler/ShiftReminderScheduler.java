@@ -16,6 +16,7 @@ import java.util.UUID;
 public class ShiftReminderScheduler {
     BookingOccurrenceService bookingOccurrenceService;
 
+    // Định kỳ nhắc caregiver trước giờ bắt đầu buổi.
     @Scheduled(fixedDelayString = "${BOOKING_SHIFT_REMINDER_INTERVAL:15m}")
     public void remind() {
         for (UUID id : bookingOccurrenceService.findShiftReminderIds()) {

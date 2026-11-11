@@ -21,11 +21,14 @@ public class CareSessionNote extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "session_id", nullable = false)
     CareSession session;
+
     @Column(name = "content", nullable = false, length = 2000)
     String content;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "vitals")
     SessionVitals vitals;
+
     @Column(name = "created_by", nullable = false)
     UUID createdBy;
 }

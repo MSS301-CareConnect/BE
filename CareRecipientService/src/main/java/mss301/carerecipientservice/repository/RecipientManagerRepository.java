@@ -17,7 +17,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface RecipientManagerRepository extends JpaRepository<RecipientManager, UUID>, JpaSpecificationExecutor<RecipientManager> {
+public interface RecipientManagerRepository extends JpaRepository<RecipientManager, UUID>,
+        JpaSpecificationExecutor<RecipientManager> {
     // Quan hệ của user với hồ sơ chưa xóa mềm (nạp sẵn hồ sơ).
     @Query("""
             select m from RecipientManager m join fetch m.recipient r
@@ -25,21 +26,15 @@ public interface RecipientManagerRepository extends JpaRepository<RecipientManag
             """)
     Optional<RecipientManager> findMembership(@Param("recipientId") UUID recipientId, @Param("userId") UUID userId);
 
-    @Query("select m from RecipientManager m where m.recipient.id = :recipientId order by m.createdAt asc")
-    List<RecipientManager> findAllByRecipient(@Param("recipientId") UUID recipientId);
+    List<RecipientManager> findByRecipientIdOrderByCreatedAtAsc(UUID recipientId);
 
-    @Query("select m from RecipientManager m where m.id = :id and m.recipient.id = :recipientId")
-    Optional<RecipientManager> findByIdAndRecipient(@Param("id") UUID id, @Param("recipientId") UUID recipientId);
+    Optional<RecipientManager> findByIdAndRecipientId(UUID id, UUID recipientId);
 
-    @Query("select m from RecipientManager m where m.recipient.id = :recipientId and m.primary = true")
-    Optional<RecipientManager> findPrimary(@Param("recipientId") UUID recipientId);
+    Optional<RecipientManager> findByRecipientIdAndPrimaryTrue(UUID recipientId);
 
-    @Query("select count(m) > 0 from RecipientManager m where m.recipient.id = :recipientId and m.userId = :userId")
-    boolean existsByRecipientAndUser(@Param("recipientId") UUID recipientId, @Param("userId") UUID userId);
+    boolean existsByRecipientIdAndUserId(UUID recipientId, UUID userId);
 
-    @Query("select count(m) from RecipientManager m where m.recipient.id = :recipientId and m.accessLevel = :accessLevel")
-    long countByRecipientAndAccessLevel(@Param("recipientId") UUID recipientId,
-                                        @Param("accessLevel") RecipientAccessLevel accessLevel);
+    long countByRecipientIdAndAccessLevel(UUID recipientId, RecipientAccessLevel accessLevel);
 
     // Danh sách "hồ sơ tôi quản lý": nạp sẵn hồ sơ trong cùng query.
     @Override

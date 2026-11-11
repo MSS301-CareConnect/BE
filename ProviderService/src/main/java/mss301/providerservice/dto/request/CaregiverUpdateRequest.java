@@ -8,7 +8,6 @@ import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import mss301.providerservice.enums.CaregiverStatus;
 import mss301.providerservice.enums.Gender;
 
 import java.time.LocalDate;

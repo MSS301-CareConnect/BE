@@ -21,8 +21,12 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CertificateCheckResponse {
     CertificateRiskLevel riskLevel;
+
     List<CertificateWarningResponse> warnings;
+
     CertificateExtractedResponse extracted;
+
     String model;
+
     Instant checkedAt;
 }

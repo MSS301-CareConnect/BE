@@ -39,6 +39,7 @@ public class CancellationTokenServiceImpl implements CancellationTokenService {
 
     BookingProperties bookingProperties;
 
+    // Cảnh báo khi chưa cấu hình khóa ký token hủy (dùng khóa ngẫu nhiên tạm).
     @PostConstruct
     void warnIfFallbackKey() {
         if (bookingProperties.getCancellation().getPreviewSecret().isBlank()) {
@@ -46,12 +47,14 @@ public class CancellationTokenServiceImpl implements CancellationTokenService {
         }
     }
 
+    // Ký token xem trước hủy kèm thời điểm hết hạn.
     @Override
     public String sign(UUID bookingId, List<UUID> occurrenceIds, BigDecimal totalRefund, Instant expiresAt) {
         long expiresAtSeconds = expiresAt.getEpochSecond();
         return expiresAtSeconds + TOKEN_SEPARATOR + calculateSignature(bookingId, occurrenceIds, totalRefund, expiresAtSeconds);
     }
 
+    // Kiểm tra token xem trước hủy: đúng chữ ký, chưa hết hạn, đúng nội dung.
     @Override
     public void verify(String previewToken, UUID bookingId, List<UUID> occurrenceIds, BigDecimal totalRefund,
                        Instant now) {
@@ -95,11 +98,13 @@ public class CancellationTokenServiceImpl implements CancellationTokenService {
         }
     }
 
+    // Khóa ký token: lấy từ cấu hình, chưa có thì dùng khóa ngẫu nhiên.
     private byte[] resolveKey() {
         String previewSecret = bookingProperties.getCancellation().getPreviewSecret();
         return previewSecret.isBlank() ? FALLBACK_KEY : previewSecret.getBytes(StandardCharsets.UTF_8);
     }
 
+    // Sinh khóa ngẫu nhiên tạm cho tiến trình.
     private static byte[] generateFallbackKey() {
         byte[] key = new byte[FALLBACK_KEY_BYTES];
         new SecureRandom().nextBytes(key);

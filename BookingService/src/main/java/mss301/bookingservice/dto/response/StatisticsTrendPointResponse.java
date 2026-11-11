@@ -12,8 +12,12 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class StatisticsTrendPointResponse {
     String period;
+
     long bookings;
+
     long completedVisits;
+
     long cancelledVisits;
+
     long missedVisits;
 }

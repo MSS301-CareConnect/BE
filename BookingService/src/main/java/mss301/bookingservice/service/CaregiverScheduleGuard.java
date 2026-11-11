@@ -5,12 +5,6 @@ import mss301.bookingservice.dto.response.OccurrenceSlot;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Chốt chống phân công trùng cho các luồng gán caregiver ngoài BookingServiceImpl (duyệt đổi người, tự phân công —
- * 2026-11-09). Cùng khóa tư vấn "booking:caregiver:<id>" và cùng quy tắc trùng giờ / travel-buffer với
- * BookingServiceImpl.lockSchedule + checkCaregiverAvailable. Chỉ gọi trong transaction ghi; exclusion constraint
- * ex_booking_occurrences_caregiver_slot vẫn là chốt cuối.
- */
 public interface CaregiverScheduleGuard {
 
     // Tuần tự hóa mọi lệnh gán cùng một caregiver tới hết transaction hiện tại.

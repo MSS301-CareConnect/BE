@@ -25,6 +25,7 @@ import java.util.UUID;
 public class PermissionController {
     RoleService roleService;
 
+    // API danh sách permission.
     @GetMapping
     public APIResponse<List<PermissionResponse>> list(@CurrentUserId UUID actorId) {
         return roleService.listPermissions(actorId);

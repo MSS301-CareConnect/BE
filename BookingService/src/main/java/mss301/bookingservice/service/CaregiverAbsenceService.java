@@ -15,11 +15,6 @@ import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Hồ sơ caregiver vắng ca (2026-11-10): ghi khi buổi thành CAREGIVER_MISSED, caregiver giải trình, Center Manager kết
- * luận. Phạm vi: CAREGIVER chỉ thấy của mình, CENTER_MANAGER trung tâm trong token, ADMIN toàn hệ thống (chỉ xem); ngoài
- * phạm vi luôn 404.
- */
 public interface CaregiverAbsenceService {
 
     // from / to: ngày của buổi bị vắng theo múi giờ booking (bỏ trống = không giới hạn). centerId chỉ có nghĩa với ADMIN;
@@ -29,8 +24,10 @@ public interface CaregiverAbsenceService {
                                                              UUID caregiverId, UUID bookingId, LocalDate from,
                                                              LocalDate to, int page, int size);
 
+    // Chi tiết một lần vắng mặt.
     APIResponse<CaregiverAbsenceResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id);
 
+    // Thống kê vắng mặt.
     APIResponse<CaregiverAbsenceStatisticsResponse> getStatistics(UUID actorId, Set<RoleCode> roles,
                                                                   UUID scopeCenterId, UUID centerId, UUID caregiverId,
                                                                   LocalDate from, LocalDate to);

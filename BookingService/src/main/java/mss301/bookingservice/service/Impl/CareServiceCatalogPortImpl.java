@@ -32,6 +32,7 @@ public class CareServiceCatalogPortImpl implements CareServiceCatalogPort {
     CareCatalogClient careCatalogClient;
     BookingDetailMapper bookingDetailMapper;
 
+    // Gọi CareCatalogService báo giá dịch vụ của trung tâm, response thiếu thì báo lỗi.
     @Override
     public List<ServiceQuote> quote(UUID centerId, List<BookingServiceRequest> services) {
         CareCatalogQuoteRequest request = bookingDetailMapper.toCatalogQuoteRequest(centerId, services);

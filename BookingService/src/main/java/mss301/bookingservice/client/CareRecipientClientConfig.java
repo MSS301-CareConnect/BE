@@ -13,6 +13,7 @@ public class CareRecipientClientConfig {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Bộ dịch lỗi HTTP khi gọi CareRecipientService.
     @Bean
     public ErrorDecoder careRecipientErrorDecoder() {
         return new CareRecipientErrorDecoder();

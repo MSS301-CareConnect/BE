@@ -37,10 +37,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Các service ngoài giả cho test PaymentService trên một HttpServer: Identity (JWKS + token SERVICE), BookingService
- * (payment-context, deposit-paid) và API merchant VNPay (refund) có thể chỉnh mã trả / độ trễ / HTTP status.
- */
 public final class PaymentTestServer {
 
     public static final String ISSUER = "https://identity.test";

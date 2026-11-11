@@ -62,12 +62,14 @@ public class User extends BaseEntity {
                 .collect(Collectors.toSet());
     }
 
+    // Tập permission hiệu lực từ các role còn hoạt động của người dùng.
     public Set<String> effectivePermissionCodes() {
         return effectiveRoles()
                 .flatMap(role -> role.activePermissionCodes().stream())
                 .collect(Collectors.toSet());
     }
 
+    // Các role còn hoạt động và chưa xóa của người dùng.
     private Stream<Role> effectiveRoles() {
         return userRoles.stream()
                 .map(UserRole::getRole)

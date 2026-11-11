@@ -16,15 +16,26 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverCardResponse {
     UUID caregiverId;
+
     UUID centerId;
+
     String centerName;
+
     String fullName;
+
     Gender gender;
+
     String bio;
+
     Integer experienceYears;
+
     BigDecimal ratingAverage;
+
     Integer ratingCount;
+
     String avatarUrl;
+
     List<UUID> careServiceIds;
+
     long verifiedCertificateCount;
 }

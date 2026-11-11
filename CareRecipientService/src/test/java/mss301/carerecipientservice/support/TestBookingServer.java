@@ -17,10 +17,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * BookingService giả cho test: GET /api/v1/bookings/caregiver-access chỉ nhận token SERVICE, trả allowed theo các cặp
- * (caregiverUserId, recipientId) đã đăng ký. Có thể tắt (500) để kiểm fail-closed.
- */
 public final class TestBookingServer {
 
     private static final TestBookingServer INSTANCE = new TestBookingServer();

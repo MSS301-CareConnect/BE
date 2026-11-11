@@ -43,6 +43,7 @@ public class PaymentProperties {
         @ToString.Exclude
         String clientSecret;
 
+        // Kiểm tra đã cấu hình đủ clientId và clientSecret.
         public boolean isConfigured() {
             return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
         }

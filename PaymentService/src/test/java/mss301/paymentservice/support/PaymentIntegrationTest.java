@@ -44,11 +44,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Nền chung cho test tích hợp PaymentService: SpringBootTest + MockMvc, H2 create-drop, JWT thật (RS256, JWKS từ
- * {@link PaymentTestServer}), Feign thật tới Booking giả, VNPay giả. Scheduler không tự chạy — test gọi service trực tiếp.
- * Mọi lớp con dùng chung MỘT Spring context (cùng cấu hình).
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(PaymentIntegrationTest.TestClockConfig.class)

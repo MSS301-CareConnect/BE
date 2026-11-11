@@ -13,21 +13,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * IdentityService (/api/v1/users/**, qua ApiGateway). Không có service discovery → URL qua env
- * CARE_RECIPIENT_IDENTITY_URL; chuyển tiếp token người dùng, ErrorDecoder ở {@link IdentityClientConfig};
- * circuit breaker + fallback ở {@link IdentityClientFallbackFactory}. Dùng qua IdentityUserService, không gọi trực tiếp.
- */
 @FeignClient(name = "identity", url = "${care-recipient.identity.url}",
         configuration = IdentityClientConfig.class, fallbackFactory = IdentityClientFallbackFactory.class)
 public interface IdentityClient {
 
+    // Gọi IdentityService lấy thông tin một người dùng.
     @GetMapping("/api/v1/users/{userId}")
     IdentityApiResponse<IdentityUserResponse> get(@PathVariable("userId") UUID userId);
 
+    // Gọi IdentityService tìm người dùng theo email.
     @GetMapping("/api/v1/users/by-email")
     IdentityApiResponse<IdentityUserResponse> getByEmail(@RequestParam("email") String email);
 
+    // Gọi IdentityService lấy thông tin nhiều người dùng một lần.
     @PostMapping("/api/v1/users/batch")
     IdentityApiResponse<List<IdentityUserResponse>> list(@RequestBody IdentityUserBatchRequest request);
 }

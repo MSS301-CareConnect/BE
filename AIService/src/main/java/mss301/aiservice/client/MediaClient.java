@@ -17,6 +17,7 @@ import java.util.UUID;
 
 @FeignClient(name = "media", url = "${ai.media.url}", configuration = MediaClientConfig.class)
 public interface MediaClient {
+    // Gọi MediaService upload ảnh đính kèm của chat.
     @PostMapping(value = "/api/v1/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     RemoteApiResponse<MediaClientResponse> upload(
             @RequestPart("file")
@@ -35,9 +36,11 @@ public interface MediaClient {
             UUID referenceId
     );
 
+    // Gọi MediaService tạo URL tải ảnh có thời hạn.
     @GetMapping("/api/v1/media/{mediaFileId}/download-url")
     RemoteApiResponse<DownloadUrlClientResponse> createDownloadUrl(@PathVariable("mediaFileId") UUID mediaFileId);
 
+    // Gọi MediaService xóa ảnh đã upload.
     @DeleteMapping("/api/v1/media/{mediaFileId}")
     RemoteApiResponse<Void> delete(@PathVariable("mediaFileId") UUID mediaFileId);
 }

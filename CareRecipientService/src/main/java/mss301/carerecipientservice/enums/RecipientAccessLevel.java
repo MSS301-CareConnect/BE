@@ -7,6 +7,7 @@ public enum RecipientAccessLevel {
     EDITOR,
     OWNER;
 
+    // Kiểm tra quyền này có bao gồm quyền yêu cầu không (OWNER > EDITOR > VIEWER).
     public boolean covers(RecipientAccessLevel requiredLevel) {
         return compareTo(requiredLevel) >= 0;
     }

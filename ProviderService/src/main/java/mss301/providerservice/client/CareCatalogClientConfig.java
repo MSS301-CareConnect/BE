@@ -12,6 +12,7 @@ public class CareCatalogClientConfig {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Bộ dịch lỗi HTTP khi gọi CareCatalogService.
     @Bean
     public ErrorDecoder careCatalogErrorDecoder() {
         return new CareCatalogErrorDecoder();

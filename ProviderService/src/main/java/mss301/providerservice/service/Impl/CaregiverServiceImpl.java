@@ -47,7 +47,7 @@ import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CaregiverMapper;
 import mss301.providerservice.repository.CareCenterRepository;
-import mss301.providerservice.repository.CaregiverCertificateCount;
+import mss301.providerservice.repository.projection.CaregiverCertificateCount;
 import mss301.providerservice.repository.CaregiverProfileRepository;
 import mss301.providerservice.repository.CaregiverScheduleRepository;
 import mss301.providerservice.repository.CaregiverSkillRepository;
@@ -141,6 +141,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Tạo hồ sơ người chăm sóc thành công", caregiverResponse);
     }
 
+    // Danh sách caregiver của trung tâm theo xác minh / trạng thái (manager hoặc admin).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverResponse>> listByCenter(UUID actorId, UUID centerId,
@@ -183,6 +184,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy hồ sơ người chăm sóc thành công", caregiverResponse);
     }
 
+    // Hồ sơ caregiver theo userId trong phạm vi được xem.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverResponse> getByUser(UUID userId) {
@@ -192,6 +194,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy hồ sơ người chăm sóc thành công", caregiverResponse);
     }
 
+    // Hồ sơ caregiver của người đang đăng nhập.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverResponse> getMe(UUID actorId) {
@@ -263,6 +266,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy hồ sơ công khai của người chăm sóc thành công", caregiverPublicResponse);
     }
 
+    // Manager cập nhật hồ sơ caregiver có kiểm version.
     @Override
     @Transactional
     public APIResponse<CaregiverResponse> update(UUID actorId, UUID caregiverId, CaregiverUpdateRequest request) {
@@ -277,6 +281,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Cập nhật hồ sơ người chăm sóc thành công", caregiverResponse);
     }
 
+    // Đổi trạng thái caregiver; ngừng hoạt động thì xếp cascade hủy booking.
     @Override
     @Transactional
     public APIResponse<CaregiverResponse> updateStatus(UUID actorId, UUID caregiverId, CaregiverStatusRequest request) {
@@ -298,6 +303,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Cập nhật trạng thái người chăm sóc thành công", response);
     }
 
+    // Admin xác minh / từ chối hồ sơ caregiver.
     @Override
     @Transactional
     public APIResponse<CaregiverResponse> verify(UUID actorId, UUID caregiverId, VerificationRequest request) {
@@ -328,6 +334,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Xác minh hồ sơ người chăm sóc thành công", caregiverResponse);
     }
 
+    // Lưu trữ hồ sơ caregiver và xếp cascade.
     @Override
     @Transactional
     public APIResponse<Void> archive(UUID actorId, UUID caregiverId, Long version) {
@@ -351,6 +358,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         }
     }
 
+    // Danh sách dịch vụ caregiver làm được.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CaregiverSkillResponse>> listServices(UUID actorId, UUID caregiverId) {
@@ -379,6 +387,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Cập nhật kỹ năng của người chăm sóc thành công", skillResponses);
     }
 
+    // Ngày nghỉ của caregiver trong khoảng thời gian.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<TimeOffResponse>> listTimeOffs(UUID actorId, UUID caregiverId, Instant from, Instant to) {
@@ -394,6 +403,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy danh sách ngày nghỉ thành công", timeOffResponses);
     }
 
+    // Ngày nghỉ của caregiver trong trung tâm có phân trang.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<TimeOffResponse>> listCenterTimeOffs(UUID actorId, UUID centerId, UUID caregiverId,
@@ -440,6 +450,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Tạo ngày nghỉ thành công", timeOffResponse);
     }
 
+    // Xóa ngày nghỉ của caregiver.
     @Override
     @Transactional
     public APIResponse<Void> deleteTimeOff(UUID actorId, UUID caregiverId, UUID timeOffId) {
@@ -454,6 +465,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Xóa ngày nghỉ thành công");
     }
 
+    // Tính khung giờ rảnh: ca đã nhận trừ ngày nghỉ, giới hạn độ dài khoảng.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<AvailabilityWindowResponse>> getAvailability(UUID caregiverId, Instant from, Instant to) {
@@ -504,18 +516,21 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Kiểm tra lịch rảnh thành công", availabilityCheckResponse);
     }
 
+    // Tìm caregiver chưa xóa theo userId, không có thì báo lỗi.
     @Override
     public CaregiverProfile findActiveCaregiverByUser(UUID userId) {
         return caregiverProfileRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
     }
 
+    // Tìm caregiver chưa xóa theo id, không có thì báo lỗi.
     @Override
     public CaregiverProfile findActiveCaregiver(UUID id) {
         return caregiverProfileRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
     }
 
+    // Tìm caregiver nhận booking được (đã xác minh, đang hoạt động).
     @Override
     public CaregiverProfile findBookableCaregiver(UUID id) {
         CaregiverProfile caregiver = findActiveCaregiver(id);
@@ -664,6 +679,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return mergedByCaregiver;
     }
 
+    // Lấy ngày nghỉ của nhiều caregiver theo từng caregiver.
     private Map<UUID, List<TimeWindow>> loadTimeOffWindows(Collection<UUID> caregiverIds, Instant from, Instant to) {
         List<CaregiverTimeOff> timeOffs = caregiverTimeOffRepository.findOverlappingForCaregivers(caregiverIds, from, to);
         Map<UUID, List<TimeWindow>> windowsByCaregiver = new HashMap<>();
@@ -686,6 +702,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return null;
     }
 
+    // Kiểm tra số lượng khung giờ hợp lệ.
     private void validateSlots(List<TimeWindow> slots) {
         if (slots.isEmpty() || slots.size() > MAX_SLOTS) {
             throw new AppException(ErrorCode.SLOTS_INVALID);
@@ -697,6 +714,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         }
     }
 
+    // Thời điểm bắt đầu sớm nhất của các khung giờ.
     private Instant findEarliestStart(List<TimeWindow> slots) {
         return slots.stream()
                 .map(TimeWindow::startAt)
@@ -704,6 +722,7 @@ public class CaregiverServiceImpl implements CaregiverService {
                 .orElseThrow(() -> new AppException(ErrorCode.SLOTS_INVALID));
     }
 
+    // Thời điểm kết thúc muộn nhất của các khung giờ.
     private Instant findLatestEnd(List<TimeWindow> slots) {
         return slots.stream()
                 .map(TimeWindow::endAt)
@@ -728,6 +747,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return slots;
     }
 
+    // Đọc khung giờ dạng "start/end" từ tham số tìm kiếm.
     private TimeWindow parseSlot(String slot) {
         String[] parts = slot == null ? new String[0] : slot.split(SLOT_SEPARATOR);
         if (parts.length != 2) {
@@ -765,6 +785,7 @@ public class CaregiverServiceImpl implements CaregiverService {
                 .toList();
     }
 
+    // Lọc ứng viên có ca phủ khung giờ và không có ngày nghỉ trùng.
     private List<CaregiverProfile> filterByProviderAvailability(List<CaregiverProfile> candidates,
                                                                 List<TimeWindow> slots) {
         if (candidates.isEmpty()) {
@@ -856,6 +877,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return caregiverMapper.toPublicResponse(caregiver, certificates, avatarUrl);
     }
 
+    // Lấy URL đầu tiên trong danh sách.
     private String firstUrl(List<String> urls) {
         if (urls == null || urls.isEmpty()) {
             return null;
@@ -864,32 +886,36 @@ public class CaregiverServiceImpl implements CaregiverService {
     }
 
 
+    // Tìm trung tâm chưa xóa, không có thì báo lỗi.
     private CareCenter findActiveCenter(UUID centerId) {
         return careCenterRepository.findByIdAndDeletedAtIsNull(centerId)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
     }
 
+    // Chuẩn hóa họ tên và giới thiệu của caregiver.
     private void normalizeFields(CaregiverProfile caregiver) {
         caregiver.setFullName(caregiver.getFullName().trim());
         caregiver.setBio(normalize(caregiver.getBio()));
     }
 
+    // Báo xung đột nếu version gửi lên không khớp.
     private void checkVersion(CaregiverProfile caregiver, Long version) {
         if (version == null || !version.equals(caregiver.getVersion())) {
             throw new AppException(ErrorCode.CAREGIVER_VERSION_CONFLICT);
         }
     }
 
+    // Cập nhật điểm đánh giá trung bình và số lượt đánh giá.
     @Override
     @Transactional
     public APIResponse<Void> updateRating(UUID caregiverId, CaregiverRatingRequest request) {
         CaregiverProfile caregiver = caregiverProfileRepository.findForUpdate(caregiverId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
-        caregiver.setRatingAverage(request.getRatingAverage());
-        caregiver.setRatingCount(request.getRatingCount());
+        caregiverMapper.updateRating(request, caregiver);
         return APIResponse.success("Cập nhật điểm đánh giá thành công");
     }
 
+    // Danh sách caregiver chờ xác minh của trung tâm.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(UUID centerId, int page, int size) {
@@ -903,6 +929,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy hồ sơ chờ xác minh thành công", response);
     }
 
+    // Danh bạ caregiver cho admin có lọc theo trung tâm, trạng thái, từ khóa.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverResponse>> listDirectory(UUID centerId, VerificationStatus verification,
@@ -931,6 +958,7 @@ public class CaregiverServiceImpl implements CaregiverService {
         return APIResponse.success("Lấy danh bạ người chăm sóc thành công", response);
     }
 
+    // Báo lỗi nếu người gọi không được xem hồ sơ caregiver này.
     private void checkReadScope(CaregiverProfile caregiver, UUID actorId) {
         if (providerAuthorization.isAdmin() || providerAuthorization.hasRole(RoleCode.SERVICE)
                 || (providerAuthorization.hasRole(RoleCode.CAREGIVER) && actorId.equals(caregiver.getUserId()))
@@ -941,16 +969,19 @@ public class CaregiverServiceImpl implements CaregiverService {
         throw new AppException(ErrorCode.CAREGIVER_NOT_FOUND);
     }
 
+    // Kiểm tra page / size hợp lệ.
     private void validatePage(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
         }
     }
 
+    // Trim chuỗi, rỗng thì trả null.
     private String normalize(String value) {
         return isBlank(value) ? null : value.trim();
     }
 
+    // Kiểm tra chuỗi rỗng hoặc null.
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }

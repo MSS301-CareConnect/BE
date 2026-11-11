@@ -12,5 +12,6 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverPublicServiceResponse {
     UUID careServiceId;
+
     String serviceName;
 }

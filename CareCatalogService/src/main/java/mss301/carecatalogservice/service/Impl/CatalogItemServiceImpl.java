@@ -69,6 +69,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
     MediaClient mediaClient;
     Clock clock;
 
+    // Danh sách dịch vụ chuẩn; người không phải admin chỉ thấy dịch vụ đang hoạt động.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CatalogItemResponse>> list(Set<RoleCode> roles, CatalogItemSearchRequest request) {
@@ -82,6 +83,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Lấy danh sách dịch vụ chuẩn thành công", pageResponse);
     }
 
+    // Chi tiết dịch vụ chuẩn; người không phải admin chỉ xem được dịch vụ đang hoạt động.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CatalogItemResponse> get(Set<RoleCode> roles, UUID id) {
@@ -93,6 +95,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Lấy thông tin dịch vụ chuẩn thành công", catalogItemResponse);
     }
 
+    // Chuyển hướng 302 tới URL tải ảnh minh họa có thời hạn.
     @Override
     public ResponseEntity<Void> redirectToImage(UUID mediaFileId) {
         RemoteApiResponse<DownloadUrlClientResponse> response = mediaClient.createDownloadUrl(mediaFileId);
@@ -107,6 +110,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
                 .build();
     }
 
+    // Tạo dịch vụ chuẩn mới.
     @Override
     @Transactional
     public APIResponse<CatalogItemResponse> create(CatalogItemRequest request) {
@@ -117,6 +121,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Tạo dịch vụ chuẩn thành công", catalogItemResponse);
     }
 
+    // Kiểm tra file ảnh rồi upload qua MediaService.
     @Override
     public APIResponse<CatalogImageResponse> uploadImage(UUID actorId, MultipartFile file) {
         checkImageFile(file);
@@ -133,6 +138,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Tải ảnh minh họa thành công", catalogImageResponse);
     }
 
+    // Cập nhật thông tin dịch vụ chuẩn.
     @Override
     @Transactional
     public APIResponse<CatalogItemResponse> update(UUID id, CatalogItemRequest request) {
@@ -158,6 +164,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Cập nhật trạng thái dịch vụ chuẩn thành công", catalogItemResponse);
     }
 
+    // Xóa mềm dịch vụ chuẩn; chặn nếu còn dịch vụ trung tâm hoặc gói giá đang dùng nó.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID id) {
@@ -172,6 +179,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return APIResponse.success("Xóa dịch vụ chuẩn thành công");
     }
 
+    // Kiểm tra file ảnh không rỗng và đúng định dạng cho phép.
     private void checkImageFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.CATALOG_IMAGE_REQUIRED);
@@ -185,6 +193,7 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         }
     }
 
+    // Tính thời gian cache của redirect, ngắn hơn hạn URL tải.
     private Duration findRedirectMaxAge(Instant expiresAt) {
         if (expiresAt == null) {
             return Duration.ZERO;
@@ -199,10 +208,12 @@ public class CatalogItemServiceImpl implements CatalogItemService {
         return remaining;
     }
 
+    // Kiểm tra người gọi được xem dịch vụ ở mọi trạng thái (admin).
     private boolean canSeeAllStatuses(Set<RoleCode> roles) {
         return roles.contains(RoleCode.ADMIN) || roles.contains(RoleCode.CENTER_MANAGER);
     }
 
+    // Tìm dịch vụ chuẩn chưa xóa, không có thì báo lỗi.
     private CatalogItem findActiveCatalogItem(UUID id) {
         return catalogItemRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));

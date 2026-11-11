@@ -17,9 +17,14 @@ import java.time.LocalDate;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CertificateAiExtractedResponse {
     String holderName;
+
     String credentialNumber;
+
     String certificateName;
+
     String issuedBy;
+
     LocalDate issuedDate;
+
     LocalDate expiryDate;
 }

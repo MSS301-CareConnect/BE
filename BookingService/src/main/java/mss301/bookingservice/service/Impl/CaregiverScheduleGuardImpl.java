@@ -33,11 +33,13 @@ public class CaregiverScheduleGuardImpl implements CaregiverScheduleGuard {
     BookingOccurrenceRepository bookingOccurrenceRepository;
     BookingProperties bookingProperties;
 
+    // Khóa lịch của caregiver (advisory lock) để tránh xếp trùng đồng thời.
     @Override
     public void lockCaregiver(UUID caregiverId) {
         bookingRepository.lockScheduleKey(CAREGIVER_LOCK_PREFIX + caregiverId);
     }
 
+    // Báo lỗi nếu caregiver đã có buổi trùng các khung giờ.
     @Override
     public void checkCaregiverFree(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
         ErrorCode conflict = findConflict(caregiverId, slots, excludeBookingId);
@@ -46,6 +48,7 @@ public class CaregiverScheduleGuardImpl implements CaregiverScheduleGuard {
         }
     }
 
+    // Caregiver không có buổi trùng các khung giờ.
     @Override
     public boolean isCaregiverFree(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
         return findConflict(caregiverId, slots, excludeBookingId) == null;

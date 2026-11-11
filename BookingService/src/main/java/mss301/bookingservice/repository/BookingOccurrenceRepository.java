@@ -1,5 +1,7 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.OccurrenceStatsView;
+import mss301.bookingservice.repository.projection.CaregiverLoadView;
 import jakarta.persistence.LockModeType;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.BookingStatus;
@@ -34,21 +36,11 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                               @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                               @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
-    @Query("select o from BookingOccurrence o where o.booking.id = :bookingId and o.deletedAt is null order by o.occurrenceNo")
-    List<BookingOccurrence> findAllByBooking(@Param("bookingId") UUID bookingId);
+    List<BookingOccurrence> findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(UUID bookingId);
 
     // BK-06: buổi của booking theo trang (lọc trạng thái).
-    @Query(value = """
-            select o from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            order by o.occurrenceNo
-            """, countQuery = """
-            select count(o) from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            """)
-    Page<BookingOccurrence> findPageByBooking(@Param("bookingId") UUID bookingId,
-                                              @Param("statuses") Collection<OccurrenceStatus> statuses,
-                                              Pageable pageable);
+    Page<BookingOccurrence> findByBookingIdAndDeletedAtIsNullAndStatusInOrderByOccurrenceNoAsc(
+            UUID bookingId, Collection<OccurrenceStatus> statuses, Pageable pageable);
 
     // BK-06: tổng số buổi / đã hoàn thành / buổi kế tiếp của mỗi booking trong trang danh sách — một truy vấn.
     @Query("""

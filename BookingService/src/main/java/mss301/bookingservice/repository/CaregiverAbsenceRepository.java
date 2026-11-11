@@ -1,5 +1,6 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.CaregiverAbsenceStatusCountView;
 import jakarta.persistence.LockModeType;
 import mss301.bookingservice.entity.CaregiverAbsence;
 import mss301.bookingservice.enums.CaregiverAbsenceStatus;

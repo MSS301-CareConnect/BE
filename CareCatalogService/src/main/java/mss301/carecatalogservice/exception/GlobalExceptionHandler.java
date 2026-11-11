@@ -26,21 +26,25 @@ public class GlobalExceptionHandler {
 
     private static final String CENTER_SERVICE_UNIQUE_INDEX = "uk_center_services_center_care";
 
+    // Trả lỗi nghiệp vụ theo ErrorCode của AppException.
     @ExceptionHandler(AppException.class)
     public ResponseEntity<APIResponse<Void>> handlingAppException(AppException exception) {
         return toResponse(exception.getErrorCode());
     }
 
+    // Trả 401 khi chưa xác thực.
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<APIResponse<Void>> handlingAuthenticationException(AuthenticationException exception) {
         return toResponse(ErrorCode.UNAUTHENTICATED);
     }
 
+    // Trả 403 khi thiếu quyền truy cập.
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<APIResponse<Void>> handlingAccessDeniedException(AccessDeniedException exception) {
         return toResponse(ErrorCode.UNAUTHORIZED);
     }
 
+    // Trả 400 khi request không đọc được hoặc sai kiểu tham số.
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
             MissingServletRequestParameterException.class})
     public ResponseEntity<APIResponse<Void>> handlingUnreadableRequest(Exception exception) {
@@ -53,11 +57,13 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.CATALOG_IMAGE_TOO_LARGE);
     }
 
+    // Trả 400 khi thiếu phần file trong request multipart.
     @ExceptionHandler(MissingServletRequestPartException.class)
     public ResponseEntity<APIResponse<Void>> handlingMissingPart(MissingServletRequestPartException exception) {
         return toResponse(ErrorCode.CATALOG_IMAGE_REQUIRED);
     }
 
+    // Trả lỗi validation theo key ErrorCode trong message của annotation.
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<APIResponse<Void>> handlingValidation(MethodArgumentNotValidException exception) {
         // message của Bean Validation chính là key ErrorCode; key lạ → INVALID_KEY để dễ phát hiện khi dev.
@@ -69,6 +75,7 @@ public class GlobalExceptionHandler {
         }
     }
 
+    // Trả 404 khi không có endpoint khớp.
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<APIResponse<Void>> handlingNoResourceFound(NoResourceFoundException exception) {
         return toResponse(ErrorCode.PATH_NOT_FOUND);
@@ -80,6 +87,7 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.CONCURRENT_UPDATE);
     }
 
+    // Đổi lỗi ràng buộc DB (trùng / khóa ngoại) sang ErrorCode tương ứng.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<APIResponse<Void>> handlingDataIntegrityViolation(DataIntegrityViolationException exception) {
         // Constraint ở DB là chốt chặn cuối (FK, NOT NULL, unique) khi bước kiểm tra trong service bị lọt — vd hai request
@@ -91,6 +99,7 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.INVALID_REQUEST);
     }
 
+    // Trả 503 khi database lỗi.
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<APIResponse<Void>> handlingDataAccess(DataAccessException exception) {
         // Không log message của driver, chỉ log loại lỗi.
@@ -98,12 +107,14 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.SERVICE_UNAVAILABLE);
     }
 
+    // Bắt mọi lỗi chưa xử lý và trả lỗi chung.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<APIResponse<Void>> handlingRuntimeException(Exception exception) {
         log.error("Unhandled CareCatalogService error ({})", exception.getClass().getName());
         return toResponse(ErrorCode.UNCATEGORIZED_EXCEPTION);
     }
 
+    // Dựng ResponseEntity APIResponse từ ErrorCode.
     private ResponseEntity<APIResponse<Void>> toResponse(ErrorCode errorCode) {
         APIResponse<Void> response = APIResponse.<Void>builder()
                 .code(errorCode.getCode())

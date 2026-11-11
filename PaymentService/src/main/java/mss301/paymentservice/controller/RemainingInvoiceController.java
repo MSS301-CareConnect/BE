@@ -43,6 +43,7 @@ public class RemainingInvoiceController {
 
     RemainingInvoiceService remainingInvoiceService;
 
+    // API danh sách hóa đơn phần còn lại.
     @GetMapping
     @PreAuthorize("hasAnyRole('CUSTOMER','ADMIN')")
     public APIResponse<PageResponse<RemainingInvoiceResponse>> list(@CurrentUserId UUID actorId,
@@ -54,6 +55,7 @@ public class RemainingInvoiceController {
         return remainingInvoiceService.list(actorId, roles, customerId, status, page, size);
     }
 
+    // API cho BookingService tạo hóa đơn phần còn lại (có idempotency key).
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<RemainingInvoiceResultResponse> create(
@@ -62,6 +64,7 @@ public class RemainingInvoiceController {
         return remainingInvoiceService.create(idempotencyKey, request);
     }
 
+    // API khách tạo phiên thanh toán hóa đơn phần còn lại.
     @PostMapping("/{invoiceId}/payments")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CheckoutResponse> pay(@CurrentUserId UUID customerId, @PathVariable UUID invoiceId,
@@ -70,6 +73,7 @@ public class RemainingInvoiceController {
         return remainingInvoiceService.pay(customerId, invoiceId, request, httpServletRequest);
     }
 
+    // API miễn thu hóa đơn phần còn lại.
     @PatchMapping("/{invoiceId}/waive")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<RemainingInvoiceResponse> waive(@CurrentUserId UUID actorId, @PathVariable UUID invoiceId,

@@ -1,5 +1,7 @@
 package mss301.providerservice.dto.request;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
@@ -9,6 +11,8 @@ import lombok.experimental.FieldDefaults;
 
 // H-08: admin đã xử lý tay việc này (khóa tài khoản / hủy booking) → bỏ qua dòng FAILED, ghi lý do.
 @Data
+@Builder
+@AllArgsConstructor
 @NoArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class OutboxSkipRequest {

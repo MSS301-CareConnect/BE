@@ -16,23 +16,41 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverAbsenceResponse {
     UUID id;
+
     UUID bookingId;
+
     String bookingCode;
+
     String recipientName;
+
     UUID occurrenceId;
+
     Integer occurrenceNo;
+
     Instant startAt;
+
     Instant endAt;
+
     UUID centerId;
+
     // Caregiver đã vắng (Provider + Identity id).
     UUID caregiverId;
+
     UUID caregiverUserId;
+
     CaregiverAbsenceSource source;
+
     CaregiverAbsenceStatus status;
+
     String explanation;
+
     Instant explainedAt;
+
     String conclusionNote;
+
     UUID concludedBy;
+
     Instant concludedAt;
+
     Instant createdAt;
 }

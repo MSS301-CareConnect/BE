@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RefundQuoteController {
     RefundService refundService;
 
+    // API tính trước số tiền hoàn khi hủy.
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<RefundQuoteResponse> quote(@Valid @RequestBody RefundQuoteRequest request) {

@@ -1,5 +1,7 @@
 package mss301.paymentservice.service.Impl;
 
+import org.springframework.data.domain.Sort;
+import mss301.paymentservice.util.PaymentSpecifications;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -63,6 +65,7 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
                 occurrenceFinancial.getBookingId(), amount, beneficiary);
     }
 
+    // Danh sách tiền cọc bị giữ trong khoảng thời gian, lọc theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<DepositForfeitureResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -70,14 +73,18 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
                                                                      Instant to, int page, int size) {
         checkRange(from, to);
         Scope scope = resolveScope(actorId, roles, claimCenterId, centerId);
-        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE));
-        Page<DepositForfeiture> forfeitures = depositForfeitureRepository.findPage(scope.centerId(),
-                scope.caregiverUserId(), scope.beneficiary(), from, to, pageRequest);
+        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<DepositForfeiture> forfeitures = depositForfeitureRepository.findAll(
+                PaymentSpecifications.forfeitures(scope.centerId(), scope.caregiverUserId(), scope.beneficiary(),
+                        from, to),
+                pageRequest);
         PageResponse<DepositForfeitureResponse> pageResponse = PageResponse.of(forfeitures,
                 depositForfeitureMapper.toResponseList(forfeitures.getContent()));
         return APIResponse.success("Lấy danh sách tiền cọc bị giữ thành công", pageResponse);
     }
 
+    // Tổng tiền cọc bị giữ trong khoảng thời gian theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<DepositForfeitureSummaryResponse> getSummary(UUID actorId, Set<RoleCode> roles,
@@ -110,12 +117,14 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
         return new Scope(null, actorId, ForfeitureBeneficiary.CAREGIVER);
     }
 
+    // Báo lỗi nếu thời điểm bắt đầu sau thời điểm kết thúc.
     private void checkRange(Instant from, Instant to) {
         if (from.isAfter(to)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
     }
 
+    // Phạm vi dữ liệu người gọi được xem: trung tâm, caregiver, bên hưởng.
     private record Scope(UUID centerId, UUID caregiverUserId, ForfeitureBeneficiary beneficiary) {
     }
 }

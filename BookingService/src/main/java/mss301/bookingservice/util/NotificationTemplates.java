@@ -3,9 +3,11 @@ package mss301.bookingservice.util;
 import mss301.bookingservice.enums.NotificationType;
 
 public final class NotificationTemplates {
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private NotificationTemplates() {
     }
 
+    // Tiêu đề thông báo theo loại.
     public static String title(NotificationType type) {
         return switch (type) {
             case BOOKING_CREATED -> "Có yêu cầu đặt lịch mới";

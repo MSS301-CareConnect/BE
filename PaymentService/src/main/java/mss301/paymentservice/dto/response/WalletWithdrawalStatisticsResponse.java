@@ -14,11 +14,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Dashboard yêu cầu rút tiền (2026-11-10) theo phạm vi người gọi. Đang chờ tính mọi thời điểm; còn lại tính trong kỳ
- * (gửi theo lúc tạo, đã chuyển theo lúc hoàn tất, từ chối theo lúc xử lý). Phần "giữ hộ" chỉ có ở hàng đợi trung tâm:
- * tiền của khách / caregiver gắn trung tâm còn trong ví (khả dụng + đang chờ rút) — trung tâm đang giữ thực tế.
- */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Data
 @Builder

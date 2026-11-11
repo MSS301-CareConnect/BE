@@ -76,6 +76,7 @@ public class IdentityProperties {
     @Valid
     Brevo brevo = new Brevo();
 
+    // Kiểm tra TTL access / refresh hợp lệ (refresh dài hơn access).
     @AssertTrue(message = "Identity TTLs must be positive, refresh TTL must exceed access TTL")
     public boolean isValidTtls() {
         return accessTtl != null && accessTtl.toSeconds() > 0

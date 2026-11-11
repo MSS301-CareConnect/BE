@@ -17,15 +17,10 @@ import java.util.UUID;
 @Repository
 public interface ManagerInvitationRepository extends JpaRepository<ManagerInvitation, UUID> {
 
-    @Query("select i from ManagerInvitation i where i.recipient.id = :recipientId order by i.createdAt desc")
-    List<ManagerInvitation> findAllByRecipient(@Param("recipientId") UUID recipientId);
+    List<ManagerInvitation> findByRecipientIdOrderByCreatedAtDesc(UUID recipientId);
 
-    @Query("""
-            select count(i) > 0 from ManagerInvitation i
-            where i.recipient.id = :recipientId and i.email = :email and i.status = :status and i.expiresAt > :now
-            """)
-    boolean existsOpen(@Param("recipientId") UUID recipientId, @Param("email") String email,
-                       @Param("status") InvitationStatus status, @Param("now") Instant now);
+    boolean existsByRecipientIdAndEmailAndStatusAndExpiresAtAfter(UUID recipientId, String email,
+                                                                 InvitationStatus status, Instant now);
 
     // Lời mời còn hiệu lực gửi tới người dùng; hồ sơ đã lưu trữ / xóa không hiện.
     @Query("""

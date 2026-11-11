@@ -35,18 +35,21 @@ public class PricePlanController {
         return pricePlanService.list(centerOfferingId, page, size);
     }
 
+    // API danh sách gói giá của một dịch vụ trung tâm.
     @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
     @PreAuthorize("permitAll()")
     public APIResponse<List<PricePlanResponse>> listByCenterOffering(@PathVariable UUID centerOfferingId) {
         return pricePlanService.listByCenterOffering(centerOfferingId);
     }
 
+    // API xem chi tiết một gói giá.
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<PricePlanResponse> get(@PathVariable UUID id) {
         return pricePlanService.get(id);
     }
 
+    // API manager tạo gói giá.
     @PostMapping
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<PricePlanResponse> create(@CurrentCenterId UUID centerId,
@@ -62,6 +65,7 @@ public class PricePlanController {
         return pricePlanService.updateBatch(centerId, request);
     }
 
+    // API manager cập nhật gói giá.
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<PricePlanResponse> update(@CurrentCenterId UUID centerId,
@@ -70,6 +74,7 @@ public class PricePlanController {
         return pricePlanService.update(centerId, id, request);
     }
 
+    // API manager xóa gói giá.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<Void> delete(@CurrentCenterId UUID centerId,

@@ -20,29 +20,52 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverResponse {
     UUID id;
+
     UUID userId;
+
     UUID centerId;
+
     String centerName;
+
     CenterStatus centerStatus;
+
     String fullName;
+
     Gender gender;
+
     LocalDate dateOfBirth;
+
     Integer experienceYears;
+
     String bio;
+
     BigDecimal ratingAverage;
+
     Integer ratingCount;
+
     VerificationStatus verificationStatus;
+
     CaregiverStatus caregiverStatus;
+
     String verificationReason;
+
     UUID verifiedBy;
+
     Instant verifiedAt;
+
     UUID createdBy;
+
     UUID updatedBy;
+
     Long version;
+
     Instant createdAt;
+
     Instant updatedAt;
+
     // Kỹ năng (PRV-01): id dịch vụ chuẩn (Catalog item) và id offering của trung tâm; chưa gán → [].
     List<UUID> careServiceIds;
+
     List<UUID> centerServiceIds;
 
     public UUID getCaregiverId() {

@@ -12,7 +12,9 @@ public interface RecipientAccessService {
     // có quan hệ nhưng thiếu cấp → 403 RECIPIENT_ACCESS_DENIED. Trả quan hệ (đã nạp hồ sơ).
     RecipientManager checkAccess(UUID recipientId, UUID userId, RecipientAccessLevel requiredLevel);
 
+    // Báo lỗi nếu hồ sơ không cho phép ghi.
     void checkActiveForWrite(UUID recipientId);
 
+    // Lấy mức quyền của người dùng trên hồ sơ.
     Optional<RecipientAccessLevel> findAccessLevel(UUID recipientId, UUID userId);
 }

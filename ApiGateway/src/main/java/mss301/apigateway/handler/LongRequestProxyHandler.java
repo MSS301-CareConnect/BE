@@ -20,12 +20,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Proxy cho route cần chờ lâu hơn read timeout chung (10s) của gateway — hiện là AIService (/api/v1/ai/**): Groq có thể
- * mất tới hàng chục giây cho một câu trả lời hoặc một lần đọc ảnh chứng chỉ. Handler chép nguyên method, header, body
- * (kể cả multipart — GatewayMvcMultipartResolver không tiêu thụ body) và trả nguyên status/header/body của service.
- * Request đã qua SecurityConfig (JWT) và GatewayRequestHeaders.sanitize() như mọi route khác.
- */
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class LongRequestProxyHandler implements HandlerFunction<ServerResponse> {
 
@@ -38,6 +32,7 @@ public class LongRequestProxyHandler implements HandlerFunction<ServerResponse> 
     String targetUrl;
     Duration readTimeout;
 
+    // Khởi tạo proxy cho request chạy lâu với timeout kết nối / đọc riêng.
     public LongRequestProxyHandler(String targetUrl, Duration connectTimeout, Duration readTimeout) {
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -48,6 +43,7 @@ public class LongRequestProxyHandler implements HandlerFunction<ServerResponse> 
         this.readTimeout = readTimeout;
     }
 
+    // Chuyển tiếp request chạy lâu (AI) tới service đích và trả nguyên response.
     @Override
     public ServerResponse handle(ServerRequest request) throws IOException, InterruptedException {
         HttpRequest upstreamRequest = buildUpstreamRequest(request);
@@ -69,6 +65,7 @@ public class LongRequestProxyHandler implements HandlerFunction<ServerResponse> 
                 });
     }
 
+    // Dựng request gửi lên service đích kèm header và body gốc.
     private HttpRequest buildUpstreamRequest(ServerRequest request) throws IOException {
         String query = request.uri().getRawQuery();
         URI target = URI.create(targetUrl + request.uri().getRawPath() + (query == null ? "" : "?" + query));
@@ -90,6 +87,7 @@ public class LongRequestProxyHandler implements HandlerFunction<ServerResponse> 
         return builder.build();
     }
 
+    // Đọc toàn bộ body của request gốc.
     private byte[] readBody(ServerRequest request) throws IOException {
         try (InputStream input = request.servletRequest().getInputStream()) {
             return input.readAllBytes();

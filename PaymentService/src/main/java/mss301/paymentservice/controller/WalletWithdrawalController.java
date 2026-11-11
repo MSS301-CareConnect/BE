@@ -43,6 +43,7 @@ public class WalletWithdrawalController {
 
     WalletWithdrawalService walletWithdrawalService;
 
+    // API danh sách yêu cầu rút tiền theo phạm vi người gọi.
     @GetMapping
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<PageResponse<WalletWithdrawalResponse>> list(
@@ -57,6 +58,7 @@ public class WalletWithdrawalController {
         return walletWithdrawalService.list(actorId, roles, claimCenterId, scope, status, ownerType, page, size);
     }
 
+    // API thống kê yêu cầu rút tiền.
     @GetMapping("/statistics")
     @PreAuthorize("hasAnyRole('CENTER_MANAGER','ADMIN')")
     public APIResponse<WalletWithdrawalStatisticsResponse> getStatistics(
@@ -70,6 +72,7 @@ public class WalletWithdrawalController {
         return walletWithdrawalService.getStatistics(actorId, roles, claimCenterId, scope, from, to, groupBy);
     }
 
+    // API xem chi tiết một yêu cầu rút tiền.
     @GetMapping("/{withdrawalId}")
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<WalletWithdrawalResponse> get(@CurrentUserId UUID actorId,
@@ -99,6 +102,7 @@ public class WalletWithdrawalController {
         return walletWithdrawalService.transfer(actorId, roles, claimCenterId, withdrawalId);
     }
 
+    // API từ chối yêu cầu rút tiền.
     @PostMapping("/{withdrawalId}/reject")
     @PreAuthorize("hasAnyRole('CENTER_MANAGER','ADMIN')")
     public APIResponse<WalletWithdrawalResponse> reject(@CurrentUserId UUID actorId,

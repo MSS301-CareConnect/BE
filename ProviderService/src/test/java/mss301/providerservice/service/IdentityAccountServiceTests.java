@@ -4,14 +4,18 @@ import mss301.providerservice.client.IdentityClient;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.response.APIResponse;
 import mss301.providerservice.enums.RoleCode;
-import mss301.providerservice.exception.*;
+import mss301.providerservice.exception.AppException;
+import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.service.Impl.IdentityAccountServiceImpl;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.Set;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
 
 class IdentityAccountServiceTests {
     IdentityClient client = mock(IdentityClient.class);

@@ -13,6 +13,8 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class AvailabilityViolationResponse {
     Instant startAt;
+
     Instant endAt;
+
     AvailabilityViolationReason reason;
 }

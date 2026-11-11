@@ -35,10 +35,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Ảnh minh họa dịch vụ chuẩn: chỉ ADMIN tải lên (kiểm loại / dung lượng trước khi gọi MediaService), ảnh xem công khai
- * qua redirect 302 tới URL tải có hạn. MediaService được giả lập — lời gọi thật đã có e2e.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class CatalogImageApiTests {

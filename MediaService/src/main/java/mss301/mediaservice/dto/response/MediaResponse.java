@@ -20,15 +20,26 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MediaResponse {
     UUID mediaFileId;
+
     String originalFileName;
+
     String contentType;
+
     FileType fileType;
+
     Long fileSize;
+
     MediaPurpose mediaPurpose;
+
     MediaStatus mediaStatus;
+
     UUID uploadedBy;
+
     String sourceService;
+
     String referenceType;
+
     UUID referenceId;
+
     Instant createdAt;
 }

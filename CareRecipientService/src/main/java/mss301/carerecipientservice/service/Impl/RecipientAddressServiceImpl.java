@@ -38,15 +38,17 @@ public class RecipientAddressServiceImpl implements RecipientAddressService {
     RecipientAccessService recipientAccessService;
     RecipientAddressMapper recipientAddressMapper;
 
+    // Danh sách địa chỉ của người bệnh (quyền VIEWER).
     @Transactional(readOnly = true)
     @Override
     public APIResponse<List<RecipientAddressResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
-        List<RecipientAddress> recipientAddresses = recipientAddressRepository.findAllByRecipient(recipientId);
+        List<RecipientAddress> recipientAddresses = recipientAddressRepository.findByRecipientIdAndDeletedAtIsNullOrderByCreatedAtAsc(recipientId);
         List<RecipientAddressResponse> recipientAddressResponses = recipientAddressMapper.toResponseList(recipientAddresses);
         return APIResponse.success("Lấy sổ địa chỉ thành công", recipientAddressResponses);
     }
 
+    // Thêm địa chỉ (quyền EDITOR), giới hạn số địa chỉ tối đa.
     @Transactional
     @Override
     public APIResponse<RecipientAddressResponse> create(UUID actorId, UUID recipientId, RecipientAddressRequest request) {
@@ -54,7 +56,7 @@ public class RecipientAddressServiceImpl implements RecipientAddressService {
         recipientAccessService.checkActiveForWrite(recipientId);
         CareRecipient recipient = lockRecipient(recipientId);
         // Đếm dưới khóa hồ sơ để hai request song song không cùng vượt giới hạn.
-        if (recipientAddressRepository.countByRecipient(recipientId) >= MAX_ADDRESSES) {
+        if (recipientAddressRepository.countByRecipientIdAndDeletedAtIsNull(recipientId) >= MAX_ADDRESSES) {
             throw new AppException(ErrorCode.ADDRESS_BOOK_FULL);
         }
         RecipientAddress recipientAddress = recipientAddressMapper.toRecipientAddress(request, recipient);
@@ -64,6 +66,7 @@ public class RecipientAddressServiceImpl implements RecipientAddressService {
         return APIResponse.success("Đã lưu địa chỉ", recipientAddressResponse);
     }
 
+    // Cập nhật địa chỉ (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<RecipientAddressResponse> update(UUID actorId, UUID recipientId, UUID id,
@@ -89,11 +92,13 @@ public class RecipientAddressServiceImpl implements RecipientAddressService {
         return APIResponse.success("Đã xóa địa chỉ");
     }
 
+    // Tìm địa chỉ thuộc hồ sơ, không có thì báo lỗi.
     private RecipientAddress findAddress(UUID recipientId, UUID id) {
-        return recipientAddressRepository.findByIdAndRecipient(id, recipientId)
+        return recipientAddressRepository.findByIdAndRecipientIdAndDeletedAtIsNull(id, recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.ADDRESS_NOT_FOUND));
     }
 
+    // Khóa dòng hồ sơ để cập nhật, không có thì báo lỗi.
     private CareRecipient lockRecipient(UUID recipientId) {
         return careRecipientRepository.findForUpdate(recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));

@@ -22,7 +22,7 @@ import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.CaregiverAbsenceMapper;
 import mss301.bookingservice.repository.CaregiverAbsenceRepository;
-import mss301.bookingservice.repository.CaregiverAbsenceStatusCountView;
+import mss301.bookingservice.repository.projection.CaregiverAbsenceStatusCountView;
 import mss301.bookingservice.service.BookingNotificationService;
 import mss301.bookingservice.service.CaregiverAbsenceService;
 import mss301.bookingservice.service.NotificationService;
@@ -43,10 +43,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Hồ sơ caregiver vắng ca (2026-11-10). Không đụng tiền và không đổi trạng thái buổi: buổi đã là CAREGIVER_MISSED, khách
- * đã được xếp hoàn 100 % — ở đây chỉ ghi nhận, nhận giải trình và kết luận của trung tâm để tính vi phạm của caregiver.
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -65,6 +61,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
     BookingProperties bookingProperties;
     Clock clock;
 
+    // Danh sách lần vắng mặt theo phạm vi người gọi và bộ lọc.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverAbsenceResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -81,6 +78,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return APIResponse.success("Lấy danh sách vắng ca thành công", absenceResponses);
     }
 
+    // Chi tiết một lần vắng mặt trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverAbsenceResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id) {
@@ -91,6 +89,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return APIResponse.success("Lấy hồ sơ vắng ca thành công", absenceResponse);
     }
 
+    // Thống kê vắng mặt theo trạng thái trong khoảng thời gian.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CaregiverAbsenceStatisticsResponse> getStatistics(UUID actorId, Set<RoleCode> roles,
@@ -112,6 +111,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return APIResponse.success("Thống kê vắng ca thành công", statisticsResponse);
     }
 
+    // Caregiver gửi giải trình cho lần vắng mặt đang chờ.
     @Override
     @Transactional
     public APIResponse<CaregiverAbsenceResponse> explain(UUID actorId, UUID id,
@@ -134,6 +134,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return APIResponse.success("Đã gửi giải trình cho trung tâm", absenceResponse);
     }
 
+    // Trung tâm kết luận lần vắng mặt (có / không chấp nhận lý do).
     @Override
     @Transactional
     public APIResponse<CaregiverAbsenceResponse> conclude(UUID actorId, UUID centerId, UUID id,
@@ -168,6 +169,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return APIResponse.success("Đã kết luận lần vắng ca", absenceResponse);
     }
 
+    // Ghi một lần vắng mặt của caregiver cho buổi và báo các bên.
     @Override
     public void record(BookingOccurrence occurrence, CaregiverAbsenceSource source) {
         Booking booking = occurrence.getBooking();
@@ -216,6 +218,7 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return new Scope(null, actorId, null);
     }
 
+    // Người gọi được xem lần vắng mặt này.
     private boolean canRead(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, CaregiverAbsence absence) {
         if (roles.contains(RoleCode.ADMIN)) {
             return true;
@@ -237,15 +240,18 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
         return new Range(rangeStart, rangeEnd);
     }
 
+    // Mô tả ngắn buổi (số thứ tự + giờ bắt đầu) cho thông báo.
     private String describeVisit(BookingOccurrence occurrence) {
         return "buổi " + occurrence.getOccurrenceNo() + " ("
                 + TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(occurrence.getStartAt())
                 + ") của lịch " + occurrence.getBooking().getBookingCode();
     }
 
+    // Phạm vi dữ liệu người gọi được xem: trung tâm, caregiver.
     private record Scope(UUID centerId, UUID caregiverUserId, UUID caregiverId) {
     }
 
+    // Khoảng thời gian thống kê.
     private record Range(Instant from, Instant to) {
     }
 }

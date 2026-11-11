@@ -16,10 +16,15 @@ import java.util.UUID;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CenterOfferingResponse {
     UUID id;
+
     CatalogItemResponse catalogItem;
+
     UUID centerId;
+
     String description;
+
     ServiceStatus status;
+
     // Chỉ có khi duyệt dịch vụ của trung tâm (CAT-02); khách chỉ nhận gói đang active.
     List<PricePlanResponse> pricePlans;
 

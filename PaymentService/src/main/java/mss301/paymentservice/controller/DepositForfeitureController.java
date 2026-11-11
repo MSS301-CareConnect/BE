@@ -33,6 +33,7 @@ public class DepositForfeitureController {
 
     DepositForfeitureService depositForfeitureService;
 
+    // API danh sách tiền cọc bị giữ theo phạm vi người gọi.
     @GetMapping
     @PreAuthorize("hasAnyRole('CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<PageResponse<DepositForfeitureResponse>> list(
@@ -47,6 +48,7 @@ public class DepositForfeitureController {
         return depositForfeitureService.list(actorId, roles, claimCenterId, centerId, from, to, page, size);
     }
 
+    // API tổng hợp tiền cọc bị giữ theo phạm vi người gọi.
     @GetMapping("/summary")
     @PreAuthorize("hasAnyRole('CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<DepositForfeitureSummaryResponse> getSummary(

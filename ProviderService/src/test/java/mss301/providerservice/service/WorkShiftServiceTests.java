@@ -2,24 +2,37 @@ package mss301.providerservice.service;
 
 import mss301.providerservice.dto.request.WorkShiftRequest;
 import mss301.providerservice.entity.CareCenter;
-import mss301.providerservice.enums.*;
-import mss301.providerservice.exception.*;
+import mss301.providerservice.enums.CenterStatus;
+import mss301.providerservice.enums.ShiftStatus;
+import mss301.providerservice.exception.AppException;
+import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.dto.response.WorkShiftResponse;
 import mss301.providerservice.entity.WorkShift;
 import mss301.providerservice.mapper.WorkShiftMapper;
 import mss301.providerservice.mapper.WorkShiftMapperImpl;
-import mss301.providerservice.repository.*;
+import mss301.providerservice.repository.CareCenterRepository;
+import mss301.providerservice.repository.CaregiverProfileRepository;
+import mss301.providerservice.repository.ShiftRegistrationRepository;
+import mss301.providerservice.repository.WorkShiftRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.Impl.WorkShiftServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.*;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.*;
-import java.util.*;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 

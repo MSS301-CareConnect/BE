@@ -10,19 +10,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.UUID;
 
-/**
- * API của CareRecipientService (/api/v1/care-recipients/**): kiểm quyền khách trên hồ sơ và lấy snapshot
- * lúc đặt lịch, bằng token SERVICE của Booking (hai endpoint này chỉ cho SERVICE). Dùng qua CareRecipientDirectoryService.
- */
 @FeignClient(name = "care-recipient", url = "${booking.care-recipient.url}",
         configuration = CareRecipientClientConfig.class, fallbackFactory = CareRecipientClientFallbackFactory.class)
 public interface CareRecipientClient {
 
+    // Hỏi CareRecipientService người dùng có quyền trên hồ sơ người bệnh không.
     @GetMapping("/api/v1/care-recipients/{recipientId}/access")
     RemoteApiResponse<RecipientAccessResponse> checkAccess(@PathVariable("recipientId") UUID recipientId,
                                                            @RequestParam("userId") UUID userId,
                                                            @RequestParam("minLevel") String minLevel);
 
+    // Lấy ảnh chụp thông tin chăm sóc của người bệnh.
     @GetMapping("/api/v1/care-recipients/{recipientId}/snapshot")
     RemoteApiResponse<RecipientSnapshot> getSnapshot(@PathVariable("recipientId") UUID recipientId);
 }

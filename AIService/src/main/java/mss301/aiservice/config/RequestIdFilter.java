@@ -23,6 +23,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
     private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
 
+    // Gắn request id cho mỗi request (nhận từ header hoặc sinh mới) và đưa vào log.
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String requestId = request.getHeader(HEADER);

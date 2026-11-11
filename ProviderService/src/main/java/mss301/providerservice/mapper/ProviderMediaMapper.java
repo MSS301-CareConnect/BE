@@ -22,7 +22,6 @@ public interface ProviderMediaMapper {
     // ProviderMedia không kế thừa BaseEntity: id + createdAt do JPA / @PrePersist sinh.
     @Mapping(target = "providerMediaId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "mediaFileId", source = "uploaded.mediaFileId")
     @Mapping(target = "mediaFileType", source = "uploaded.fileType")
     ProviderMedia toProviderMedia(MediaOwnerType ownerType, UUID ownerId, MediaClientResponse uploaded,
                                   Integer displayOrder, UUID createdBy);

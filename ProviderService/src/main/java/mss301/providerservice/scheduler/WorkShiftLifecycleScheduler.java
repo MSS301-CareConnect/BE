@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 public class WorkShiftLifecycleScheduler {
     WorkShiftLifecycleService workShiftLifecycleService;
 
+    // Định kỳ cập nhật trạng thái ca theo thời gian (mở, đóng, hoàn thành).
     @Scheduled(cron = "${provider.work-shift.lifecycle-cron:${PROVIDER_SHIFT_LIFECYCLE_CRON:0 * * * * *}}")
     public void advance() {
         try {

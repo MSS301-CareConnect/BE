@@ -1,5 +1,6 @@
 package mss301.providerservice;
 
+import java.util.Comparator;
 import mss301.providerservice.client.dto.SystemCancellationRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -103,10 +104,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Test tích hợp trên H2 + repository thật: kỹ năng caregiver (PRV-01) với Catalog / Identity giả trên JDK HttpServer
- * (token SERVICE thật qua ServiceTokenProvider + Feign), và sửa lỗi ca làm việc (PRV-03) không mock count.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ProviderIntegrationTests {
@@ -1411,7 +1408,7 @@ class ProviderIntegrationTests {
     void archivedCenterCannotBeRestoredWhenItsEmailWasReused() throws Exception {
         CareCenter center = saveCenter(UUID.randomUUID());
         center.setCenterStatus(CenterStatus.ARCHIVED);
-        center.setDeletedAt(java.time.Instant.now());
+        center.setDeletedAt(Instant.now());
         center = careCenterRepository.saveAndFlush(center);
         CareCenter reuse = saveCenter(UUID.randomUUID());
         reuse.setEmail(center.getEmail());
@@ -1464,7 +1461,7 @@ class ProviderIntegrationTests {
                 .andExpect(status().isOk());
         List<ProviderOutbox> rows = providerOutboxRepository.findAll().stream()
                 .filter(item -> item.getCenterId().equals(center.getId()))
-                .sorted(java.util.Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
+                .sorted(Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
         ProviderOutbox suspend = rows.getFirst();
         ProviderOutbox resume = rows.getLast();
         assertThat(suspend.getStatus()).isEqualTo("FAILED");
@@ -1718,7 +1715,6 @@ class ProviderIntegrationTests {
     }
 
 
-    /** Identity (service-token) + Catalog (center-services) + Booking (busy-caregivers) giả qua "gateway" duy nhất. */
     static final class StubPlatform {
         final HttpServer server;
         final Map<UUID, String> offerings = new ConcurrentHashMap<>();

@@ -1,5 +1,10 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.dto.response.OccurrenceRescheduleResponse;
+import mss301.bookingservice.dto.request.OccurrenceRescheduleRequest;
+import mss301.bookingservice.dto.request.OccurrenceReschedulePreviewRequest;
+import mss301.bookingservice.dto.request.EmergencyReassignmentRequest;
+import mss301.bookingservice.dto.request.ReplacementConsentRequest;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
 import mss301.bookingservice.dto.request.CustomerVisitReportRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
@@ -21,10 +26,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Buổi chăm sóc (booking_occurrences) — lịch caregiver và chi tiết một buổi. Phạm vi theo role do service chọn,
- * ngoài phạm vi luôn 404 OCCURRENCE_NOT_FOUND (không lộ tồn tại).
- */
 public interface BookingOccurrenceService {
 
     // CAREGIVER: lịch được giao trong [from, to] (ngày theo múi giờ booking, bỏ trống = không giới hạn), theo trang;
@@ -57,6 +58,7 @@ public interface BookingOccurrenceService {
     // Job MISSED (OPS-06): id buổi quá hạn check-in; markMissed xử lý từng buổi trong transaction riêng.
     List<UUID> findMissedIds();
 
+    // Đánh dấu buổi bị bỏ lỡ.
     void markMissed(UUID id);
 
     // 2026-11-11: ca tự đóng mà trung tâm kết luận buổi không được thực hiện → CAREGIVER_MISSED (hoàn tiền khách, ghi
@@ -67,10 +69,13 @@ public interface BookingOccurrenceService {
     // trung tâm và khách một lần, trước khi job MISSED ghi nhận vắng ca.
     List<UUID> findLateCheckInIds();
 
+    // Cảnh báo caregiver check-in trễ.
     void warnLateCheckIn(UUID id);
 
+    // Lấy id buổi cần nhắc caregiver.
     List<UUID> findShiftReminderIds();
 
+    // Nhắc caregiver trước giờ buổi.
     void remindShift(UUID id);
 
     // Nhắc manager báo vắng chưa quyết định (một lần mỗi buổi).
@@ -81,23 +86,24 @@ public interface BookingOccurrenceService {
 
     // Module 2 (SPEC V3): Trung tâm bố trí người thay thế khẩn cấp
     APIResponse<Void> emergencyReassign(UUID actorId, UUID centerId, UUID bookingId,
-                                        mss301.bookingservice.dto.request.EmergencyReassignmentRequest request);
+                                        EmergencyReassignmentRequest request);
 
     // Module 2 (SPEC V3): Khách phản hồi người thay thế khẩn cấp (ACCEPT, RESCHEDULE, REJECT_AND_CANCEL)
     // 2026-11-11: khách chủ booking báo nhanh về buổi. Buổi tới giờ chưa ai check-in → báo trung tâm; buổi COMPLETED trong
     // cửa sổ phản ánh → ca chuyển "chờ trung tâm xác nhận" (giữ quyết toán).
     APIResponse<OccurrenceResponse> reportByCustomer(UUID actorId, UUID occurrenceId, CustomerVisitReportRequest request);
 
+    // Khách đồng ý / từ chối người thay thế cho buổi.
     APIResponse<Void> consentReplacement(UUID actorId, UUID occurrenceId,
-                                         mss301.bookingservice.dto.request.ReplacementConsentRequest request);
+                                         ReplacementConsentRequest request);
 
     // Module 3 (SPEC V3): Xem trước dời lịch buổi chăm sóc
-    APIResponse<mss301.bookingservice.dto.response.OccurrenceRescheduleResponse> reschedulePreview(
+    APIResponse<OccurrenceRescheduleResponse> reschedulePreview(
             UUID actorId, Set<RoleCode> roles, UUID centerId, UUID occurrenceId,
-            mss301.bookingservice.dto.request.OccurrenceReschedulePreviewRequest request);
+            OccurrenceReschedulePreviewRequest request);
 
     // Module 3 (SPEC V3): Thực hiện dời lịch buổi chăm sóc
-    APIResponse<mss301.bookingservice.dto.response.OccurrenceRescheduleResponse> reschedule(
+    APIResponse<OccurrenceRescheduleResponse> reschedule(
             UUID actorId, Set<RoleCode> roles, UUID centerId, UUID occurrenceId,
-            mss301.bookingservice.dto.request.OccurrenceRescheduleRequest request);
+            OccurrenceRescheduleRequest request);
 }

@@ -3,7 +3,6 @@ package mss301.identityservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.identityservice.config.IdentityProperties;
 import mss301.identityservice.config.RedisKeys;
 import mss301.identityservice.dto.request.EmailRequest;
@@ -36,7 +35,6 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class RegistrationServiceImpl implements RegistrationService {
 
     // Purpose tách namespace OTP đăng ký và quên mật khẩu trên Redis.
@@ -62,6 +60,7 @@ public class RegistrationServiceImpl implements RegistrationService {
     RegistrationMapper registrationMapper;
     UserRepository userRepository;
 
+    // Đăng ký: kiểm email chưa tồn tại, lưu thông tin chờ và gửi OTP.
     @Override
     public APIResponse<OtpResponse> register(RegisterRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
@@ -80,6 +79,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return toOtpResponse(email);
     }
 
+    // Gửi lại OTP đăng ký khi phiên chờ còn hạn.
     @Override
     public APIResponse<OtpResponse> resendOtp(EmailRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
@@ -91,6 +91,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return toOtpResponse(email);
     }
 
+    // Xác thực OTP đăng ký rồi tạo tài khoản khách hàng.
     @Override
     public APIResponse<UserResponse> verify(VerifyOtpRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
@@ -102,6 +103,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return APIResponse.success("Đăng ký thành công, vui lòng đăng nhập", userResponse);
     }
 
+    // Gửi OTP đặt lại mật khẩu (không lộ email có tồn tại hay không).
     @Override
     public APIResponse<Void> forgotPassword(EmailRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
@@ -119,6 +121,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return APIResponse.success("Nếu tài khoản hợp lệ, mã xác thực sẽ được gửi đến email");
     }
 
+    // Xác thực OTP rồi đặt mật khẩu mới.
     @Override
     public APIResponse<Void> resetPassword(ResetPasswordRequest request) {
         String email = EmailNormalizer.normalize(request.getEmail());
@@ -128,6 +131,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return APIResponse.success("Đặt mật khẩu thành công, vui lòng đăng nhập");
     }
 
+    // Sinh OTP, lưu hash trên Redis rồi gửi email; gửi lỗi thì xóa OTP.
     private void sendOtp(String purpose, String email, Map<String, String> data) {
         String otpCode = String.format(Locale.ROOT, OTP_FORMAT, SECURE_RANDOM.nextInt(OTP_BOUND));
         data.put(RedisKeys.OTP_HASH_FIELD, passwordEncoder.encode(otpCode));
@@ -163,6 +167,7 @@ public class RegistrationServiceImpl implements RegistrationService {
         return data;
     }
 
+    // Trả thông tin hạn OTP và thời gian chờ gửi lại.
     private APIResponse<OtpResponse> toOtpResponse(String email) {
         OtpResponse otpResponse = registrationMapper.toOtpResponse(email,
                 identityProperties.getOtpTtl().toSeconds(), identityProperties.getOtpCooldown().toSeconds());

@@ -16,8 +16,10 @@ import java.time.Instant;
 public class CareReportMedia {
     @EmbeddedId
     CareReportMediaId id;
+
     @Column(name = "display_order", nullable = false)
     Integer displayOrder;
+
     @Column(name = "created_at", nullable = false)
     Instant createdAt;
 }

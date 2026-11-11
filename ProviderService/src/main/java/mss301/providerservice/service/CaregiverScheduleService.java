@@ -13,6 +13,7 @@ import java.util.UUID;
 
 public interface CaregiverScheduleService {
 
+    // Lịch làm việc của caregiver đang đăng nhập.
     APIResponse<PageResponse<ScheduleResponse>> listMine(UUID actorId, int page, int size);
 
     // Bộ lọc tùy chọn (null = bỏ qua): caregiver, trạng thái, khoảng ngày làm việc (giờ VN).
@@ -20,6 +21,7 @@ public interface CaregiverScheduleService {
                                                              ScheduleStatus status, LocalDate fromDate,
                                                              LocalDate toDate, int page, int size);
 
+    // Đổi trạng thái một lịch làm việc.
     APIResponse<ScheduleResponse> updateStatus(UUID actorId, UUID id, ScheduleStatusRequest request);
 
     // BookingService (token SERVICE) xác minh lịch khách chọn cho booking SHIFT.

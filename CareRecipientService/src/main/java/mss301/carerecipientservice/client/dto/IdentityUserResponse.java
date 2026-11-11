@@ -17,6 +17,7 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class IdentityUserResponse {
     public static final String STATUS_ACTIVE = "ACTIVE";
+
     public static final String ROLE_CUSTOMER = "CUSTOMER";
 
     UUID id;

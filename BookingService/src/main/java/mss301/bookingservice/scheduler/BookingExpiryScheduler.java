@@ -11,11 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Quét booking quá hạn duyệt / quá hạn cọc theo lô (booking.schedule.expiry-batch-size) mỗi
- * booking.schedule.expiry-scan-interval. Lỗi một booking chỉ log, không dừng lô.
- * TODO(nhiều instance): dùng FOR UPDATE SKIP LOCKED / leader election khi chạy nhiều bản BookingService.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -24,6 +19,7 @@ public class BookingExpiryScheduler {
 
     BookingService bookingService;
 
+    // Định kỳ chuyển booking quá hạn xử lý sang hết hạn.
     @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void expireOverdueBookings() {
@@ -44,6 +40,7 @@ public class BookingExpiryScheduler {
 
     // Giữ chỗ chờ cọc ngắn (5 phút): quét riêng chu kỳ booking.schedule.hold-scan-interval để slot được nhả ngay sau
     // hạn + grace thay vì chờ lượt quét chung (2026-11-09). expire kiểm lại dưới khóa nên chạy song song lượt chung an toàn.
+    // Định kỳ nhả lịch giữ chỗ đã hết hạn (chưa đặt cọc).
     @Scheduled(fixedDelayString = "${booking.schedule.hold-scan-interval:15s}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void releaseExpiredHolds() {
@@ -57,6 +54,7 @@ public class BookingExpiryScheduler {
     }
 
     // Nhắc trả phần còn lại theo mốc của center policy (mặc định 72h, 48h trước hạn — M6), cùng chu kỳ quét.
+    // Định kỳ nhắc khách trả phần còn lại.
     @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void remindRemainingPayments() {
@@ -70,6 +68,7 @@ public class BookingExpiryScheduler {
     }
 
     // Nhắc trung tâm booking sắp quá hạn xác nhận / phân công (booking.schedule.center-reminder-minutes).
+    // Định kỳ nhắc trung tâm xử lý booking sắp quá hạn.
     @Scheduled(fixedDelayString = "${booking.schedule.expiry-scan-interval:1m}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void remindCenterActions() {

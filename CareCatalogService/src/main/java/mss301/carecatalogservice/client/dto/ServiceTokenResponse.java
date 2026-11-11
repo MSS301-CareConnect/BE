@@ -20,5 +20,6 @@ public class ServiceTokenResponse {
     String accessToken;
 
     String tokenType;
+
     long expiresInSeconds;
 }

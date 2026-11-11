@@ -94,6 +94,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
     RecipientManagerService recipientManagerService;
     TransactionTemplate transactionTemplate;
 
+    // Tạo hồ sơ người bệnh kèm thuốc, liên hệ khẩn cấp; người tạo là quản lý chính (OWNER).
     @Override
     @Transactional
     public APIResponse<CareRecipientDetailResponse> create(UUID actorId, CareRecipientCreateRequest request) {
@@ -119,6 +120,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Tạo hồ sơ người bệnh thành công", detailResponse);
     }
 
+    // Danh sách hồ sơ: admin lọc toàn hệ thống, người dùng chỉ thấy hồ sơ mình quản lý.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CareRecipientSummaryResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -156,6 +158,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Lấy hồ sơ người bệnh thành công", detailResponse);
     }
 
+    // Cập nhật hồ sơ (cần quyền EDITOR; hồ sơ ngừng hoạt động chỉ OWNER được sửa).
     @Override
     @Transactional
     public APIResponse<CareRecipientResponse> update(UUID actorId, UUID id, CareRecipientUpdateRequest request) {
@@ -197,6 +200,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Cập nhật trạng thái hồ sơ thành công", careRecipientResponse);
     }
 
+    // Lưu trữ hồ sơ (chỉ OWNER, chặn khi còn booking chưa xong).
     @Override
     public APIResponse<Void> delete(UUID actorId, UUID id) {
         recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.OWNER);
@@ -223,8 +227,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         }
     }
 
-    // ===== Inter-Service =====
-
+    // Ảnh chụp thông tin chăm sóc của hồ sơ cho service khác / người có quyền xem.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<RecipientSnapshotResponse> getSnapshot(UUID id) {
@@ -236,6 +239,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Lấy snapshot hồ sơ thành công", snapshotResponse);
     }
 
+    // Kiểm tra người dùng có quyền tối thiểu trên hồ sơ, trả kèm mức quyền hiện có.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<AccessCheckResponse> checkAccess(UUID id, UUID userId, RecipientAccessLevel minLevel) {
@@ -246,6 +250,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Kiểm tra quyền thành công", accessCheckResponse);
     }
 
+    // Tóm tắt nhiều hồ sơ; người dùng thường chỉ nhận hồ sơ mình có quyền.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CareRecipientSummaryResponse>> listBatch(RecipientBatchRequest request) {
@@ -261,8 +266,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return APIResponse.success("Lấy danh sách hồ sơ thành công", summaryResponses);
     }
 
-    // ===== Helpers =====
-
+    // Danh sách hồ sơ người dùng đang quản lý, có lọc và phân trang.
     private PageResponse<CareRecipientSummaryResponse> listManaged(UUID actorId, RecipientStatus status, String keyword,
                                                                    int page, int size) {
         PageRequest pageRequest = toPageRequest(page, size, "recipient.createdAt");
@@ -274,6 +278,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return PageResponse.of(memberships, summaryResponses);
     }
 
+    // Danh sách toàn bộ hồ sơ cho admin, có lọc và phân trang.
     private PageResponse<CareRecipientSummaryResponse> listAll(RecipientStatus status, String keyword, UUID createdBy,
                                                                boolean includeDeleted, int page, int size) {
         PageRequest pageRequest = toPageRequest(page, size, "createdAt");
@@ -290,6 +295,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return toDetailResponse(recipient, null);
     }
 
+    // Chi tiết hồ sơ cho người có quyền xem (hoặc caregiver đang được giao).
     private CareRecipientDetailResponse getManagedDetail(UUID actorId, UUID id) {
         RecipientManager membership = recipientAccessService.checkAccess(id, actorId, RecipientAccessLevel.VIEWER);
         return toDetailResponse(membership.getRecipient(), membership.getAccessLevel());
@@ -307,10 +313,11 @@ public class CareRecipientServiceImpl implements CareRecipientService {
             CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
                     .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
             return careRecipientMapper.toCaregiverDetailResponse(toSnapshot(recipient), recipient,
-                    emergencyContactRepository.findAllByRecipient(id));
+                    emergencyContactRepository.findByRecipientIdAndDeletedAtIsNullOrderByPrimaryDescPriorityAscCreatedAtAsc(id));
         });
     }
 
+    // Hỏi BookingService caregiver có đang được giao chăm sóc người bệnh này không.
     private boolean checkAssigned(UUID recipientId, UUID caregiverUserId) {
         BookingApiResponse<CaregiverAccessResponse> response = bookingClient.checkCaregiverAccess(caregiverUserId, recipientId);
         if (response == null || response.getResult() == null) {
@@ -319,29 +326,34 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return response.getResult().isAllowed();
     }
 
+    // Tìm hồ sơ chưa xóa rồi dựng ảnh chụp thông tin chăm sóc.
     private RecipientSnapshotResponse buildSnapshot(UUID id) {
         CareRecipient recipient = careRecipientRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
         return toSnapshot(recipient);
     }
 
+    // Dựng ảnh chụp gồm thuốc đang dùng và liên hệ khẩn cấp chính.
     private RecipientSnapshotResponse toSnapshot(CareRecipient recipient) {
-        List<Medication> activeMedications = medicationRepository.findAllByRecipientAndActive(recipient.getId(), true);
-        EmergencyContact primaryContact = emergencyContactRepository.findPrimary(recipient.getId()).orElse(null);
+        List<Medication> activeMedications = medicationRepository.findByRecipientIdAndActiveAndDeletedAtIsNullOrderByStartDateDescCreatedAtAsc(recipient.getId(), true);
+        EmergencyContact primaryContact = emergencyContactRepository.findByRecipientIdAndPrimaryTrueAndDeletedAtIsNull(recipient.getId()).orElse(null);
         return careRecipientMapper.toSnapshotResponse(recipient, activeMedications, primaryContact, Instant.now());
     }
 
+    // Dựng chi tiết hồ sơ gồm thuốc, liên hệ khẩn cấp và mức quyền của người xem.
     private CareRecipientDetailResponse toDetailResponse(CareRecipient recipient, RecipientAccessLevel myAccessLevel) {
-        List<Medication> medications = medicationRepository.findAllByRecipient(recipient.getId());
-        List<EmergencyContact> emergencyContacts = emergencyContactRepository.findAllByRecipient(recipient.getId());
+        List<Medication> medications = medicationRepository.findByRecipientIdAndDeletedAtIsNullOrderByActiveDescStartDateDescCreatedAtAsc(recipient.getId());
+        List<EmergencyContact> emergencyContacts = emergencyContactRepository.findByRecipientIdAndDeletedAtIsNullOrderByPrimaryDescPriorityAscCreatedAtAsc(recipient.getId());
         return careRecipientMapper.toDetailResponse(recipient, myAccessLevel, medications, emergencyContacts);
     }
 
+    // Khóa dòng hồ sơ để cập nhật, không có thì báo lỗi.
     private CareRecipient lockRecipient(UUID id) {
         return careRecipientRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));
     }
 
+    // Tạo PageRequest sắp xếp mới nhất trước sau khi kiểm tra page / size.
     private PageRequest toPageRequest(int page, int size, String sortProperty) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
@@ -349,12 +361,14 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, sortProperty));
     }
 
+    // Báo lỗi nếu chỉ gửi một trong hai tọa độ (vĩ độ / kinh độ).
     private void checkCoordinates(BigDecimal latitude, BigDecimal longitude) {
         if ((latitude == null) != (longitude == null)) {
             throw new AppException(ErrorCode.INVALID_COORDINATES);
         }
     }
 
+    // Báo lỗi nếu có hơn một liên hệ khẩn cấp chính.
     private void checkSinglePrimaryContact(List<EmergencyContactRequest> emergencyContacts) {
         if (emergencyContacts == null) {
             return;
@@ -367,6 +381,7 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         }
     }
 
+    // Báo lỗi nếu ngày kết thúc thuốc trước ngày bắt đầu.
     private void checkMedicationDates(List<MedicationRequest> medications) {
         if (medications == null) {
             return;
@@ -378,137 +393,160 @@ public class CareRecipientServiceImpl implements CareRecipientService {
         }
     }
 
-    // ===== Medication =====
+    // Thêm thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<MedicationResponse> createMedication(UUID actorId, UUID recipientId, MedicationRequest request) {
         return medicationService.create(actorId, recipientId, request);
     }
 
+    // Danh sách thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<List<MedicationResponse>> listMedications(UUID actorId, UUID recipientId, Boolean active) {
         return medicationService.list(actorId, recipientId, active);
     }
 
+    // Chi tiết thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<MedicationResponse> getMedication(UUID actorId, UUID recipientId, UUID medicationId) {
         return medicationService.get(actorId, recipientId, medicationId);
     }
 
+    // Cập nhật thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<MedicationResponse> updateMedication(UUID actorId, UUID recipientId, UUID medicationId, MedicationRequest request) {
         return medicationService.update(actorId, recipientId, medicationId, request);
     }
 
+    // Bật / tắt thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<MedicationResponse> updateMedicationActive(UUID actorId, UUID recipientId, UUID medicationId, boolean active) {
         return medicationService.updateActive(actorId, recipientId, medicationId, active);
     }
 
+    // Xóa thuốc (ủy quyền MedicationService).
     @Override
     public APIResponse<Void> deleteMedication(UUID actorId, UUID recipientId, UUID medicationId) {
         return medicationService.delete(actorId, recipientId, medicationId);
     }
 
-    // ===== Emergency Contact =====
+    // Thêm liên hệ khẩn cấp (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<EmergencyContactResponse> createEmergencyContact(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
         return emergencyContactService.create(actorId, recipientId, request);
     }
 
+    // Danh sách địa chỉ (ủy quyền RecipientAddressService).
     @Override
     public APIResponse<List<RecipientAddressResponse>> listAddresses(UUID actorId, UUID recipientId) {
         return recipientAddressService.list(actorId, recipientId);
     }
 
+    // Thêm địa chỉ (ủy quyền RecipientAddressService).
     @Override
     public APIResponse<RecipientAddressResponse> createAddress(UUID actorId, UUID recipientId,
                                                                RecipientAddressRequest request) {
         return recipientAddressService.create(actorId, recipientId, request);
     }
 
+    // Cập nhật địa chỉ (ủy quyền RecipientAddressService).
     @Override
     public APIResponse<RecipientAddressResponse> updateAddress(UUID actorId, UUID recipientId, UUID addressId,
                                                                RecipientAddressRequest request) {
         return recipientAddressService.update(actorId, recipientId, addressId, request);
     }
 
+    // Xóa địa chỉ (ủy quyền RecipientAddressService).
     @Override
     public APIResponse<Void> deleteAddress(UUID actorId, UUID recipientId, UUID addressId) {
         return recipientAddressService.delete(actorId, recipientId, addressId);
     }
 
+    // Danh sách liên hệ khẩn cấp (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<List<EmergencyContactResponse>> listEmergencyContacts(UUID actorId, UUID recipientId) {
         return emergencyContactService.list(actorId, recipientId);
     }
 
+    // Chi tiết liên hệ khẩn cấp (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<EmergencyContactResponse> getEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
         return emergencyContactService.get(actorId, recipientId, contactId);
     }
 
+    // Cập nhật liên hệ khẩn cấp (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<EmergencyContactResponse> updateEmergencyContact(UUID actorId, UUID recipientId, UUID contactId, EmergencyContactRequest request) {
         return emergencyContactService.update(actorId, recipientId, contactId, request);
     }
 
+    // Đặt liên hệ chính (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<EmergencyContactResponse> assignPrimaryEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
         return emergencyContactService.assignPrimary(actorId, recipientId, contactId);
     }
 
+    // Xóa liên hệ khẩn cấp (ủy quyền EmergencyContactService).
     @Override
     public APIResponse<Void> deleteEmergencyContact(UUID actorId, UUID recipientId, UUID contactId) {
         return emergencyContactService.delete(actorId, recipientId, contactId);
     }
 
-    // ===== Recipient Manager =====
+    // Danh sách người cùng quản lý (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<List<RecipientManagerResponse>> listManagers(UUID actorId, UUID recipientId) {
         return recipientManagerService.list(actorId, recipientId);
     }
 
+    // Danh sách lời mời của hồ sơ (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<List<ManagerInvitationResponse>> listInvitations(UUID actorId, UUID recipientId) {
         return recipientManagerService.listInvitations(actorId, recipientId);
     }
 
+    // Lời mời đang chờ người dùng (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<List<MyInvitationResponse>> listMyInvitations(UUID actorId) {
         return recipientManagerService.listMyInvitations(actorId);
     }
 
+    // Mời người cùng quản lý (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<ManagerInvitationResponse> inviteManager(UUID actorId, UUID recipientId,
                                                                 ManagerCreateRequest request) {
         return recipientManagerService.invite(actorId, recipientId, request);
     }
 
+    // Chấp nhận lời mời (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<RecipientManagerResponse> acceptInvitation(UUID actorId, UUID invitationId) {
         return recipientManagerService.acceptInvitation(actorId, invitationId);
     }
 
+    // Từ chối lời mời (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<Void> declineInvitation(UUID actorId, UUID invitationId) {
         return recipientManagerService.declineInvitation(actorId, invitationId);
     }
 
+    // Thu hồi lời mời (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<Void> revokeInvitation(UUID actorId, UUID recipientId, UUID invitationId) {
         return recipientManagerService.revokeInvitation(actorId, recipientId, invitationId);
     }
 
+    // Đổi quyền người cùng quản lý (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<RecipientManagerResponse> updateManager(UUID actorId, UUID recipientId, UUID managerId, ManagerUpdateRequest request) {
         return recipientManagerService.update(actorId, recipientId, managerId, request);
     }
 
+    // Chuyển quản lý chính (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<RecipientManagerResponse> assignPrimaryManager(UUID actorId, UUID recipientId, UUID managerId) {
         return recipientManagerService.assignPrimary(actorId, recipientId, managerId);
     }
 
+    // Gỡ người cùng quản lý (ủy quyền RecipientManagerService).
     @Override
     public APIResponse<Void> deleteManager(UUID actorId, UUID recipientId, UUID managerId) {
         return recipientManagerService.delete(actorId, recipientId, managerId);

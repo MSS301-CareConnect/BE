@@ -19,6 +19,7 @@ import java.util.UUID;
 public class RefundDispatchScheduler {
     RefundDispatchService refundDispatchService;
 
+    // Định kỳ gửi các lệnh hoàn tiền tới hạn.
     @Scheduled(fixedDelayString = "${payment.refund.scan-interval:30s}",
             initialDelayString = "${payment.refund.scan-interval:30s}")
     public void dispatchDueRefunds() {

@@ -1,5 +1,7 @@
 package mss301.bookingservice.util;
 
+import mss301.bookingservice.enums.CaregiverChangeRequestStatus;
+import mss301.bookingservice.entity.CaregiverChangeRequest;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
@@ -19,12 +21,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-/**
- * Filter động cho danh sách booking (JPA Specification — tránh tham số nullable trong JPQL). Tham số null = bỏ qua.
- * Phạm vi (customer / trung tâm) do service truyền vào từ token, không từ client.
- */
 public final class BookingSpecifications {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private BookingSpecifications() {
     }
 
@@ -100,6 +99,32 @@ public final class BookingSpecifications {
                     direction == Sort.Direction.DESC ? criteriaBuilder.desc(deadline) : criteriaBuilder.asc(deadline),
                     criteriaBuilder.asc(root.get("id")));
             return null;
+        };
+    }
+
+    // Yêu cầu đổi người chăm sóc của một trung tâm; status null = mọi trạng thái.
+    public static Specification<CaregiverChangeRequest> changeRequestsOfCenter(UUID centerId,
+                                                                              CaregiverChangeRequestStatus status) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.equal(root.get("centerId"), centerId));
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    // Booking đang có hạn (chờ xác nhận / phân công / thanh toán); centerId null = toàn hệ thống (admin).
+    public static Specification<Booking> timed(UUID centerId, Collection<BookingStatus> statuses) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.isNull(root.get("deletedAt")));
+            if (centerId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("centerId"), centerId));
+            }
+            predicates.add(root.get("status").in(statuses));
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
         };
     }
 

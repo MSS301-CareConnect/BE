@@ -31,6 +31,7 @@ import java.util.UUID;
 public class NotificationController {
     NotificationService notificationService;
 
+    // API danh sách thông báo của người dùng.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<PageResponse<NotificationResponse>> list(@CurrentUserId UUID actorId,
@@ -39,42 +40,49 @@ public class NotificationController {
         return notificationService.list(actorId, unreadOnly, type, page, size);
     }
 
+    // API số thông báo chưa đọc.
     @GetMapping("/unread-count")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<UnreadCountResponse> unreadCount(@CurrentUserId UUID actorId) {
         return notificationService.unreadCount(actorId);
     }
 
+    // API mở luồng SSE nhận thông báo realtime.
     @GetMapping(value = "/stream", produces = "text/event-stream")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public SseEmitter stream(@CurrentUserId UUID actorId) {
         return notificationService.stream(actorId);
     }
 
+    // API cho service khác tạo thông báo.
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<NotificationsCreatedResponse> create(@Valid @RequestBody NotificationRequest request) {
         return notificationService.create(request);
     }
 
+    // API đánh dấu một thông báo đã đọc.
     @PatchMapping("/{id}/read")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<Void> read(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return notificationService.read(actorId, id);
     }
 
+    // API đánh dấu tất cả thông báo đã đọc.
     @PatchMapping("/read-all")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<Void> readAll(@CurrentUserId UUID actorId) {
         return notificationService.readAll(actorId);
     }
 
+    // API đánh dấu một thông báo chưa đọc.
     @PatchMapping("/{id}/unread")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<Void> unread(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return notificationService.unread(actorId, id);
     }
 
+    // API đổi trạng thái đọc của nhiều thông báo.
     @PatchMapping("/read-state")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<NotificationsUpdatedResponse> updateReadState(@CurrentUserId UUID actorId,
@@ -82,12 +90,14 @@ public class NotificationController {
         return notificationService.updateReadState(actorId, request);
     }
 
+    // API xóa một thông báo.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return notificationService.delete(actorId, id);
     }
 
+    // API xóa nhiều thông báo.
     @PostMapping("/deletions")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<NotificationsDeletedResponse> deleteMany(@CurrentUserId UUID actorId,
@@ -95,6 +105,7 @@ public class NotificationController {
         return notificationService.deleteMany(actorId, request);
     }
 
+    // API xóa các thông báo đã đọc.
     @DeleteMapping("/read")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<NotificationsDeletedResponse> deleteRead(@CurrentUserId UUID actorId) {

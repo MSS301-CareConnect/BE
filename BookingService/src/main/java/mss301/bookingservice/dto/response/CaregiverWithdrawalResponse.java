@@ -17,21 +17,36 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverWithdrawalResponse {
     UUID id;
+
     UUID bookingId;
+
     String bookingCode;
+
     String recipientName;
+
     UUID occurrenceId;
+
     Integer occurrenceNo;
+
     Instant startAt;
+
     Instant endAt;
+
     OccurrenceStatus occurrenceStatus;
+
     // Caregiver đã xin hủy (Provider + Identity id).
     UUID caregiverId;
+
     UUID caregiverUserId;
+
     // Caregiver hiện tại của buổi — khác caregiverId khi trung tâm đã phân người khác.
     UUID currentCaregiverId;
+
     CaregiverWithdrawalReason reasonCode;
+
     String reasonDetail;
+
     CaregiverWithdrawalState state;
+
     Instant createdAt;
 }

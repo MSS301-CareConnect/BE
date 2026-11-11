@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface StatisticsService {
+    // Thống kê vận hành của trung tâm.
     APIResponse<OperationalStatisticsResponse> centers(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId, LocalDate from, LocalDate to);
+    // Thống kê vận hành toàn hệ thống.
     APIResponse<OperationalStatisticsResponse> system(LocalDate from, LocalDate to, int page, int size);
 }

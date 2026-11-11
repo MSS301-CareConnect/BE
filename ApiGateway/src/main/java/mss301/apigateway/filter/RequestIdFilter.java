@@ -15,11 +15,6 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/**
- * Correlation id cho mọi request (kể cả request bị chặn 401/403/404 trước khi tới route): nhận X-Request-Id hợp lệ
- * từ client hoặc sinh mới, ghi vào MDC + request attribute (GatewayRequestHeaders chuyển tiếp xuống service) + response,
- * và log một dòng truy cập. Không log query string / header (có thể chứa email, token).
- */
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -32,6 +27,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
     // Chỉ nhận id an toàn cho log (chống log injection); khác mẫu → sinh mới.
     private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
 
+    // Gắn request id cho mỗi request (nhận từ header hoặc sinh mới) và đưa vào log.
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {

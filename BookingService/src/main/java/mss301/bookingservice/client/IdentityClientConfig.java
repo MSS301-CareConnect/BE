@@ -4,16 +4,15 @@ import feign.RequestInterceptor;
 import feign.codec.ErrorDecoder;
 import org.springframework.context.annotation.Bean;
 
-/**
- * Cấu hình riêng của {@link IdentityClient}. Cố ý KHÔNG có @Configuration.
- */
 public class IdentityClientConfig {
 
+    // Gắn token SERVICE vào mọi lời gọi IdentityService.
     @Bean
     public RequestInterceptor identityRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Bộ dịch lỗi HTTP khi gọi IdentityService.
     @Bean
     public ErrorDecoder identityErrorDecoder() {
         return new IdentityErrorDecoder();

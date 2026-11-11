@@ -1,9 +1,5 @@
 package mss301.apigateway.config;
 
-/**
- * Đường dẫn public của gateway — một nguồn duy nhất cho route (RouteConfig) và bảo mật (SecurityConfig).
- * Mọi service tự khai báo prefix /api/v1 nên gateway chuyển tiếp nguyên path, không cắt prefix.
- */
 public final class GatewayPaths {
     public static final String API_PREFIX = "/api/v1";
 
@@ -111,6 +107,7 @@ public final class GatewayPaths {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };
 
+    // Lớp chỉ chứa hằng đường dẫn, không cho khởi tạo.
     private GatewayPaths() {
     }
 }

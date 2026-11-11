@@ -21,11 +21,6 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Test hợp đồng Booking ↔ Payment phía Booking: file JSON trong {@code contracts/payment/} giống hệt bản ở PaymentService
- * (PaymentContractTests bên đó gửi chính các file này vào API thật). Request: DTO client đọc mẫu ở chế độ strict rồi ghi
- * lại phải ra đúng JSON mẫu (cùng tên field, cùng hình dạng). Response: mẫu đọc được vào DTO client.
- */
 class PaymentContractTests {
 
     static final String FIXTURES = "contracts/payment/";

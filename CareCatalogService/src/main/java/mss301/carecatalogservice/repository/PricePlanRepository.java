@@ -1,5 +1,6 @@
 package mss301.carecatalogservice.repository;
 
+import mss301.carecatalogservice.repository.projection.CenterPriceView;
 import mss301.carecatalogservice.entity.PricePlan;
 import mss301.carecatalogservice.enums.ServiceStatus;
 import org.springframework.data.domain.Page;

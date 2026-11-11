@@ -16,11 +16,18 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class BookableScheduleResponse {
     UUID id;
+
     UUID caregiverId;
+
     UUID centerId;
+
     UUID workShiftId;
+
     LocalDate workDate;
+
     LocalTime startTime;
+
     LocalTime endTime;
+
     Integer maxBookings;
 }

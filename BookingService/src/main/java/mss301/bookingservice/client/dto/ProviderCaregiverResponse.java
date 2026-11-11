@@ -17,6 +17,7 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ProviderCaregiverResponse {
     public static final String STATUS_VERIFIED = "VERIFIED";
+
     public static final String STATUS_ACTIVE = "ACTIVE";
 
     UUID caregiverId;

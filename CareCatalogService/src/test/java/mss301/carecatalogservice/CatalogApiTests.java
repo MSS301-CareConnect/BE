@@ -1,5 +1,7 @@
 package mss301.carecatalogservice;
 
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import com.jayway.jsonpath.JsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
@@ -33,11 +35,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * API CAT-02 trên H2: phân quyền (401 / 403), phạm vi đọc theo role, vô hiệu hóa an toàn, price-summary.
- * Token giả bằng {@code jwt()} của spring-security-test (roles → ROLE_*, claim center_id) — chữ ký / JWKS đã được test
- * ở IdentityService và ApiGateway.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class CatalogApiTests {
@@ -125,7 +122,7 @@ class CatalogApiTests {
     @Test
     void createAndGetCatalogItemWithImageUrl() throws Exception {
         String body = "{\"name\":\"Chăm sóc đặc biệt\",\"category\":\"Chăm sóc\",\"status\":\"ACTIVE\",\"imageUrl\":\"https://example.com/photo.jpg\"}";
-        String response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/catalog-items")
+        String response = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/catalog-items")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body)
                         .with(user("ADMIN", null)))
@@ -134,7 +131,7 @@ class CatalogApiTests {
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"))
                 .andReturn().getResponse().getContentAsString();
 
-        String id = com.jayway.jsonpath.JsonPath.read(response, "$.result.id");
+        String id = JsonPath.read(response, "$.result.id");
         mockMvc.perform(get("/api/v1/catalog-items/" + id).with(user("CUSTOMER", null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"));

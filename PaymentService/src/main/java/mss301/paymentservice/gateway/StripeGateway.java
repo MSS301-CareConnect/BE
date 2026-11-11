@@ -26,17 +26,20 @@ public class StripeGateway implements PaymentGateway {
 
     PaymentProperties paymentProperties;
 
+    // Nhà cung cấp của cổng này (Stripe).
     @Override
     public PaymentProvider provider() {
         return PaymentProvider.STRIPE;
     }
 
+    // Stripe được bật và đã cấu hình secret key.
     @Override
     public boolean isEnabled() {
         PaymentProperties.Stripe stripe = paymentProperties.getStripe();
         return stripe.isEnabled() && stripe.getSecretKey() != null && !stripe.getSecretKey().isBlank();
     }
 
+    // Tạo phiên Stripe Checkout cho khoản thanh toán.
     @Override
     public CheckoutResult createCheckout(CheckoutCommand command) {
         PaymentProperties.Stripe stripe = paymentProperties.getStripe();

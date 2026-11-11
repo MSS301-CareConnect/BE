@@ -52,12 +52,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Caregiver xin hủy buổi được giao (2026-11-09). Không đổi trạng thái buổi, không đụng tiền: buổi được đánh cờ
- * needs_reassignment (check-in bị chặn, nhắc ca bỏ qua), hệ thống tự tìm người thay (CaregiverAssignmentService) và
- * Center Manager vẫn phân tay bằng API đổi caregiver sẵn có — đổi xong cờ tự bỏ (BookingOccurrence.assignCaregiver).
- * Còn ≤ unassigned-cancel-lead mà chưa có người → hủy buổi, hoàn 100 % (BookingService.cancelUnassigned).
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -83,6 +77,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Danh sách lần caregiver rút khỏi buổi theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverWithdrawalResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -105,6 +100,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         return APIResponse.success("Lấy danh sách yêu cầu hủy buổi thành công", withdrawalResponses);
     }
 
+    // Caregiver rút khỏi một buổi hoặc cả ngày; buổi bị rút chờ phân công lại.
     @Override
     public APIResponse<List<CaregiverWithdrawalResponse>> create(UUID actorId, CaregiverWithdrawalRequest request) {
         String reasonDetail = request.getReasonDetail() == null || request.getReasonDetail().isBlank()
@@ -201,7 +197,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         for (BookingOccurrence target : targets) {
             days.add(target.getStartAt().atZone(timezone).toLocalDate());
         }
-        for (BookingOccurrence sibling : bookingOccurrenceRepository.findAllByBooking(bookingId)) {
+        for (BookingOccurrence sibling : bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId)) {
             boolean sameDay = days.contains(sibling.getStartAt().atZone(timezone).toLocalDate());
             boolean stillMine = actorId.equals(sibling.getCaregiverUserId())
                     && OccurrenceStatus.WORKABLE.contains(sibling.getStatus())
@@ -212,6 +208,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         }
     }
 
+    // Mô tả lý do rút (kèm chi tiết khi là lý do cá nhân).
     private String describeReason(CaregiverWithdrawalReason reasonCode, String reasonDetail) {
         if (reasonCode == CaregiverWithdrawalReason.PERSONAL) {
             return reasonDetail == null ? PERSONAL_REASON_LABEL : PERSONAL_REASON_LABEL + ": " + reasonDetail;

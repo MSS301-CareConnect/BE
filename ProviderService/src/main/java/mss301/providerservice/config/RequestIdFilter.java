@@ -14,10 +14,6 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/**
- * Correlation id: nhận X-Request-Id từ gateway (hoặc sinh mới), đưa vào MDC cho log và trả lại trong response.
- * Feign đọc MDC để chuyển tiếp sang IdentityService. Chạy trước Spring Security để cả 401/403 cũng có id.
- */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestIdFilter extends OncePerRequestFilter {
@@ -28,6 +24,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
     // Chỉ nhận id an toàn cho log (chống log injection); khác mẫu → sinh mới.
     private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
 
+    // Gắn request id cho mỗi request (nhận từ header hoặc sinh mới) và đưa vào log.
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {

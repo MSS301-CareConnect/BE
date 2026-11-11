@@ -12,11 +12,13 @@ import java.time.Clock;
 @Configuration
 @EnableConfigurationProperties(AIProperties.class)
 public class AIConfig {
+    // Bean Clock UTC, cho phép thay khi test.
     @Bean
     public Clock clock() {
         return Clock.systemUTC();
     }
 
+    // Tạo RestClient gọi Groq với timeout từ cấu hình.
     @Bean
     public RestClient groqRestClient(AIProperties aiProperties) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
@@ -31,6 +33,7 @@ public class AIConfig {
                 .build();
     }
 
+    // Tạo RestClient xin token SERVICE với timeout từ cấu hình.
     @Bean
     public RestClient serviceTokenRestClient(AIProperties aiProperties) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();

@@ -19,11 +19,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Ca chăm sóc thực tế (care_sessions + care_tasks). Phạm vi đọc: caregiver của ca, khách chủ booking, manager cùng trung
- * tâm, ADMIN / SERVICE; ngoài phạm vi → 404.
- */
 public interface CareSessionService {
+    // Chi tiết ca chăm sóc.
     APIResponse<CareSessionResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id);
 
     // OPS-02: caregiver được giao check-in buổi (từ 30 phút trước giờ bắt đầu tới trước giờ kết thúc), sinh checklist.
@@ -39,23 +36,30 @@ public interface CareSessionService {
     APIResponse<PageResponse<CareSessionResponse>> listForReview(UUID centerId, SessionCompletionReview review, int page,
                                                                  int size);
 
+    // Trung tâm xác nhận kết quả ca.
     APIResponse<CareSessionResponse> review(UUID actorId, UUID centerId, UUID id, CareSessionReviewRequest request);
 
+    // Cập nhật công việc trong checklist.
     APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request);
 
+    // Thêm công việc vào checklist.
     APIResponse<CareTaskResponse> createTask(UUID actorId, UUID sessionId, CareTaskCreateRequest request);
 
+    // Thêm ghi chú tình trạng.
     APIResponse<SessionNoteResponse> createNote(UUID actorId, UUID sessionId, SessionNoteRequest request);
 
+    // Danh sách ghi chú của ca.
     APIResponse<PageResponse<SessionNoteResponse>> listNotes(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id, int page, int size);
 
     // Job nhắc session còn mở quá giờ kết thúc buổi (một lần / session).
     List<UUID> findOverdueIds();
 
+    // Nhắc ca quá giờ chưa kết thúc.
     void remindOverdue(UUID id);
 
     // D21 (H-10): ca còn IN_PROGRESS quá giờ kết thúc buổi + autoCloseAfter.
     List<UUID> findAutoCloseIds();
 
+    // Tự đóng ca bị quên check-out.
     void autoClose(UUID id);
 }

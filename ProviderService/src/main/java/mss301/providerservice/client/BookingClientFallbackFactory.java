@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class BookingClientFallbackFactory implements FallbackFactory<BookingClient> {
 
+    // Fallback khi gọi BookingService lỗi: ném AppException tương ứng.
     @Override
     public BookingClient create(Throwable cause) {
         return new BookingClient() {

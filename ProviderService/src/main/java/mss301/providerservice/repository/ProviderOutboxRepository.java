@@ -26,12 +26,8 @@ public interface ProviderOutboxRepository extends JpaRepository<ProviderOutbox, 
 
     // Sự kiện khóa / mở trung tâm đi theo thứ tự: còn SUSPEND / RESUME trước chưa SENT / SKIPPED thì chờ.
     // H-08: admin bỏ qua (SKIPPED) sự kiện FAILED đã xử lý tay để gỡ chặn các sự kiện sau.
-    @Query("""
-            select count(o) > 0 from ProviderOutbox o
-            where o.centerId = :centerId and o.sequenceNo < :sequenceNo and o.eventType in ('SUSPEND', 'RESUME')
-              and o.status not in ('SENT', 'SKIPPED') and o.deletedAt is null
-            """)
-    boolean existsBlockingPredecessor(@Param("centerId") UUID centerId, @Param("sequenceNo") Long sequenceNo);
+    boolean existsByCenterIdAndSequenceNoLessThanAndEventTypeInAndStatusNotInAndDeletedAtIsNull(
+            UUID centerId, Long sequenceNo, List<String> orderedEventTypes, List<String> finishedStatuses);
 
     // H-08: màn hình sự cố admin.
     Page<ProviderOutbox> findByStatusAndDeletedAtIsNull(String status, Pageable pageable);

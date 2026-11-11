@@ -1,9 +1,6 @@
 package mss301.providerservice.client;
 
 import lombok.extern.slf4j.Slf4j;
-import mss301.providerservice.client.dto.CertificateCheckClientRequest;
-import mss301.providerservice.client.dto.CertificateCheckClientResponse;
-import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import org.springframework.cloud.openfeign.FallbackFactory;
@@ -13,6 +10,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class AiClientFallbackFactory implements FallbackFactory<AiClient> {
 
+    // Fallback khi gọi AIService lỗi: ném AppException tương ứng.
     @Override
     public AiClient create(Throwable cause) {
         return request -> {

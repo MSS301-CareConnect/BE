@@ -9,18 +9,16 @@ import mss301.bookingservice.enums.RefundReason;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Nơi DUY NHẤT đổi trạng thái booking (state machine ở BookingAction): mốc thời gian, hủy buổi chưa diễn ra khi kết
- * thúc sớm, booking_status_history, việc gửi sang Payment qua outbox. Chỉ gọi trong transaction ghi, booking ĐÃ khóa dòng.
- */
 public interface BookingLifecycleService {
     // Nhắc trả phần còn lại khi tới mốc nhắc mới của policy (M6); false = chưa tới mốc / mốc đã nhắc.
     boolean remindRemainingPayment(Booking booking);
     // Nhắc trung tâm khi booking chờ xác nhận / phân công tới mốc nhắc mới; false = chưa tới mốc / mốc đã nhắc.
     boolean remindCenterAction(Booking booking);
 
+    // Ghi lịch sử trạng thái khi booking được tạo.
     void recordCreated(Booking booking, UUID customerId);
 
+    // Áp một hành động lên booking: đổi trạng thái, ghi lịch sử, xử lý buổi và thông báo.
     void apply(Booking booking, BookingAction action, UUID changedBy, String reason);
 
     // OPS-04 (dùng chung BK-03 / BK-04 / OPS-06): khi không còn buổi nào chưa kết thúc → COMPLETED nếu có buổi đã được

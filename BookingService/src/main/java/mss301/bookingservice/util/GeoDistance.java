@@ -7,9 +7,11 @@ public final class GeoDistance {
 
     private static final double EARTH_RADIUS_METERS = 6_371_000;
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private GeoDistance() {
     }
 
+    // Khoảng cách (mét) giữa hai tọa độ theo công thức haversine.
     public static int meters(BigDecimal fromLatitude, BigDecimal fromLongitude, BigDecimal toLatitude,
                              BigDecimal toLongitude) {
         double fromLat = Math.toRadians(fromLatitude.doubleValue());

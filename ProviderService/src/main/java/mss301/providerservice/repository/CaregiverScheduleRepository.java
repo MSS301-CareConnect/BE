@@ -24,7 +24,6 @@ public interface CaregiverScheduleRepository extends JpaRepository<CaregiverSche
     List<CaregiverSchedule> findByWorkShiftIdAndScheduleStatusAndDeletedAtIsNull(UUID workShiftId,
                                                                                  ScheduleStatus scheduleStatus);
     Page<CaregiverSchedule> findByCaregiverIdAndDeletedAtIsNull(UUID caregiverId, Pageable pageable);
-    Page<CaregiverSchedule> findByWorkShiftCenterIdAndDeletedAtIsNull(UUID centerId, Pageable pageable);
 
     // Lịch làm việc của trung tâm theo bộ lọc tùy chọn (null = bỏ qua); PostgreSQL cần cast tham số null (42P18).
     @Query(value = """

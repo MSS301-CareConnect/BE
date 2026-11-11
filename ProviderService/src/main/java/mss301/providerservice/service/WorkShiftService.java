@@ -17,28 +17,39 @@ import java.util.UUID;
 
 public interface WorkShiftService {
 
+    // Tạo ca.
     APIResponse<WorkShiftResponse> create(UUID actorId, UUID centerId, WorkShiftRequest request);
 
+    // Tạo ca cho nhiều ngày.
     APIResponse<List<WorkShiftResponse>> createBatch(UUID actorId, UUID centerId, WorkShiftBatchRequest request);
 
+    // Danh sách ca.
     APIResponse<PageResponse<WorkShiftResponse>> list(UUID actorId, UUID centerId, ShiftStatus status,
                                                      LocalDate fromDate, LocalDate toDate, String shiftType,
                                                      boolean hasVacancy, boolean hasPending, int page, int size);
 
+    // Thống kê ca.
     APIResponse<WorkShiftStatisticsResponse> statistics(UUID actorId, UUID centerId, LocalDate fromDate,
                                                        LocalDate toDate, String shiftType);
 
+    // Chi tiết ca.
     APIResponse<WorkShiftResponse> get(UUID actorId, UUID id);
 
+    // Cập nhật ca.
     APIResponse<WorkShiftResponse> update(UUID actorId, UUID id, WorkShiftRequest request);
 
+    // Đổi trạng thái ca.
     APIResponse<WorkShiftResponse> changeStatus(UUID actorId, UUID id, WorkShiftStatusRequest request);
 
+    // Hủy ca.
     APIResponse<WorkShiftResponse> cancel(UUID actorId, UUID id, WorkShiftCancelRequest request);
 
+    // Xóa ca.
     APIResponse<Void> delete(UUID actorId, UUID id, Long version);
 
+    // Tìm ca chưa xóa.
     WorkShift findActiveShift(UUID id);
 
+    // Đếm đăng ký đã duyệt của ca.
     long countApproved(UUID shiftId);
 }

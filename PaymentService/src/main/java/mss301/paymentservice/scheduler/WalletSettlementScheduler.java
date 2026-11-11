@@ -18,6 +18,7 @@ import java.util.UUID;
 public class WalletSettlementScheduler {
     WalletSettlementService walletSettlementService;
 
+    // Định kỳ quyết toán tiền vào ví cho các buổi đã hoàn thành.
     @Scheduled(fixedDelayString = "${payment.wallet.settlement-scan-interval:10m}",
             initialDelayString = "${payment.wallet.settlement-scan-interval:10m}")
     public void settleCompletedOccurrences() {

@@ -13,6 +13,7 @@ import java.util.List;
         configuration = CareCatalogClientConfig.class, fallbackFactory = CareCatalogClientFallbackFactory.class)
 public interface CareCatalogClient {
 
+    // Gọi CareCatalogService báo giá các dịch vụ của booking.
     @PostMapping("/api/v1/center-services/quote")
     RemoteApiResponse<List<CareCatalogQuoteResponse>> quote(@RequestBody CareCatalogQuoteRequest request);
 }

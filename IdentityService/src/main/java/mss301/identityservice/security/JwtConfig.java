@@ -35,6 +35,7 @@ public class JwtConfig {
 
     private static final int MIN_RSA_KEY_BITS = 2048;
 
+    // Nạp cặp khóa RSA ký JWT từ file PEM cấu hình.
     @Bean
     public RSAKey signingKey(IdentityProperties identityProperties, ResourceLoader resourceLoader) throws IOException {
         RSAPrivateKey privateKey;
@@ -57,6 +58,7 @@ public class JwtConfig {
                 .build();
     }
 
+    // Bean ký JWT bằng khóa RSA.
     @Bean
     public JwtEncoder jwtEncoder(RSAKey signingKey) {
         return new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(signingKey)));
@@ -89,6 +91,7 @@ public class JwtConfig {
         };
     }
 
+    // Kiểm tra JWT có audience của IdentityService và đủ claim bắt buộc.
     private static boolean hasRequiredClaims(Jwt jwt, IdentityProperties identityProperties) {
         boolean valid = jwt.getAudience().contains(identityProperties.getAudience())
                 && jwt.getExpiresAt() != null
@@ -98,6 +101,7 @@ public class JwtConfig {
         return valid && isUuid(jwt.getSubject());
     }
 
+    // Kiểm tra chuỗi có phải UUID hợp lệ.
     private static boolean isUuid(String value) {
         try {
             UUID.fromString(value);

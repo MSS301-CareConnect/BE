@@ -6,10 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 
-/**
- * HTTP lỗi từ CareRecipientService → AppException của service này. 404 (hồ sơ không tồn tại / đã lưu trữ) là lỗi
- * nghiệp vụ; mọi trường hợp khác → CARE_RECIPIENT_UNAVAILABLE (503), không đoán.
- */
 @Slf4j
 public class CareRecipientErrorDecoder implements ErrorDecoder {
 
@@ -17,6 +13,7 @@ public class CareRecipientErrorDecoder implements ErrorDecoder {
     private static final int UNAUTHORIZED = 401;
     private static final int FORBIDDEN = 403;
 
+    // Đổi mã lỗi HTTP từ CareRecipientService sang ErrorCode.
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

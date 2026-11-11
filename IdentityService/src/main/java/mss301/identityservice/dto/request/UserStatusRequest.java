@@ -14,6 +14,7 @@ import mss301.identityservice.enums.UserStatus;
 public class UserStatusRequest {
     @NotNull(message = "INVALID_REQUEST")
     UserStatus status;
+
     @Size(max = 500, message = "INVALID_REQUEST")
     String reason;
 }

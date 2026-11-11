@@ -87,6 +87,7 @@ public class CareRecipientController {
         return careRecipientService.checkAccess(id, userId, minLevel);
     }
 
+    // API danh sách thuốc của người bệnh.
     @GetMapping("/{recipientId}/medications")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<MedicationResponse>> listMedications(
@@ -96,6 +97,7 @@ public class CareRecipientController {
         return careRecipientService.listMedications(actorId, recipientId, active);
     }
 
+    // API xem chi tiết một thuốc.
     @GetMapping("/{recipientId}/medications/{medicationId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<MedicationResponse> getMedication(
@@ -105,6 +107,7 @@ public class CareRecipientController {
         return careRecipientService.getMedication(actorId, recipientId, medicationId);
     }
 
+    // API danh sách liên hệ khẩn cấp.
     @GetMapping("/{recipientId}/emergency-contacts")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<EmergencyContactResponse>> listEmergencyContacts(
@@ -113,6 +116,7 @@ public class CareRecipientController {
         return careRecipientService.listEmergencyContacts(actorId, recipientId);
     }
 
+    // API xem một liên hệ khẩn cấp.
     @GetMapping("/{recipientId}/emergency-contacts/{contactId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<EmergencyContactResponse> getEmergencyContact(
@@ -122,6 +126,7 @@ public class CareRecipientController {
         return careRecipientService.getEmergencyContact(actorId, recipientId, contactId);
     }
 
+    // API danh sách địa chỉ của người bệnh.
     @GetMapping("/{recipientId}/addresses")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<RecipientAddressResponse>> listAddresses(
@@ -130,6 +135,7 @@ public class CareRecipientController {
         return careRecipientService.listAddresses(actorId, recipientId);
     }
 
+    // API danh sách người cùng quản lý hồ sơ.
     @GetMapping("/{recipientId}/managers")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<RecipientManagerResponse>> listManagers(
@@ -145,6 +151,7 @@ public class CareRecipientController {
         return careRecipientService.listMyInvitations(actorId);
     }
 
+    // API danh sách lời mời cùng quản lý hồ sơ.
     @GetMapping("/{recipientId}/invitations")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<ManagerInvitationResponse>> listInvitations(
@@ -155,6 +162,7 @@ public class CareRecipientController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API tạo hồ sơ người bệnh.
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CareRecipientDetailResponse> create(
@@ -163,12 +171,14 @@ public class CareRecipientController {
         return careRecipientService.create(actorId, request);
     }
 
+    // API cho service khác lấy tóm tắt nhiều hồ sơ một lần.
     @PostMapping("/batch")
     @PreAuthorize("hasAnyRole('SERVICE','CUSTOMER','ADMIN')")
     public APIResponse<List<CareRecipientSummaryResponse>> listBatch(@Valid @RequestBody RecipientBatchRequest request) {
         return careRecipientService.listBatch(request);
     }
 
+    // API thêm thuốc cho người bệnh.
     @PostMapping("/{recipientId}/medications")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<MedicationResponse> createMedication(
@@ -178,6 +188,7 @@ public class CareRecipientController {
         return careRecipientService.createMedication(actorId, recipientId, request);
     }
 
+    // API thêm liên hệ khẩn cấp.
     @PostMapping("/{recipientId}/emergency-contacts")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<EmergencyContactResponse> createEmergencyContact(
@@ -187,6 +198,7 @@ public class CareRecipientController {
         return careRecipientService.createEmergencyContact(actorId, recipientId, request);
     }
 
+    // API thêm địa chỉ cho người bệnh.
     @PostMapping("/{recipientId}/addresses")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<RecipientAddressResponse> createAddress(
@@ -206,6 +218,7 @@ public class CareRecipientController {
         return careRecipientService.inviteManager(actorId, recipientId, request);
     }
 
+    // API chấp nhận lời mời cùng quản lý hồ sơ.
     @PostMapping("/invitations/{invitationId}/accept")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<RecipientManagerResponse> acceptInvitation(
@@ -214,6 +227,7 @@ public class CareRecipientController {
         return careRecipientService.acceptInvitation(actorId, invitationId);
     }
 
+    // API từ chối lời mời cùng quản lý hồ sơ.
     @PostMapping("/invitations/{invitationId}/decline")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> declineInvitation(
@@ -224,6 +238,7 @@ public class CareRecipientController {
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
+    // API cập nhật hồ sơ người bệnh.
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CareRecipientResponse> update(
@@ -233,6 +248,7 @@ public class CareRecipientController {
         return careRecipientService.update(actorId, id, request);
     }
 
+    // API cập nhật thông tin thuốc.
     @PutMapping("/{recipientId}/medications/{medicationId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<MedicationResponse> updateMedication(
@@ -243,6 +259,7 @@ public class CareRecipientController {
         return careRecipientService.updateMedication(actorId, recipientId, medicationId, request);
     }
 
+    // API cập nhật liên hệ khẩn cấp.
     @PutMapping("/{recipientId}/emergency-contacts/{contactId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<EmergencyContactResponse> updateEmergencyContact(
@@ -253,6 +270,7 @@ public class CareRecipientController {
         return careRecipientService.updateEmergencyContact(actorId, recipientId, contactId, request);
     }
 
+    // API cập nhật địa chỉ.
     @PutMapping("/{recipientId}/addresses/{addressId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<RecipientAddressResponse> updateAddress(
@@ -265,6 +283,7 @@ public class CareRecipientController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API đổi trạng thái hồ sơ người bệnh.
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CareRecipientResponse> updateStatus(
@@ -274,6 +293,7 @@ public class CareRecipientController {
         return careRecipientService.updateStatus(actorId, id, status);
     }
 
+    // API bật / tắt thuốc đang dùng.
     @PatchMapping("/{recipientId}/medications/{medicationId}/active")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<MedicationResponse> updateMedicationActive(
@@ -284,6 +304,7 @@ public class CareRecipientController {
         return careRecipientService.updateMedicationActive(actorId, recipientId, medicationId, active);
     }
 
+    // API đặt liên hệ khẩn cấp chính.
     @PatchMapping("/{recipientId}/emergency-contacts/{contactId}/primary")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<EmergencyContactResponse> assignPrimaryEmergencyContact(
@@ -293,6 +314,7 @@ public class CareRecipientController {
         return careRecipientService.assignPrimaryEmergencyContact(actorId, recipientId, contactId);
     }
 
+    // API đổi quyền của người cùng quản lý.
     @PatchMapping("/{recipientId}/managers/{managerId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<RecipientManagerResponse> updateManager(
@@ -303,6 +325,7 @@ public class CareRecipientController {
         return careRecipientService.updateManager(actorId, recipientId, managerId, request);
     }
 
+    // API chuyển người quản lý chính.
     @PatchMapping("/{recipientId}/managers/{managerId}/primary")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<RecipientManagerResponse> assignPrimaryManager(
@@ -314,12 +337,14 @@ public class CareRecipientController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API xóa (lưu trữ) hồ sơ người bệnh.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return careRecipientService.delete(actorId, id);
     }
 
+    // API xóa thuốc.
     @DeleteMapping("/{recipientId}/medications/{medicationId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> deleteMedication(
@@ -329,6 +354,7 @@ public class CareRecipientController {
         return careRecipientService.deleteMedication(actorId, recipientId, medicationId);
     }
 
+    // API xóa liên hệ khẩn cấp.
     @DeleteMapping("/{recipientId}/emergency-contacts/{contactId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> deleteEmergencyContact(
@@ -338,6 +364,7 @@ public class CareRecipientController {
         return careRecipientService.deleteEmergencyContact(actorId, recipientId, contactId);
     }
 
+    // API xóa địa chỉ.
     @DeleteMapping("/{recipientId}/addresses/{addressId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> deleteAddress(
@@ -347,6 +374,7 @@ public class CareRecipientController {
         return careRecipientService.deleteAddress(actorId, recipientId, addressId);
     }
 
+    // API thu hồi lời mời cùng quản lý.
     @DeleteMapping("/{recipientId}/invitations/{invitationId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> revokeInvitation(
@@ -356,6 +384,7 @@ public class CareRecipientController {
         return careRecipientService.revokeInvitation(actorId, recipientId, invitationId);
     }
 
+    // API gỡ người cùng quản lý khỏi hồ sơ.
     @DeleteMapping("/{recipientId}/managers/{managerId}")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<Void> deleteManager(

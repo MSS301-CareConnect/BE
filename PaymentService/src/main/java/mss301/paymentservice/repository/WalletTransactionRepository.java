@@ -1,11 +1,12 @@
 package mss301.paymentservice.repository;
 
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import mss301.paymentservice.repository.projection.WalletCenterTypeTotalView;
+import mss301.paymentservice.repository.projection.WalletBookingTotalView;
 import mss301.paymentservice.dto.response.WalletTypeTotalResponse;
 import mss301.paymentservice.entity.WalletTransaction;
 import mss301.paymentservice.enums.WalletOwnerType;
 import mss301.paymentservice.enums.WalletTransactionType;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,22 +19,11 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, UUID> {
+public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, UUID>,
+        JpaSpecificationExecutor<WalletTransaction> {
 
     // Kiểm trùng sau khi đã khóa ví (kèm unique index uk_wallet_transactions_reference ở DB).
     boolean existsByWalletIdAndReferenceKey(UUID walletId, String referenceKey);
-
-    @Query("""
-            select t from WalletTransaction t
-            where t.walletId = :walletId and t.createdAt >= :from and t.createdAt <= :to
-              and (:type is null or t.type = :type)
-            order by t.createdAt desc
-            """)
-    Page<WalletTransaction> findPage(@Param("walletId") UUID walletId,
-                                     @Param("type") WalletTransactionType type,
-                                     @Param("from") Instant from,
-                                     @Param("to") Instant to,
-                                     Pageable pageable);
 
     @Query("""
             select new mss301.paymentservice.dto.response.WalletTypeTotalResponse(t.type, count(t),
@@ -47,15 +37,8 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
                                             @Param("to") Instant to);
 
     // Chuỗi thời gian của dashboard: service gom theo ngày / tháng giờ Việt Nam.
-    @Query("""
-            select t from WalletTransaction t
-            where t.walletId = :walletId and t.createdAt >= :from and t.createdAt <= :to and t.type in :types
-            order by t.createdAt
-            """)
-    List<WalletTransaction> findAllForSeries(@Param("walletId") UUID walletId,
-                                             @Param("types") Collection<WalletTransactionType> types,
-                                             @Param("from") Instant from,
-                                             @Param("to") Instant to);
+    List<WalletTransaction> findByWalletIdAndTypeInAndCreatedAtBetweenOrderByCreatedAtAsc(
+            UUID walletId, Collection<WalletTransactionType> types, Instant from, Instant to);
 
     @Query("""
             select count(distinct t.bookingId) from WalletTransaction t

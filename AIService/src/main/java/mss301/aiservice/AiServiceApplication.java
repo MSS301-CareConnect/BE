@@ -12,6 +12,7 @@ import java.util.TimeZone;
 @EnableFeignClients
 public class AiServiceApplication {
 
+    // Khởi động AIService với múi giờ mặc định UTC.
     public static void main(String[] args) {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         SpringApplication.run(AiServiceApplication.class, args);

@@ -55,6 +55,7 @@ public class RoleServiceImpl implements RoleService {
     RoleMapper roleMapper;
     IdentityAuditMapper identityAuditMapper;
 
+    // Danh sách role chưa xóa (người có quyền quản lý role).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<RoleResponse>> list(UUID actorId) {
@@ -63,6 +64,7 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Lấy danh sách role thành công", roleResponses);
     }
 
+    // Tạo role tùy chỉnh (không cho dùng mã SERVICE hoặc mã đã tồn tại).
     @Override
     @Transactional
     public APIResponse<RoleResponse> create(UUID actorId, RoleRequest request) {
@@ -81,20 +83,18 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Tạo role thành công", roleResponse);
     }
 
+    // Cập nhật role tùy chỉnh và ghi audit.
     @Override
     @Transactional
     public APIResponse<RoleResponse> update(UUID actorId, UUID id, RoleUpdateRequest request) {
         Role role = findCustomRoleForChange(actorId, id);
-        role.setRoleName(request.getRoleName().trim());
-        role.setDescription(request.getDescription());
-        if (request.getActive() != null) {
-            role.setActive(request.getActive());
-        }
+        roleMapper.update(request, role);
         writeAudit(actorId, id, AuditAction.ROLE_UPDATED, role.getRoleCode());
         RoleResponse roleResponse = roleMapper.toResponse(role);
         return APIResponse.success("Cập nhật role thành công", roleResponse);
     }
 
+    // Xóa role tùy chỉnh khi không còn người dùng nào giữ role.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id) {
@@ -109,6 +109,7 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Xóa role thành công");
     }
 
+    // Gán lại danh sách permission của role và ghi audit.
     @Override
     @Transactional
     public APIResponse<RoleResponse> updatePermissions(UUID actorId, UUID id, RolePermissionsRequest request) {
@@ -130,6 +131,7 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Cập nhật permissions thành công", roleResponse);
     }
 
+    // Danh sách permission (người có quyền quản lý role).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<PermissionResponse>> listPermissions(UUID actorId) {
@@ -164,11 +166,13 @@ public class RoleServiceImpl implements RoleService {
         return role;
     }
 
+    // Kiểm tra role là role hệ thống.
     private boolean isBuiltInRole(Role role) {
         return Arrays.stream(RoleCode.values())
                 .anyMatch(roleCode -> roleCode.name().equals(role.getRoleCode()));
     }
 
+    // Tìm các permission theo id, thiếu thì báo lỗi.
     private Set<Permission> findPermissions(Set<UUID> permissionIds) {
         Set<Permission> permissions = new HashSet<>();
         for (UUID permissionId : permissionIds) {
@@ -179,6 +183,7 @@ public class RoleServiceImpl implements RoleService {
         return permissions;
     }
 
+    // Gỡ các permission không còn được chọn khỏi role.
     private void removeUnselectedGrants(Role role, Set<Permission> selectedPermissions) {
         for (RolePermission rolePermission : new HashSet<>(role.getRolePermissions())) {
             if (!selectedPermissions.contains(rolePermission.getPermission())) {
@@ -188,6 +193,7 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
+    // Thêm các permission mới được chọn vào role.
     private void addMissingGrants(Role role, Set<Permission> selectedPermissions) {
         for (Permission permission : selectedPermissions) {
             if (!rolePermissionRepository.existsById(new RolePermissionId(role.getId(), permission.getId()))) {
@@ -198,6 +204,7 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
+    // Ghi audit thay đổi role.
     private void writeAudit(UUID actorId, UUID roleId, AuditAction action, String detail) {
         identityAuditRepository.save(identityAuditMapper.toAudit(actorId, roleId, null, action, detail));
     }

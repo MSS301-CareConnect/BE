@@ -14,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.UUID;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,7 +93,7 @@ public class BookingProperties {
     // H-08 / H-09: Identity chưa có API tra người dùng theo vai trò → cấu hình danh sách admin nhận thông báo vận hành.
     @Data
     public static class Notification {
-        java.util.List<java.util.UUID> adminUserIds = new java.util.ArrayList<>();
+        List<UUID> adminUserIds = new ArrayList<>();
     }
 
     // BK-03: previewToken hủy booking. Khóa trống = khóa ngẫu nhiên theo tiến trình (chỉ dev, một instance).
@@ -141,6 +142,7 @@ public class BookingProperties {
         @NotNull
         Duration readTimeout = Duration.ofSeconds(3);
 
+        // Kiểm tra đã cấu hình đủ clientId và clientSecret.
         public boolean isConfigured() {
             return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
         }

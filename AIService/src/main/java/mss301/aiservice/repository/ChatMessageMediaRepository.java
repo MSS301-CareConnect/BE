@@ -10,7 +10,6 @@ import java.util.UUID;
 
 @Repository
 public interface ChatMessageMediaRepository extends JpaRepository<ChatMessageMedia, UUID> {
-    List<ChatMessageMedia> findAllByChatMessageIdAndDeletedAtIsNullOrderBySortOrderAsc(UUID chatMessageId);
 
     List<ChatMessageMedia> findAllByChatMessageIdInAndDeletedAtIsNullOrderBySortOrderAsc(Collection<UUID> chatMessageIds);
 }

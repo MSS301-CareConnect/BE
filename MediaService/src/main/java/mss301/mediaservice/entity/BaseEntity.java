@@ -40,6 +40,7 @@ public abstract class BaseEntity {
     @Column(name = "deleted_at")
     Instant deletedAt;
 
+    // Gán createdAt / updatedAt khi lưu bản ghi mới.
     @PrePersist
     protected void onCreate() {
         Instant now = Instant.now();
@@ -47,6 +48,7 @@ public abstract class BaseEntity {
         updatedAt = now;
     }
 
+    // Cập nhật updatedAt mỗi lần sửa bản ghi.
     @PreUpdate
     protected void onUpdate() {
         updatedAt = Instant.now();

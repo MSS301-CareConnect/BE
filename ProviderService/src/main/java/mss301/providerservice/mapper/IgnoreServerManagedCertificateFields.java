@@ -7,10 +7,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Field của Certificate do server quyết định (kết quả xác minh, kiểm tra AI, optimistic lock) — không bao giờ lấy
- * từ request.
- */
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 @Mapping(target = "verificationStatus", ignore = true)

@@ -25,15 +25,19 @@ import java.util.UUID;
 
 public interface WalletService {
 
+    // Ví của người gọi.
     APIResponse<WalletResponse> getMine(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);
 
+    // Ví theo id.
     APIResponse<WalletResponse> get(UUID walletId);
 
+    // Lịch sử giao dịch ví của người gọi.
     APIResponse<PageResponse<WalletTransactionResponse>> listMyTransactions(UUID actorId, Set<RoleCode> roles,
                                                                             UUID claimCenterId,
                                                                             WalletTransactionType type, Instant from,
                                                                             Instant to, int page, int size);
 
+    // Lịch sử giao dịch của một ví.
     APIResponse<PageResponse<WalletTransactionResponse>> listTransactions(UUID walletId, WalletTransactionType type,
                                                                           Instant from, Instant to, int page,
                                                                           int size);
@@ -42,10 +46,9 @@ public interface WalletService {
     APIResponse<List<WalletCenterBalanceResponse>> listMyCenterBalances(UUID actorId, Set<RoleCode> roles,
                                                                        UUID claimCenterId);
 
+    // Thống kê ví của người gọi.
     APIResponse<WalletStatisticsResponse> getMyStatistics(UUID actorId, Set<RoleCode> roles, UUID claimCenterId,
                                                           Instant from, Instant to, StatisticsGroupBy groupBy);
-
-    // ===== ghi sổ — MANDATORY: luôn cùng transaction với sự kiện tiền gây ra biến động =====
 
     // Hoàn tiền kênh WALLET đã xong (dispatcher) → cộng ví khách.
     void creditRefund(Refund refund);
@@ -67,8 +70,10 @@ public interface WalletService {
     // Ví của chính người gọi, đã khóa (tạo nếu chưa có) — ví trung tâm / nền tảng không rút → WALLET_NOT_WITHDRAWABLE.
     Wallet lockOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);
 
+    // Tìm ví của người gọi.
     Optional<Wallet> findOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);
 
+    // Khóa ví theo id.
     Wallet lockWallet(UUID walletId);
 
     // Số dư khả dụng của một ví theo center_id của biến động (key null = tiền không gắn trung tâm); chỉ số dương.

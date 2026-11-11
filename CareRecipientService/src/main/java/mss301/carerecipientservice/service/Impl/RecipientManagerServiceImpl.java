@@ -38,18 +38,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Người thân quản lý hồ sơ. Quy tắc: chỉ OWNER thêm/sửa/gỡ người khác và chuyển quản lý chính; ai cũng tự rời được;
- * quản lý chính luôn là OWNER và phải chuyển cho người khác trước khi rời/hạ quyền; không gỡ/hạ OWNER cuối cùng.
- * Mọi thao tác ghi khóa dòng hồ sơ (findForUpdate) để các kiểm tra trên không bị request song song vượt qua.
- *
- * Gọi IdentityService (mạng) luôn NGOÀI transaction DB (rule #24): các method cần Identity không có @Transactional
- * mà ghi bằng TransactionTemplate.
- *
- * TODO(Identity events): khi user bị khóa / xóa mềm ở IdentityService, recipient_managers chưa được đồng bộ (hồ sơ có
- *  thể còn OWNER đã bị khóa). Khi có message broker: Identity phát event user.locked / user.deleted (outbox), service
- *  này gỡ/đánh dấu manager và xử lý hồ sơ mất OWNER hoạt động. Xem docs/2026-10-03-PLAN_CARE_RECIPIENT_GATEWAY.md §6.
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -73,7 +61,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
     @Override
     public APIResponse<List<RecipientManagerResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
-        List<RecipientManager> managers = recipientManagerRepository.findAllByRecipient(recipientId);
+        List<RecipientManager> managers = recipientManagerRepository.findByRecipientIdOrderByCreatedAtAsc(recipientId);
         // Một lời gọi batch cho cả danh sách; Identity lỗi → vẫn trả danh sách, chỉ thiếu profile.
         Map<UUID, IdentityUserResponse> profiles = identityUserService.getProfiles(
                 managers.stream().map(RecipientManager::getUserId).toList());
@@ -83,16 +71,18 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Lấy danh sách người quản lý thành công", managerResponses);
     }
 
+    // Danh sách lời mời của hồ sơ (chỉ quản lý chính), cập nhật lời mời quá hạn.
     @Override
     @Transactional
     public APIResponse<List<ManagerInvitationResponse>> listInvitations(UUID actorId, UUID recipientId) {
         checkPrimaryOwner(recipientId, actorId);
-        List<ManagerInvitation> invitations = managerInvitationRepository.findAllByRecipient(recipientId);
+        List<ManagerInvitation> invitations = managerInvitationRepository.findByRecipientIdOrderByCreatedAtDesc(recipientId);
         expireOverdue(invitations);
         List<ManagerInvitationResponse> invitationResponses = recipientManagerMapper.toInvitationResponseList(invitations);
         return APIResponse.success("Lấy danh sách lời mời thành công", invitationResponses);
     }
 
+    // Danh sách lời mời còn hiệu lực gửi tới người dùng.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<MyInvitationResponse>> listMyInvitations(UUID actorId) {
@@ -114,12 +104,12 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
             // Kiểm lại sau khi khóa: quyền của actor có thể vừa bị đổi trong lúc gọi Identity.
             checkPrimaryOwner(recipientId, actorId);
             recipientAccessService.checkActiveForWrite(recipientId);
-            if (inviteeUserId != null && recipientManagerRepository.existsByRecipientAndUser(recipientId, inviteeUserId)) {
+            if (inviteeUserId != null && recipientManagerRepository.existsByRecipientIdAndUserId(recipientId, inviteeUserId)) {
                 throw new AppException(ErrorCode.MANAGER_EXISTED);
             }
             Instant now = clock.instant();
-            expireOverdue(managerInvitationRepository.findAllByRecipient(recipientId));
-            if (managerInvitationRepository.existsOpen(recipientId, email, InvitationStatus.PENDING, now)) {
+            expireOverdue(managerInvitationRepository.findByRecipientIdOrderByCreatedAtDesc(recipientId));
+            if (managerInvitationRepository.existsByRecipientIdAndEmailAndStatusAndExpiresAtAfter(recipientId, email, InvitationStatus.PENDING, now)) {
                 throw new AppException(ErrorCode.INVITATION_EXISTED);
             }
             return managerInvitationRepository.saveAndFlush(recipientManagerMapper.toInvitation(recipient, email,
@@ -132,6 +122,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã gửi lời mời", invitationResponse);
     }
 
+    // Chấp nhận lời mời: thêm người dùng làm người cùng quản lý hồ sơ.
     @Override
     public APIResponse<RecipientManagerResponse> acceptInvitation(UUID actorId, UUID invitationId) {
         RecipientManager manager = transactionTemplate.execute(status -> {
@@ -142,7 +133,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
             // Khóa hồ sơ trước rồi lời mời — cùng thứ tự với invite / revoke để không deadlock.
             CareRecipient recipient = lockRecipient(recipientId);
             ManagerInvitation invitation = lockOpenInvitation(invitationId, actorId);
-            if (recipientManagerRepository.existsByRecipientAndUser(recipientId, actorId)) {
+            if (recipientManagerRepository.existsByRecipientIdAndUserId(recipientId, actorId)) {
                 throw new AppException(ErrorCode.MANAGER_EXISTED);
             }
             invitation.setStatus(InvitationStatus.ACCEPTED);
@@ -156,6 +147,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã chấp nhận lời mời", managerResponse);
     }
 
+    // Từ chối lời mời đang chờ.
     @Override
     @Transactional
     public APIResponse<Void> declineInvitation(UUID actorId, UUID invitationId) {
@@ -166,6 +158,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã từ chối lời mời");
     }
 
+    // Quản lý chính thu hồi lời mời đang chờ.
     @Override
     @Transactional
     public APIResponse<Void> revokeInvitation(UUID actorId, UUID recipientId, UUID invitationId) {
@@ -183,6 +176,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã thu hồi lời mời");
     }
 
+    // Đổi quyền / quan hệ của người cùng quản lý (chỉ OWNER).
     @Override
     public APIResponse<RecipientManagerResponse> update(UUID actorId, UUID recipientId, UUID id,
                                                         ManagerUpdateRequest request) {
@@ -205,6 +199,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Cập nhật người quản lý thành công", managerResponse);
     }
 
+    // Chuyển vai trò quản lý chính sang người quản lý khác (chỉ OWNER).
     @Override
     public APIResponse<RecipientManagerResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id) {
         RecipientManager newPrimary = transactionTemplate.execute(status -> {
@@ -219,7 +214,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
             }
             // Bỏ cờ cũ và flush TRƯỚC khi đặt cờ mới (partial unique index uk_recipient_managers_primary);
             // cả hai bước trong cùng transaction nên hồ sơ không bao giờ ở trạng thái "không có quản lý chính".
-            recipientManagerRepository.findPrimary(recipientId).ifPresent(currentPrimary -> {
+            recipientManagerRepository.findByRecipientIdAndPrimaryTrue(recipientId).ifPresent(currentPrimary -> {
                 currentPrimary.setPrimary(false);
                 recipientManagerRepository.flush();
             });
@@ -231,6 +226,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return APIResponse.success("Đã chuyển người quản lý chính", managerResponse);
     }
 
+    // Gỡ người cùng quản lý: quản lý chính gỡ người khác, ai cũng tự rời hồ sơ được.
     @Transactional
     @Override
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
@@ -270,6 +266,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         }
     }
 
+    // Khóa lời mời đang chờ của người được mời, không hợp lệ thì báo lỗi.
     private ManagerInvitation lockOpenInvitation(UUID invitationId, UUID actorId) {
         ManagerInvitation invitation = managerInvitationRepository.findForUpdate(invitationId)
                 .filter(found -> actorId.equals(found.getInviteeUserId()))
@@ -312,7 +309,7 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
             throw new AppException(ErrorCode.PRIMARY_TRANSFER_REQUIRED);
         }
         if (manager.getAccessLevel() == RecipientAccessLevel.OWNER
-                && recipientManagerRepository.countByRecipientAndAccessLevel(recipientId, RecipientAccessLevel.OWNER) <= 1) {
+                && recipientManagerRepository.countByRecipientIdAndAccessLevel(recipientId, RecipientAccessLevel.OWNER) <= 1) {
             throw new AppException(ErrorCode.LAST_OWNER);
         }
     }
@@ -323,11 +320,13 @@ public class RecipientManagerServiceImpl implements RecipientManagerService {
         return recipientManagerMapper.toResponse(manager, profiles.get(manager.getUserId()));
     }
 
+    // Tìm người quản lý thuộc hồ sơ, không có thì báo lỗi.
     private RecipientManager findManager(UUID recipientId, UUID id) {
-        return recipientManagerRepository.findByIdAndRecipient(id, recipientId)
+        return recipientManagerRepository.findByIdAndRecipientId(id, recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.MANAGER_NOT_FOUND));
     }
 
+    // Khóa dòng hồ sơ để cập nhật, không có thì báo lỗi.
     private CareRecipient lockRecipient(UUID recipientId) {
         return careRecipientRepository.findForUpdate(recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.RECIPIENT_NOT_FOUND));

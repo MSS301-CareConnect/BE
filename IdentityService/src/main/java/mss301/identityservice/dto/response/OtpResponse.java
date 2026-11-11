@@ -10,6 +10,8 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class OtpResponse {
     String email;
+
     long expiresInSeconds;
+
     long resendAfterSeconds;
 }

@@ -13,10 +13,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 2026-11-11: quyết toán một booking (quản lý / admin) — khách đã trả, đã hoàn (caregiver vắng, hủy, khiếu nại), cọc bị
- * giữ, phần trung tâm thực nhận và hoa hồng nền tảng, tổng và từng buổi. Số lấy từ occurrence_financials + sổ ví.
- */
 @Data
 @Builder
 @NoArgsConstructor

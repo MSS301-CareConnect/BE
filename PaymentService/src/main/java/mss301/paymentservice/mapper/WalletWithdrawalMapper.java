@@ -31,7 +31,6 @@ public interface WalletWithdrawalMapper {
     @IgnoreServerManagedFields
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "walletId", source = "wallet.id")
-    @Mapping(target = "ownerType", source = "wallet.ownerType")
     @Mapping(target = "centerId", source = "routedCenterId")
     @Mapping(target = "rejectReason", ignore = true)
     @Mapping(target = "reviewedBy", ignore = true)

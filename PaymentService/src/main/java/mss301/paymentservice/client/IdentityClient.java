@@ -15,6 +15,7 @@ import java.util.List;
         configuration = IdentityClientConfig.class)
 public interface IdentityClient {
 
+    // Gọi IdentityService lấy thông tin nhiều người dùng.
     @PostMapping("/api/v1/users/batch")
     RemoteApiResponse<List<IdentityUserResponse>> list(@RequestBody IdentityUserBatchRequest request);
 }

@@ -27,16 +27,19 @@ import java.util.UUID;
 public class RoleController {
     RoleService roleService;
 
+    // API danh sách role.
     @GetMapping
     public APIResponse<List<RoleResponse>> list(@CurrentUserId UUID actorId) {
         return roleService.list(actorId);
     }
 
+    // API tạo role tùy chỉnh.
     @PostMapping
     public APIResponse<RoleResponse> create(@CurrentUserId UUID actorId, @Valid @RequestBody RoleRequest request) {
         return roleService.create(actorId, request);
     }
 
+    // API cập nhật role tùy chỉnh.
     @PutMapping("/{id}")
     public APIResponse<RoleResponse> update(@CurrentUserId UUID actorId,
                                             @PathVariable UUID id,
@@ -44,11 +47,13 @@ public class RoleController {
         return roleService.update(actorId, id, request);
     }
 
+    // API xóa role tùy chỉnh.
     @DeleteMapping("/{id}")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return roleService.delete(actorId, id);
     }
 
+    // API gán lại danh sách permission cho role.
     @PutMapping("/{id}/permissions")
     public APIResponse<RoleResponse> updatePermissions(@CurrentUserId UUID actorId,
                                                        @PathVariable UUID id,

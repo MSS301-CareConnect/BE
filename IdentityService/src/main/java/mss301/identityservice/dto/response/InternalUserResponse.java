@@ -15,9 +15,14 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class InternalUserResponse {
     UUID id;
+
     String email;
+
     String fullName;
+
     String phoneNumber;
+
     UserStatus status;
+
     Set<String> roles;
 }

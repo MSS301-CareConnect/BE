@@ -119,6 +119,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     CaregiverAbsenceService caregiverAbsenceService;
     CaregiverScheduleGuard caregiverScheduleGuard;
 
+    // Các buổi được giao cho caregiver trong khoảng ngày, lọc theo trạng thái / booking.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverOccurrenceResponse>> list(UUID actorId, LocalDate from, LocalDate to,
@@ -140,6 +141,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Lấy lịch chăm sóc thành công", occurrenceResponses);
     }
 
+    // Tìm caregiver đã có buổi trùng các khung giờ (cho ProviderService).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<BusyCaregiverResponse> listBusyCaregivers(BusyCaregiverRequest request) {
@@ -191,7 +193,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
         }
         // Buổi gắn một dịch vụ (2026-11-05) chỉ hiện dịch vụ đó.
-        List<BookingDetail> services = bookingDetailRepository.findAllByBooking(booking.getId()).stream()
+        List<BookingDetail> services = bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(booking.getId()).stream()
                 .filter(detail -> occurrence.getCareServiceId() == null
                         || occurrence.getCareServiceId().equals(detail.getCareServiceId()))
                 .toList();
@@ -200,7 +202,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         String customerPhone = resolveCustomerPhone(customer, occurrence, fullAccess);
         String customerName = customer == null ? null : customer.getFullName();
         // Các buổi của cùng caregiver trong booking (manager / admin: theo caregiver của buổi đang xem).
-        List<BookingOccurrence> bookingVisits = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+        List<BookingOccurrence> bookingVisits = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
                 .filter(visit -> Objects.equals(visit.getCaregiverUserId(), occurrence.getCaregiverUserId()))
                 .sorted(Comparator.comparing(BookingOccurrence::getStartAt))
                 .toList();
@@ -209,6 +211,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Lấy chi tiết buổi chăm sóc thành công", occurrenceResponse);
     }
 
+    // Caregiver xác nhận đã nhận buổi.
     @Override
     public APIResponse<CaregiverOccurrenceResponse> acknowledge(UUID actorId, UUID id) {
         BookingOccurrence occurrence = findAssignedOccurrence(actorId, id);
@@ -226,6 +229,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã xác nhận nhận ca", occurrenceResponse);
     }
 
+    // Caregiver xác nhận nhiều buổi cùng booking một lần.
     @Override
     public APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(UUID actorId,
                                                                           OccurrenceAcknowledgementRequest request) {
@@ -252,6 +256,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã nhận " + occurrenceResponses.size() + " buổi", occurrenceResponses);
     }
 
+    // Caregiver báo khách vắng mặt khi tới nơi.
     @Override
     @Transactional
     public APIResponse<CaregiverOccurrenceResponse> reportNoShow(UUID actorId, UUID id, NoShowReportRequest request) {
@@ -287,6 +292,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã báo khách vắng mặt, chờ trung tâm xác nhận", occurrenceResponse);
     }
 
+    // Trung tâm chấp nhận / bác báo vắng mặt của caregiver.
     @Override
     @Transactional
     public APIResponse<CaregiverOccurrenceResponse> decideNoShow(UUID actorId, UUID centerId, UUID id,
@@ -325,6 +331,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã xử lý báo cáo khách vắng mặt", occurrenceResponse);
     }
 
+    // Lấy id buổi đã qua giờ mà caregiver không check-in.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findMissedIds() {
@@ -332,6 +339,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, clock.instant(), PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
+    // Đánh dấu buổi bị bỏ lỡ do caregiver, ghi vắng mặt và xử lý hoàn tiền.
     @Override
     @Transactional
     public void markMissed(UUID id) {
@@ -361,6 +369,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         log.warn("Occurrence {} marked MISSED — no check-in within the grace period", id);
     }
 
+    // Khách phản ánh buổi không được thực hiện trong cửa sổ cho phép.
     @Override
     @Transactional
     public APIResponse<OccurrenceResponse> reportByCustomer(UUID actorId, UUID occurrenceId,
@@ -408,6 +417,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã gửi phản ánh tới trung tâm", occurrenceResponse);
     }
 
+    // Đánh dấu buổi không được thực hiện (lỗi caregiver) theo phản ánh.
     @Override
     public void markNotDelivered(Booking booking, BookingOccurrence occurrence, UUID actorId, String note,
                                  Instant now) {
@@ -417,6 +427,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 occurrence.getId());
     }
 
+    // Lấy id buổi đã tới giờ mà caregiver chưa check-in.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findLateCheckInIds() {
@@ -424,6 +435,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, clock.instant(), PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
+    // Cảnh báo caregiver và trung tâm khi check-in trễ (một lần mỗi buổi).
     @Override
     @Transactional
     public void warnLateCheckIn(UUID id) {
@@ -469,6 +481,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         log.warn("Occurrence {} has no check-in at its start time — caregiver, center and customer warned", id);
     }
 
+    // Lấy id buổi có báo vắng mặt chưa được trung tâm kết luận.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findUndecidedNoShowIds() {
@@ -477,6 +490,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
+    // Tự chấp nhận báo vắng mặt khi trung tâm không kết luận đúng hạn.
     @Override
     @Transactional
     public void autoAcceptNoShow(UUID id) {
@@ -506,6 +520,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         log.warn("Occurrence {} no-show report auto-accepted after the decision window", id);
     }
 
+    // Lấy id buổi sắp bắt đầu cần nhắc caregiver.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findShiftReminderIds() {
@@ -514,6 +529,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, now, now.plusSeconds(7200), PageRequest.of(0, 100));
     }
 
+    // Nhắc caregiver trước giờ buổi (một lần mỗi buổi).
     @Override
     @Transactional
     public void remindShift(UUID id) {
@@ -557,12 +573,14 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         caregiverAbsenceService.record(occurrence, source);
     }
 
+    // Mô tả ngắn buổi (số thứ tự + giờ bắt đầu) cho thông báo.
     private String describeVisit(Booking booking, BookingOccurrence occurrence) {
         return "buổi " + occurrence.getOccurrenceNo() + " ("
                 + VISIT_TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(occurrence.getStartAt())
                 + ") của lịch " + booking.getBookingCode();
     }
 
+    // Đổi trạng thái buổi có kiểm chuyển hợp lệ và ghi sự kiện.
     private void changeStatus(BookingOccurrence occurrence, OccurrenceStatus toStatus, UUID changedBy, String reason,
                               Instant now) {
         OccurrenceStatus fromStatus = occurrence.getStatus();
@@ -660,6 +678,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return upcoming ? phoneNumber : maskPhone(phoneNumber);
     }
 
+    // Che bớt số điện thoại, chỉ giữ vài số đầu / cuối.
     private String maskPhone(String phoneNumber) {
         if (phoneNumber.length() <= PHONE_VISIBLE_DIGITS * 2) {
             return "*".repeat(phoneNumber.length());
@@ -669,6 +688,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 + phoneNumber.substring(phoneNumber.length() - PHONE_VISIBLE_DIGITS);
     }
 
+    // Id ca chăm sóc của buổi (nếu có).
     private UUID findSessionId(BookingOccurrence occurrence) {
         return careSessionRepository.findByOccurrenceIdAndDeletedAtIsNull(occurrence.getId())
                 .map(CareSession::getId)
@@ -688,7 +708,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
         Instant requestedAt = clock.instant();
         Set<UUID> requestedIds = Set.copyOf(request.getOccurrenceIds());
-        List<BookingOccurrence> candidates = bookingOccurrenceRepository.findAllByBooking(bookingId).stream()
+        List<BookingOccurrence> candidates = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId).stream()
                 .filter(occurrence -> requestedIds.contains(occurrence.getId()))
                 .filter(occurrence -> isReplaceable(occurrence, request.getNewCaregiverId(), requestedAt))
                 .toList();
@@ -769,12 +789,14 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 && !Objects.equals(occurrence.getCaregiverId(), newCaregiverId);
     }
 
+    // Danh sách id dịch vụ của booking.
     private List<UUID> findBookingServiceIds(UUID bookingId) {
-        return bookingDetailRepository.findAllByBooking(bookingId).stream()
+        return bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(bookingId).stream()
                 .map(BookingDetail::getCareServiceId)
                 .toList();
     }
 
+    // Khách đồng ý / từ chối người thay thế cho buổi.
     @Override
     @Transactional
     public APIResponse<Void> consentReplacement(UUID actorId, UUID occurrenceId,
@@ -856,6 +878,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
     }
 
+    // Kiểm tra buổi được dời lịch và khung giờ mới hợp lệ.
     private void validateReschedule(BookingOccurrence occurrence, Instant newStartAt, Instant newEndAt, Instant now) {
         if (occurrence.getStatus() != OccurrenceStatus.SCHEDULED && occurrence.getStatus() != OccurrenceStatus.ACKNOWLEDGED) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
@@ -866,7 +889,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (!occurrence.getStartAt().isAfter(now.plus(Duration.ofHours(24)))) {
             throw new AppException(ErrorCode.RESCHEDULE_LEAD_TIME_TOO_SHORT);
         }
-        int totalOccurrences = bookingOccurrenceRepository.findAllByBooking(occurrence.getBooking().getId()).size();
+        int totalOccurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(occurrence.getBooking().getId()).size();
         int limit = totalOccurrences >= 20 ? 4 : 2;
         if (occurrence.getRescheduleCount() != null && occurrence.getRescheduleCount() >= limit) {
             throw new AppException(ErrorCode.RESCHEDULE_LIMIT_REACHED);
@@ -881,6 +904,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
     }
 
+    // Xem trước dời lịch: caregiver có rảnh khung giờ mới không.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OccurrenceRescheduleResponse> reschedulePreview(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -903,20 +927,13 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             busy = overlaps.stream().anyMatch(o -> !o.getId().equals(occurrence.getId()));
         }
 
-        OccurrenceRescheduleResponse res = OccurrenceRescheduleResponse.builder()
-                .occurrenceId(occurrence.getId())
-                .bookingId(booking.getId())
-                .originalStartAt(occurrence.getOriginalStartAt() != null ? occurrence.getOriginalStartAt() : occurrence.getStartAt())
-                .originalEndAt(occurrence.getOriginalEndAt() != null ? occurrence.getOriginalEndAt() : occurrence.getEndAt())
-                .newStartAt(request.getNewStartAt())
-                .newEndAt(request.getNewEndAt())
-                .rescheduleCount(occurrence.getRescheduleCount())
-                .available(!busy)
-                .message(!busy ? "Khung giờ mới khả dụng" : "Chuyên viên đã có lịch khác trong khung giờ này")
-                .build();
+        String message = !busy ? "Khung giờ mới khả dụng" : "Chuyên viên đã có lịch khác trong khung giờ này";
+        OccurrenceRescheduleResponse res = occurrenceMapper.toRescheduleResponse(occurrence, booking.getId(),
+                request.getNewStartAt(), request.getNewEndAt(), !busy, message);
         return APIResponse.success("Kiểm tra dời lịch thành công", res);
     }
 
+    // Dời lịch một buổi sang khung giờ mới và báo các bên.
     @Override
     @Transactional
     public APIResponse<OccurrenceRescheduleResponse> reschedule(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -966,17 +983,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 "BOOKING",
                 booking.getId());
 
-        OccurrenceRescheduleResponse res = OccurrenceRescheduleResponse.builder()
-                .occurrenceId(occurrence.getId())
-                .bookingId(booking.getId())
-                .originalStartAt(occurrence.getOriginalStartAt())
-                .originalEndAt(occurrence.getOriginalEndAt())
-                .newStartAt(occurrence.getStartAt())
-                .newEndAt(occurrence.getEndAt())
-                .rescheduleCount(occurrence.getRescheduleCount())
-                .available(true)
-                .message("Dời lịch thành công")
-                .build();
+        OccurrenceRescheduleResponse res = occurrenceMapper.toRescheduleResponse(occurrence, booking.getId(),
+                occurrence.getStartAt(), occurrence.getEndAt(), true, "Dời lịch thành công");
         return APIResponse.success("Dời lịch buổi chăm sóc thành công", res);
     }
 }

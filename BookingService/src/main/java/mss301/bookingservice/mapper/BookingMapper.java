@@ -1,5 +1,6 @@
 package mss301.bookingservice.mapper;
 
+import mss301.bookingservice.dto.response.RecipientActivityResponse;
 import mss301.bookingservice.client.dto.IdentityUserResponse;
 import mss301.bookingservice.client.dto.RefundCreateRequest;
 import mss301.bookingservice.client.dto.RefundQuoteRequest;
@@ -35,7 +36,8 @@ import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.CenterBookingPolicy;
 import mss301.bookingservice.entity.BookingDetail;
 import mss301.bookingservice.entity.BookingOccurrence;
-import mss301.bookingservice.repository.OccurrenceStatsView;
+import mss301.bookingservice.repository.projection.OccurrenceStatsView;
+import mss301.bookingservice.util.BookingDeadlines;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Context;
 import org.mapstruct.IterableMapping;
@@ -57,7 +59,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-@Mapper(config = MapStructConfig.class, uses = {OccurrenceMapper.class, BookingDetailMapper.class})
+@Mapper(config = MapStructConfig.class, uses = {OccurrenceMapper.class, BookingDetailMapper.class},
+        imports = BookingDeadlines.class)
 public interface BookingMapper {
 
     String ADDRESS_SEPARATOR = ", ";
@@ -83,8 +86,6 @@ public interface BookingMapper {
     // Báo giá tạm tính (BK-01): tỷ lệ + khoản thanh toán đầu theo center policy (policy mặc định → policyId null).
     @Mapping(target = "occurrenceCount", expression = "java(quote.getOccurrences().size())")
     @Mapping(target = "lines", source = "quote.items")
-    @Mapping(target = "occurrences", source = "quote.occurrences")
-    @Mapping(target = "totalAmount", source = "quote.totalAmount")
     @Mapping(target = "depositPercent", source = "initialPaymentPercent")
     @Mapping(target = "policyId", source = "policy.id")
     BookingQuoteResponse toQuoteResponse(BookingQuote quote, CenterBookingPolicy policy, BigDecimal initialPaymentPercent,
@@ -127,17 +128,19 @@ public interface BookingMapper {
     @Mapping(target = "totalCount", expression = "java(countTotal(occurrenceStats.get(booking.getId())))")
     @Mapping(target = "completedCount", expression = "java(countCompleted(occurrenceStats.get(booking.getId())))")
     @Mapping(target = "nextOccurrenceAt", expression = "java(occurrenceStats.containsKey(booking.getId()) ? occurrenceStats.get(booking.getId()).getNextOccurrenceAt() : null)")
-    @Mapping(target = "deadlineType", expression = "java(mss301.bookingservice.util.BookingDeadlines.typeOf(booking))")
-    @Mapping(target = "deadlineAt", expression = "java(mss301.bookingservice.util.BookingDeadlines.dueAt(booking))")
+    @Mapping(target = "deadlineType", expression = "java(BookingDeadlines.typeOf(booking))")
+    @Mapping(target = "deadlineAt", expression = "java(BookingDeadlines.dueAt(booking))")
     @Mapping(target = "serviceNames", expression = "java(serviceNames.getOrDefault(booking.getId(), List.of()))")
     BookingSummaryResponse toSummaryResponse(Booking booking, @Context Map<UUID, IdentityUserResponse> customerProfiles,
                                              @Context Map<UUID, OccurrenceStatsView> occurrenceStats,
                                              @Context Map<UUID, List<String>> serviceNames);
 
+    // Tổng số buổi từ thống kê, không có thì 0.
     default int countTotal(OccurrenceStatsView stats) {
         return stats == null || stats.getTotalCount() == null ? 0 : stats.getTotalCount().intValue();
     }
 
+    // Số buổi đã hoàn thành từ thống kê, không có thì 0.
     default int countCompleted(OccurrenceStatsView stats) {
         return stats == null || stats.getCompletedCount() == null ? 0 : stats.getCompletedCount().intValue();
     }
@@ -161,8 +164,8 @@ public interface BookingMapper {
     @Mapping(target = "occurrences", source = "occurrences")
     @Mapping(target = "customer", source = "customer")
     @Mapping(target = "refund", ignore = true)
-    @Mapping(target = "deadlineType", expression = "java(mss301.bookingservice.util.BookingDeadlines.typeOf(booking))")
-    @Mapping(target = "deadlineAt", expression = "java(mss301.bookingservice.util.BookingDeadlines.dueAt(booking))")
+    @Mapping(target = "deadlineType", expression = "java(BookingDeadlines.typeOf(booking))")
+    @Mapping(target = "deadlineAt", expression = "java(BookingDeadlines.dueAt(booking))")
     BookingDetailResponse toDetailResponse(Booking booking, List<BookingDetail> services,
                                            List<BookingOccurrence> occurrences, IdentityUserResponse customer,
                                            Instant serverTime);
@@ -170,7 +173,6 @@ public interface BookingMapper {
     CustomerProfileResponse toCustomerProfileResponse(IdentityUserResponse user);
 
     // CR-3: đơn chờ caregiver nhận — khu vực, tên và tình trạng sức khỏe từ snapshot; không số nhà / SĐT / thuốc chi tiết.
-    @Mapping(target = "id", source = "booking.id")
     @Mapping(target = "recipientAge", source = "booking.recipientSnapshot.age")
     @Mapping(target = "recipientGender", source = "booking.recipientSnapshot.gender")
     @Mapping(target = "recipientName", source = "booking.recipientSnapshot.fullName")
@@ -182,12 +184,9 @@ public interface BookingMapper {
     @Mapping(target = "dietaryNotes", source = "booking.recipientSnapshot.dietaryNotes")
     @Mapping(target = "behaviorNotes", source = "booking.recipientSnapshot.behaviorNotes")
     @Mapping(target = "medicationCount", expression = "java(booking.getRecipientSnapshot() == null || booking.getRecipientSnapshot().getActiveMedications() == null ? 0 : booking.getRecipientSnapshot().getActiveMedications().size())")
-    @Mapping(target = "customerName", source = "customerName")
     @Mapping(target = "ward", source = "booking.recipientSnapshot.ward")
     @Mapping(target = "district", source = "booking.recipientSnapshot.district")
     @Mapping(target = "province", source = "booking.recipientSnapshot.province")
-    @Mapping(target = "services", source = "services")
-    @Mapping(target = "occurrences", source = "occurrences")
     CaregiverBookingRequestResponse toCaregiverRequestResponse(Booking booking, List<BookingDetail> services,
                                                                List<BookingOccurrence> occurrences, String customerName);
 
@@ -214,9 +213,6 @@ public interface BookingMapper {
     RefundQuoteRequest.Occurrence toRefundQuoteOccurrence(BookingOccurrence occurrence);
 
     // BK-03: kết quả Payment + giờ bắt đầu từng buổi (Payment không trả) + token xác nhận.
-    @Mapping(target = "items", source = "quote.items")
-    @Mapping(target = "totalRefund", source = "quote.totalRefund")
-    @Mapping(target = "totalFee", source = "quote.totalFee")
     CancellationPreviewResponse toCancellationPreviewResponse(RefundQuoteResponse quote, String previewToken,
                                                               Instant expiresAt, @Context Map<UUID, Instant> startTimes);
 
@@ -305,6 +301,7 @@ public interface BookingMapper {
                 .toArray(Short[]::new);
     }
 
+    // Đổi mảng thứ trong tuần sang danh sách.
     default List<Integer> toDayList(Short[] daysOfWeek) {
         if (daysOfWeek == null) {
             return null;
@@ -313,4 +310,6 @@ public interface BookingMapper {
                 .map(Short::intValue)
                 .collect(Collectors.toList());
     }
+
+    RecipientActivityResponse toRecipientActivityResponse(UUID recipientId, long unfinishedBookings);
 }

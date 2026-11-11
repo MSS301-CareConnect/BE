@@ -23,8 +23,12 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CertificateCheckClientResponse {
     CertificateRiskLevel riskLevel;
+
     List<CertificateAiWarningResponse> warnings;
+
     CertificateAiExtractedResponse extracted;
+
     String model;
+
     Instant checkedAt;
 }

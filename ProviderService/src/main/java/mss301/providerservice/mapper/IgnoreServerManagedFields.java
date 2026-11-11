@@ -7,10 +7,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Field của BaseEntity do server quản lý — mapper tạo/cập nhật entity PHẢI bỏ qua: không cho client gán id/audit,
- * và không chép nhầm id của tham số nguồn khác (vd recipient.id) sang entity đích.
- */
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 @Mapping(target = "id", ignore = true)

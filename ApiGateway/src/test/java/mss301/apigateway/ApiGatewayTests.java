@@ -1,5 +1,6 @@
 package mss301.apigateway;
 
+import org.hamcrest.Matchers;
 import jakarta.servlet.http.Cookie;
 import mss301.apigateway.support.TestUpstreams;
 import org.junit.jupiter.api.Test;
@@ -24,9 +25,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Gateway thật (MockMvc) chuyển tiếp tới IdentityService / CareRecipientService giả qua HTTP thật.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ApiGatewayTests {
@@ -329,16 +327,16 @@ class ApiGatewayTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.headers.cookie").value(org.hamcrest.Matchers.containsString("access_token=" + accessToken)))
-                .andExpect(jsonPath("$.result.headers.cookie").value(org.hamcrest.Matchers.containsString("refresh_token=r")))
-                .andExpect(jsonPath("$.result.headers.cookie").value(org.hamcrest.Matchers.containsString("XSRF-TOKEN=csrf-1")))
+                .andExpect(jsonPath("$.result.headers.cookie").value(Matchers.containsString("access_token=" + accessToken)))
+                .andExpect(jsonPath("$.result.headers.cookie").value(Matchers.containsString("refresh_token=r")))
+                .andExpect(jsonPath("$.result.headers.cookie").value(Matchers.containsString("XSRF-TOKEN=csrf-1")))
                 .andExpect(jsonPath("$.result.headers['x-xsrf-token']").value("csrf-1"));
         mockMvc.perform(post("/api/v1/auth/refresh")
                         .cookie(new Cookie("refresh_token", "r"), new Cookie("XSRF-TOKEN", "csrf-1"))
                         .header("X-XSRF-TOKEN", "csrf-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.path").value("/api/v1/auth/refresh"))
-                .andExpect(jsonPath("$.result.headers.cookie").value(org.hamcrest.Matchers.containsString("refresh_token=r")));
+                .andExpect(jsonPath("$.result.headers.cookie").value(Matchers.containsString("refresh_token=r")));
     }
 
     // ===== Header do gateway quản lý =====
@@ -378,7 +376,7 @@ class ApiGatewayTests {
         mockMvc.perform(get("/api/v1/care-recipients")
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", "bad id\r\ninjected"))
-                .andExpect(header().string("X-Request-Id", org.hamcrest.Matchers.matchesPattern("[0-9a-f-]{36}")));
+                .andExpect(header().string("X-Request-Id", Matchers.matchesPattern("[0-9a-f-]{36}")));
     }
 
     // ===== Không còn /internal =====
@@ -429,9 +427,9 @@ class ApiGatewayTests {
                         .header("Access-Control-Request-Headers", "idempotency-key,x-refresh-token,last-event-id"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Headers",
-                        org.hamcrest.Matchers.containsStringIgnoringCase("Idempotency-Key")))
+                        Matchers.containsStringIgnoringCase("Idempotency-Key")))
                 .andExpect(header().string("Access-Control-Allow-Headers",
-                        org.hamcrest.Matchers.containsStringIgnoringCase("Last-Event-ID")));
+                        Matchers.containsStringIgnoringCase("Last-Event-ID")));
     }
 
     @Test

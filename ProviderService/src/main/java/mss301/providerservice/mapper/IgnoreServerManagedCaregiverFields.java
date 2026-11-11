@@ -7,10 +7,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Field của CaregiverProfile do server quyết định (điểm đánh giá, kết quả xác minh, audit, optimistic lock, kỹ năng gán qua PUT /caregivers/{id}/services) —
- * không bao giờ lấy từ request.
- */
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 @Mapping(target = "ratingAverage", ignore = true)

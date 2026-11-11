@@ -2,20 +2,23 @@ package mss301.providerservice.service;
 
 import mss301.providerservice.dto.request.CertificateRequest;
 import mss301.providerservice.entity.CaregiverProfile;
-import mss301.providerservice.exception.*;
+import mss301.providerservice.exception.AppException;
+import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CertificateMapper;
 import mss301.providerservice.repository.CertificateRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.Impl.CertificateServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.*;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)

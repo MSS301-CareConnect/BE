@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Size;
 public class FeedbackVisibilityRequest {
     @NotNull(message = "INVALID_REQUEST")
     Boolean visible;
+
     @Size(max = 1000, message = "INVALID_REQUEST")
     String reason;
 }

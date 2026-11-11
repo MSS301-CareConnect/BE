@@ -9,11 +9,6 @@ import mss301.bookingservice.enums.CaregiverAbsenceStatus;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Hồ sơ một lần caregiver vắng ca (2026-11-10): tạo cùng lúc buổi thành CAREGIVER_MISSED, mỗi buổi tối đa một dòng. Tiền
- * không nằm ở đây (khách đã được hoàn 100 % qua outbox REFUND) — đây là phần kỷ luật: caregiver giải trình, Center Manager
- * kết luận. Hai id caregiver chụp lúc vắng để hồ sơ không đổi khi các buổi sau sang người khác.
- */
 @Entity
 @Table(name = "caregiver_absences")
 @Getter

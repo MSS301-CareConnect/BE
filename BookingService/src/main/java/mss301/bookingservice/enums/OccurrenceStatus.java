@@ -34,6 +34,7 @@ public enum OccurrenceStatus {
     // Buổi đã lên lịch chính thức, caregiver làm việc được (nhận ca, check-in, báo vắng, MISSED).
     public static final Set<OccurrenceStatus> WORKABLE = EnumSet.of(SCHEDULED, ACKNOWLEDGED);
 
+    // Kiểm tra buổi được chuyển sang trạng thái đích không.
     public boolean canTransitionTo(OccurrenceStatus targetStatus) {
         return switch (this) {
             // SCHEDULED: booking đã cọc khi chưa có người (2026-11-09) — gán người là lên lịch chính thức luôn.

@@ -1,5 +1,7 @@
 package mss301.paymentservice.service.Impl;
 
+import org.springframework.data.domain.Sort;
+import mss301.paymentservice.util.PaymentSpecifications;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -34,7 +36,7 @@ import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.WalletMapper;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RefundRepository;
-import mss301.paymentservice.repository.WalletCenterTypeTotalView;
+import mss301.paymentservice.repository.projection.WalletCenterTypeTotalView;
 import mss301.paymentservice.repository.WalletRepository;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.repository.WalletWithdrawalRepository;
@@ -105,6 +107,7 @@ public class WalletServiceImpl implements WalletService {
     PlatformTransactionManager transactionManager;
     Clock clock;
 
+    // Xem ví của người gọi (chưa có ví thì trả ví rỗng).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WalletResponse> getMine(UUID actorId, Set<RoleCode> roles, UUID claimCenterId) {
@@ -115,6 +118,7 @@ public class WalletServiceImpl implements WalletService {
         return APIResponse.success("Lấy thông tin ví thành công", walletResponse);
     }
 
+    // Xem một ví theo id.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WalletResponse> get(UUID walletId) {
@@ -124,6 +128,7 @@ public class WalletServiceImpl implements WalletService {
         return APIResponse.success("Lấy thông tin ví thành công", walletResponse);
     }
 
+    // Lịch sử giao dịch ví của người gọi trong khoảng thời gian.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<WalletTransactionResponse>> listMyTransactions(UUID actorId, Set<RoleCode> roles,
@@ -142,6 +147,7 @@ public class WalletServiceImpl implements WalletService {
         return buildTransactionPage(wallet.getId(), type, from, to, pageRequest);
     }
 
+    // Lịch sử giao dịch của một ví bất kỳ trong khoảng thời gian.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<WalletTransactionResponse>> listTransactions(UUID walletId,
@@ -156,6 +162,7 @@ public class WalletServiceImpl implements WalletService {
         return buildTransactionPage(walletId, type, from, to, pageRequest);
     }
 
+    // Số dư ví của khách / caregiver tách theo từng trung tâm.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<WalletCenterBalanceResponse>> listMyCenterBalances(UUID actorId, Set<RoleCode> roles,
@@ -173,6 +180,7 @@ public class WalletServiceImpl implements WalletService {
         return APIResponse.success("Lấy số dư theo trung tâm thành công", balances);
     }
 
+    // Thống kê thu / chi của ví người gọi theo ngày hoặc tháng.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WalletStatisticsResponse> getMyStatistics(UUID actorId, Set<RoleCode> roles,
@@ -225,6 +233,7 @@ public class WalletServiceImpl implements WalletService {
         return APIResponse.success("Thống kê ví thành công", statisticsResponse);
     }
 
+    // Cộng tiền hoàn vào ví khách hàng.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void creditRefund(Refund refund) {
@@ -234,6 +243,7 @@ public class WalletServiceImpl implements WalletService {
                 refund.getId(), null, "reason=" + refund.getReason()));
     }
 
+    // Cộng tiền cọc bị giữ vào ví trung tâm hoặc caregiver.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void creditForfeiture(DepositForfeiture forfeiture) {
@@ -247,6 +257,7 @@ public class WalletServiceImpl implements WalletService {
                 forfeiture.getOccurrenceId(), null, null, "reason=" + forfeiture.getReason()));
     }
 
+    // Quyết toán một buổi: cộng tiền cho trung tâm và hoa hồng cho nền tảng.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void settleOccurrence(OccurrenceFinancial occurrenceFinancial, BigDecimal centerAmount,
@@ -263,6 +274,7 @@ public class WalletServiceImpl implements WalletService {
                 occurrenceId, null, null, null));
     }
 
+    // Trừ ví trung tâm phần tiền hoàn do khiếu nại, trả về số đã trừ.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public BigDecimal debitComplaintRefund(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount) {
@@ -285,6 +297,7 @@ public class WalletServiceImpl implements WalletService {
         return posted ? debit : BigDecimal.ZERO;
     }
 
+    // Trừ ví nền tảng phần hoa hồng tương ứng tiền hoàn do khiếu nại.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void debitComplaintCommission(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount) {
@@ -307,6 +320,7 @@ public class WalletServiceImpl implements WalletService {
                 bookingId);
     }
 
+    // Khóa ví của người gọi để rút tiền, chỉ ví được phép rút.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public Wallet lockOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId) {
@@ -317,6 +331,7 @@ public class WalletServiceImpl implements WalletService {
         return lockOrCreateWallet(owner.type(), owner.id());
     }
 
+    // Tìm ví của người gọi.
     @Override
     @Transactional(readOnly = true)
     public Optional<Wallet> findOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId) {
@@ -324,6 +339,7 @@ public class WalletServiceImpl implements WalletService {
         return walletRepository.findByOwnerTypeAndOwnerId(owner.type(), owner.id());
     }
 
+    // Khóa ví theo id, không có thì báo lỗi.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public Wallet lockWallet(UUID walletId) {
@@ -434,21 +450,25 @@ public class WalletServiceImpl implements WalletService {
         throw new AppException(ErrorCode.UNAUTHORIZED);
     }
 
+    // Ví thuộc loại được rút và còn số dư khả dụng.
     private boolean isWithdrawable(Wallet wallet) {
         return WITHDRAWABLE_OWNERS.contains(wallet.getOwnerType()) && wallet.getAvailableBalance().signum() > 0;
     }
 
+    // Dựng trang lịch sử giao dịch ví, mới nhất trước.
     private APIResponse<PageResponse<WalletTransactionResponse>> buildTransactionPage(UUID walletId,
                                                                                       WalletTransactionType type,
                                                                                       Instant from, Instant to,
                                                                                       PageRequest pageRequest) {
-        Page<WalletTransaction> transactions = walletTransactionRepository.findPage(walletId, type, from, to,
-                pageRequest);
+        Page<WalletTransaction> transactions = walletTransactionRepository.findAll(
+                PaymentSpecifications.walletTransactions(walletId, type, from, to),
+                pageRequest.withSort(Sort.by(Sort.Direction.DESC, "createdAt")));
         PageResponse<WalletTransactionResponse> pageResponse = PageResponse.of(transactions,
                 walletMapper.toTransactionResponseList(transactions.getContent()));
         return APIResponse.success("Lấy lịch sử giao dịch ví thành công", pageResponse);
     }
 
+    // Điền thống kê của khách: đã trả, hoàn vào ví…
     private void fillCustomerStatistics(WalletStatisticsResponse statisticsResponse, UUID customerId, Instant from,
                                         Instant to) {
         BigDecimal totalPaid = paymentRepository.sumPaidByCustomer(customerId, PaymentStatus.SUCCESS, from, to);
@@ -462,6 +482,7 @@ public class WalletServiceImpl implements WalletService {
         statisticsResponse.setNetSpent(totalPaid.subtract(toWallet).subtract(toGateway));
     }
 
+    // Điền thống kê của trung tâm: thu dịch vụ, cọc giữ, trừ khiếu nại…
     private void fillCenterStatistics(WalletStatisticsResponse statisticsResponse,
                                       Map<WalletTransactionType, BigDecimal> totals, UUID centerId, Instant from,
                                       Instant to) {
@@ -474,6 +495,7 @@ public class WalletServiceImpl implements WalletService {
                 WalletTransactionType.COMMISSION_CREDIT, from, to));
     }
 
+    // Điền thống kê của nền tảng: hoa hồng và các khoản liên quan.
     private void fillPlatformStatistics(WalletStatisticsResponse statisticsResponse,
                                         Map<WalletTransactionType, BigDecimal> totals, Instant from, Instant to) {
         statisticsResponse.setCommissionIncome(totals.getOrDefault(WalletTransactionType.COMMISSION_CREDIT,
@@ -512,13 +534,14 @@ public class WalletServiceImpl implements WalletService {
         return buckets;
     }
 
+    // Điền chuỗi thu / rút của ví theo từng kỳ.
     private void fillWalletSeries(Map<String, SeriesBucket> buckets, UUID walletId,
                                   Set<WalletTransactionType> incomeTypes, Instant from, Instant to,
                                   StatisticsGroupBy groupBy) {
         Set<WalletTransactionType> types = EnumSet.copyOf(incomeTypes);
         types.add(WalletTransactionType.WITHDRAWAL_PAID);
         types.add(WalletTransactionType.COMPLAINT_DEBIT);
-        for (WalletTransaction transaction : walletTransactionRepository.findAllForSeries(walletId, types, from, to)) {
+        for (WalletTransaction transaction : walletTransactionRepository.findByWalletIdAndTypeInAndCreatedAtBetweenOrderByCreatedAtAsc(walletId, types, from, to)) {
             SeriesBucket bucket = buckets.get(periodOf(transaction.getCreatedAt().atZone(ZONE).toLocalDate(), groupBy));
             if (bucket == null) {
                 continue;
@@ -533,9 +556,10 @@ public class WalletServiceImpl implements WalletService {
         }
     }
 
+    // Điền chuỗi số tiền khách đã trả theo từng kỳ.
     private void fillSpentSeries(Map<String, SeriesBucket> buckets, UUID customerId, Instant from, Instant to,
                                  StatisticsGroupBy groupBy) {
-        for (Payment payment : paymentRepository.findAllPaidByCustomer(customerId, PaymentStatus.SUCCESS, from, to)) {
+        for (Payment payment : paymentRepository.findByCustomerIdAndStatusAndPaidAtBetweenOrderByPaidAtAsc(customerId, PaymentStatus.SUCCESS, from, to)) {
             SeriesBucket bucket = buckets.get(periodOf(payment.getPaidAt().atZone(ZONE).toLocalDate(), groupBy));
             if (bucket != null) {
                 bucket.spent = bucket.spent.add(payment.getAmount());
@@ -543,16 +567,19 @@ public class WalletServiceImpl implements WalletService {
         }
     }
 
+    // Nhãn kỳ (ngày hoặc tháng) của một ngày.
     private String periodOf(LocalDate date, StatisticsGroupBy groupBy) {
         return groupBy == StatisticsGroupBy.MONTH ? date.format(MONTH_FORMAT) : date.format(DAY_FORMAT);
     }
 
+    // Báo lỗi nếu thời điểm bắt đầu sau thời điểm kết thúc.
     private void checkRange(Instant from, Instant to) {
         if (from.isAfter(to)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
     }
 
+    // Chủ ví: loại chủ và id.
     private record WalletOwner(WalletOwnerType type, UUID id) {
     }
 

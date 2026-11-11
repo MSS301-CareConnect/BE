@@ -12,10 +12,6 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * State machine (docs/2026-10-09-PLAN_BOOKING.md §4): kiểm MỌI cặp (hành động × trạng thái) — hợp lệ ra đúng trạng thái
- * đích, còn lại ném INVALID_BOOKING_TRANSITION.
- */
 class BookingActionTests {
 
     static final Map<BookingAction, Set<BookingStatus>> EXPECTED_SOURCES = new EnumMap<>(BookingAction.class);

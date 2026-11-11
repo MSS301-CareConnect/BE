@@ -48,6 +48,7 @@ public class ServiceTokenProvider {
     @NonFinal
     volatile Instant refreshAt = Instant.MIN;
 
+    // Lấy token SERVICE từ cache, gần hết hạn thì xin token mới.
     public String getToken() {
         String token = cachedToken;
 
@@ -58,6 +59,7 @@ public class ServiceTokenProvider {
         return refreshToken();
     }
 
+    // Xin token SERVICE mới từ IdentityService và cập nhật cache.
     private synchronized String refreshToken() {
         if (cachedToken != null && clock.instant().isBefore(refreshAt)) {
             return cachedToken;
@@ -83,6 +85,7 @@ public class ServiceTokenProvider {
         return cachedToken;
     }
 
+    // Gọi IdentityService đổi clientId / clientSecret lấy token SERVICE.
     private ServiceTokenResponse requestToken(
             AIProperties.ServiceClient serviceClient
     ) {

@@ -9,14 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Filter động cho danh mục dịch vụ chuẩn (JPA Specification — tránh tham số nullable trong JPQL). Tham số null = bỏ qua.
- */
 public final class CatalogItemSpecifications {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private CatalogItemSpecifications() {
     }
 
+    // Điều kiện lọc dịch vụ chuẩn theo trạng thái, nhóm và từ khóa.
     public static Specification<CatalogItem> filter(ServiceStatus status, String category, String keyword) {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();

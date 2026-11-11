@@ -44,67 +44,73 @@ public class AuthenticationController {
     RegistrationService registrationService;
     ServiceClientService serviceClientService;
 
-    // =========================================================================
     // GET Endpoints
-    // =========================================================================
 
+    // API lấy CSRF token cho web.
     @GetMapping("/csrf")
     @SecurityRequirements({})
     public APIResponse<CsrfResponse> getCsrf(CsrfToken csrfToken) {
         return authenticationService.getCsrf(csrfToken);
     }
 
+    // API lấy thông tin người dùng đang đăng nhập.
     @GetMapping("/me")
     public APIResponse<UserResponse> me(@CurrentUserId UUID actorId) {
         return authenticationService.me(actorId);
     }
 
+    // API danh sách phiên đăng nhập của người dùng.
     @GetMapping("/sessions")
     public APIResponse<List<SessionResponse>> listSessions(@CurrentUserId UUID actorId,
                                                        HttpServletRequest httpRequest) {
         return authenticationService.listSessions(actorId, httpRequest);
     }
 
-    // =========================================================================
     // POST Endpoints
-    // =========================================================================
 
+    // API đăng ký tài khoản khách hàng, gửi OTP xác thực email.
     @PostMapping("/register")
     @SecurityRequirements({})
     public APIResponse<OtpResponse> register(@Valid @RequestBody RegisterRequest request) {
         return registrationService.register(request);
     }
 
+    // API gửi lại OTP đăng ký.
     @PostMapping("/register/resend-otp")
     @SecurityRequirements({})
     public APIResponse<OtpResponse> resendOtp(@Valid @RequestBody EmailRequest request) {
         return registrationService.resendOtp(request);
     }
 
+    // API xác thực OTP và tạo tài khoản.
     @PostMapping("/register/verify")
     @SecurityRequirements({})
     public APIResponse<UserResponse> verify(@Valid @RequestBody VerifyOtpRequest request) {
         return registrationService.verify(request);
     }
 
+    // API xác thực email bằng OTP.
     @PostMapping("/verify-email")
     @SecurityRequirements({})
     public APIResponse<UserResponse> verifyEmail(@Valid @RequestBody VerifyOtpRequest request) {
         return registrationService.verify(request);
     }
 
+    // API gửi OTP đặt lại mật khẩu.
     @PostMapping("/forgot-password")
     @SecurityRequirements({})
     public APIResponse<Void> forgotPassword(@Valid @RequestBody EmailRequest request) {
         return registrationService.forgotPassword(request);
     }
 
+    // API đặt lại mật khẩu bằng OTP.
     @PostMapping("/reset-password")
     @SecurityRequirements({})
     public APIResponse<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         return registrationService.resetPassword(request);
     }
 
+    // API đăng nhập web: set cookie access / refresh.
     @PostMapping("/login")
     @SecurityRequirements({})
     public APIResponse<AuthenticationResponse> login(@Valid @RequestBody LoginRequest request,
@@ -113,6 +119,7 @@ public class AuthenticationController {
         return authenticationService.login(request, httpRequest, httpResponse);
     }
 
+    // API làm mới token cho web bằng refresh token trong cookie.
     @PostMapping("/refresh")
     @SecurityRequirements({})
     public APIResponse<AuthenticationResponse> refresh(@RequestBody(required = false) RefreshRequest refreshRequest,
@@ -121,6 +128,7 @@ public class AuthenticationController {
         return authenticationService.refresh(refreshRequest, httpRequest, httpResponse);
     }
 
+    // API đăng xuất (phiên hiện tại hoặc mọi phiên).
     @PostMapping("/logout")
     @SecurityRequirements({})
     public APIResponse<Void> logout(@RequestBody(required = false) LogoutRequest logoutRequest,
@@ -129,6 +137,7 @@ public class AuthenticationController {
         return authenticationService.logout(logoutRequest, httpRequest, httpResponse);
     }
 
+    // API cấp token SERVICE cho service khác bằng clientId / clientSecret.
     @PostMapping("/service-token")
     @SecurityRequirements({})
     public APIResponse<ServiceTokenResponse> issueServiceToken(@Valid @RequestBody ServiceTokenRequest request,
@@ -136,8 +145,7 @@ public class AuthenticationController {
         return serviceClientService.issueToken(request, httpServletRequest);
     }
 
-    // ===== Deprecated Endpoints (Backward Compatibility) =====
-
+    // API đăng nhập mobile: trả access / refresh trong body.
     @Deprecated
     @PostMapping("/mobile/login")
     @SecurityRequirements({})
@@ -146,6 +154,7 @@ public class AuthenticationController {
         return authenticationService.loginMobile(request, httpResponse);
     }
 
+    // API làm mới token cho mobile.
     @Deprecated
     @PostMapping("/mobile/refresh")
     @SecurityRequirements({})
@@ -154,10 +163,9 @@ public class AuthenticationController {
         return authenticationService.refreshMobile(request, httpResponse);
     }
 
-    // =========================================================================
     // DELETE Endpoints
-    // =========================================================================
 
+    // API thu hồi một phiên đăng nhập.
     @DeleteMapping("/sessions/{sessionId}")
     public APIResponse<Void> revokeSession(@CurrentUserId UUID actorId,
                                            @PathVariable String sessionId) {

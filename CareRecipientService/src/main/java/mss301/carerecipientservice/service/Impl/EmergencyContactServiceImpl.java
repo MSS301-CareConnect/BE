@@ -36,6 +36,7 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
     RecipientAccessService recipientAccessService;
     EmergencyContactMapper emergencyContactMapper;
 
+    // Thêm liên hệ khẩn cấp (quyền EDITOR); liên hệ chính mới thay liên hệ chính cũ.
     @Transactional
     @Override
     public APIResponse<EmergencyContactResponse> create(UUID actorId, UUID recipientId, EmergencyContactRequest request) {
@@ -52,15 +53,17 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Thêm liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
+    // Danh sách liên hệ khẩn cấp (quyền VIEWER), liên hệ chính trước.
     @Transactional(readOnly = true)
     @Override
     public APIResponse<List<EmergencyContactResponse>> list(UUID actorId, UUID recipientId) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
-        List<EmergencyContact> emergencyContacts = emergencyContactRepository.findAllByRecipient(recipientId);
+        List<EmergencyContact> emergencyContacts = emergencyContactRepository.findByRecipientIdAndDeletedAtIsNullOrderByPrimaryDescPriorityAscCreatedAtAsc(recipientId);
         List<EmergencyContactResponse> emergencyContactResponses = emergencyContactMapper.toResponseList(emergencyContacts);
         return APIResponse.success("Lấy danh sách liên hệ khẩn cấp thành công", emergencyContactResponses);
     }
 
+    // Chi tiết một liên hệ khẩn cấp (quyền VIEWER).
     @Transactional(readOnly = true)
     @Override
     public APIResponse<EmergencyContactResponse> get(UUID actorId, UUID recipientId, UUID id) {
@@ -70,6 +73,7 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Lấy liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
+    // Cập nhật liên hệ khẩn cấp (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<EmergencyContactResponse> update(UUID actorId, UUID recipientId, UUID id,
@@ -91,6 +95,7 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Cập nhật liên hệ khẩn cấp thành công", emergencyContactResponse);
     }
 
+    // Xóa mềm liên hệ khẩn cấp (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
@@ -105,6 +110,7 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
         return APIResponse.success("Xóa liên hệ khẩn cấp thành công");
     }
 
+    // Đặt liên hệ này làm liên hệ chính, bỏ cờ chính của liên hệ cũ.
     @Transactional
     @Override
     public APIResponse<EmergencyContactResponse> assignPrimary(UUID actorId, UUID recipientId, UUID id) {
@@ -122,7 +128,7 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
     // Bỏ cờ của liên hệ chính hiện tại (khác keepId) và flush TRƯỚC khi đặt cờ mới — partial unique index
     // uk_emergency_contacts_primary không cho hai dòng primary cùng lúc.
     private void clearPrimary(UUID recipientId, UUID keepId) {
-        emergencyContactRepository.findPrimary(recipientId)
+        emergencyContactRepository.findByRecipientIdAndPrimaryTrueAndDeletedAtIsNull(recipientId)
                 .filter(current -> !current.getId().equals(keepId))
                 .ifPresent(current -> {
                     current.setPrimary(false);
@@ -130,8 +136,9 @@ public class EmergencyContactServiceImpl implements EmergencyContactService {
                 });
     }
 
+    // Tìm liên hệ khẩn cấp thuộc hồ sơ, không có thì báo lỗi.
     private EmergencyContact findContact(UUID recipientId, UUID id) {
-        return emergencyContactRepository.findByIdAndRecipient(id, recipientId)
+        return emergencyContactRepository.findByIdAndRecipientIdAndDeletedAtIsNull(id, recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTACT_NOT_FOUND));
     }
 

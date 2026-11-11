@@ -50,12 +50,6 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Báo Booking theo loại sự kiện (Booking idempotent nên gửi lại an toàn): xác nhận khoản đầu ({@code /deposit-paid}), đã
- * trả xong phần còn lại ({@code /remaining-paid}), quá hạn trả phần còn lại ({@code /payment-overdue}). Booking từ chối
- * (4xx — hết hạn / đã hủy / không tồn tại) → FAILED; khoản vừa thu được hoàn toàn bộ {@code BOOKING_NOT_CONFIRMABLE}
- * (quá hạn thì không có khoản mới). Lỗi tạm thời → backoff tới maxAttempts rồi FAILED để admin xử lý.
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -92,24 +86,28 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Xếp lệnh báo BookingService đã nhận cọc.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueueDepositConfirmation(Payment payment, String paymentReference) {
         enqueue(OutboxEventType.DEPOSIT_CONFIRMATION, payment, paymentReference);
     }
 
+    // Xếp lệnh báo BookingService đã nhận phần còn lại.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueueRemainingConfirmation(Payment payment, String paymentReference) {
         enqueue(OutboxEventType.REMAINING_CONFIRMATION, payment, paymentReference);
     }
 
+    // Xếp lệnh báo BookingService hóa đơn còn lại quá hạn.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueuePaymentOverdue(Payment depositPayment, UUID invoiceId) {
         enqueue(OutboxEventType.PAYMENT_OVERDUE, depositPayment, OVERDUE_REFERENCE_PREFIX + invoiceId);
     }
 
+    // Xếp thông báo hoàn tiền xong khi mọi lệnh hoàn trong nhóm đã hoàn.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueueRefundCompleted(Refund refund) {
@@ -128,6 +126,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         save(OutboxEventType.REFUND_COMPLETED, anchor.getBookingId(), anchor.getPaymentId(), reference);
     }
 
+    // Xếp thông báo kết quả rút tiền (hoàn thành / bị từ chối).
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueueWithdrawalResult(WalletWithdrawal withdrawal) {
@@ -143,6 +142,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         save(eventType, null, null, reference);
     }
 
+    // Xếp một sự kiện outbox cho khoản thanh toán (bỏ qua nếu đã có).
     private void enqueue(OutboxEventType eventType, Payment payment, String paymentReference) {
         if (paymentOutboxRepository.existsByEventTypeAndPaymentId(eventType, payment.getId())) {
             return;
@@ -150,6 +150,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         save(eventType, payment.getBookingId(), payment.getId(), paymentReference);
     }
 
+    // Lưu dòng outbox và đăng ký gửi ngay sau khi transaction commit.
     private void save(OutboxEventType eventType, UUID bookingId, UUID paymentId, String paymentReference) {
         PaymentOutbox outbox = paymentOutboxRepository.save(paymentOutboxMapper.toOutbox(eventType, bookingId,
                 paymentId, paymentReference, OutboxStatus.PENDING, clock.instant()));
@@ -168,12 +169,14 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         });
     }
 
+    // Lấy id các dòng outbox đang chờ và tới hạn gửi.
     @Override
     public List<UUID> findDueIds() {
         return paymentOutboxRepository.findDueIds(OutboxStatus.PENDING, clock.instant(),
                 PageRequest.of(0, paymentProperties.getOutbox().getBatchSize()));
     }
 
+    // Gửi một dòng outbox: nhận dòng, gọi service đích ngoài transaction, ghi kết quả.
     @Override
     public void process(UUID outboxId) {
         // REQUIRES_NEW: có thể chạy trong afterCommit của transaction IPN (đã commit nhưng vẫn gắn thread).
@@ -202,6 +205,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         newTransaction.executeWithoutResult(status -> recordResult(outboxId, finalOutcome, finalError));
     }
 
+    // Gọi BookingService theo loại sự kiện outbox.
     private void send(PaymentOutbox outbox) {
         UUID bookingId = outbox.getBookingId();
         switch (outbox.getEventType()) {
@@ -272,6 +276,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                 .build());
     }
 
+    // Che số tài khoản, chỉ giữ vài số cuối.
     private String maskAccount(String accountNumber) {
         if (accountNumber.length() <= MASKED_ACCOUNT_DIGITS) {
             return accountNumber;
@@ -286,6 +291,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                 .orElse(false);
     }
 
+    // Khóa (SKIP LOCKED) dòng outbox tới hạn để một worker xử lý.
     private PaymentOutbox claim(UUID outboxId) {
         PaymentOutbox outbox = paymentOutboxRepository.findForUpdateSkipLocked(outboxId).orElse(null);
         Instant now = clock.instant();
@@ -296,6 +302,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         return outbox;
     }
 
+    // Ghi kết quả gửi: thành công, thử lại sau hoặc thất bại hẳn.
     private void recordResult(UUID outboxId, Outcome outcome, String error) {
         PaymentOutbox outbox = paymentOutboxRepository.findForUpdate(outboxId).orElse(null);
         if (outbox == null || outbox.getStatus() != OutboxStatus.PENDING) {
@@ -358,6 +365,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         }
     }
 
+    // Hẹn lần gửi lại với thời gian chờ tăng dần, quá giới hạn thì đánh dấu thất bại.
     private void scheduleRetry(PaymentOutbox outbox, String error, Instant now) {
         PaymentProperties.Outbox outboxProperties = paymentProperties.getOutbox();
         outbox.setLastError(truncate(error));
@@ -377,6 +385,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                 backoff);
     }
 
+    // Cắt ngắn thông báo lỗi trước khi lưu.
     private String truncate(String message) {
         if (message == null) {
             return null;

@@ -6,9 +6,11 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class AftercareScope {
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private AftercareScope() {
     }
 
+    // Người gọi được xem ca chăm sóc (admin, trung tâm, khách, caregiver).
     public static boolean canReadSession(UUID actorId, Set<RoleCode> roles, UUID centerId, CareSession session) {
         return roles.contains(RoleCode.ADMIN)
                 || (roles.contains(RoleCode.CENTER_MANAGER) && session.getBooking().getCenterId().equals(centerId))

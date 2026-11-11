@@ -1,8 +1,6 @@
 package mss301.carecatalogservice.security;
 
 import mss301.carecatalogservice.enums.RoleCode;
-import mss301.carecatalogservice.exception.AppException;
-import mss301.carecatalogservice.exception.ErrorCode;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -24,12 +22,14 @@ public class CurrentRolesArgumentResolver implements HandlerMethodArgumentResolv
             .map(RoleCode::name)
             .collect(Collectors.toUnmodifiableSet());
 
+    // Nhận tham số controller có @CurrentRoles.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentRoles.class)
                 && Set.class.equals(parameter.getParameterType());
     }
 
+    // Lấy danh sách role của người gọi từ Authentication.
     @Override
     public Set<RoleCode> resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                          NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {

@@ -1,9 +1,5 @@
 package mss301.aiservice.config;
 
-/**
- * Prompt đọc ảnh chứng chỉ. Mô hình CHỈ chép lại nội dung in trên ảnh dưới dạng JSON — không được biết thông tin
- * caregiver khai báo (tránh "xác nhận theo gợi ý") và không tự đánh giá thật / giả; AIService đối chiếu bằng code.
- */
 public final class CertificatePrompts {
     public static final String SYSTEM_PROMPT = """
             You read photos of Vietnamese professional certificates (care, nursing, first aid, training
@@ -32,6 +28,7 @@ public final class CertificatePrompts {
 
     public static final String USER_PROMPT = "Read this certificate and return the JSON object.";
 
+    // Lớp chỉ chứa prompt kiểm tra chứng chỉ, không cho khởi tạo.
     private CertificatePrompts() {
     }
 }

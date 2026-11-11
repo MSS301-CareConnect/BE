@@ -1,9 +1,9 @@
 package mss301.providerservice.service.Impl;
 
+import mss301.providerservice.util.ShiftRegistrationSpecifications;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.providerservice.dto.request.RegistrationBulkReviewRequest;
 import mss301.providerservice.dto.request.RegistrationReviewRequest;
 import mss301.providerservice.dto.request.ShiftRegistrationRequest;
@@ -55,7 +55,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
 
     static int MAX_PAGE_SIZE = 100;
@@ -73,6 +72,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
     CaregiverScheduleMapper caregiverScheduleMapper;
     Clock clock;
 
+    // Caregiver đã xác minh đăng ký nhận ca đang mở.
     @Override
     @Transactional
     public APIResponse<ShiftRegistrationResponse> register(UUID actorId, UUID shiftId,
@@ -116,6 +116,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         return APIResponse.success("Đăng ký ca làm việc thành công", respond(savedRegistration));
     }
 
+    // Danh sách đăng ký của một ca (manager của trung tâm).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<ShiftRegistrationResponse>> listByShift(UUID actorId, UUID shiftId,
@@ -125,26 +126,28 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         WorkShift shift = workShiftRepository.findByIdAndDeletedAtIsNull(shiftId)
                 .orElseThrow(() -> new AppException(ErrorCode.WORK_SHIFT_NOT_FOUND));
         providerAuthorization.requireCenterManagement(shift.getCenter(), actorId);
-        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findByShift(
-                shiftId, status, PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt")));
+        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findAll(
+                ShiftRegistrationSpecifications.ofShift(shiftId, status), PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt")));
         List<ShiftRegistrationResponse> items = respond(registrationPage.getContent());
         PageResponse<ShiftRegistrationResponse> pageResponse = PageResponse.of(registrationPage, items);
         return APIResponse.success("Lấy danh sách đăng ký ca thành công", pageResponse);
     }
 
+    // Danh sách đăng ký ca của caregiver đang đăng nhập.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<ShiftRegistrationResponse>> listMine(UUID actorId, RegistrationStatus status,
                                                                            int page, int size) {
         validatePage(page, size);
         CaregiverProfile caregiver = caregiverService.findActiveCaregiverByUser(actorId);
-        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findByCaregiver(
-                caregiver.getId(), status, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        Page<ShiftRegistration> registrationPage = shiftRegistrationRepository.findAll(
+                ShiftRegistrationSpecifications.ofCaregiver(caregiver.getId(), status), PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
         List<ShiftRegistrationResponse> items = respond(registrationPage.getContent());
         PageResponse<ShiftRegistrationResponse> pageResponse = PageResponse.of(registrationPage, items);
         return APIResponse.success("Lấy đăng ký ca của tôi thành công", pageResponse);
     }
 
+    // Manager duyệt / từ chối một đăng ký ca.
     @Override
     @Transactional
     public APIResponse<ShiftRegistrationResponse> review(UUID actorId, UUID registrationId,
@@ -197,6 +200,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         return APIResponse.success("Xử lý " + saved.size() + " đăng ký ca thành công", respond(saved));
     }
 
+    // Chỉ cho duyệt / từ chối; từ chối thì phải có lý do.
     private void checkReviewRequest(RegistrationStatus status, String reason) {
         if (status != RegistrationStatus.APPROVED && status != RegistrationStatus.REJECTED) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -224,6 +228,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         return shiftRegistrationRepository.save(registration);
     }
 
+    // Caregiver hủy đăng ký ca của mình có kiểm version.
     @Override
     @Transactional
     public APIResponse<Void> cancel(UUID actorId, UUID registrationId, Long version) {
@@ -242,6 +247,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         return APIResponse.success("Hủy đăng ký ca thành công");
     }
 
+    // Duyệt đăng ký: kiểm ca còn chỗ, tạo lịch làm việc, đóng ca khi đủ người.
     private void approve(UUID actorId, ShiftRegistration registration, WorkShift shift, String note) {
         checkCenterActive(shift);
         if (shift.getShiftStatus() != ShiftStatus.OPEN && shift.getShiftStatus() != ShiftStatus.CLOSED) {
@@ -279,6 +285,7 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         }
     }
 
+    // Map một đăng ký sang response.
     private ShiftRegistrationResponse respond(ShiftRegistration registration) {
         return respond(List.of(registration)).getFirst();
     }
@@ -312,12 +319,14 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         return responses;
     }
 
+    // Báo lỗi nếu trung tâm của ca không hoạt động.
     private void checkCenterActive(WorkShift shift) {
         if (shift.getCenter().getCenterStatus() != CenterStatus.ACTIVE) {
             throw new AppException(ErrorCode.CENTER_NOT_ACTIVE);
         }
     }
 
+    // Báo lỗi nếu ca đã bắt đầu.
     private void checkShiftNotStarted(WorkShift shift, Instant now) {
         Instant shiftStart = ProviderTime.toInstant(shift.getWorkDate(), shift.getStartTime());
         if (!now.isBefore(shiftStart)) {
@@ -325,26 +334,31 @@ public class ShiftRegistrationServiceImpl implements ShiftRegistrationService {
         }
     }
 
+    // Đếm số đăng ký đã duyệt của ca.
     private long countApproved(UUID shiftId) {
         return shiftRegistrationRepository.countByWorkShiftIdAndRegistrationStatus(shiftId, RegistrationStatus.APPROVED);
     }
 
+    // Báo xung đột nếu version gửi lên không khớp.
     private void checkVersion(ShiftRegistration value, Long version) {
         if (version == null || !version.equals(value.getVersion())) {
             throw new AppException(ErrorCode.CONCURRENT_UPDATE);
         }
     }
 
+    // Kiểm tra page / size hợp lệ.
     private void validatePage(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
         }
     }
 
+    // Trim chuỗi, rỗng thì trả null.
     private String normalize(String value) {
         return isBlank(value) ? null : value.trim();
     }
 
+    // Kiểm tra chuỗi rỗng hoặc null.
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }

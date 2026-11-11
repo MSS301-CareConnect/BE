@@ -29,6 +29,7 @@ public class BookingPriceCalculatorImpl implements BookingPriceCalculator {
     static int UNIT_SCALE = 4;
     static int AMOUNT_SCALE = 10;
 
+    // Tính giá từng buổi theo đơn giá và số đơn vị, làm tròn đồng, cộng tổng.
     @Override
     public BookingQuote calculate(List<ServiceQuote> services, List<OccurrenceSlot> slots) {
         checkSlotServices(services, slots);

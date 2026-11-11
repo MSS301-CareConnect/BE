@@ -144,6 +144,7 @@ public class ProviderProperties {
         @NotNull
         Duration readTimeout = Duration.ofSeconds(3);
 
+        // Kiểm tra đã cấu hình đủ clientId và clientSecret.
         public boolean isConfigured() {
             return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
         }

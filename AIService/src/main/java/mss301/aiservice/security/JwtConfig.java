@@ -18,6 +18,7 @@ import java.util.UUID;
 @Configuration
 public class JwtConfig {
 
+    // Cấu hình bộ giải mã JWT qua JWKS (RS256) và các validator issuer, audience, claim.
     @Bean
     public JwtDecoder jwtDecoder(AIProperties aiProperties) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder
@@ -36,6 +37,7 @@ public class JwtConfig {
         return decoder;
     }
 
+    // Kiểm tra JWT là access token có đủ claim bắt buộc.
     private boolean hasRequiredClaims(Jwt jwt) {
         boolean valid = jwt.getAudience() != null && jwt.getAudience().contains(TokenClaims.API_AUDIENCE)
                 && TokenClaims.ACCESS_TOKEN_TYPE.equals(jwt.getClaimAsString(TokenClaims.TOKEN_TYPE))
@@ -46,6 +48,7 @@ public class JwtConfig {
         return valid && isUuid(jwt.getSubject());
     }
 
+    // Kiểm tra chuỗi có phải UUID hợp lệ.
     private boolean isUuid(String value) {
         try {
             UUID.fromString(value);

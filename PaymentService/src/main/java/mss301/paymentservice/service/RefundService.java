@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface RefundService {
+    // Danh sách hoàn tiền.
     APIResponse<PageResponse<RefundResponse>> list(UUID actorId, Set<RoleCode> roles, UUID bookingId, RefundStatus status,
                                                    int page, int size);
 
@@ -30,6 +31,7 @@ public interface RefundService {
     // C2.4: admin chấp nhận khiếu nại — giảm hóa đơn REMAINING trước, phần còn lại hoàn tiền.
     APIResponse<RefundCreateResponse> createComplaintRefund(String idempotencyKey, ComplaintRefundRequest request);
 
+    // Thử lại lệnh hoàn tiền thất bại.
     APIResponse<RefundResponse> retry(UUID actorId, UUID refundId);
 
     // Trong transaction của caller: hoàn toàn bộ phần còn hoàn được của payment (Booking không nhận cọc, REMAINING trả

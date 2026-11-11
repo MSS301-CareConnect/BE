@@ -9,5 +9,6 @@ public interface CurrentIdentityService {
     // Nạp user + quyền HIỆN HÀNH từ DB; ném AuthenticationException nếu tài khoản không còn hợp lệ cho token này.
     UserResponse getActiveUser(UUID userId, long authzVersion);
 
+    // Lấy người dùng đang hoạt động kèm authz_version để phát token.
     AuthenticatedUser getActiveAuthenticatedUser(UUID userId);
 }

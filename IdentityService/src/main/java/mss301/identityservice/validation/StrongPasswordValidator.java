@@ -12,11 +12,13 @@ public class StrongPasswordValidator implements ConstraintValidator<StrongPasswo
 
     private static final String STRONG_PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$";
 
+    // Kiểm tra mật khẩu đủ mạnh và không vượt giới hạn 72 byte của BCrypt.
     @Override
     public boolean isValid(String value, ConstraintValidatorContext context) {
         return value == null || (!exceedsBcryptLimit(value) && value.matches(STRONG_PASSWORD_PATTERN));
     }
 
+    // Kiểm tra mật khẩu dài quá 72 byte UTF-8.
     public static boolean exceedsBcryptLimit(String value) {
         return value.getBytes(StandardCharsets.UTF_8).length > BCRYPT_MAX_BYTES;
     }

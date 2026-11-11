@@ -50,6 +50,7 @@ public class PaymentController {
     PaymentService paymentService;
     RemainingInvoiceService remainingInvoiceService;
 
+    // API danh sách giao dịch thanh toán có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CUSTOMER','CENTER_MANAGER')")
     public APIResponse<PageResponse<PaymentResponse>> list(@CurrentUserId UUID actorId,
@@ -63,6 +64,7 @@ public class PaymentController {
         return paymentService.list(actorId, roles, centerId, bookingId, status, type, page, size);
     }
 
+    // API xem chi tiết một giao dịch thanh toán.
     @GetMapping("/{paymentId}")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CUSTOMER','CENTER_MANAGER')")
     public APIResponse<PaymentResponse> get(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -71,6 +73,7 @@ public class PaymentController {
         return paymentService.get(actorId, roles, centerId, paymentId);
     }
 
+    // API xem thanh toán của một booking.
     @GetMapping("/by-booking/{bookingId}")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CUSTOMER','CENTER_MANAGER')")
     public APIResponse<PaymentResponse> getByBooking(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -112,12 +115,14 @@ public class PaymentController {
         return paymentService.handleVnPayReturn(params);
     }
 
+    // API xử lý khi khách quay lại từ trang thanh toán Stripe.
     @GetMapping("/stripe/return")
     @SecurityRequirements({})
     public APIResponse<PaymentReturnResponse> handleStripeReturn(@RequestParam("session_id") String sessionId) {
         return paymentService.handleStripeReturn(sessionId);
     }
 
+    // API tạo phiên thanh toán tiền cọc cho booking.
     @PostMapping("/bookings/{bookingId}/checkout")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CheckoutResponse> createCheckout(@CurrentUserId UUID customerId, @PathVariable UUID bookingId,

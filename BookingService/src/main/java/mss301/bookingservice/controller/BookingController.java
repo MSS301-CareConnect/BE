@@ -16,6 +16,7 @@ import mss301.bookingservice.dto.response.BookingSummaryResponse;
 import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CaregiverAccessResponse;
 import mss301.bookingservice.dto.response.CaregiverBookingRequestResponse;
+import mss301.bookingservice.dto.response.CaregiverChangeRequestResponse;
 import mss301.bookingservice.dto.response.CaregiverHeldScheduleResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
@@ -28,12 +29,14 @@ import mss301.bookingservice.security.CurrentRoles;
 import mss301.bookingservice.security.CurrentUserId;
 import mss301.bookingservice.service.BookingOccurrenceService;
 import mss301.bookingservice.service.BookingService;
+import mss301.bookingservice.service.CaregiverChangeRequestService;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,7 +49,9 @@ public class BookingController {
 
     BookingService bookingService;
     BookingOccurrenceService bookingOccurrenceService;
+    CaregiverChangeRequestService caregiverChangeRequestService;
 
+    // API danh sách booking theo phạm vi người gọi, có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<PageResponse<BookingSummaryResponse>> list(@CurrentUserId UUID actorId,
@@ -56,6 +61,7 @@ public class BookingController {
         return bookingService.list(actorId, roles, scopeCenterId, request);
     }
 
+    // API đếm booking theo trạng thái (hàng đợi trung tâm / admin).
     @GetMapping("/status-counts")
     @PreAuthorize("hasAnyRole('CENTER_MANAGER', 'ADMIN')")
     public APIResponse<BookingStatusCountsResponse> countByStatus(@CurrentRoles Set<RoleCode> roles,
@@ -84,6 +90,7 @@ public class BookingController {
         return bookingService.listCaregiverRequests(actorId, page, size);
     }
 
+    // API caregiver xem chi tiết yêu cầu booking gửi tới mình.
     @GetMapping("/caregiver-requests/{id}")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverBookingRequestResponse> getCaregiverRequest(@CurrentUserId UUID actorId,
@@ -91,6 +98,7 @@ public class BookingController {
         return bookingService.getCaregiverRequest(actorId, id);
     }
 
+    // API xem chi tiết booking.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<BookingDetailResponse> get(@CurrentUserId UUID actorId,
@@ -100,6 +108,7 @@ public class BookingController {
         return bookingService.get(actorId, roles, scopeCenterId, id);
     }
 
+    // API lịch sử thay đổi trạng thái của booking.
     @GetMapping("/{id}/history")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<PageResponse<BookingHistoryResponse>> listHistory(@CurrentUserId UUID actorId,
@@ -111,6 +120,7 @@ public class BookingController {
         return bookingService.listHistory(actorId, roles, scopeCenterId, id, page, size);
     }
 
+    // API danh sách buổi chăm sóc của booking.
     @GetMapping("/{id}/occurrences")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<PageResponse<OccurrenceResponse>> listOccurrences(@CurrentUserId UUID actorId,
@@ -123,6 +133,18 @@ public class BookingController {
         return bookingService.listOccurrences(actorId, roles, scopeCenterId, id, status, page, size);
     }
 
+    // API danh sách yêu cầu đổi người chăm sóc của booking.
+    @GetMapping("/{id}/caregiver-change-requests")
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
+    public APIResponse<List<CaregiverChangeRequestResponse>> listCaregiverChangeRequests(
+            @CurrentUserId UUID actorId,
+            @CurrentRoles Set<RoleCode> roles,
+            @CurrentCenterId(required = false) UUID centerId,
+            @PathVariable UUID id) {
+        return caregiverChangeRequestService.listByBooking(actorId, roles, centerId, id);
+    }
+
+    // API cho PaymentService lấy thông tin booking cần thanh toán.
     @GetMapping("/{id}/payment-context")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<PaymentContextResponse> getPaymentContext(@PathVariable UUID id) {
@@ -144,6 +166,7 @@ public class BookingController {
         return bookingService.getRecipientActivity(recipientId);
     }
 
+    // API khách tạo booking (có idempotency key).
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<BookingDetailResponse> create(@CurrentUserId UUID actorId,
@@ -152,6 +175,7 @@ public class BookingController {
         return bookingService.create(actorId, idempotencyKey, request);
     }
 
+    // API báo giá tạm tính trước khi đặt.
     @PostMapping("/quotes")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<BookingQuoteResponse> quote(@CurrentUserId UUID actorId,
@@ -159,12 +183,14 @@ public class BookingController {
         return bookingService.quote(actorId, request);
     }
 
+    // API cho service khác hủy booking hàng loạt (trung tâm / caregiver ngừng hoạt động).
     @PostMapping("/system-cancellations")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<SystemCancellationResponse> cancelBySystem(@Valid @RequestBody SystemCancellationRequest request) {
         return bookingService.cancelBySystem(request);
     }
 
+    // API xem trước phí hủy và tiền hoàn khi hủy buổi.
     @PostMapping("/{id}/cancellation-previews")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<CancellationPreviewResponse> previewCancellation(@CurrentUserId UUID actorId,
@@ -184,6 +210,7 @@ public class BookingController {
         return bookingService.cancel(actorId, roles, scopeCenterId, id, request);
     }
 
+    // API trung tâm nhận booking.
     @PostMapping("/{id}/accept")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<BookingDetailResponse> accept(@CurrentUserId UUID actorId,
@@ -193,6 +220,7 @@ public class BookingController {
         return bookingService.accept(actorId, centerId, id, request);
     }
 
+    // API trung tâm từ chối booking.
     @PostMapping("/{id}/reject")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<BookingDetailResponse> reject(@CurrentUserId UUID actorId,
@@ -242,6 +270,17 @@ public class BookingController {
         return bookingService.markPaymentOverdue(id);
     }
 
+    // API khách yêu cầu đổi người chăm sóc.
+    @PostMapping("/{id}/caregiver-change-requests")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<CaregiverChangeRequestResponse> createCaregiverChangeRequest(
+            @CurrentUserId UUID actorId,
+            @PathVariable UUID id,
+            @Valid @RequestBody CaregiverChangeCreateRequest request) {
+        return caregiverChangeRequestService.create(actorId, id, request);
+    }
+
+    // API trung tâm phân công / đổi caregiver cho booking.
     @PatchMapping("/{id}/caregiver")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<BookingDetailResponse> updateCaregiver(@CurrentUserId UUID actorId,
@@ -262,6 +301,7 @@ public class BookingController {
         return bookingService.updateServiceAddress(actorId, roles, scopeCenterId, id, request);
     }
 
+    // API trung tâm đổi caregiver cho một buổi.
     @PatchMapping("/{id}/occurrences/{occurrenceId}/caregiver")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<OccurrenceResponse> updateOccurrenceCaregiver(@CurrentUserId UUID actorId,

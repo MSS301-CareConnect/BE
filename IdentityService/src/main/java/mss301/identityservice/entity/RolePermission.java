@@ -31,6 +31,7 @@ public class RolePermission {
     @Column(name = "granted_at", nullable = false, updatable = false)
     Instant grantedAt;
 
+    // Gán thời điểm cấp permission cho role.
     @PrePersist
     void onCreate() {
         grantedAt = Instant.now();

@@ -176,6 +176,7 @@ public class AIProperties {
         Duration readTimeout =
                 Duration.ofSeconds(3);
 
+        // Kiểm tra đã cấu hình đủ clientId và clientSecret.
         public boolean isConfigured() {
             return clientId != null
                     && !clientId.isBlank()

@@ -36,12 +36,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Dispatcher hoàn tiền (PAY-10). Mỗi refund: transaction ngắn "nhận việc" (SKIP LOCKED + thuê dòng), gọi cổng NGOÀI
- * transaction, rồi transaction ngắn ghi kết quả. SIMULATED (mặc định) đánh REFUNDED ngay mà vẫn đi đủ state machine,
- * nhật ký và cộng payment.refundedAmount; VNPAY gọi adapter; STRIPE → FAILED (D16 không hoàn qua Stripe). Kênh WALLET
- * (khách tự hủy, 2026-11-09) không gọi cổng: đánh REFUNDED và cộng ví khách trong cùng transaction ghi kết quả.
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -65,12 +59,14 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Lấy id các lệnh hoàn tiền đang chờ và tới hạn gửi.
     @Override
     public List<UUID> findDueIds() {
         return refundRepository.findDueIds(RefundStatus.REFUND_PENDING, clock.instant(),
                 PageRequest.of(0, paymentProperties.getRefund().getBatchSize()));
     }
 
+    // Gửi một lệnh hoàn tiền: nhận lệnh, gọi cổng ngoài transaction, ghi kết quả.
     @Override
     public void process(UUID refundId) {
         Claim claim = transactionTemplate.execute(status -> claim(refundId));
@@ -128,11 +124,12 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         if (refund.getAttemptId() != null) {
             return paymentAttemptRepository.findById(refund.getAttemptId()).orElse(null);
         }
-        return paymentAttemptRepository.findAllCompletedByPayment(payment.getId(), PaymentStatus.SUCCESS).stream()
+        return paymentAttemptRepository.findByPaymentIdAndStatusOrderByCompletedAtAsc(payment.getId(), PaymentStatus.SUCCESS).stream()
                 .findFirst()
                 .orElse(null);
     }
 
+    // Thực hiện hoàn tiền: hoàn vào ví thì thành công ngay, còn lại gọi cổng thanh toán.
     private RefundResult execute(Claim claim) {
         if (claim.wallet()) {
             return RefundResult.succeeded(WALLET_CODE, null);
@@ -150,6 +147,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         return vnPayRefundGateway.refund(claim.command());
     }
 
+    // Ghi kết quả hoàn tiền: hoàn xong, thử lại sau hoặc thất bại.
     private void recordResult(UUID refundId, Claim claim, RefundResult result) {
         // Khóa booking_financials trước (thứ tự khóa chung) để các dòng hoàn cùng booking ghi kết quả lần lượt — dòng cuối
         // của một lệnh mới thấy cả nhóm đã xong và xếp đúng một thông báo.
@@ -175,6 +173,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         }
     }
 
+    // Đánh dấu lệnh hoàn tiền đã hoàn và cập nhật tài chính liên quan.
     private void markRefunded(Refund refund, Instant now) {
         if (refund.getAttemptId() != null) {
             // Tiền của phiên trả trễ / trùng không nằm trong payment.amount → không cộng refundedAmount.
@@ -195,6 +194,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         completeRefund(refund, now);
     }
 
+    // Cập nhật trạng thái đã hoàn và số tiền đã hoàn của khoản thanh toán.
     private void completeRefund(Refund refund, Instant now) {
         refund.setStatus(RefundStatus.REFUNDED);
         refund.setRefundedAt(now);
@@ -224,6 +224,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
                 result.message());
     }
 
+    // Đánh dấu lệnh hoàn tiền thất bại kèm lỗi.
     private void markFailed(Refund refund, String message) {
         refund.setStatus(RefundStatus.FAILED);
         refund.setLastError(truncate(message));
@@ -233,6 +234,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
                 message);
     }
 
+    // Cắt ngắn thông báo lỗi trước khi lưu.
     private String truncate(String message) {
         if (message == null) {
             return null;
@@ -240,6 +242,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         return message.length() > MAX_ERROR_LENGTH ? message.substring(0, MAX_ERROR_LENGTH) : message;
     }
 
+    // Lệnh hoàn tiền đã nhận để gửi: lệnh, cổng, có hoàn vào ví không.
     private record Claim(RefundCommand command, PaymentProvider provider, boolean wallet) {
     }
 }

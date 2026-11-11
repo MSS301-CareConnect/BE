@@ -23,7 +23,7 @@ import mss301.paymentservice.exception.AppException;
 import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.repository.BookingFinancialRepository;
 import mss301.paymentservice.repository.OccurrenceFinancialRepository;
-import mss301.paymentservice.repository.WalletBookingTotalView;
+import mss301.paymentservice.repository.projection.WalletBookingTotalView;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.service.WalletService;
 import mss301.paymentservice.service.WalletSettlementService;
@@ -45,12 +45,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Cộng tiền buổi đã phục vụ: gọi payment-context NGOÀI transaction, rồi transaction ngắn (khóa booking_financials) chốt
- * từng buổi. COMPLETED / CUSTOMER_NO_SHOW → tiền khách đã trả cho buổi (cọc + thu thêm − đã hoàn) trừ hoa hồng snapshot vào
- * ví trung tâm, hoa hồng vào ví nền tảng. CANCELLED / EXPIRED / CAREGIVER_MISSED → chỉ đánh settled_at (tiền do luồng hoàn
- * tiền xử lý, kể cả khi lệnh hoàn của Booking tới sau).
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -69,6 +63,7 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Lấy id booking có buổi đã xong quá thời gian chờ để quyết toán.
     @Override
     public List<UUID> findDueBookingIds() {
         PaymentProperties.Wallet walletProperties = paymentProperties.getWallet();
@@ -77,6 +72,7 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
                 cutoff, PageRequest.of(0, walletProperties.getSettlementBatchSize()));
     }
 
+    // Quyết toán một booking: lấy trạng thái buổi từ BookingService rồi ghi tiền vào ví.
     @Override
     public void process(UUID bookingId) {
         BookingPaymentContextResponse context;
@@ -103,6 +99,7 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
         transactionTemplate.executeWithoutResult(status -> settle(bookingId, statuses));
     }
 
+    // Bảng quyết toán của booking: đã thu, đã hoàn, phần trung tâm, hoa hồng.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<BookingSettlementResponse> getBookingSettlement(Set<RoleCode> roles, UUID claimCenterId,
@@ -200,6 +197,7 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
         return APIResponse.success("Lấy quyết toán booking thành công", settlementResponse);
     }
 
+    // Quyết toán các buổi đã kết thúc của booking.
     private void settle(UUID bookingId, Map<UUID, OccurrenceStatus> statuses) {
         BookingFinancial financial = bookingFinancialRepository.findForUpdate(bookingId).orElse(null);
         if (financial == null || financial.getStatus() == BookingFinancialStatus.AWAITING_DEPOSIT) {
@@ -231,6 +229,7 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
         }
     }
 
+    // Tính tiền thực nhận của một buổi, trừ hoa hồng rồi ghi vào ví.
     private void settleOccurrence(BookingFinancial financial, OccurrenceFinancial occurrenceFinancial,
                                   OccurrenceStatus status, Instant now) {
         BigDecimal net = VndMoney.nonNegative(occurrenceFinancial.getDepositAmount()

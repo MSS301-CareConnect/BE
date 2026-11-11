@@ -21,11 +21,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Lỗi trong security filter không tới @ControllerAdvice — class này trả CÙNG envelope APIResponse:
- * token thiếu/sai → 401, thiếu quyền → 403, thiếu/sai CSRF → 403 CSRF_INVALID, không lấy được JWKS → 503
- * (không giả làm 401).
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -33,6 +28,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
     ObjectMapper objectMapper;
 
+    // Trả 401 (hoặc 503 khi không xác minh được token) dạng APIResponse.
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException exception) throws IOException {
@@ -42,12 +38,14 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, errorCode);
     }
 
+    // Trả lỗi xác thực khi token không hợp lệ.
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
         commence(request, response, exception);
     }
 
+    // Trả 403 dạng APIResponse; sai CSRF thì trả mã lỗi CSRF riêng.
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException exception) throws IOException {
@@ -58,6 +56,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, errorCode);
     }
 
+    // Ghi APIResponse lỗi từ ErrorCode vào response.
     private void writeError(HttpServletResponse response, ErrorCode errorCode) throws IOException {
         APIResponse<Void> body = APIResponse.<Void>builder()
                 .code(errorCode.getCode())

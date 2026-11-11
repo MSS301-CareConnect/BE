@@ -28,23 +28,6 @@ public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
     @Query("select s from WorkShift s where s.id = :id and s.deletedAt is null")
     Optional<WorkShift> findByIdForUpdate(@Param("id") UUID id);
 
-    // excludedStatus: caregiver không thấy ca DRAFT (null = không loại trạng thái nào).
-    @Query("""
-            select s from WorkShift s
-            where s.deletedAt is null
-              and (:centerId is null or s.center.id = :centerId)
-              and (cast(:status as String) is null or s.shiftStatus = :status)
-              and (cast(:excludedStatus as String) is null or s.shiftStatus <> :excludedStatus)
-              and (cast(:fromDate as LocalDate) is null or s.workDate >= :fromDate)
-              and (cast(:toDate as LocalDate) is null or s.workDate <= :toDate)
-            """)
-    Page<WorkShift> search(@Param("centerId") UUID centerId,
-                           @Param("status") ShiftStatus status,
-                           @Param("excludedStatus") ShiftStatus excludedStatus,
-                           @Param("fromDate") LocalDate fromDate,
-                           @Param("toDate") LocalDate toDate,
-                           Pageable pageable);
-
     /**
      * Danh sách theo trạng thái HIỆU LỰC (util/WorkShiftStates), không theo cột đã lưu: openOnly / closedOnly /
      * completedOnly tính từ ngày-giờ ca (giờ VN: today + nowTime) và hạn đăng ký (now); storedStatus cho DRAFT /
@@ -106,16 +89,8 @@ public interface WorkShiftRepository extends JpaRepository<WorkShift, UUID> {
                                       @Param("shiftType") String shiftType);
 
     // Ca chưa hủy của trung tâm bắt đầu trong [fromDate, toDate] — lọc giờ chính xác trong service.
-    @Query("""
-            select s from WorkShift s
-            where s.deletedAt is null
-              and s.center.id = :centerId
-              and s.shiftStatus <> mss301.providerservice.enums.ShiftStatus.CANCELLED
-              and s.workDate between :fromDate and :toDate
-            """)
-    List<WorkShift> findActiveBetween(@Param("centerId") UUID centerId,
-                                      @Param("fromDate") LocalDate fromDate,
-                                      @Param("toDate") LocalDate toDate);
+    List<WorkShift> findByCenterIdAndShiftStatusNotAndWorkDateBetweenAndDeletedAtIsNull(
+            UUID centerId, ShiftStatus excludedStatus, LocalDate fromDate, LocalDate toDate);
 
     // Job vòng đời (WorkShiftLifecycleScheduler). Câu UPDATE hàng loạt bỏ qua @Version nên tự tăng version.
     @Modifying(clearAutomatically = true, flushAutomatically = true)

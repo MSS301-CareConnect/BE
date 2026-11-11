@@ -22,10 +22,6 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Resource Server: tự xác minh JWT (không tin header X-User-* của gateway). CORS tắt — trình duyệt đi qua gateway
- * (gateway xử lý CORS và bỏ header Origin khi chuyển tiếp).
- */
 @Configuration
 @EnableMethodSecurity
 @RequiredArgsConstructor
@@ -45,6 +41,7 @@ public class SecurityConfig {
     SecurityErrorHandler securityErrorHandler;
     DefaultBearerTokenResolver headerTokenResolver = new DefaultBearerTokenResolver();
 
+    // Cấu hình bảo mật: stateless, CSRF cho request dùng cookie, xác thực JWT, endpoint public.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -89,6 +86,7 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình cách đọc CSRF token từ header của request.
     private CsrfTokenRequestAttributeHandler csrfTokenRequestHandler() {
         CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
         // FE gửi nguyên giá trị token (lấy từ /auth/csrf của Identity) trong header X-XSRF-TOKEN.
@@ -104,6 +102,7 @@ public class SecurityConfig {
         return CookieUtils.read(request, CookieUtils.ACCESS) != null;
     }
 
+    // Lấy access token từ header hoặc cookie, bỏ qua các path public.
     private String resolveToken(HttpServletRequest request) {
         String path = request.getRequestURI();
         for (String publicPrefix : PUBLIC_PREFIXES) {

@@ -15,6 +15,7 @@ public class CareCatalogErrorDecoder implements ErrorDecoder {
     private static final int UNAUTHORIZED = 401;
     private static final int FORBIDDEN = 403;
 
+    // Đổi mã lỗi HTTP từ CareCatalogService sang ErrorCode.
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

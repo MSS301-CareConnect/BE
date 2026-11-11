@@ -9,6 +9,7 @@ import mss301.providerservice.exception.ErrorCode;
 @Slf4j
 public class IdentityErrorDecoder implements ErrorDecoder {
 
+    // Đổi mã lỗi HTTP từ IdentityService sang ErrorCode (404 → không tìm thấy người dùng).
     @Override
     public Exception decode(String methodKey, Response response) {
         if (response.status() == 404) {

@@ -10,10 +10,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Bước 4 của luồng duyệt chứng chỉ: gửi chứng chỉ trung tâm vừa xác nhận (ai_check_status = QUEUED) sang AIService
- * đọc ảnh và lưu kết quả. Chạy nền để Center Manager không phải chờ AI; lỗi thì thử lại với backoff, hết lượt → FAILED.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -21,6 +17,7 @@ import java.util.UUID;
 public class CertificateAiCheckScheduler {
     CertificateService certificateService;
 
+    // Định kỳ chạy AI kiểm tra các chứng chỉ tới hạn; lỗi một chứng chỉ không dừng cả lượt.
     @Scheduled(fixedDelayString = "${PROVIDER_AI_CHECK_SCAN_INTERVAL:15s}",
             initialDelayString = "${PROVIDER_AI_CHECK_INITIAL_DELAY:30s}")
     public void process() {

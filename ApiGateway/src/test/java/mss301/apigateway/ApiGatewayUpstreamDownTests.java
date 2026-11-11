@@ -20,9 +20,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Service phía sau không chạy (cổng đóng) / JWKS không lấy được → 503 đúng envelope, không 500, không giả 401.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ApiGatewayUpstreamDownTests {

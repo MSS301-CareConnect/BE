@@ -9,10 +9,6 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/**
- * Center booking policy (spec §8): mỗi trung tâm tối đa một dòng; chưa có dòng thì dùng mặc định
- * booking.policy-defaults. Mốc thời gian lưu theo phút, tỷ lệ theo phần trăm. Booking đọc policy lúc xử lý.
- */
 @Entity
 @Table(name = "center_booking_policies")
 @Getter

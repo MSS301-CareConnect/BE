@@ -20,10 +20,12 @@ public enum WalletTransactionType {
         this.heldSign = heldSign;
     }
 
+    // Dấu cộng / trừ của loại giao dịch lên số dư khả dụng.
     public int availableSign() {
         return availableSign;
     }
 
+    // Dấu cộng / trừ của loại giao dịch lên số dư tạm giữ.
     public int heldSign() {
         return heldSign;
     }

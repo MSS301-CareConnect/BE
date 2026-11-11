@@ -14,11 +14,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Dashboard ví theo kỳ. Phần chung cho mọi chủ ví + phần riêng theo loại chủ (field không áp dụng bị bỏ khỏi JSON):
- * CUSTOMER — chi tiêu / hoàn; CAREGIVER — cọc được hưởng; CENTER — tiền buổi thực nhận, hoa hồng bị trừ, trừ khiếu nại;
- * PLATFORM — hoa hồng, đã thu / đã hoàn toàn nền tảng, tiền đang giữ hộ, yêu cầu rút chờ xử lý.
- */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Data
 @Builder

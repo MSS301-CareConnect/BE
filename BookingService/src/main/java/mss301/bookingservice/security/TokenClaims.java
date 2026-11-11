@@ -1,8 +1,5 @@
 package mss301.bookingservice.security;
 
-/**
- * Tên claim / giá trị trong JWT do IdentityService phát — bản sao contract (không import class của service khác).
- */
 public final class TokenClaims {
     public static final String TOKEN_TYPE = "token_type";
     public static final String ROLES = "roles";
@@ -22,6 +19,7 @@ public final class TokenClaims {
     // Tiền tố header Authorization của mobile/Swagger
     public static final String BEARER_PREFIX = "Bearer ";
 
+    // Lớp chỉ chứa hằng tên claim, không cho khởi tạo.
     private TokenClaims() {
     }
 }

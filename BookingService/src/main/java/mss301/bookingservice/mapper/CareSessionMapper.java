@@ -19,7 +19,6 @@ import org.mapstruct.NullValuePropertyMappingStrategy;
 
 import java.time.Instant;
 import java.util.UUID;
-import mss301.bookingservice.dto.request.CareTaskCreateRequest;
 import mss301.bookingservice.dto.request.SessionNoteRequest;
 import mss301.bookingservice.dto.response.SessionNoteResponse;
 import mss301.bookingservice.dto.response.SessionUpdateResponse;

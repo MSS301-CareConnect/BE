@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties(MediaProperties.class)
 public class MediaServiceApplication {
 
+    // Khởi động ứng dụng MediaService.
     public static void main(String[] args) {
         SpringApplication.run(MediaServiceApplication.class, args);
     }

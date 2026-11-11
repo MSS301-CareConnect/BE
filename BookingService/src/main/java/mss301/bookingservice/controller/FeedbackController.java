@@ -26,6 +26,7 @@ import java.util.List;
 public class FeedbackController {
     FeedbackService feedbackService;
 
+    // API danh sách đánh giá có lọc theo caregiver, trung tâm, số sao.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<PageResponse<FeedbackResponse>> list(@RequestParam(required = false) UUID caregiverId,
@@ -34,6 +35,7 @@ public class FeedbackController {
         return feedbackService.list(null, caregiverId, centerId, rating, page, size);
     }
 
+    // API danh sách đánh giá của khách đang đăng nhập.
     @GetMapping("/me")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<PageResponse<FeedbackResponse>> listMine(@CurrentUserId UUID actorId,
@@ -41,18 +43,21 @@ public class FeedbackController {
         return feedbackService.list(actorId, null, null, null, page, size);
     }
 
+    // API danh sách caregiver khách được đánh giá trong booking.
     @GetMapping("/eligible")
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<List<EligibleCaregiverResponse>> eligible(@CurrentUserId UUID actorId, @RequestParam UUID bookingId) {
         return feedbackService.eligible(actorId, bookingId);
     }
 
+    // API khách gửi đánh giá.
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<FeedbackResponse> create(@CurrentUserId UUID actorId, @Valid @RequestBody FeedbackRequest request) {
         return feedbackService.create(actorId, request);
     }
 
+    // API trung tâm phản hồi đánh giá.
     @PostMapping("/{id}/reply")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<FeedbackResponse> reply(@CurrentUserId UUID actorId, @CurrentCenterId UUID centerId,
@@ -60,6 +65,7 @@ public class FeedbackController {
         return feedbackService.reply(actorId, centerId, id, request);
     }
 
+    // API admin ẩn / hiện đánh giá.
     @PatchMapping("/{id}/visibility")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<FeedbackResponse> updateVisibility(@PathVariable UUID id,

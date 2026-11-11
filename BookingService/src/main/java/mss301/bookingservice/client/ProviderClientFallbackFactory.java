@@ -10,14 +10,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Fallback khi ProviderService lỗi / timeout / circuit mở: mọi lời gọi dùng để XÁC MINH trước khi ghi (trung tâm
- * đang hoạt động, caregiver hợp lệ) → không đoán, ném lại lỗi nghiệp vụ (404) hoặc 503.
- */
 @Component
 @Slf4j
 public class ProviderClientFallbackFactory implements FallbackFactory<ProviderClient> {
 
+    // Fallback khi gọi ProviderService lỗi: ném AppException tương ứng.
     @Override
     public ProviderClient create(Throwable cause) {
         return new ProviderClient() {
@@ -28,6 +25,7 @@ public class ProviderClientFallbackFactory implements FallbackFactory<ProviderCl
         };
     }
 
+    // Giữ nguyên AppException, lỗi khác đổi thành dịch vụ không khả dụng.
     private static AppException toAppException(Throwable cause) {
         if (cause instanceof AppException appException) {
             return appException;

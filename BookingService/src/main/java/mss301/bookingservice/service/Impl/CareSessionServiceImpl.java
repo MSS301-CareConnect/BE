@@ -106,6 +106,7 @@ public class CareSessionServiceImpl implements CareSessionService {
     CareSessionNoteRepository careSessionNoteRepository;
     BookingOccurrenceService bookingOccurrenceService;
 
+    // Chi tiết ca chăm sóc trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CareSessionResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id) {
@@ -113,10 +114,11 @@ public class CareSessionServiceImpl implements CareSessionService {
                 .filter(found -> canRead(actorId, roles, scopeCenterId, found))
                 .orElseThrow(() -> new AppException(ErrorCode.SESSION_NOT_FOUND));
         CareSessionResponse careSessionResponse = careSessionMapper.toResponse(session,
-                careTaskRepository.findAllBySession(id));
+                careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(id));
         return APIResponse.success("Lấy ca chăm sóc thành công", careSessionResponse);
     }
 
+    // Caregiver check-in: tạo ca, checklist công việc và cờ vị trí.
     @Override
     public APIResponse<CareSessionResponse> start(UUID actorId, CareSessionStartRequest request) {
         BookingOccurrence occurrence = bookingOccurrenceRepository.findWithBooking(request.getOccurrenceId())
@@ -136,6 +138,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Bắt đầu ca chăm sóc thành công", careSessionResponse);
     }
 
+    // Caregiver check-out: kết thúc ca và cập nhật buổi.
     @Override
     public APIResponse<CareSessionResponse> end(UUID actorId, UUID id, CareSessionEndRequest request) {
         CareSession session = careSessionRepository.findWithBooking(id)
@@ -152,12 +155,13 @@ public class CareSessionServiceImpl implements CareSessionService {
                 lockedSession.setCheckOutLongitude(request.getLongitude());
             }
             closeSession(lockedSession, actorId, null);
-            return careSessionMapper.toResponse(lockedSession, careTaskRepository.findAllBySession(id));
+            return careSessionMapper.toResponse(lockedSession, careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(id));
         });
         log.info("Care session {} ended by caregiver {}", id, actorId);
         return APIResponse.success("Kết thúc ca chăm sóc thành công", careSessionResponse);
     }
 
+    // Trung tâm buộc kết thúc ca đang treo kèm lý do.
     @Override
     public APIResponse<CareSessionResponse> forceEnd(UUID actorId, UUID centerId, UUID id,
                                                      CareSessionForceEndRequest request) {
@@ -168,7 +172,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         CareSessionResponse careSessionResponse = transactionTemplate.execute(status -> {
             CareSession lockedSession = lockSession(session);
             Instant now = clock.instant();
-            List<CareTask> tasks = careTaskRepository.findAllBySession(id);
+            List<CareTask> tasks = careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(id);
             for (CareTask task : tasks) {
                 if (task.getStatus() == CareTaskStatus.PENDING) {
                     task.setStatus(CareTaskStatus.SKIPPED);
@@ -183,6 +187,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Đã buộc kết thúc ca chăm sóc", careSessionResponse);
     }
 
+    // Danh sách ca chờ trung tâm xác nhận kết quả.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CareSessionResponse>> listForReview(UUID centerId, SessionCompletionReview review,
@@ -201,6 +206,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Lấy danh sách ca chờ trung tâm xác nhận thành công", pageResponse);
     }
 
+    // Trung tâm xác nhận ca hoàn thành hoặc không được thực hiện.
     @Override
     public APIResponse<CareSessionResponse> review(UUID actorId, UUID centerId, UUID id,
                                                    CareSessionReviewRequest request) {
@@ -231,13 +237,14 @@ public class CareSessionServiceImpl implements CareSessionService {
             if (!delivered) {
                 bookingOccurrenceService.markNotDelivered(booking, session.getOccurrence(), actorId, note, now);
             }
-            return careSessionMapper.toResponse(session, careTaskRepository.findAllBySession(id));
+            return careSessionMapper.toResponse(session, careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(id));
         });
         log.info("Auto-closed care session {} reviewed by manager {}: {}", id, actorId,
                 delivered ? "delivered" : "not delivered");
         return APIResponse.success("Đã ghi nhận kết luận của trung tâm", careSessionResponse);
     }
 
+    // Lấy id ca quá giờ kết thúc mà chưa check-out.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findOverdueIds() {
@@ -246,6 +253,7 @@ public class CareSessionServiceImpl implements CareSessionService {
                 PageRequest.of(0, OVERDUE_BATCH_SIZE));
     }
 
+    // Nhắc caregiver check-out ca quá giờ (một lần mỗi ca).
     @Override
     @Transactional
     public void remindOverdue(UUID id) {
@@ -262,6 +270,7 @@ public class CareSessionServiceImpl implements CareSessionService {
                 });
     }
 
+    // Lấy id ca bị quên check-out quá lâu.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findAutoCloseIds() {
@@ -270,6 +279,7 @@ public class CareSessionServiceImpl implements CareSessionService {
                 PageRequest.of(0, OVERDUE_BATCH_SIZE));
     }
 
+    // Tự đóng ca bị quên check-out và chờ trung tâm xác nhận.
     @Override
     public void autoClose(UUID id) {
         CareSession snapshot = careSessionRepository.findWithBooking(id).orElse(null);
@@ -284,7 +294,7 @@ public class CareSessionServiceImpl implements CareSessionService {
                     || session.getOccurrence().getEndAt().isAfter(endedBefore)) {
                 return false;
             }
-            for (CareTask task : careTaskRepository.findAllBySession(id)) {
+            for (CareTask task : careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(id)) {
                 if (task.getStatus() == CareTaskStatus.PENDING) {
                     task.setStatus(CareTaskStatus.SKIPPED);
                     task.setSkipReason(AUTO_CLOSE_REASON);
@@ -303,6 +313,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
+    // Khóa booking, kiểm điều kiện check-in rồi tạo ca và checklist.
     private CareSessionResponse startInTransaction(UUID actorId, CareSessionStartRequest request, UUID bookingId) {
         // Khóa booking rồi tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
         Booking booking = bookingRepository.findForUpdate(bookingId)
@@ -390,6 +401,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
+    // Mô tả cảnh báo vị trí check-in cho thông báo trung tâm.
     private String describeLocationFlag(CareSession session, Booking booking, BookingOccurrence occurrence) {
         String visit = "Buổi " + occurrence.getOccurrenceNo() + " của lịch " + booking.getBookingCode();
         return session.getLocationFlag() == SessionLocationFlag.NO_LOCATION
@@ -402,7 +414,7 @@ public class CareSessionServiceImpl implements CareSessionService {
     private List<CareTask> buildTasks(CareSession session, Booking booking, BookingOccurrence occurrence) {
         List<CareTask> tasks = new ArrayList<>();
         int sortOrder = 0;
-        for (BookingDetail detail : bookingDetailRepository.findAllByBooking(booking.getId())) {
+        for (BookingDetail detail : bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(booking.getId())) {
             if (occurrence.getCareServiceId() != null && !occurrence.getCareServiceId().equals(detail.getCareServiceId())) {
                 continue;
             }
@@ -418,6 +430,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return tasks;
     }
 
+    // Các liều thuốc của người bệnh rơi vào giờ của buổi.
     private Map<LocalTime, List<String>> findDosesInWindow(Booking booking, BookingOccurrence occurrence) {
         Map<LocalTime, List<String>> doses = new TreeMap<>(Comparator.naturalOrder());
         RecipientSnapshot snapshot = booking.getRecipientSnapshot();
@@ -441,6 +454,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return doses;
     }
 
+    // Tiêu đề công việc uống thuốc (tên, liều, giờ).
     private String toMedicationTitle(RecipientSnapshot.MedicationItem medication, LocalTime doseTime) {
         String dosage = medication.getDosage() == null || medication.getDosage().isBlank()
                 ? ""
@@ -458,6 +472,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
+    // Cập nhật công việc trong checklist (bỏ qua cần lý do; hoàn tác về PENDING khi ca còn chạy).
     @Override
     @Transactional
     public APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request) {
@@ -485,6 +500,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Cập nhật công việc thành công", response);
     }
 
+    // Thêm công việc tự do vào checklist (tối đa 20).
     @Override
     @Transactional
     public APIResponse<CareTaskResponse> createTask(UUID actorId, UUID sessionId, CareTaskCreateRequest request) {
@@ -492,7 +508,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         if (careTaskRepository.countBySessionIdAndTaskTypeAndDeletedAtIsNull(sessionId, CareTaskType.CUSTOM) >= 20) {
             throw new AppException(ErrorCode.TOO_MANY_CUSTOM_TASKS);
         }
-        int order = careTaskRepository.findAllBySession(sessionId).stream().mapToInt(CareTask::getSortOrder).max().orElse(0) + 1;
+        int order = careTaskRepository.findBySessionIdAndDeletedAtIsNullOrderBySortOrderAsc(sessionId).stream().mapToInt(CareTask::getSortOrder).max().orElse(0) + 1;
         CareTask task = careSessionMapper.toMedicationTask(request.getTitle().trim(), null, session,
                 CareTaskType.CUSTOM, CareTaskStatus.PENDING, order);
         task.setUpdatedBy(actorId);
@@ -503,6 +519,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Thêm công việc thành công", response);
     }
 
+    // Thêm ghi chú tình trạng vào ca đang chạy.
     @Override
     @Transactional
     public APIResponse<SessionNoteResponse> createNote(UUID actorId, UUID sessionId, SessionNoteRequest request) {
@@ -515,6 +532,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Ghi nhận tình trạng thành công", response);
     }
 
+    // Danh sách ghi chú của ca trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<SessionNoteResponse>> listNotes(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -531,6 +549,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         return APIResponse.success("Lấy ghi chú tình trạng thành công", response);
     }
 
+    // Khóa ca đang chạy của chính caregiver để ghi, không hợp lệ thì báo lỗi.
     private CareSession lockWritableSession(UUID actorId, UUID id) {
         CareSession session = careSessionRepository.findWithBooking(id)
                 .filter(found -> actorId.equals(found.getCaregiverUserId()))
@@ -573,6 +592,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
+    // Người gọi được xem ca này (admin, service, trung tâm, khách, caregiver).
     private boolean canRead(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, CareSession session) {
         if (roles.contains(RoleCode.ADMIN) || roles.contains(RoleCode.SERVICE)) {
             return true;

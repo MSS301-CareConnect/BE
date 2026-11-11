@@ -33,10 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-/**
- * Gateway: xác thực JWT sớm + CORS tập trung. Không CSRF ở gateway — IdentityService / CareRecipientService tự kiểm
- * CSRF (cookie XSRF-TOKEN + header X-XSRF-TOKEN được chuyển nguyên). Không session.
- */
 @Configuration
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -61,6 +57,7 @@ public class SecurityConfig {
             toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS),
             toMatcher(HttpMethod.GET, GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS));
 
+    // Cấu hình bảo mật gateway: route public, xác thực JWT, xử lý lỗi 401/403.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -94,6 +91,7 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình CORS tập trung cho FE gọi qua gateway.
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
@@ -125,6 +123,7 @@ public class SecurityConfig {
         return bearerToken == null ? cookieToken : bearerToken;
     }
 
+    // Đọc access token từ cookie khi request không có header Authorization.
     private static String readAccessCookie(HttpServletRequest request) {
         if (request.getCookies() == null) {
             return null;

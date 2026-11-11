@@ -16,7 +16,9 @@ import lombok.experimental.FieldDefaults;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class APIResponse<T> {
     int code;
+
     String message;
+
     T result;
 
     public static <T> APIResponse<T> success(String message, T result) {

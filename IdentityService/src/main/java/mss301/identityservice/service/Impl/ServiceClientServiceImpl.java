@@ -43,6 +43,7 @@ public class ServiceClientServiceImpl implements ServiceClientService {
     IdentityProperties identityProperties;
     ClientIpResolver clientIpResolver;
 
+    // Cấp token SERVICE: kiểm rate limit, clientId và secret rồi phát token.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<ServiceTokenResponse> issueToken(ServiceTokenRequest request, HttpServletRequest httpServletRequest) {
@@ -62,6 +63,7 @@ public class ServiceClientServiceImpl implements ServiceClientService {
         return APIResponse.success("Cấp token service thành công", serviceTokenResponse);
     }
 
+    // Kiểm tra service client còn hoạt động.
     @Override
     @Transactional(readOnly = true)
     public boolean isActive(UUID clientUuid, String clientId) {

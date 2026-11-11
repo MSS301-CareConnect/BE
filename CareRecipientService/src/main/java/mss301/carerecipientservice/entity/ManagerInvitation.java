@@ -11,10 +11,6 @@ import org.hibernate.annotations.UuidGenerator;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Lời mời quản lý hồ sơ (C-04 / D19). inviteeUserId chỉ có khi email thuộc tài khoản CUSTOMER đang hoạt động — người mời
- * không bao giờ biết điều này; lời mời không có invitee thì không ai chấp nhận được và tự hết hạn.
- */
 @Entity
 @Table(name = "recipient_manager_invitations")
 @Getter
@@ -68,6 +64,7 @@ public class ManagerInvitation {
     @Column(name = "updated_at", nullable = false)
     Instant updatedAt;
 
+    // Gán createdAt / updatedAt khi lưu lời mời mới.
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -75,6 +72,7 @@ public class ManagerInvitation {
         updatedAt = now;
     }
 
+    // Cập nhật updatedAt mỗi lần sửa lời mời.
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();

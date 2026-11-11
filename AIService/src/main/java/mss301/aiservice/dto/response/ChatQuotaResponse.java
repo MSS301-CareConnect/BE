@@ -17,11 +17,18 @@ import lombok.experimental.FieldDefaults;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatQuotaResponse {
     boolean guest;
+
     Integer dailyPromptLimit;
+
     Integer remainingPrompts;
+
     int maxPromptLength;
+
     boolean imagesAllowed;
+
     int maxImages;
+
     int maxImageSizeMb;
+
     int maxTotalImageSizeMb;
 }

@@ -34,6 +34,7 @@ public class CaregiverAbsenceController {
 
     CaregiverAbsenceService caregiverAbsenceService;
 
+    // API danh sách lần vắng mặt của caregiver.
     @GetMapping
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<PageResponse<CaregiverAbsenceResponse>> list(@CurrentUserId UUID actorId,
@@ -51,6 +52,7 @@ public class CaregiverAbsenceController {
                 to, page, size);
     }
 
+    // API thống kê vắng mặt của caregiver.
     @GetMapping("/statistics")
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<CaregiverAbsenceStatisticsResponse> getStatistics(@CurrentUserId UUID actorId,
@@ -63,6 +65,7 @@ public class CaregiverAbsenceController {
         return caregiverAbsenceService.getStatistics(actorId, roles, scopeCenterId, centerId, caregiverId, from, to);
     }
 
+    // API xem chi tiết một lần vắng mặt.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<CaregiverAbsenceResponse> get(@CurrentUserId UUID actorId,
@@ -72,6 +75,7 @@ public class CaregiverAbsenceController {
         return caregiverAbsenceService.get(actorId, roles, scopeCenterId, id);
     }
 
+    // API caregiver giải trình lần vắng mặt.
     @PostMapping("/{id}/explanation")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverAbsenceResponse> explain(@CurrentUserId UUID actorId,
@@ -80,6 +84,7 @@ public class CaregiverAbsenceController {
         return caregiverAbsenceService.explain(actorId, id, request);
     }
 
+    // API trung tâm kết luận lần vắng mặt.
     @PostMapping("/{id}/conclusion")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CaregiverAbsenceResponse> conclude(@CurrentUserId UUID actorId,

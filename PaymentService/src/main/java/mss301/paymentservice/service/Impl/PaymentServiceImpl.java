@@ -123,6 +123,7 @@ public class PaymentServiceImpl implements PaymentService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Chi tiết một khoản thanh toán trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PaymentResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID paymentId) {
@@ -133,6 +134,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Lấy giao dịch thành công", paymentResponse);
     }
 
+    // Khoản thanh toán (mặc định là cọc) của một booking trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PaymentResponse> getByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId,
@@ -160,6 +162,7 @@ public class PaymentServiceImpl implements PaymentService {
         return responses;
     }
 
+    // Danh sách thanh toán có lọc và phân trang theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<PaymentResponse>> list(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -204,6 +207,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Thống kê doanh thu thành công", revenueResponse);
     }
 
+    // Tạo thanh toán cọc: lấy thông tin booking, tính cọc theo chính sách, mở phiên ở cổng.
     @Override
     public APIResponse<CheckoutResponse> createCheckout(UUID customerId, UUID bookingId, CreateCheckoutRequest request,
                                                         HttpServletRequest httpServletRequest) {
@@ -243,6 +247,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Tạo phiên thanh toán thành công", checkoutResponse);
     }
 
+    // Xử lý IPN của VNPay: kiểm chữ ký, số tiền rồi xác nhận thanh toán.
     @Override
     public VnPayIpnResponse handleVnPayIpn(Map<String, String> params) {
         if (!vnPayGateway.isValidSignature(params)) {
@@ -254,6 +259,7 @@ public class PaymentServiceImpl implements PaymentService {
         return ipnResponse(outcome.responseCode(), outcome.message());
     }
 
+    // Xử lý khi khách quay lại từ VNPay: kiểm chữ ký và xác nhận kết quả.
     @Override
     public APIResponse<PaymentReturnResponse> handleVnPayReturn(Map<String, String> params) {
         if (!vnPayGateway.isValidSignature(params)) {
@@ -280,6 +286,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Nhận kết quả VNPay thành công", paymentReturnResponse);
     }
 
+    // Xử lý webhook Stripe: kiểm chữ ký, hoàn tất hoặc hết hạn phiên thanh toán.
     @Override
     public APIResponse<Void> handleStripeWebhook(String payload, String signature) {
         PaymentProperties.Stripe stripe = paymentProperties.getStripe();
@@ -303,6 +310,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Đã xử lý webhook");
     }
 
+    // Trả trạng thái thanh toán khi khách quay lại từ Stripe.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PaymentReturnResponse> handleStripeReturn(String sessionId) {
@@ -313,6 +321,7 @@ public class PaymentServiceImpl implements PaymentService {
         return APIResponse.success("Nhận kết quả Stripe thành công", paymentReturnResponse);
     }
 
+    // Lấy id các lần thanh toán còn chờ quá thời gian cho phép.
     @Override
     public List<UUID> findStaleAttemptIds() {
         Instant before = clock.instant().minus(paymentProperties.getExpiry().getGrace());
@@ -320,6 +329,7 @@ public class PaymentServiceImpl implements PaymentService {
                 PageRequest.of(0, paymentProperties.getExpiry().getBatchSize()));
     }
 
+    // Đối soát một lần thanh toán treo bằng cách tra cứu trạng thái ở cổng.
     @Override
     public void reconcileAttempt(UUID attemptId) {
         Instant now = clock.instant();
@@ -339,6 +349,7 @@ public class PaymentServiceImpl implements PaymentService {
         transactionTemplate.executeWithoutResult(status -> applyReconciliation(stale, queryResult));
     }
 
+    // Áp kết quả tra cứu từ cổng vào lần thanh toán đang chờ.
     private void applyReconciliation(StaleAttempt stale, QueryResult queryResult) {
         PaymentAttempt attempt = paymentAttemptRepository.findForUpdateByReference(stale.reference()).orElse(null);
         if (attempt == null || attempt.getStatus() != PaymentStatus.PENDING) {
@@ -366,7 +377,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
         attempt.setStatus(PaymentStatus.EXPIRED);
         attempt.setCompletedAt(now);
-        boolean otherPending = paymentAttemptRepository.findAllByPaymentAndStatus(payment.getId(), PaymentStatus.PENDING)
+        boolean otherPending = paymentAttemptRepository.findByPaymentIdAndStatusOrderByCreatedAtDesc(payment.getId(), PaymentStatus.PENDING)
                 .stream()
                 .anyMatch(other -> !other.getId().equals(attempt.getId()));
         if (payment.getStatus() == PaymentStatus.PENDING && !otherPending) {
@@ -377,6 +388,7 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("Attempt {} expired", stale.reference());
     }
 
+    // Gọi BookingService lấy thông tin booking cần thanh toán, đổi lỗi sang ErrorCode.
     private BookingPaymentContextResponse fetchPaymentContext(UUID bookingId) {
         RemoteApiResponse<BookingPaymentContextResponse> response;
         try {
@@ -414,6 +426,7 @@ public class PaymentServiceImpl implements PaymentService {
         return lines;
     }
 
+    // Tạo / cập nhật tài chính booking và mở lần thanh toán cọc.
     private UUID openDepositAttempt(BookingPaymentContextResponse context, PolicySnapshot policySnapshot,
                                     DepositAllocator.Result allocation, CreateCheckoutRequest request, Instant expiresAt) {
         UUID bookingId = context.getBookingId();
@@ -444,6 +457,7 @@ public class PaymentServiceImpl implements PaymentService {
         return attempt.getId();
     }
 
+    // Tạo / cập nhật tài chính từng buổi theo phân bổ tiền cọc.
     private void upsertOccurrenceFinancials(BookingFinancial financial, DepositAllocator.Result allocation,
                                             BookingPaymentContextResponse context) {
         // CR-4: caregiver từng buổi lúc khách trả khoản đầu — mặc định cho bên hưởng phần cọc bị giữ.
@@ -516,6 +530,7 @@ public class PaymentServiceImpl implements PaymentService {
         return new IpnOutcome(VNPAY_SUCCESS, "Confirm Success");
     }
 
+    // Kiểm tra số tiền VNPay báo về khớp số tiền của lần thanh toán.
     private boolean matchesVnPayAmount(PaymentAttempt attempt, String rawAmount) {
         if (rawAmount == null) {
             return false;
@@ -550,7 +565,7 @@ public class PaymentServiceImpl implements PaymentService {
                 TransactionEventType.PAYMENT_SUCCEEDED, payment.getAmount(), null, "reference=" + attempt.getReference(),
                 null);
         // Đã thu tiền: phiên khác còn mở của payment này không được thu thêm lần nữa.
-        for (PaymentAttempt otherAttempt : paymentAttemptRepository.findAllByPaymentAndStatus(payment.getId(),
+        for (PaymentAttempt otherAttempt : paymentAttemptRepository.findByPaymentIdAndStatusOrderByCreatedAtDesc(payment.getId(),
                 PaymentStatus.PENDING)) {
             if (!otherAttempt.getId().equals(attempt.getId())) {
                 otherAttempt.setStatus(PaymentStatus.CANCELLED);
@@ -601,6 +616,7 @@ public class PaymentServiceImpl implements PaymentService {
         refundService.refundSeparateAttempt(attempt, reason);
     }
 
+    // Kiểm tra khoản thanh toán vẫn còn được thanh toán (booking chưa hủy / hết hạn).
     private boolean isStillPayable(Payment payment) {
         if (payment.getPaymentType() == PaymentType.DEPOSIT) {
             return bookingFinancialRepository.findById(payment.getBookingId())
@@ -610,6 +626,7 @@ public class PaymentServiceImpl implements PaymentService {
         return payment.getInvoiceId() != null;
     }
 
+    // Hoàn tất lần thanh toán Stripe từ session đã trả tiền.
     private void completeStripe(Session session) {
         transactionTemplate.executeWithoutResult(status -> {
             PaymentAttempt attempt = paymentAttemptRepository.findForUpdateByCheckoutId(session.getId())
@@ -627,6 +644,7 @@ public class PaymentServiceImpl implements PaymentService {
         });
     }
 
+    // Đánh dấu lần thanh toán Stripe hết hạn.
     private void expireStripe(String sessionId) {
         PaymentAttempt attempt = paymentAttemptRepository.findForUpdateByCheckoutId(sessionId)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
@@ -653,12 +671,14 @@ public class PaymentServiceImpl implements PaymentService {
         throw new AppException(ErrorCode.PAYMENT_NOT_FOUND);
     }
 
+    // Báo lỗi nếu token manager không có center_id.
     private void checkCenterClaim(UUID centerId) {
         if (centerId == null) {
             throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
         }
     }
 
+    // Dựng điều kiện lọc thanh toán theo role (khách, trung tâm, admin) và tham số.
     private Specification<Payment> buildListSpecification(UUID actorId, Set<RoleCode> roles, UUID centerId,
                                                            UUID bookingId, PaymentStatus status, PaymentType paymentType) {
         UUID scopeCustomerId;
@@ -697,6 +717,7 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
+    // Dựng response trả VNPay theo định dạng IPN.
     private VnPayIpnResponse ipnResponse(String responseCode, String message) {
         return VnPayIpnResponse.builder()
                 .responseCode(responseCode)
@@ -704,9 +725,11 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
+    // Kết quả xử lý IPN gồm mã và thông điệp trả VNPay.
     private record IpnOutcome(String responseCode, String message) {
     }
 
+    // Thông tin lần thanh toán treo cần đối soát.
     private record StaleAttempt(PaymentProvider provider, String reference, Instant createdAt, Instant expiresAt) {
     }
 }

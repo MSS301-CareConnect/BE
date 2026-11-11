@@ -43,6 +43,7 @@ public class BookingOccurrenceController {
 
     BookingOccurrenceService bookingOccurrenceService;
 
+    // API caregiver xem các buổi được giao trong khoảng ngày.
     @GetMapping
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<PageResponse<CaregiverOccurrenceResponse>> list(@CurrentUserId UUID actorId,
@@ -55,6 +56,7 @@ public class BookingOccurrenceController {
         return bookingOccurrenceService.list(actorId, from, to, status, bookingId, page, size);
     }
 
+    // API xem chi tiết một buổi chăm sóc.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CUSTOMER', 'CENTER_MANAGER', 'ADMIN', 'SERVICE')")
     public APIResponse<CaregiverOccurrenceResponse> get(@CurrentUserId UUID actorId,
@@ -64,18 +66,21 @@ public class BookingOccurrenceController {
         return bookingOccurrenceService.get(actorId, roles, centerId, id);
     }
 
+    // API cho ProviderService biết caregiver nào bận trong các khung giờ.
     @PostMapping("/busy-caregivers")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<BusyCaregiverResponse> listBusyCaregivers(@Valid @RequestBody BusyCaregiverRequest request) {
         return bookingOccurrenceService.listBusyCaregivers(request);
     }
 
+    // API caregiver xác nhận đã nhận buổi.
     @PostMapping("/{id}/acknowledge")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverOccurrenceResponse> acknowledge(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return bookingOccurrenceService.acknowledge(actorId, id);
     }
 
+    // API caregiver xác nhận nhiều buổi một lần.
     @PostMapping("/acknowledgements")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(@CurrentUserId UUID actorId,
@@ -83,6 +88,7 @@ public class BookingOccurrenceController {
         return bookingOccurrenceService.acknowledgeMany(actorId, request);
     }
 
+    // API báo khách vắng mặt khi caregiver tới nơi.
     @PostMapping("/{id}/no-show-reports")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverOccurrenceResponse> reportNoShow(@CurrentUserId UUID actorId,
@@ -91,6 +97,7 @@ public class BookingOccurrenceController {
         return bookingOccurrenceService.reportNoShow(actorId, id, request);
     }
 
+    // API trung tâm kết luận báo vắng mặt.
     @PostMapping("/{id}/no-show-reports/decision")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CaregiverOccurrenceResponse> decideNoShow(@CurrentUserId UUID actorId,

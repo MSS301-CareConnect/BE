@@ -18,12 +18,6 @@ import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Adapter API hoàn tiền VNPay (merchant_webapi, vnp_Command=refund, PAY-10). Chỉ dùng khi PAYMENT_REFUND_MODE=VNPAY.
- * Chữ ký: HMAC-SHA512 trên vnp_RequestId|vnp_Version|vnp_Command|vnp_TmnCode|vnp_TransactionType|vnp_TxnRef|vnp_Amount|
- * vnp_TransactionNo|vnp_TransactionDate|vnp_CreateBy|vnp_CreateDate|vnp_IpAddr|vnp_OrderInfo. Chưa kiểm trên sandbox
- * (Đợt 1b). Gọi mạng — caller phải gọi ngoài transaction.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -41,6 +35,7 @@ public class VnPayRefundGateway {
     PaymentProperties paymentProperties;
     Clock clock;
 
+    // Gọi API hoàn tiền của VNPay và đổi kết quả sang RefundResult.
     public RefundResult refund(RefundCommand command) {
         PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
         if (!isPresent(vnpay.getTmnCode()) || !isPresent(vnpay.getHashSecret()) || !isPresent(vnpay.getApiUrl())) {
@@ -79,6 +74,7 @@ public class VnPayRefundGateway {
         return RefundResult.rejected(code, command.requestId(), "VNPay refund rejected (code " + code + ")");
     }
 
+    // Dựng request hoàn tiền VNPay (toàn phần / một phần) kèm chữ ký.
     private Map<String, String> buildRequest(RefundCommand command, PaymentProperties.Vnpay vnpay) {
         String transactionType = command.fullRefund() ? FULL_REFUND : PARTIAL_REFUND;
         String amount = VndMoney.toVnPayAmount(command.amount());
@@ -106,6 +102,7 @@ public class VnPayRefundGateway {
         return body;
     }
 
+    // Kiểm tra chuỗi có giá trị.
     private boolean isPresent(String value) {
         return value != null && !value.isBlank();
     }

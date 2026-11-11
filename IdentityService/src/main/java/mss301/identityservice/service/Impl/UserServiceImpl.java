@@ -56,7 +56,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import mss301.identityservice.repository.StatisticsCountView;
+import mss301.identityservice.repository.projection.StatisticsCountView;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.time.ZoneId;
@@ -84,6 +84,7 @@ public class UserServiceImpl implements UserService {
     SessionStore sessionStore;
     CurrentRequestIdentity currentRequestIdentity;
 
+    // Kiểm email + mật khẩu và trạng thái tài khoản khi đăng nhập.
     @Override
     @Transactional(readOnly = true)
     public AuthenticatedUser verifyCredentials(String email, String password) {
@@ -103,6 +104,7 @@ public class UserServiceImpl implements UserService {
         return userMapper.toAuthenticatedUser(user);
     }
 
+    // Tạo tài khoản khách hàng sau khi đã xác thực OTP.
     @Override
     @Transactional
     public UserResponse createVerified(RegisterRequest request) {
@@ -113,6 +115,7 @@ public class UserServiceImpl implements UserService {
         return userMapper.toResponse(savedUser);
     }
 
+    // Đổi mật khẩu theo email và hủy các phiên cũ.
     @Override
     @Transactional
     public void resetPassword(String email, String passwordHash) {
@@ -128,6 +131,7 @@ public class UserServiceImpl implements UserService {
         log.info("Password reset for user {}", user.getId());
     }
 
+    // Khóa user, tăng authz_version và xóa mọi phiên.
     @Override
     @Transactional
     public void invalidateSessions(UUID userId) {
@@ -136,6 +140,7 @@ public class UserServiceImpl implements UserService {
         writeAudit(userId, user, AuditAction.SESSIONS_REVOKED, "Logout all");
     }
 
+    // Hồ sơ của người dùng đang đăng nhập.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<UserResponse> me(UUID actorId) {
@@ -144,6 +149,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy thông tin tài khoản thành công", userResponse);
     }
 
+    // Cập nhật hồ sơ của chính mình (tài khoản phải đang hoạt động).
     @Override
     @Transactional
     public APIResponse<UserResponse> update(UUID actorId, UpdateProfileRequest request) {
@@ -157,6 +163,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Cập nhật thông tin thành công", userResponse);
     }
 
+    // Đổi mật khẩu: kiểm mật khẩu hiện tại rồi hủy các phiên khác.
     @Override
     @Transactional
     public APIResponse<Void> changePassword(UUID actorId, ChangePasswordRequest request) {
@@ -176,8 +183,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Đổi mật khẩu thành công, vui lòng đăng nhập lại");
     }
 
-    // ===== Tra cứu tài khoản (người dùng & service-to-service qua ApiGateway) =====
-
+    // Xem thông tin một người dùng trong phạm vi được phép.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<UserResponse> get(UUID id) {
@@ -187,6 +193,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy thông tin tài khoản thành công", userResponse);
     }
 
+    // Tìm người dùng theo email (chỉ ADMIN / SERVICE).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<UserResponse> getByEmail(String email) {
@@ -203,6 +210,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy thông tin tài khoản thành công", userResponse);
     }
 
+    // Lấy thông tin nhiều người dùng một lần trong phạm vi được phép.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<UserResponse>> listBatch(UserBatchRequest request) {
@@ -213,8 +221,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy danh sách tài khoản thành công", userResponses);
     }
 
-    // ===== Quản trị tài khoản =====
-
+    // Danh sách người dùng có lọc và phân trang theo phạm vi của người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<UserResponse>> list(UUID actorId, RoleCode role, UserStatus status, UUID centerId,
@@ -280,6 +287,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy danh sách tài khoản thành công", response);
     }
 
+    // Khóa / mở mọi tài khoản thuộc một trung tâm (ADMIN / SERVICE).
     @Override
     @Transactional
     public APIResponse<AffectedUsersResponse> updateCenterStatus(UUID actorId, UUID centerId, UserStatusRequest request) {
@@ -309,6 +317,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Cập nhật tài khoản theo trung tâm thành công", response);
     }
 
+    // Tạo tài khoản manager / caregiver theo quyền và phạm vi trung tâm của người tạo.
     @Override
     @Transactional
     public APIResponse<UserResponse> provision(UUID actorId, ProvisionRequest request) {
@@ -342,6 +351,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Tạo tài khoản thành công; người dùng cần đặt mật khẩu bằng OTP", userResponse);
     }
 
+    // Cập nhật hồ sơ người dùng khác trong phạm vi quản lý.
     @Override
     @Transactional
     public APIResponse<UserResponse> update(UUID actorId, UUID id, UpdateProfileRequest request) {
@@ -354,6 +364,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Cập nhật thông tin thành công", userResponse);
     }
 
+    // Khóa / mở khóa tài khoản trong phạm vi quản lý và ghi audit.
     @Override
     @Transactional
     public APIResponse<UserResponse> updateStatus(UUID actorId, UUID id, UserStatus status, String reason) {
@@ -379,6 +390,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Cập nhật trạng thái thành công", userResponse);
     }
 
+    // Xóa mềm tài khoản trong phạm vi quản lý và ghi audit.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id) {
@@ -397,6 +409,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Vô hiệu hóa tài khoản thành công");
     }
 
+    // Gán role cho người dùng và ghi audit.
     @Override
     @Transactional
     public APIResponse<UserResponse> assign(UUID actorId, UUID id, UUID roleId) {
@@ -417,6 +430,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Gán role thành công", userResponse);
     }
 
+    // Thu hồi role của người dùng, tăng authz_version và ghi audit.
     @Override
     @Transactional
     public APIResponse<UserResponse> revoke(UUID actorId, UUID id, UUID roleId) {
@@ -439,6 +453,7 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Thu hồi role thành công", userResponse);
     }
 
+    // Thống kê người dùng theo role / trạng thái trong khoảng ngày (giờ Việt Nam).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<UserStatisticsResponse> statistics(LocalDate from, LocalDate to) {
@@ -454,12 +469,14 @@ public class UserServiceImpl implements UserService {
         return APIResponse.success("Lấy thống kê tài khoản thành công", response);
     }
 
+    // Đổi các dòng thống kê thành map nhóm → số lượng.
     private Map<String, Long> toStatisticsCounts(List<StatisticsCountView> rows) {
         Map<String, Long> counts = new LinkedHashMap<>();
         rows.forEach(row -> counts.put(row.getCategory(), row.getCount()));
         return counts;
     }
 
+    // Kiểm tra trạng thái hợp lệ và bắt buộc lý do khi khóa.
     private void checkLockReason(UserStatus status, String reason) {
         if (status == null) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -472,11 +489,13 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    // Người gọi là ADMIN hoặc SERVICE thì được xem mọi người dùng.
     private boolean canReadAllUsers() {
         return currentRequestIdentity.hasRole(RoleCode.SERVICE.name())
                 || currentRequestIdentity.hasRole(RoleCode.ADMIN.name());
     }
 
+    // Báo lỗi nếu người gọi không được xem người dùng này.
     private void checkLookupScope(User target) {
         if (canReadAllUsers()) {
             return;
@@ -493,6 +512,7 @@ public class UserServiceImpl implements UserService {
         throw new AppException(ErrorCode.USER_NOT_EXISTED);
     }
 
+    // Map người dùng sang response, ẩn bớt trường với người gọi thường.
     private UserResponse mapLookupResponse(User user) {
         UserResponse userResponse = userMapper.toResponse(user);
         if (!canReadAllUsers()) {
@@ -501,6 +521,7 @@ public class UserServiceImpl implements UserService {
         return userResponse;
     }
 
+    // Chuẩn hóa email, kiểm trùng, lưu tài khoản và gán role.
     private User createAccount(User user, RoleCode roleCode, UUID actorId) {
         user.setEmail(EmailNormalizer.normalize(user.getEmail()));
         // Kiểm trước để báo lỗi thân thiện; unique constraint uk_users_email vẫn chặn khi hai request chạy song song.
@@ -515,11 +536,13 @@ public class UserServiceImpl implements UserService {
         return savedUser;
     }
 
+    // Tìm người dùng chưa xóa, không có thì báo lỗi.
     private User findUser(UUID id) {
         return userRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
     }
 
+    // Tìm người gọi và kiểm tài khoản đang hoạt động.
     private User findActiveActor(UUID actorId) {
         User actor = findUser(actorId);
         if (actor.getStatus() != UserStatus.ACTIVE) {
@@ -528,6 +551,7 @@ public class UserServiceImpl implements UserService {
         return actor;
     }
 
+    // Khóa dòng người dùng để cập nhật, không có thì báo lỗi.
     private User lockUser(UUID id) {
         return userRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
@@ -540,6 +564,7 @@ public class UserServiceImpl implements UserService {
         return lockUser(id);
     }
 
+    // Tìm role được phép gán theo mã, không có thì báo lỗi.
     private Role findAssignableRole(RoleCode roleCode) {
         Role role = roleRepository.findByRoleCodeAndDeletedAtIsNull(roleCode.name())
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
@@ -549,6 +574,7 @@ public class UserServiceImpl implements UserService {
         return role;
     }
 
+    // Lưu liên kết người dùng – role.
     private void assignRole(User user, Role role, UUID assignedBy) {
         UserRole userRole = userMapper.toUserRole(user, role, assignedBy);
         userRoleRepository.save(userRole);
@@ -562,30 +588,36 @@ public class UserServiceImpl implements UserService {
         sessionStore.removeAllUserSessions(user.getId());
     }
 
+    // Ghi audit thao tác quản trị tài khoản.
     private void writeAudit(UUID actorId, User target, AuditAction action, String detail) {
         identityAuditRepository.save(
                 identityAuditMapper.toAudit(actorId, target.getId(), target.getCenterId(), action, detail));
     }
 
+    // Kiểm tra người dùng có role hiệu lực.
     private boolean hasRole(User user, RoleCode roleCode) {
         return user.effectiveRoleCodes().contains(roleCode.name());
     }
 
+    // Kiểm tra người dùng có permission hiệu lực.
     private boolean hasPermission(User user, String permission) {
         return user.effectivePermissionCodes().contains(permission);
     }
 
+    // Role gắn với trung tâm (CENTER_MANAGER, CAREGIVER).
     private boolean isCenterScopedRole(Role role) {
         return RoleCode.CENTER_MANAGER.name().equals(role.getRoleCode())
                 || RoleCode.CAREGIVER.name().equals(role.getRoleCode());
     }
 
+    // Báo lỗi nếu người gọi không phải ADMIN có permission yêu cầu.
     private void checkAdminPermission(User actor, String permission) {
         if (!hasRole(actor, RoleCode.ADMIN) || !hasPermission(actor, permission)) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
     }
 
+    // Kiểm tra manager được tạo caregiver cho đúng trung tâm của mình.
     private void checkCaregiverCreator(User actor, UUID requestedCenterId) {
         if (!hasRole(actor, RoleCode.CENTER_MANAGER)
                 || !hasPermission(actor, Permissions.CAREGIVER_CREATE)
@@ -615,6 +647,7 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    // Chặn thao tác làm mất ADMIN đang hoạt động cuối cùng.
     private void checkNotLastAdmin(User user) {
         boolean isActiveAdmin = hasRole(user, RoleCode.ADMIN) && user.getStatus() == UserStatus.ACTIVE;
         if (isActiveAdmin && userRepository.countActiveByRoleCode(RoleCode.ADMIN.name(), UserStatus.ACTIVE) <= 1) {

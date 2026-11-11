@@ -21,10 +21,10 @@ import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.StatisticsMapper;
 import mss301.bookingservice.repository.BookingRepository;
-import mss301.bookingservice.repository.BookingResponseTimeView;
-import mss301.bookingservice.repository.StatisticsCountView;
-import mss301.bookingservice.repository.FeedbackRatingView;
-import mss301.bookingservice.repository.OccurrenceStartView;
+import mss301.bookingservice.repository.projection.BookingResponseTimeView;
+import mss301.bookingservice.repository.projection.StatisticsCountView;
+import mss301.bookingservice.repository.projection.FeedbackRatingView;
+import mss301.bookingservice.repository.projection.OccurrenceStartView;
 import mss301.bookingservice.service.StatisticsService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -68,6 +68,7 @@ public class StatisticsServiceImpl implements StatisticsService {
     StatisticsMapper statisticsMapper;
     Clock clock;
 
+    // Thống kê vận hành của một trung tâm trong khoảng ngày.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OperationalStatisticsResponse> centers(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId, LocalDate from, LocalDate to) {
@@ -84,6 +85,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         return APIResponse.success("Lấy thống kê trung tâm thành công", response);
     }
 
+    // Thống kê vận hành toàn hệ thống kèm bảng xếp hạng caregiver.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OperationalStatisticsResponse> system(LocalDate from, LocalDate to, int page, int size) {
@@ -104,6 +106,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         return APIResponse.success("Lấy thống kê hệ thống thành công", response);
     }
 
+    // Gom số liệu booking, buổi, đánh giá, khiếu nại, hết hạn của khoảng thời gian.
     private OperationalStatisticsResponse aggregate(UUID centerId, Instant from, Instant to) {
         Map<String, Long> bookings = toCounts(bookingRepository.countBookings(centerId, from, to));
         Map<String, Long> occurrences = toCounts(bookingRepository.countOccurrences(centerId, from, to));
@@ -183,6 +186,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         return points;
     }
 
+    // Thời gian phản hồi của trung tâm với yêu cầu booking.
     private ResponsivenessStatisticsResponse responsiveness(UUID centerId, Instant from, Instant to) {
         List<BookingResponseTimeView> answers = bookingRepository.findCenterResponses(centerId, from, to,
                 BookingStatus.PENDING_CENTER_CONFIRMATION, CENTER_ANSWERS);
@@ -193,12 +197,14 @@ public class StatisticsServiceImpl implements StatisticsService {
                 bookingRepository.countExpired(centerId, from, to, CENTER_TIMEOUTS));
     }
 
+    // Đổi các dòng thống kê thành map nhóm → số lượng.
     private Map<String, Long> toCounts(List<StatisticsCountView> rows) {
         Map<String, Long> counts = new LinkedHashMap<>();
         rows.forEach(row -> counts.put(row.getCategory(), row.getCount()));
         return counts;
     }
 
+    // Kiểm khoảng ngày hợp lệ và không quá một năm.
     private void validateRange(LocalDate from, LocalDate to) {
         if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) >= 366) {
             throw new AppException(ErrorCode.INVALID_DATE_FILTER);

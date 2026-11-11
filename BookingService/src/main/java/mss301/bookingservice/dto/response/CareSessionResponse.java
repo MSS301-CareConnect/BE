@@ -38,21 +38,34 @@ public class CareSessionResponse {
     String endReason;
 
     boolean autoClosed;
+
     // 2026-11-11: chấm công thực tế và cờ để trung tâm xem lại.
     int lateMinutes;
+
     Integer earlyLeaveMinutes;
+
     Integer checkInDistanceMeters;
+
     SessionLocationFlag locationFlag;
+
     SessionCompletionReview completionReview;
+
     Instant reviewedAt;
+
     String reviewNote;
+
     // Lý do khách phản ánh buổi (nếu ca chờ xác nhận vì khách báo, không phải vì hệ thống tự đóng).
     String customerReportNote;
+
     // Buổi của ca — để hàng đợi "chờ trung tâm xác nhận" hiển thị mà không phải đọc thêm booking.
     String bookingCode;
+
     String recipientName;
+
     Integer occurrenceNo;
+
     Instant startAt;
+
     Instant endAt;
 
     List<CareTaskResponse> tasks;

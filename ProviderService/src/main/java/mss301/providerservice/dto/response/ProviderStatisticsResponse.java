@@ -11,6 +11,8 @@ import java.util.Map;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ProviderStatisticsResponse {
     Map<String, Long> centersByStatus;
+
     Map<String, Long> caregiversByStatus;
+
     Map<String, Long> caregiversByVerification;
 }

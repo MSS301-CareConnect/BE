@@ -70,6 +70,7 @@ service mới, hỏi tên rồi cập nhật bảng này.
 | BookingService | 8085 | 5445 | `5000–5999` | gồm ca chăm sóc, review / complaint, notification, thống kê |
 | MediaService | 8086 | 5446 | `7000–7999` | |
 | PaymentService | 8087 | 5447 | `6000–6999` | VNPay; Stripe tắt sau cờ (D16) — xem `PaymentService/AGENTS.md` |
+| AIService | 8088 | 5448 | `8000–8999` | AI chat + kiểm tra chứng chỉ (Groq) — xem `AIService/AGENTS.md` |
 
 ### IdentityService — thông số
 
@@ -204,6 +205,7 @@ src/main/java/mss301/<service>/
 ├── exception/                         — AppException, ErrorCode, GlobalExceptionHandler
 ├── mapper/                            — MapStruct, một mapper / domain
 ├── repository/
+│   └── projection/                    — interface projection Spring Data (`*View`, `*Count`) mà @Query trả về
 ├── service/                           — interface FooService
 │   └── Impl/                          — FooServiceImpl (giữ chữ I hoa)
 ├── client/                            — client + DTO gọi service khác (chỉ tạo khi cần)
@@ -288,6 +290,14 @@ quan dùng `@ConfigurationProperties` (vd `IdentityProperties` ← `identity.*`)
 - Không dùng `var` cho kiểu không hiển nhiên; tên helper private là **động từ** rõ nghĩa
   (`findActiveUser`, `checkCenterScope`, `assignRole`), không đặt tên một từ mơ hồ (`require`, `is`, `scope`).
 - Comment tiếng Việt, ngắn, giải thích **vì sao** (không lặp lại code làm gì).
+- **Mỗi hàm có logic** (controller, service + Impl, scheduler, client, util, config, security, exception handler,
+  method có thân trong mapper / entity / enum) có **một dòng `//` ngay trên khối annotation** nói hàm dùng cho chức
+  năng gì (vd `// API khách tạo booking (có idempotency key).`). Comment "vì sao" (mã quyết định, rule, ràng buộc DB)
+  vẫn giữ. Không bắt buộc với method repository derived và method mapper khai báo trơn — tên đã tự mô tả (2026-11-11).
+  Không đặt khối `/** ... */` ở đầu class / interface / enum / record — chỉ dùng comment `//`.
+- Không viết tên class đầy đủ trong code, kể cả `expression = "java(...)"` của MapStruct — khai báo
+  `@Mapper(imports = X.class)` rồi dùng tên ngắn; hằng enum dùng `constant = "VALUE"`. Ngoại lệ duy nhất: JPQL
+  `select new pkg.Dto(...)` (JPQL không có import).
 - Logging: `log.info` cho sự kiện nghiệp vụ (tạo tài khoản, khóa, gán role…), `log.warn` cho bất thường có thể
   phục hồi, `log.error` kèm exception cho lỗi dependency. Không log secret (xem rule #26).
 
@@ -303,6 +313,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 }
 ```
 
+- **Ưu tiên derived query của Spring Data** (`findBy…`, `countBy…`, `existsBy…`, `…OrderBy…`, `Pageable`) khi điều kiện
+  chỉ là so sánh / `In` / `IsNull` / `Between` / `True` trên một entity (kể cả đi qua quan hệ: `findByRecipientId`).
+  Chỉ viết `@Query` khi derived không diễn đạt được hoặc khó đọc hơn: `select new` / một cột / projection, aggregate
+  (`sum`, `avg`, `group by`), subquery, hàm (`lower`, `coalesce`), tham số tùy chọn (`:x is null or …`), `@Modifying`,
+  khóa dòng `findForUpdate` (trùng tên với bản không khóa), điều kiện giao khoảng thời gian (`startAt < :to and
+  endAt > :from` — derived buộc truyền `to` trước `from`, dễ nhầm). Rà soát 2026-11-11 đã chuyển 29 method.
 - Không nhúng literal nghiệp vụ trong JPQL (`'ADMIN'`, `'CAREGIVER'`) — bind tham số và truyền `RoleCode.X.name()`.
 - Không `findAll()` rồi lọc `deletedAt` trong Java — viết method `...AndDeletedAtIsNull`.
 - Method khóa dòng (`@Lock(PESSIMISTIC_WRITE)`) đặt tên `findForUpdate` và có comment vì sao cần khóa.
@@ -874,7 +890,7 @@ Health:   /actuator/health
    validation mới cần `ErrorCode` mới. **`code` số phải duy nhất trong service**, và mỗi service dùng **dải mã
    riêng** để FE/gateway phân biệt: IdentityService `1000–1999`, CareRecipientService `2000–2999`, CareCatalogService
    `3000–3999`, ProviderService `4000–4999`, BookingService `5000–5999`, PaymentService `6000–6999`,
-   MediaService `7000–7999`, ApiGateway `9000–9099`
+   MediaService `7000–7999`, AIService `8000–8999`, ApiGateway `9000–9099`
    (+ `401`, `403`, `404`, `9999` dùng chung ý nghĩa). Service mới chọn dải kế tiếp và ghi vào `<Service>/AGENTS.md`.
 
 3. **Luôn trả `APIResponse<T>`** ở mọi method controller — không trả raw type, `Map`, hay `ResponseEntity`.
@@ -887,6 +903,8 @@ Health:   /actuator/health
    `GET /api/v1/catalog-items/images/{mediaFileId}` trả **302** (`ResponseEntity<Void>`, `Location` = URL tải có hạn
    của MediaService, `Cache-Control` ngắn hơn hạn URL) vì `imageUrl` được dùng thẳng trong thẻ `<img>` — trình duyệt
    không đọc được `APIResponse`; endpoint public chỉ GET, lỗi vẫn trả `APIResponse` qua `GlobalExceptionHandler`.
+   *Ngoại lệ thứ tư (BookingService):* SSE `GET /api/v1/notifications/stream` trả `SseEmitter` (`text/event-stream`)
+   vì luồng sự kiện không bọc được trong một envelope JSON; lỗi trước khi mở luồng vẫn trả `APIResponse`.
    `GlobalExceptionHandler` và security handler được dùng `ResponseEntity`/ghi
    response để đặt HTTP status. Không thêm ngoại lệ khác nếu chưa ghi vào đây kèm lý do.
 

@@ -12,14 +12,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Access token → Authentication: roles[] → ROLE_<code>, permissions[] → giữ nguyên mã. Tên authentication = sub
- * (userId, đọc bằng {@link CurrentUserId}). Quyền là snapshot trong token (≤ access TTL) — service này không nạp lại
- * trạng thái tài khoản như IdentityService.
- */
 @Component
 public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    // Chuyển JWT thành Authentication với quyền từ claim roles và permissions.
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
@@ -32,6 +28,7 @@ public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticat
         return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
     }
 
+    // Đọc một claim dạng danh sách chuỗi từ JWT.
     private List<String> readList(Jwt jwt, String claim) {
         List<String> values = jwt.getClaimAsStringList(claim);
         return values == null ? List.of() : values;

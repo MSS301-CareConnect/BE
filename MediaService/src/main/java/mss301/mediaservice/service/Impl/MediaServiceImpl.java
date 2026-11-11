@@ -46,6 +46,7 @@ public class MediaServiceImpl implements MediaService {
     MediaProperties mediaProperties;
     TransactionTemplate transactionTemplate;
 
+    // Kiểm tra file, upload lên R2 rồi lưu metadata; lỗi DB thì dọn object đã upload.
     @Override
     public APIResponse<MediaResponse> upload(MultipartFile file, MediaPurpose purpose, UUID uploadedBy,
                                              String referenceType, UUID referenceId) {
@@ -77,6 +78,7 @@ public class MediaServiceImpl implements MediaService {
         }
     }
 
+    // Lấy metadata của file còn hiệu lực.
     @Override
     public APIResponse<MediaResponse> get(UUID mediaFileId) {
         MediaFile mediaFile = findActiveMedia(mediaFileId);
@@ -84,6 +86,7 @@ public class MediaServiceImpl implements MediaService {
         return APIResponse.success("Lấy metadata file thành công", response);
     }
 
+    // Sinh URL tải file có thời hạn cho file còn hiệu lực.
     @Override
     public APIResponse<DownloadUrlResponse> createDownloadUrl(UUID mediaFileId) {
         MediaFile mediaFile = findActiveMedia(mediaFileId);
@@ -94,6 +97,7 @@ public class MediaServiceImpl implements MediaService {
         return APIResponse.success("Tạo đường dẫn tải file thành công", response);
     }
 
+    // Xóa mềm metadata và xóa object trên R2.
     @Override
     public APIResponse<Void> delete(UUID mediaFileId) {
         MediaFile pendingMedia = transactionTemplate.execute(status -> {
@@ -120,6 +124,7 @@ public class MediaServiceImpl implements MediaService {
         return APIResponse.success("Xóa file thành công");
     }
 
+    // Kiểm tra file rỗng, dung lượng, loại nội dung theo mục đích upload.
     private String validateUpload(MultipartFile file, MediaPurpose purpose, String sourceService) {
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.FILE_REQUIRED);
@@ -142,6 +147,7 @@ public class MediaServiceImpl implements MediaService {
         return contentType;
     }
 
+    // Tìm file theo id (kể cả đã xóa), không có thì báo lỗi.
     private MediaFile findExistingMedia(UUID mediaFileId) {
         MediaFile mediaFile = mediaFileRepository.findById(mediaFileId)
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
@@ -149,6 +155,7 @@ public class MediaServiceImpl implements MediaService {
         return mediaFile;
     }
 
+    // Tìm file chưa xóa theo id, không có thì báo lỗi.
     private MediaFile findActiveMedia(UUID mediaFileId) {
         MediaFile mediaFile = mediaFileRepository.findByIdAndDeletedAtIsNull(mediaFileId)
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
@@ -159,12 +166,14 @@ public class MediaServiceImpl implements MediaService {
         return mediaFile;
     }
 
+    // Chỉ cho service đã upload file được thao tác trên file đó.
     private void checkSourceService(MediaFile mediaFile) {
         if (!currentRequestIdentity.clientId().equals(mediaFile.getSourceService())) {
             throw new AppException(ErrorCode.MEDIA_ACCESS_DENIED);
         }
     }
 
+    // Sinh key object trên R2 dạng <mục đích>/<năm>/<tháng>/<UUID>.<đuôi>.
     private String buildObjectKey(MediaPurpose purpose, String extension) {
         LocalDate now = LocalDate.now(ZoneOffset.UTC);
         String folder = purpose.name().toLowerCase(Locale.ROOT).replace('_', '-');
@@ -176,6 +185,7 @@ public class MediaServiceImpl implements MediaService {
                 extension);
     }
 
+    // Xác định loại file (ảnh / tài liệu) từ content type.
     private FileType resolveFileType(String contentType) {
         if (contentType.startsWith("image/")) {
             return FileType.IMAGE;
@@ -186,6 +196,7 @@ public class MediaServiceImpl implements MediaService {
         return FileType.DOCUMENT;
     }
 
+    // Làm sạch tên file gốc trước khi lưu.
     private String sanitizeOriginalFileName(String originalFileName) {
         if (originalFileName == null || originalFileName.isBlank()) {
             return "file";
@@ -200,6 +211,7 @@ public class MediaServiceImpl implements MediaService {
         return sanitized.length() > 255 ? sanitized.substring(sanitized.length() - 255) : sanitized;
     }
 
+    // Trim chuỗi tùy chọn, rỗng thì trả null.
     private String normalizeOptional(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -207,6 +219,7 @@ public class MediaServiceImpl implements MediaService {
         return value.trim();
     }
 
+    // Xóa object trên R2 khi lưu metadata thất bại (best-effort, chỉ log lỗi).
     private void cleanupObject(String objectKey) {
         try {
             r2StorageService.delete(objectKey);

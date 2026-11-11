@@ -13,6 +13,7 @@ import java.util.Map;
 public class PaymentGatewayFactory {
     private final Map<PaymentProvider, PaymentGateway> gateways = new EnumMap<>(PaymentProvider.class);
 
+    // Gom các cổng thanh toán theo nhà cung cấp.
     public PaymentGatewayFactory(List<PaymentGateway> paymentGateways) {
         for (PaymentGateway paymentGateway : paymentGateways) {
             gateways.put(paymentGateway.provider(), paymentGateway);

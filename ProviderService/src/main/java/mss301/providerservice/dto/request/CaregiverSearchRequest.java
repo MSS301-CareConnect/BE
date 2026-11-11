@@ -17,11 +17,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Query của GET /api/v1/caregivers/search (SRCH-01), bind bằng {@code @ModelAttribute}. Khung giờ: một cặp
- * {@code slotStart}/{@code slotEnd}, và/hoặc {@code slots} lặp lại dạng {@code <startISO>/<endISO>} (tối đa 60).
- * sort/page/size null → mặc định do service quyết định (RATING_DESC, 0, 20).
- */
 @Data
 @Builder
 @NoArgsConstructor

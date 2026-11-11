@@ -11,10 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Nhắc ca chăm sóc còn mở quá giờ kết thúc buổi + booking.session.overdue-reminder-after (OPS-04) — mỗi session một lần.
- * Không tự đóng ca: manager dùng force-end. Lỗi một session không dừng lô.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -24,6 +20,7 @@ public class CareSessionOverdueScheduler {
 
     CareSessionService careSessionService;
 
+    // Định kỳ nhắc ca chăm sóc quá giờ chưa kết thúc.
     @Scheduled(fixedDelayString = "${booking.session.overdue-scan-interval:5m}",
             initialDelayString = "${booking.session.overdue-scan-interval:5m}")
     public void remindOverdueSessions() {
@@ -37,6 +34,7 @@ public class CareSessionOverdueScheduler {
         }
     }
 
+    // Định kỳ tự đóng ca bị quên check-out quá lâu.
     @Scheduled(fixedDelayString = "${booking.session.overdue-scan-interval:5m}",
             initialDelayString = "${booking.session.overdue-scan-interval:5m}")
     public void autoCloseForgottenSessions() {

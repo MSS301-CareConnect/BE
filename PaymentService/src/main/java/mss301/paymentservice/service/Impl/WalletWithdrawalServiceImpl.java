@@ -29,7 +29,7 @@ import mss301.paymentservice.enums.WalletWithdrawalStatus;
 import mss301.paymentservice.exception.AppException;
 import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.WalletWithdrawalMapper;
-import mss301.paymentservice.repository.WalletCenterTypeTotalView;
+import mss301.paymentservice.repository.projection.WalletCenterTypeTotalView;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.repository.WalletWithdrawalRepository;
 import mss301.paymentservice.service.PaymentOutboxService;
@@ -94,6 +94,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
     IdentityClient identityClient;
     Clock clock;
 
+    // Danh sách yêu cầu rút tiền theo phạm vi người gọi, mới nhất trước.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<WalletWithdrawalResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -126,6 +127,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return APIResponse.success("Lấy danh sách yêu cầu rút tiền thành công", pageResponse);
     }
 
+    // Thống kê yêu cầu rút tiền theo kỳ.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WalletWithdrawalStatisticsResponse> getStatistics(UUID actorId, Set<RoleCode> roles,
@@ -198,6 +200,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return APIResponse.success("Thống kê yêu cầu rút tiền thành công", statisticsResponse);
     }
 
+    // Chi tiết một yêu cầu rút tiền trong phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WalletWithdrawalResponse> get(UUID actorId, Set<RoleCode> roles, UUID claimCenterId,
@@ -293,6 +296,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return APIResponse.success("Đã từ chối yêu cầu rút tiền", withdrawalResponse);
     }
 
+    // Khóa yêu cầu rút tiền để cập nhật, không có thì báo lỗi.
     private WalletWithdrawal findForUpdate(UUID withdrawalId) {
         return walletWithdrawalRepository.findForUpdate(withdrawalId)
                 .orElseThrow(() -> new AppException(ErrorCode.WITHDRAWAL_NOT_FOUND));
@@ -353,6 +357,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
                         wallet.getId()));
     }
 
+    // Điều kiện lọc yêu cầu rút tiền theo danh sách trạng thái.
     private Specification<WalletWithdrawal> hasStatusIn(Set<WalletWithdrawalStatus> statuses) {
         return (root, query, criteriaBuilder) -> root.get("status").in(statuses);
     }
@@ -365,10 +370,12 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
                 criteriaBuilder.between(root.get("reviewedAt"), from, to));
     }
 
+    // Yêu cầu rút tiền do trung tâm duyệt (caregiver thuộc trung tâm).
     private boolean isCenterRouted(WalletWithdrawal withdrawal) {
         return CENTER_ROUTED_OWNERS.contains(withdrawal.getOwnerType()) && withdrawal.getCenterId() != null;
     }
 
+    // Người gọi có quyền duyệt yêu cầu rút tiền này.
     private boolean isReviewer(Set<RoleCode> roles, UUID claimCenterId, WalletWithdrawal withdrawal) {
         if (isCenterRouted(withdrawal)) {
             return roles.contains(RoleCode.CENTER_MANAGER) && withdrawal.getCenterId().equals(claimCenterId);
@@ -376,12 +383,14 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return roles.contains(RoleCode.ADMIN);
     }
 
+    // Báo lỗi nếu người gọi không được duyệt yêu cầu này.
     private void checkReviewer(Set<RoleCode> roles, UUID claimCenterId, WalletWithdrawal withdrawal) {
         if (!isReviewer(roles, claimCenterId, withdrawal)) {
             throw new AppException(ErrorCode.WITHDRAWAL_NOT_REVIEWER);
         }
     }
 
+    // Người gọi là manager (không phải admin).
     private boolean isManagerOnly(Set<RoleCode> roles) {
         return roles.contains(RoleCode.CENTER_MANAGER) && !roles.contains(RoleCode.ADMIN);
     }
@@ -421,10 +430,12 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return reference;
     }
 
+    // Lấy 4 số cuối của số tài khoản.
     private String lastDigits(String accountNumber) {
         return accountNumber.length() <= 4 ? accountNumber : accountNumber.substring(accountNumber.length() - 4);
     }
 
+    // Kiểm tra thời điểm nằm trong khoảng.
     private boolean isWithin(Instant instant, Instant from, Instant to) {
         return instant != null && !instant.isBefore(from) && !instant.isAfter(to);
     }
@@ -448,6 +459,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         return buckets;
     }
 
+    // Cộng số tiền vào kỳ thống kê tương ứng.
     private void addToBucket(Map<String, BigDecimal[]> buckets, Instant instant, StatisticsGroupBy groupBy,
                              int index, BigDecimal amount) {
         BigDecimal[] bucket = buckets.get(periodOf(instant.atZone(ZONE).toLocalDate(), groupBy));
@@ -456,6 +468,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         }
     }
 
+    // Nhãn kỳ (ngày hoặc tháng) của một ngày.
     private String periodOf(LocalDate date, StatisticsGroupBy groupBy) {
         return groupBy == StatisticsGroupBy.MONTH ? date.format(MONTH_FORMAT) : date.format(DAY_FORMAT);
     }

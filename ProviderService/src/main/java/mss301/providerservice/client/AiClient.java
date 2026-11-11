@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
         fallbackFactory = AiClientFallbackFactory.class)
 public interface AiClient {
 
+    // Gọi AIService kiểm tra chứng chỉ bằng AI.
     @PostMapping("/api/v1/ai/certificate-checks")
     RemoteApiResponse<CertificateCheckClientResponse> checkCertificate(@RequestBody CertificateCheckClientRequest request);
 }

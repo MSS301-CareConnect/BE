@@ -12,7 +12,10 @@ import mss301.bookingservice.enums.CareTaskStatus;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SessionUpdateResponse {
     UUID sessionId;
+
     UUID taskId;
+
     CareTaskStatus status;
+
     UUID noteId;
 }

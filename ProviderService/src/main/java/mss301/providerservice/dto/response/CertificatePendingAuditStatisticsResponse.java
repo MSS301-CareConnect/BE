@@ -11,12 +11,18 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CertificatePendingAuditStatisticsResponse {
     long total;
+
     long high;
+
     long medium;
+
     long low;
+
     long undetermined;
+
     // QUEUED + PROCESSING: AI chưa trả kết quả.
     long checking;
+
     // AI lỗi hết lượt thử — admin chạy lại hoặc duyệt thủ công.
     long failed;
 }

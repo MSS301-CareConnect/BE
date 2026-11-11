@@ -42,6 +42,7 @@ public class WalletController {
     WalletService walletService;
     WalletSettlementService walletSettlementService;
 
+    // API xem ví của người đang đăng nhập.
     @GetMapping("/me")
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<WalletResponse> getMine(@CurrentUserId UUID actorId,
@@ -50,6 +51,7 @@ public class WalletController {
         return walletService.getMine(actorId, roles, claimCenterId);
     }
 
+    // API lịch sử giao dịch ví của người đang đăng nhập.
     @GetMapping("/me/transactions")
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<PageResponse<WalletTransactionResponse>> listMyTransactions(
@@ -74,6 +76,7 @@ public class WalletController {
         return walletService.listMyCenterBalances(actorId, roles, claimCenterId);
     }
 
+    // API thống kê ví của người đang đăng nhập theo khoảng thời gian.
     @GetMapping("/me/statistics")
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
     public APIResponse<WalletStatisticsResponse> getMyStatistics(
@@ -96,12 +99,14 @@ public class WalletController {
         return walletSettlementService.getBookingSettlement(roles, claimCenterId, bookingId);
     }
 
+    // API admin xem một ví bất kỳ.
     @GetMapping("/{walletId}")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<WalletResponse> get(@PathVariable UUID walletId) {
         return walletService.get(walletId);
     }
 
+    // API admin xem lịch sử giao dịch của một ví.
     @GetMapping("/{walletId}/transactions")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<PageResponse<WalletTransactionResponse>> listTransactions(

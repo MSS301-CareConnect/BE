@@ -6,12 +6,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Mốc nhắc trung tâm trước hạn xác nhận / phân công (booking.schedule.center-reminder-minutes, phút trước hạn). Lưu mốc
- * nhỏ nhất đã gửi trên booking: mỗi mốc nhắc một lần, mốc đã qua lúc bắt đầu chờ thì bỏ (không nhắc dồn).
- */
 public final class CenterReminders {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private CenterReminders() {
     }
 
@@ -27,6 +24,7 @@ public final class CenterReminders {
                 .orElse(null);
     }
 
+    // Mốc nhắc lớn nhất (phút) trong cấu hình.
     public static int largest(List<Integer> reminderMinutes) {
         return reminderMinutes.stream().filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(0);
     }

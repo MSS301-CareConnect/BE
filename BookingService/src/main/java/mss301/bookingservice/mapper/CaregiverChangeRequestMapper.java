@@ -18,8 +18,11 @@ public interface CaregiverChangeRequestMapper {
 
     List<CaregiverChangeRequestResponse> toResponseList(List<CaregiverChangeRequest> requests);
 
+    // Lấy id các buổi của yêu cầu đổi người.
     default List<UUID> toOccurrenceIds(List<CaregiverChangeRequestOccurrence> occurrences) {
-        if (occurrences == null) return List.of();
+        if (occurrences == null) {
+            return List.of();
+        }
         return occurrences.stream().map(o -> o.getId().getOccurrenceId()).toList();
     }
 }

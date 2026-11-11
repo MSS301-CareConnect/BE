@@ -6,16 +6,13 @@ import mss301.providerservice.enums.ShiftStatus;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
-/**
- * Trạng thái hiệu lực của ca — đúng ngay khi đọc, kể cả trong khoảng giữa hai lần chạy WorkShiftLifecycleScheduler:
- * OPEN đã tới giờ bắt đầu hoặc quá hạn đăng ký → CLOSED; OPEN / CLOSED đã qua giờ kết thúc → COMPLETED.
- * DRAFT, CANCELLED, COMPLETED giữ nguyên. Không bao giờ trả "đang mở" cho ca đã qua.
- */
 public final class WorkShiftStates {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private WorkShiftStates() {
     }
 
+    // Trạng thái hiệu lực của ca theo thời điểm hiện tại (OPEN / CLOSED / COMPLETED).
     public static ShiftStatus effective(WorkShift shift, Instant now) {
         ShiftStatus stored = shift.getShiftStatus();
         if (stored != ShiftStatus.OPEN && stored != ShiftStatus.CLOSED) {
@@ -30,10 +27,12 @@ public final class WorkShiftStates {
         return stored;
     }
 
+    // Thời điểm bắt đầu ca.
     public static Instant start(WorkShift shift) {
         return ProviderTime.toInstant(shift.getWorkDate(), shift.getStartTime());
     }
 
+    // Thời điểm kết thúc ca.
     public static Instant end(WorkShift shift) {
         return ProviderTime.toInstant(shift.getWorkDate(), shift.getEndTime());
     }
@@ -51,6 +50,7 @@ public final class WorkShiftStates {
         return hourBefore.isAfter(now) ? hourBefore : null;
     }
 
+    // Đã qua hạn đăng ký ca.
     private static boolean deadlinePassed(WorkShift shift, Instant now) {
         return shift.getRegistrationDeadline() != null && !now.isBefore(shift.getRegistrationDeadline());
     }

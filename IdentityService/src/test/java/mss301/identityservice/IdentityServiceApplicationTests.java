@@ -1,38 +1,108 @@
 package mss301.identityservice;
 
-import mss301.identityservice.dto.request.*;
-import mss301.identityservice.dto.response.*;
-import mss301.identityservice.entity.*;
-import mss301.identityservice.enums.*;
-import mss301.identityservice.repository.*;
-import mss301.identityservice.service.*;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.mockito.ArgumentCaptor;
+import org.hamcrest.Matchers;
+import mss301.identityservice.security.IdentityAuthenticationConverter;
+import mss301.identityservice.exception.ErrorCode;
+import mss301.identityservice.exception.AppException;
+import java.sql.SQLException;
+import java.sql.DriverManager;
+import mss301.identityservice.dto.request.ChangePasswordRequest;
+import mss301.identityservice.dto.request.EmailRequest;
+import mss301.identityservice.dto.request.LoginRequest;
+import mss301.identityservice.dto.request.LogoutRequest;
+import mss301.identityservice.dto.request.ProvisionRequest;
+import mss301.identityservice.dto.request.RefreshRequest;
+import mss301.identityservice.dto.request.RegisterRequest;
+import mss301.identityservice.dto.request.ResetPasswordRequest;
+import mss301.identityservice.dto.request.UpdateProfileRequest;
+import mss301.identityservice.dto.request.UserBatchRequest;
+import mss301.identityservice.dto.request.VerifyOtpRequest;
+import mss301.identityservice.dto.response.UserResponse;
+import mss301.identityservice.entity.Role;
+import mss301.identityservice.entity.ServiceClient;
+import mss301.identityservice.entity.User;
+import mss301.identityservice.entity.UserRole;
+import mss301.identityservice.entity.UserRoleId;
+import mss301.identityservice.enums.RoleCode;
+import mss301.identityservice.enums.TokenType;
+import mss301.identityservice.enums.UserStatus;
+import mss301.identityservice.repository.RoleRepository;
+import mss301.identityservice.repository.ServiceClientRepository;
+import mss301.identityservice.repository.UserRepository;
+import mss301.identityservice.repository.UserRoleRepository;
+import mss301.identityservice.service.EmailService;
+import mss301.identityservice.service.IdentityStateService;
+import mss301.identityservice.service.JwtService;
+import mss301.identityservice.service.TokenStore;
+import mss301.identityservice.service.UserService;
 import mss301.identityservice.config.IdentityProperties;
 import mss301.identityservice.enums.TokenType;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.servlet.http.Cookie;
 import tools.jackson.databind.ObjectMapper;
-import java.nio.file.*;
-import java.security.*;
-import java.time.*;
-import java.util.*;
-import java.util.concurrent.*;
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest
@@ -62,9 +132,9 @@ class IdentityServiceApplicationTests {
         boolean pg=Boolean.getBoolean("identity.testing.postgres");
         if (pg) {
             pgSchema = "identity_test_" + UUID.randomUUID().toString().replace("-", "");
-            try (var connection = java.sql.DriverManager.getConnection("jdbc:postgresql://localhost:55494/postgres", "postgres", "identity_test_only"); var statement = connection.createStatement()) {
+            try (var connection = DriverManager.getConnection("jdbc:postgresql://localhost:55494/postgres", "postgres", "identity_test_only"); var statement = connection.createStatement()) {
                 statement.execute("CREATE SCHEMA " + pgSchema);
-            } catch (java.sql.SQLException e) { throw new IllegalStateException(e); }
+            } catch (SQLException e) { throw new IllegalStateException(e); }
         }
         p.add("spring.datasource.url",()->pg?"jdbc:postgresql://localhost:55494/postgres?currentSchema="+pgSchema:"jdbc:h2:mem:identity;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
         p.add("spring.datasource.username",()->pg?"postgres":"sa"); p.add("spring.datasource.password",()->pg?"identity_test_only":"");
@@ -90,7 +160,7 @@ class IdentityServiceApplicationTests {
     @Autowired ServiceClientRepository serviceClients;
     @Autowired TransactionTemplate tx;
     @Autowired IdentityProperties properties;
-    @Autowired mss301.identityservice.security.IdentityAuthenticationConverter authenticationConverter;
+    @Autowired IdentityAuthenticationConverter authenticationConverter;
     @MockitoBean EmailService email;
     UserResponse customer,admin;
     @BeforeEach void setup() {
@@ -115,11 +185,11 @@ class IdentityServiceApplicationTests {
     UserResponse caregiver(UserResponse manager) { return accounts.provision(manager.getId(),ProvisionRequest.builder().email(UUID.randomUUID()+"@example.test").fullName("Caregiver").roleCode(RoleCode.CAREGIVER).build()).getResult(); }
     String sendRegistration(String address) throws Exception {
         mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(body(RegisterRequest.builder().email(address.toUpperCase()).fullName("Test").password(PASSWORD).build()))).andExpect(status().isOk());
-        var code=org.mockito.ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(address),code.capture()); return code.getValue();
+        var code=ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(address),code.capture()); return code.getValue();
     }
     @AfterAll static void cleanupKeys() throws Exception { Files.deleteIfExists(KEY_DIRECTORY.resolve("private.pem")); Files.deleteIfExists(KEY_DIRECTORY.resolve("public.pem")); Files.deleteIfExists(KEY_DIRECTORY);
         if (pgSchema != null) {
-            try (var connection=java.sql.DriverManager.getConnection("jdbc:postgresql://localhost:55494/postgres","postgres","identity_test_only"); var statement=connection.createStatement()) { statement.execute("DROP SCHEMA " + pgSchema + " CASCADE"); }
+            try (var connection=DriverManager.getConnection("jdbc:postgresql://localhost:55494/postgres","postgres","identity_test_only"); var statement=connection.createStatement()) { statement.execute("DROP SCHEMA " + pgSchema + " CASCADE"); }
         }
     }
 
@@ -391,7 +461,7 @@ class IdentityServiceApplicationTests {
 
     @Test void passwordResetRevokesSessions() throws Exception {
         String access=token(customer); mvc.perform(post("/api/v1/auth/forgot-password").with(csrf()).contentType("application/json").content(body(EmailRequest.builder().email(customer.getEmail()).build()))).andExpect(status().isOk());
-        var code=org.mockito.ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(customer.getEmail()),code.capture());
+        var code=ArgumentCaptor.forClass(String.class); verify(email).sendOtp(eq(customer.getEmail()),code.capture());
         String request=body(ResetPasswordRequest.builder().email(customer.getEmail()).otpCode(code.getValue()).newPassword("NewPassword9!").build());
         mvc.perform(post("/api/v1/auth/reset-password").with(csrf()).contentType("application/json").content(request)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/users/me").header("Authorization","Bearer "+access)).andExpect(status().isUnauthorized());
@@ -419,7 +489,7 @@ class IdentityServiceApplicationTests {
 
     @Test void currentUserIdIsNotExposedAsApiParameter() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("actorId"))));
+                .andExpect(content().string(Matchers.not(Matchers.containsString("actorId"))));
     }
 
     @Test void conflictingTokenTransportsAreRejected() throws Exception {
@@ -438,7 +508,7 @@ class IdentityServiceApplicationTests {
     }
 
     @Test void errorCodesAreUnique() throws Exception {
-        assertThat(Arrays.stream(mss301.identityservice.exception.ErrorCode.values()).map(mss301.identityservice.exception.ErrorCode::getCode).toList()).doesNotHaveDuplicates();
+        assertThat(Arrays.stream(ErrorCode.values()).map(ErrorCode::getCode).toList()).doesNotHaveDuplicates();
     }
 
     @Test void lastAdminCannotLoseAdminRole() {
@@ -450,8 +520,8 @@ class IdentityServiceApplicationTests {
         });
         UUID roleId = roles.findByRoleCodeAndDeletedAtIsNull("ADMIN").orElseThrow().getId();
         assertThatThrownBy(() -> accounts.revoke(admin.getId(), admin.getId(), roleId))
-                .isInstanceOf(mss301.identityservice.exception.AppException.class)
-                .extracting("errorCode").isEqualTo(mss301.identityservice.exception.ErrorCode.LAST_ADMIN);
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.LAST_ADMIN);
     }
     @Test void duplicateNormalizedEmailHasOneWinner() throws Exception {
         String address = UUID.randomUUID() + "@example.test";
@@ -461,7 +531,7 @@ class IdentityServiceApplicationTests {
             Callable<Boolean> call = () -> {
                 start.await();
                 try { accounts.createVerified(RegisterRequest.builder().email(address).password(hash).fullName("Test").build()); return true; }
-                catch (mss301.identityservice.exception.AppException | org.springframework.dao.DataIntegrityViolationException e) { return false; }
+                catch (AppException | DataIntegrityViolationException e) { return false; }
             };
             var a = executor.submit(call); var b = executor.submit(call); start.countDown();
             assertThat(List.of(a.get(), b.get())).containsExactlyInAnyOrder(true, false);
@@ -504,7 +574,7 @@ class IdentityServiceApplicationTests {
     }
     @Test void otpSendFailureCanBeRetried() throws Exception {
         String address = UUID.randomUUID() + "@example.test";
-        doThrow(new mss301.identityservice.exception.AppException(mss301.identityservice.exception.ErrorCode.EMAIL_DELIVERY_FAILED)).doNothing()
+        doThrow(new AppException(ErrorCode.EMAIL_DELIVERY_FAILED)).doNothing()
                 .when(email).sendOtp(eq(address), anyString());
         String request = body(RegisterRequest.builder().email(address).fullName("Test").password(PASSWORD).build());
         mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType("application/json").content(request)).andExpect(status().isServiceUnavailable());
@@ -555,23 +625,23 @@ class IdentityServiceApplicationTests {
             assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
             var update = executor.submit(() -> {
                 try { accounts.update(customer.getId(), UpdateProfileRequest.builder().fullName("Updated").build()); return null; }
-                catch (mss301.identityservice.exception.AppException e) { return e.getErrorCode(); }
+                catch (AppException e) { return e.getErrorCode(); }
             });
             Thread.sleep(300); commit.countDown(); lock.get();
-            assertThat(update.get()).isEqualTo(mss301.identityservice.exception.ErrorCode.UNAUTHENTICATED);
+            assertThat(update.get()).isEqualTo(ErrorCode.UNAUTHENTICATED);
             assertThat(users.findById(customer.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.LOCKED);
         }
     }
 
     @Test void dependencyFailureIs503AndNotInvalidCredentials() throws Exception {
-        Object original = org.springframework.test.util.ReflectionTestUtils.getField(authenticationConverter, "tokenStore");
+        Object original = ReflectionTestUtils.getField(authenticationConverter, "tokenStore");
         TokenStore failing = mock(TokenStore.class);
-        when(failing.isAccessTokenBlacklisted(anyString())).thenThrow(new mss301.identityservice.exception.AppException(mss301.identityservice.exception.ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE));
+        when(failing.isAccessTokenBlacklisted(anyString())).thenThrow(new AppException(ErrorCode.AUTH_DEPENDENCY_UNAVAILABLE));
         try {
-            org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "tokenStore", failing);
+            ReflectionTestUtils.setField(authenticationConverter, "tokenStore", failing);
             mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + token(customer)))
                     .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value(1105));
-        } finally { org.springframework.test.util.ReflectionTestUtils.setField(authenticationConverter, "tokenStore", original); }
+        } finally { ReflectionTestUtils.setField(authenticationConverter, "tokenStore", original); }
     }
 
     // ===== Audience chung careconnect-api =====

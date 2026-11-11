@@ -14,10 +14,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Một buổi chăm sóc (thay vai trò care session): giờ theo lịch lưu UTC, caregiver mặc định theo booking nhưng đổi
- * riêng được. Hủy buổi = CANCELLED (không xóa mềm; deleted_at chỉ do kế thừa BaseEntity).
- */
 @Entity
 @Table(name = "booking_occurrences")
 @Getter

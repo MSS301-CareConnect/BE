@@ -25,7 +25,9 @@ public interface PaymentOutboxService {
     // 2026-11-10: yêu cầu rút tiền đã chuyển khoản xong / bị từ chối → báo người rút (trong transaction đổi trạng thái).
     void enqueueWithdrawalResult(WalletWithdrawal withdrawal);
 
+    // Lấy id outbox tới hạn gửi.
     List<UUID> findDueIds();
 
+    // Gửi một dòng outbox.
     void process(UUID outboxId);
 }

@@ -39,9 +39,6 @@ public interface UserMapper {
     @Mapping(target = "roles", expression = "java(user.effectiveRoleCodes())")
     InternalUserResponse toInternalResponse(User user);
 
-    // API nội bộ /internal/users/batch.
-    List<InternalUserResponse> toInternalResponseList(List<User> users);
-
     // Một tham số nguồn: MapStruct không tự map chính tham số vào thuộc tính "user" → phải khai báo.
     @Mapping(target = "user", source = "user")
     AuthenticatedUser toAuthenticatedUser(User user);

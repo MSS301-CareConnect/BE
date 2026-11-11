@@ -23,13 +23,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
-/**
- * Token SERVICE (client-credentials, C1.2) của ProviderService để gọi endpoint cần quyền service của service khác
- * (vd Catalog {@code GET /center-services/{id}}). Xin token ở IdentityService qua gateway
- * ({@code POST /api/v1/auth/service-token}), cache tới khi còn dưới {@link #REFRESH_BEFORE_EXPIRY} rồi xin lại.
- * Thread-safe: chỉ một thread làm mới tại một thời điểm. Dùng RestClient riêng
- * ({@code ProviderConfig.serviceTokenRestClient}, không Feign) để không đi qua interceptor của chính nó.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -53,6 +46,7 @@ public class ServiceTokenProvider {
     @NonFinal
     volatile Instant refreshAt = Instant.MIN;
 
+    // Lấy token SERVICE từ cache, gần hết hạn thì xin token mới.
     public String getToken() {
         String token = cachedToken;
         if (token != null && clock.instant().isBefore(refreshAt)) {
@@ -61,6 +55,7 @@ public class ServiceTokenProvider {
         return refreshToken();
     }
 
+    // Xin token SERVICE mới từ IdentityService và cập nhật cache.
     private synchronized String refreshToken() {
         // Thread khác có thể vừa làm mới trong lúc chờ khóa.
         if (cachedToken != null && clock.instant().isBefore(refreshAt)) {
@@ -79,6 +74,7 @@ public class ServiceTokenProvider {
         return cachedToken;
     }
 
+    // Gọi IdentityService đổi clientId / clientSecret lấy token SERVICE.
     private ServiceTokenResponse requestToken(ProviderProperties.ServiceClient serviceClient) {
         ServiceTokenRequest serviceTokenRequest = serviceTokenMapper.toServiceTokenRequest(serviceClient);
         RemoteApiResponse<ServiceTokenResponse> response;

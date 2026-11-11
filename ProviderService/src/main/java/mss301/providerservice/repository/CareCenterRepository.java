@@ -1,5 +1,6 @@
 package mss301.providerservice.repository;
 
+import mss301.providerservice.repository.projection.StatisticsCountView;
 import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.enums.CenterStatus;
 import org.springframework.data.domain.Page;

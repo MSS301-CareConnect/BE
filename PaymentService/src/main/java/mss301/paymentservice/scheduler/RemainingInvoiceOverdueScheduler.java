@@ -19,6 +19,7 @@ import java.util.UUID;
 public class RemainingInvoiceOverdueScheduler {
     RemainingInvoiceService remainingInvoiceService;
 
+    // Định kỳ đánh dấu hóa đơn phần còn lại quá hạn.
     @Scheduled(fixedDelayString = "${payment.invoice.overdue-scan-interval:10m}",
             initialDelayString = "${payment.invoice.overdue-scan-interval:10m}")
     public void markOverdueInvoices() {

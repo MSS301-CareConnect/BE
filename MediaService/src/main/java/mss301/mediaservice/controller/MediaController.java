@@ -31,6 +31,7 @@ import java.util.UUID;
 public class MediaController {
     MediaService mediaService;
 
+    // API upload file lên R2 và lưu metadata.
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<MediaResponse> upload(@RequestPart("file") MultipartFile file,
@@ -41,18 +42,21 @@ public class MediaController {
         return mediaService.upload(file, purpose, uploadedBy, referenceType, referenceId);
     }
 
+    // API xem metadata của một file.
     @GetMapping("/{mediaFileId}")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<MediaResponse> get(@PathVariable UUID mediaFileId) {
         return mediaService.get(mediaFileId);
     }
 
+    // API tạo URL tải file có thời hạn.
     @GetMapping("/{mediaFileId}/download-url")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<DownloadUrlResponse> createDownloadUrl(@PathVariable UUID mediaFileId) {
         return mediaService.createDownloadUrl(mediaFileId);
     }
 
+    // API xóa file (xóa mềm metadata và xóa object trên R2).
     @DeleteMapping("/{mediaFileId}")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<Void> delete(@PathVariable UUID mediaFileId) {

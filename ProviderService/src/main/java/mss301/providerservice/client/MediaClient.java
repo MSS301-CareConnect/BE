@@ -20,6 +20,7 @@ import java.util.UUID;
         fallbackFactory = MediaClientFallbackFactory.class)
 public interface MediaClient {
 
+    // Gọi MediaService upload file.
     @PostMapping(value = "/api/v1/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     APIResponse<MediaClientResponse> upload(
             @RequestPart("file") MultipartFile file,
@@ -28,12 +29,15 @@ public interface MediaClient {
             @RequestParam("referenceType") String referenceType,
             @RequestParam("referenceId") UUID referenceId);
 
+    // Gọi MediaService lấy metadata file.
     @GetMapping("/api/v1/media/{mediaFileId}")
     APIResponse<MediaClientResponse> get(@PathVariable("mediaFileId") UUID mediaFileId);
 
+    // Gọi MediaService tạo URL tải có thời hạn.
     @GetMapping("/api/v1/media/{mediaFileId}/download-url")
     APIResponse<DownloadUrlClientResponse> createDownloadUrl(@PathVariable("mediaFileId") UUID mediaFileId);
 
+    // Gọi MediaService xóa file.
     @DeleteMapping("/api/v1/media/{mediaFileId}")
     APIResponse<Void> delete(@PathVariable("mediaFileId") UUID mediaFileId);
 }

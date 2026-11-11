@@ -34,8 +34,7 @@ import java.time.LocalDate;
 public class UserController {
     UserService userService;
 
-    // ===== GET =====
-
+    // API thống kê người dùng trong khoảng ngày.
     @GetMapping("/statistics")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<UserStatisticsResponse> statistics(@RequestParam(required = false) LocalDate from,
@@ -43,23 +42,27 @@ public class UserController {
         return userService.statistics(from, to);
     }
 
+    // API lấy hồ sơ người dùng đang đăng nhập.
     @GetMapping("/me")
     public APIResponse<UserResponse> me(@CurrentUserId UUID actorId) {
         return userService.me(actorId);
     }
 
+    // API xem thông tin một người dùng.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<UserResponse> get(@PathVariable UUID id) {
         return userService.get(id);
     }
 
+    // API tìm người dùng theo email (cho service khác).
     @GetMapping("/by-email")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN')")
     public APIResponse<UserResponse> getByEmail(@RequestParam(required = false) String email) {
         return userService.getByEmail(email);
     }
 
+    // API danh sách người dùng có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAuthority('user:read') and (hasRole('ADMIN') or hasRole('CENTER_MANAGER'))")
     public APIResponse<PageResponse<UserResponse>> list(@CurrentUserId UUID actorId,
@@ -73,20 +76,21 @@ public class UserController {
         return userService.list(actorId, role, status, centerId, keyword, page, size, sort);
     }
 
-    // ===== POST =====
-
+    // API đổi mật khẩu.
     @PostMapping("/me/change-password")
     public APIResponse<Void> changePassword(@CurrentUserId UUID actorId,
                                             @Valid @RequestBody ChangePasswordRequest request) {
         return userService.changePassword(actorId, request);
     }
 
+    // API lấy thông tin nhiều người dùng một lần (cho service khác).
     @PostMapping("/batch")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<List<UserResponse>> listBatch(@Valid @RequestBody UserBatchRequest request) {
         return userService.listBatch(request);
     }
 
+    // API tạo tài khoản manager / caregiver.
     @PostMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('CENTER_MANAGER')")
     public APIResponse<UserResponse> create(@CurrentUserId UUID actorId,
@@ -94,14 +98,14 @@ public class UserController {
         return userService.provision(actorId, request);
     }
 
-    // ===== PUT =====
-
+    // API cập nhật hồ sơ của chính mình.
     @PutMapping("/me")
     public APIResponse<UserResponse> update(@CurrentUserId UUID actorId,
                                             @Valid @RequestBody UpdateProfileRequest request) {
         return userService.update(actorId, request);
     }
 
+    // API cập nhật hồ sơ của người dùng khác.
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<UserResponse> update(@CurrentUserId UUID actorId,
@@ -110,6 +114,7 @@ public class UserController {
         return userService.update(actorId, id, request);
     }
 
+    // API gán role cho người dùng.
     @PutMapping("/{id}/roles/{roleId}")
     @PreAuthorize("hasRole('ADMIN') and hasAuthority('role:manage')")
     public APIResponse<UserResponse> assign(@CurrentUserId UUID actorId,
@@ -118,8 +123,7 @@ public class UserController {
         return userService.assign(actorId, id, roleId);
     }
 
-    // ===== PATCH =====
-
+    // API khóa / mở khóa tài khoản qua tham số query.
     @PatchMapping(value = "/{id}/status", params = "status")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<UserResponse> updateStatus(@CurrentUserId UUID actorId,
@@ -129,6 +133,7 @@ public class UserController {
         return userService.updateStatus(actorId, id, status, reason);
     }
 
+    // API khóa / mở khóa tài khoản qua body.
     @PatchMapping(value = "/{id}/status", params = "!status")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<UserResponse> updateStatus(@CurrentUserId UUID actorId, @PathVariable UUID id,
@@ -136,6 +141,7 @@ public class UserController {
         return userService.updateStatus(actorId, id, request.getStatus(), request.getReason());
     }
 
+    // API khóa / mở mọi tài khoản của một trung tâm (khi trung tâm bị khóa / mở).
     @PatchMapping("/centers/{centerId}/status")
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN')")
     public APIResponse<AffectedUsersResponse> updateCenterStatus(@CurrentUserId UUID actorId,
@@ -144,14 +150,14 @@ public class UserController {
         return userService.updateCenterStatus(actorId, centerId, request);
     }
 
-    // ===== DELETE =====
-
+    // API xóa tài khoản.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('user:manage')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return userService.delete(actorId, id);
     }
 
+    // API thu hồi role của người dùng.
     @DeleteMapping("/{id}/roles/{roleId}")
     @PreAuthorize("hasRole('ADMIN') and hasAuthority('role:manage')")
     public APIResponse<UserResponse> revoke(@CurrentUserId UUID actorId,

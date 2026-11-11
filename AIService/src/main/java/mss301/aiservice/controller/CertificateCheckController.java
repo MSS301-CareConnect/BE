@@ -15,10 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Đọc ảnh chứng chỉ caregiver và đối chiếu với thông tin khai báo (bước 4). Chỉ ProviderService gọi, bằng token
- * SERVICE qua gateway, sau khi Center Manager xác nhận chứng chỉ; admin xem kết quả trong ProviderService.
- */
 @RestController
 @RequestMapping("/api/v1/ai/certificate-checks")
 @RequiredArgsConstructor
@@ -29,6 +25,7 @@ public class CertificateCheckController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API cho ProviderService: AI đối chiếu ảnh chứng chỉ với thông tin đã khai báo.
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<CertificateCheckResponse> check(@Valid @RequestBody CertificateCheckRequest request) {

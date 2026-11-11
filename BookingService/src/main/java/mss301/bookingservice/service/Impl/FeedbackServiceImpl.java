@@ -3,7 +3,6 @@ package mss301.bookingservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.dto.request.FeedbackRequest;
 import mss301.bookingservice.dto.request.FeedbackReplyRequest;
 import mss301.bookingservice.dto.request.FeedbackVisibilityRequest;
@@ -23,7 +22,7 @@ import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.FeedbackMapper;
 import mss301.bookingservice.repository.FeedbackRepository;
-import mss301.bookingservice.repository.FeedbackRatingView;
+import mss301.bookingservice.repository.projection.FeedbackRatingView;
 import mss301.bookingservice.repository.BookingRepository;
 import mss301.bookingservice.repository.BookingOccurrenceRepository;
 import mss301.bookingservice.service.FeedbackService;
@@ -52,7 +51,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class FeedbackServiceImpl implements FeedbackService {
     FeedbackRepository feedbackRepository;
     BookingRepository bookingRepository;
@@ -65,6 +63,7 @@ public class FeedbackServiceImpl implements FeedbackService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Danh sách đánh giá hiển thị có lọc và phân trang.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<FeedbackResponse>> list(UUID customerId, UUID caregiverId, UUID centerId, Integer rating, int page, int size) {
@@ -102,13 +101,14 @@ public class FeedbackServiceImpl implements FeedbackService {
         return APIResponse.success("Lấy đánh giá thành công", response);
     }
 
+    // Caregiver trong booking của khách mà khách còn được đánh giá.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<EligibleCaregiverResponse>> eligible(UUID actorId, UUID bookingId) {
         Booking booking = findOwnedBooking(actorId, bookingId);
         checkBookingStatus(booking);
         Map<UUID, EligibleCaregiverResponse> eligible = new LinkedHashMap<>();
-        for (BookingOccurrence occurrence : bookingOccurrenceRepository.findAllByBooking(bookingId)) {
+        for (BookingOccurrence occurrence : bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId)) {
             if (occurrence.getStatus() == OccurrenceStatus.COMPLETED
                     && !feedbackRepository.existsByBookingIdAndCaregiverIdAndDeletedAtIsNull(bookingId, occurrence.getCaregiverId())) {
                 eligible.putIfAbsent(occurrence.getCaregiverId(), feedbackMapper.toEligibleResponse(occurrence));
@@ -118,6 +118,7 @@ public class FeedbackServiceImpl implements FeedbackService {
         return APIResponse.success("Lấy người chăm sóc có thể đánh giá thành công", response);
     }
 
+    // Khách đánh giá caregiver của booking đã xong, rồi xếp cập nhật điểm.
     @Override
     public APIResponse<FeedbackResponse> create(UUID actorId, FeedbackRequest request) {
         IdentityUserResponse profile = identityUserService.getProfiles(List.of(actorId)).get(actorId);
@@ -130,7 +131,7 @@ public class FeedbackServiceImpl implements FeedbackService {
             if (feedbackRepository.existsByBookingIdAndCaregiverIdAndDeletedAtIsNull(booking.getId(), request.getCaregiverId())) {
                 throw new AppException(ErrorCode.REVIEW_ALREADY_EXISTS);
             }
-            BookingOccurrence occurrence = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+            BookingOccurrence occurrence = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
                     .filter(found -> request.getCaregiverId().equals(found.getCaregiverId()) && found.getStatus() == OccurrenceStatus.COMPLETED)
                     .findFirst().orElseThrow(() -> new AppException(ErrorCode.REVIEW_NOT_ALLOWED));
             Feedback feedback = feedbackMapper.toFeedback(request, booking, occurrence, displayName);
@@ -143,6 +144,7 @@ public class FeedbackServiceImpl implements FeedbackService {
         return APIResponse.success("Gửi đánh giá thành công", response);
     }
 
+    // Trung tâm phản hồi đánh giá của trung tâm mình.
     @Override
     @Transactional
     public APIResponse<FeedbackResponse> reply(UUID actorId, UUID centerId, UUID id, FeedbackReplyRequest request) {
@@ -161,6 +163,7 @@ public class FeedbackServiceImpl implements FeedbackService {
         return APIResponse.success("Phản hồi đánh giá thành công", response);
     }
 
+    // Admin ẩn / hiện đánh giá rồi xếp cập nhật điểm.
     @Override
     @Transactional
     public APIResponse<FeedbackResponse> updateVisibility(UUID id, FeedbackVisibilityRequest request) {
@@ -180,6 +183,7 @@ public class FeedbackServiceImpl implements FeedbackService {
         return APIResponse.success("Cập nhật hiển thị đánh giá thành công", response);
     }
 
+    // Tính điểm trung bình và số lượt đánh giá hiển thị của caregiver.
     @Override
     @Transactional(readOnly = true)
     public CaregiverRatingRequest summarizeRating(UUID caregiverId) {
@@ -189,23 +193,27 @@ public class FeedbackServiceImpl implements FeedbackService {
         return feedbackMapper.toRatingRequest(average, Math.toIntExact(summary.getRatingCount()));
     }
 
+    // Xếp việc cập nhật điểm caregiver sang ProviderService.
     private void enqueueRating(Feedback feedback) {
         // Mỗi retry tính lại từ dữ liệu mới nhất, không gửi snapshot rating cũ.
         bookingOutboxService.enqueue(OutboxEventType.RATING, feedback.getCaregiverId(),
                 "RATING:" + feedback.getId() + ":" + UUID.randomUUID(), feedback.getCaregiverId());
     }
 
+    // Tìm booking của chính khách, không có thì báo lỗi.
     private Booking findOwnedBooking(UUID actorId, UUID id) {
         return bookingRepository.findByIdAndDeletedAtIsNull(id).filter(found -> actorId.equals(found.getCustomerId()))
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
     }
 
+    // Chỉ đánh giá được booking đã hoàn thành hoặc đã hủy.
     private void checkBookingStatus(Booking booking) {
         if (booking.getStatus() != BookingStatus.COMPLETED && booking.getStatus() != BookingStatus.CANCELLED) {
             throw new AppException(ErrorCode.REVIEW_NOT_ALLOWED);
         }
     }
 
+    // Rút gọn tên khách hiển thị trên đánh giá.
     private String abbreviateName(String name) {
         if (name == null || name.isBlank()) {
             return "Khách hàng";

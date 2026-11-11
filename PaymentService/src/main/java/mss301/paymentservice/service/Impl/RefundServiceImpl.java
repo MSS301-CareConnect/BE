@@ -105,6 +105,7 @@ public class RefundServiceImpl implements RefundService {
     RefundMapper refundMapper;
     Clock clock;
 
+    // Danh sách hoàn tiền; khách chỉ thấy của mình, admin / service thấy tất cả.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<RefundResponse>> list(UUID actorId, Set<RoleCode> roles, UUID bookingId,
@@ -131,6 +132,7 @@ public class RefundServiceImpl implements RefundService {
         return APIResponse.success("Lấy danh sách hoàn tiền thành công", pageResponse);
     }
 
+    // Tính trước phí hủy và số tiền hoàn cho các buổi định hủy.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<RefundQuoteResponse> quote(RefundQuoteRequest request) {
@@ -163,6 +165,7 @@ public class RefundServiceImpl implements RefundService {
         return APIResponse.success("Tính tiền hoàn thành công", refundQuoteResponse);
     }
 
+    // Tạo các lệnh hoàn tiền khi hủy buổi (idempotent theo key).
     @Override
     @Transactional
     public APIResponse<RefundCreateResponse> create(String idempotencyKey, RefundCreateRequest request) {
@@ -289,6 +292,7 @@ public class RefundServiceImpl implements RefundService {
         return buildCreateResponse(refunds);
     }
 
+    // Tạo lệnh hoàn tiền theo kết quả khiếu nại (idempotent theo key).
     @Override
     @Transactional
     public APIResponse<RefundCreateResponse> createComplaintRefund(String idempotencyKey, ComplaintRefundRequest request) {
@@ -351,6 +355,7 @@ public class RefundServiceImpl implements RefundService {
         return buildCreateResponse(refunds);
     }
 
+    // Admin đưa lệnh hoàn tiền thất bại về chờ gửi lại.
     @Override
     @Transactional
     public APIResponse<RefundResponse> retry(UUID actorId, UUID refundId) {
@@ -370,6 +375,7 @@ public class RefundServiceImpl implements RefundService {
         return APIResponse.success("Đã đưa yêu cầu hoàn tiền vào hàng đợi", refundResponse);
     }
 
+    // Hoàn toàn bộ phần còn hoàn được của một khoản thanh toán.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void refundWholePayment(UUID paymentId, RefundReason reason) {
@@ -411,6 +417,7 @@ public class RefundServiceImpl implements RefundService {
         log.warn("Payment {} fully refunded ({}): {}", paymentId, reason, room);
     }
 
+    // Hoàn tiền cho lần thanh toán trùng / tách riêng (idempotent theo lần thanh toán).
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void refundSeparateAttempt(PaymentAttempt attempt, RefundReason reason) {
@@ -429,6 +436,7 @@ public class RefundServiceImpl implements RefundService {
                 payment.getId(), attempt.getAmount(), reason);
     }
 
+    // Xử lý booking quá hạn trả phần còn lại: giữ / hoàn cọc theo chính sách.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void refundOverdueForfeit(BookingFinancial financial) {
@@ -578,15 +586,18 @@ public class RefundServiceImpl implements RefundService {
         }
     }
 
+    // Số tiền còn hoàn được của khoản thanh toán (trừ phần đã hoàn và đang giữ chỗ).
     private BigDecimal refundableRoomOf(Payment payment) {
         BigDecimal reserved = refundRepository.sumAmount(payment.getId(), RESERVED_STATUSES);
         return payment.getAmount().subtract(payment.getRefundedAmount()).subtract(reserved).max(BigDecimal.ZERO);
     }
 
+    // Kiểm tra booking đã trả cọc.
     private boolean isDepositPaid(BookingFinancial financial) {
         return financial != null && financial.getStatus() != BookingFinancialStatus.AWAITING_DEPOSIT;
     }
 
+    // Lấy tài chính từng buổi của booking theo id buổi.
     private Map<UUID, OccurrenceFinancial> findOccurrenceFinancials(BookingFinancial financial) {
         Map<UUID, OccurrenceFinancial> occurrenceFinancials = new HashMap<>();
         if (financial == null) {
@@ -599,6 +610,7 @@ public class RefundServiceImpl implements RefundService {
         return occurrenceFinancials;
     }
 
+    // Giá của buổi, không có thì 0.
     private BigDecimal priceOf(OccurrenceFinancial occurrenceFinancial) {
         return occurrenceFinancial == null ? BigDecimal.ZERO : occurrenceFinancial.getPriceAmount();
     }
@@ -614,6 +626,7 @@ public class RefundServiceImpl implements RefundService {
                 .max(BigDecimal.ZERO);
     }
 
+    // Lấy idempotency key từ header hoặc giá trị dự phòng, thiếu thì báo lỗi.
     private String resolveIdempotencyKey(String headerKey, String fallbackKey) {
         String key = headerKey != null && !headerKey.isBlank() ? headerKey.trim() : fallbackKey;
         if (key == null || key.isBlank()) {
@@ -625,6 +638,7 @@ public class RefundServiceImpl implements RefundService {
         return key;
     }
 
+    // Dựng response tạo hoàn tiền gồm từng lệnh và tổng tiền hoàn / phí.
     private APIResponse<RefundCreateResponse> buildCreateResponse(List<Refund> refunds) {
         List<RefundItemResponse> items = refundMapper.toItemResponseList(refunds);
         BigDecimal totalRefund = BigDecimal.ZERO;

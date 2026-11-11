@@ -11,10 +11,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Ca chăm sóc thực tế của một buổi: caregiver check-in (OPS-02) → làm checklist → check-out / trung tâm buộc kết thúc
- * (OPS-04). Mỗi buổi tối đa một session (UNIQUE occurrence_id chặn hai lần check-in song song).
- */
 @Entity
 @Table(name = "care_sessions")
 @AttributeOverride(name = "id", column = @Column(name = "session_id"))

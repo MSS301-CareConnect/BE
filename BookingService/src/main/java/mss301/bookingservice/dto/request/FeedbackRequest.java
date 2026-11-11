@@ -16,12 +16,15 @@ import jakarta.validation.constraints.Size;
 public class FeedbackRequest {
     @NotNull(message = "INVALID_REQUEST")
     UUID bookingId;
+
     @NotNull(message = "INVALID_REQUEST")
     UUID caregiverId;
+
     @NotNull(message = "RATING_OUT_OF_RANGE")
     @Min(value = 1, message = "RATING_OUT_OF_RANGE")
     @Max(value = 5, message = "RATING_OUT_OF_RANGE")
     Integer rating;
+
     @Size(max = 2000, message = "INVALID_REQUEST")
     String comment;
 }

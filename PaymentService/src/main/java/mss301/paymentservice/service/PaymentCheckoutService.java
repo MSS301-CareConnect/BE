@@ -11,6 +11,7 @@ import java.util.UUID;
 
 // Phần chung của mọi phiên thanh toán (cọc, phần còn lại): mở phiên trong transaction, gọi cổng ngoài transaction.
 public interface PaymentCheckoutService {
+    // Báo lỗi nếu cổng thanh toán đang tắt.
     void checkProviderEnabled(PaymentProvider provider);
 
     // Trong transaction của caller: phiên PENDING cũ → EXPIRED (một phiên sống), tạo phiên mới, ghi CHECKOUT_CREATED.
@@ -19,5 +20,6 @@ public interface PaymentCheckoutService {
     // Ngoài transaction: gọi cổng lấy URL; lỗi cổng → phiên FAILED rồi ném PAYMENT_GATEWAY_ERROR.
     CheckoutResponse launch(UUID attemptId, String orderLabel, String clientIp);
 
+    // Lấy IP client để gửi cổng thanh toán.
     String resolveClientIp(HttpServletRequest httpServletRequest);
 }

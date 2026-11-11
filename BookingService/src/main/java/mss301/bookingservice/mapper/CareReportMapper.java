@@ -18,7 +18,6 @@ import java.util.List;
 @Mapper(config = MapStructConfig.class, imports = CareReportMediaId.class)
 public interface CareReportMapper {
     @Mapping(target = "sessionId", source = "report.session.id")
-    @Mapping(target = "photos", source = "photos")
     CareReportResponse toResponse(CareReport report, List<ReportPhotoResponse> photos);
 
     @IgnoreServerManagedFields

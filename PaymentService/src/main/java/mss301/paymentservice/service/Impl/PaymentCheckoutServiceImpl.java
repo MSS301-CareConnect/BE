@@ -44,16 +44,18 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Báo lỗi nếu cổng thanh toán được chọn đang tắt.
     @Override
     public void checkProviderEnabled(PaymentProvider provider) {
         paymentGatewayFactory.getEnabled(provider);
     }
 
+    // Mở lần thanh toán mới, hủy các lần đang chờ cũ của cùng khoản thanh toán.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public PaymentAttempt openAttempt(Payment payment, PaymentProvider provider, Instant expiresAt) {
         Instant now = clock.instant();
-        for (PaymentAttempt pendingAttempt : paymentAttemptRepository.findAllByPaymentAndStatus(payment.getId(),
+        for (PaymentAttempt pendingAttempt : paymentAttemptRepository.findByPaymentIdAndStatusOrderByCreatedAtDesc(payment.getId(),
                 PaymentStatus.PENDING)) {
             pendingAttempt.setStatus(PaymentStatus.EXPIRED);
             pendingAttempt.setCompletedAt(now);
@@ -69,6 +71,7 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
         return attempt;
     }
 
+    // Tạo phiên thanh toán ở cổng (ngoài transaction) và lưu thông tin phiên.
     @Override
     public CheckoutResponse launch(UUID attemptId, String orderLabel, String clientIp) {
         CheckoutCommand command = transactionTemplate.execute(status -> {
@@ -103,11 +106,13 @@ public class PaymentCheckoutServiceImpl implements PaymentCheckoutService {
         return remoteAddress == null || remoteAddress.isBlank() ? FALLBACK_IP : remoteAddress;
     }
 
+    // Tìm lần thanh toán kèm khoản thanh toán, không có thì báo lỗi.
     private PaymentAttempt findAttempt(UUID attemptId) {
         return paymentAttemptRepository.findWithPaymentById(attemptId)
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
     }
 
+    // Đánh dấu lần thanh toán thất bại khi tạo phiên ở cổng lỗi.
     private void markAttemptFailed(UUID attemptId) {
         PaymentAttempt attempt = findAttempt(attemptId);
         if (attempt.getStatus() == PaymentStatus.PENDING) {

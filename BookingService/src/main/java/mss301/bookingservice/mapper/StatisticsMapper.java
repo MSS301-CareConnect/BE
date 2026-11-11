@@ -7,7 +7,7 @@ import mss301.bookingservice.dto.response.TopCaregiverResponse;
 import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
 import mss301.bookingservice.dto.response.ResponsivenessStatisticsResponse;
 import mss301.bookingservice.dto.response.StatisticsTrendPointResponse;
-import mss301.bookingservice.repository.TopCaregiverView;
+import mss301.bookingservice.repository.projection.TopCaregiverView;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import java.util.UUID;

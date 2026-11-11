@@ -47,16 +47,19 @@ public class JwtServiceImpl implements JwtService {
     RSAKey signingKey;
     IdentityProperties identityProperties;
 
+    // Phát JWT cho người dùng theo loại token.
     @Override
     public Jwt issue(UserResponse user, long authzVersion, TokenType tokenType) {
         return issueInternal(user, authzVersion, tokenType, null);
     }
 
+    // Phát access token gắn với phiên đăng nhập.
     @Override
     public Jwt issueAccess(UserResponse user, long authzVersion, String sessionId) {
         return issueInternal(user, authzVersion, TokenType.ACCESS, sessionId);
     }
 
+    // Phát access token role SERVICE cho service client.
     @Override
     public Jwt issueServiceAccess(UUID clientUuid, String clientId) {
         Instant now = Instant.now();
@@ -80,6 +83,7 @@ public class JwtServiceImpl implements JwtService {
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims));
     }
 
+    // Sinh refresh token ngẫu nhiên (không phải JWT).
     @Override
     public String issueOpaqueRefreshToken() {
         byte[] randomBytes = new byte[32];
@@ -87,6 +91,7 @@ public class JwtServiceImpl implements JwtService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
     }
 
+    // Băm SHA-256 token để lưu / tra cứu trên Redis.
     @Override
     public String hashToken(String token) {
         if (token == null || token.isBlank()) {
@@ -101,37 +106,38 @@ public class JwtServiceImpl implements JwtService {
         }
     }
 
+    // Giải mã và kiểm tra access token.
     @Override
     public Jwt parseAccess(String token) {
         return parse(token, TokenType.ACCESS);
     }
 
-    @Override
-    public Jwt parseRefresh(String token) {
-        return parse(token, TokenType.REFRESH);
-    }
-
+    // Lấy userId từ claim sub.
     @Override
     public UUID getUserId(Jwt jwt) {
         return UUID.fromString(jwt.getSubject());
     }
 
+    // Lấy session id từ claim của token.
     @Override
     public String getSessionId(Jwt jwt) {
         return jwt.getClaimAsString(TokenClaims.SESSION_ID);
     }
 
+    // Lấy authz_version từ token, thiếu thì là 0.
     @Override
     public long getAuthzVersion(Jwt jwt) {
         Number authzVersion = jwt.getClaim(TokenClaims.AUTHZ_VERSION);
         return authzVersion != null ? authzVersion.longValue() : 0L;
     }
 
+    // Trả JWK Set chứa khóa công khai cho endpoint JWKS.
     @Override
     public Map<String, Object> publicKeys() {
         return new JWKSet(signingKey.toPublicJWK()).toJSONObject();
     }
 
+    // Dựng claim (roles, permissions, center_id…) và ký JWT.
     private Jwt issueInternal(UserResponse user, long authzVersion, TokenType tokenType, String sessionId) {
         Instant now = Instant.now();
         Duration ttl = tokenType == TokenType.ACCESS ? identityProperties.getAccessTtl() : identityProperties.getRefreshTtl();
@@ -166,6 +172,7 @@ public class JwtServiceImpl implements JwtService {
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims.build()));
     }
 
+    // Giải mã JWT và kiểm đúng loại token mong đợi.
     private Jwt parse(String token, TokenType expectedType) {
         Jwt jwt;
         try {

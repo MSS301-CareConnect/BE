@@ -10,10 +10,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Một dịch vụ trong booking. Tên / đơn vị / giá lấy từ CareCatalogService (TODO: chưa nối → NULL, không tin client).
- * Ghi một lần khi tạo booking nên chỉ có created_at (không kế thừa BaseEntity).
- */
 @Entity
 @Table(name = "booking_details")
 @Getter
@@ -75,6 +71,7 @@ public class BookingDetail {
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 
+    // Gán thời điểm tạo dòng dịch vụ của booking.
     @PrePersist
     protected void onCreate() {
         createdAt = Instant.now();

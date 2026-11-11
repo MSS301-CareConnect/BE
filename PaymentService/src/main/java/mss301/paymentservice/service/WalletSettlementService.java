@@ -11,8 +11,10 @@ import java.util.UUID;
 // Worker cộng tiền buổi hoàn tất vào ví trung tâm / nền tảng (S1: hỏi payment-context của Booking, không cần sự kiện).
 public interface WalletSettlementService {
 
+    // Lấy id booking cần quyết toán.
     List<UUID> findDueBookingIds();
 
+    // Quyết toán một booking.
     void process(UUID bookingId);
 
     // 2026-11-11: quyết toán một booking — ADMIN mọi booking, CENTER_MANAGER booking của trung tâm trong token.

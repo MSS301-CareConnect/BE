@@ -21,6 +21,7 @@ public class SecurityConfig {
     JwtDecoder jwtDecoder;
     JwtAuthorityConverter jwtAuthorityConverter;
 
+    // Cấu hình bảo mật: xác thực JWT, phân quyền endpoint, xử lý lỗi 401/403.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         // Chỉ nhận Bearer (service-to-service qua gateway) nên không cần CSRF/cookie.

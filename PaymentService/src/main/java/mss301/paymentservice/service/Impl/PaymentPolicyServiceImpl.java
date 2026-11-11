@@ -28,6 +28,7 @@ public class PaymentPolicyServiceImpl implements PaymentPolicyService {
     PaymentPolicyMapper paymentPolicyMapper;
     Clock clock;
 
+    // Chính sách thanh toán hiệu lực của trung tâm tại một thời điểm.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PaymentPolicyResponse> getEffective(UUID centerId, Instant at) {
@@ -36,6 +37,7 @@ public class PaymentPolicyServiceImpl implements PaymentPolicyService {
         return APIResponse.success("Lấy chính sách thanh toán thành công", paymentPolicyResponse);
     }
 
+    // Tìm chính sách riêng của trung tâm, không có thì dùng chính sách toàn hệ thống.
     @Override
     @Transactional(readOnly = true)
     public PlatformPolicy findEffective(UUID centerId, Instant at) {

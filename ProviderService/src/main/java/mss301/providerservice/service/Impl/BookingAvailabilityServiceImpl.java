@@ -35,6 +35,7 @@ public class BookingAvailabilityServiceImpl implements BookingAvailabilityServic
     BookingClient bookingClient;
     BookingClientMapper bookingClientMapper;
 
+    // Hỏi BookingService theo từng lô caregiver đang bận trong các khung giờ.
     @Override
     public Set<UUID> findBusyCaregiverIds(Collection<UUID> caregiverIds, List<TimeWindow> slots) {
         Set<UUID> busyCaregiverIds = new LinkedHashSet<>();
@@ -50,6 +51,7 @@ public class BookingAvailabilityServiceImpl implements BookingAvailabilityServic
         return busyCaregiverIds;
     }
 
+    // Gọi BookingService lấy caregiver bận cho một lô.
     private List<UUID> callBooking(List<UUID> caregiverIds, List<TimeWindow> slots) {
         BusyCaregiverClientRequest request = bookingClientMapper.toBusyCaregiverClientRequest(caregiverIds, slots);
         RemoteApiResponse<BusyCaregiverClientResponse> response = bookingClient.findBusyCaregivers(request);
@@ -60,6 +62,7 @@ public class BookingAvailabilityServiceImpl implements BookingAvailabilityServic
         return response.getResult().getBusyCaregiverIds();
     }
 
+    // Chia danh sách thành các lô kích thước cố định.
     private <T> List<List<T>> partition(List<T> items, int batchSize) {
         List<List<T>> batches = new ArrayList<>();
         for (int start = 0; start < items.size(); start += batchSize) {

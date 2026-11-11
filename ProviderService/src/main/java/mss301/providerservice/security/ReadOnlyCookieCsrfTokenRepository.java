@@ -8,11 +8,6 @@ import org.springframework.security.web.csrf.DefaultCsrfToken;
 
 import java.util.UUID;
 
-/**
- * CSRF double-submit với cookie XSRF-TOKEN do IdentityService phát (Path=/, cùng host qua gateway): so header
- * X-XSRF-TOKEN với cookie. Không bao giờ ghi cookie — nếu service này tự phát token, cookie của Identity bị ghi đè
- * và token FE đang giữ mất hiệu lực.
- */
 public class ReadOnlyCookieCsrfTokenRepository implements CsrfTokenRepository {
 
     public static final String CSRF_HEADER = "X-XSRF-TOKEN";
@@ -24,11 +19,13 @@ public class ReadOnlyCookieCsrfTokenRepository implements CsrfTokenRepository {
         return new DefaultCsrfToken(CSRF_HEADER, CSRF_PARAMETER, UUID.randomUUID().toString());
     }
 
+    // Không ghi cookie CSRF (IdentityService là nơi phát cookie).
     @Override
     public void saveToken(CsrfToken token, HttpServletRequest request, HttpServletResponse response) {
         // Cố ý không ghi cookie (xem javadoc).
     }
 
+    // Đọc CSRF token từ cookie XSRF-TOKEN.
     @Override
     public CsrfToken loadToken(HttpServletRequest request) {
         String value = CookieUtils.read(request, CookieUtils.CSRF);
