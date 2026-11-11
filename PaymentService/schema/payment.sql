@@ -230,9 +230,11 @@ CREATE TABLE payment_outbox (
     outbox_id         uuid          PRIMARY KEY,
     event_type        varchar(30)   NOT NULL CONSTRAINT ck_payment_outbox_event_type
                                     CHECK (event_type IN ('DEPOSIT_CONFIRMATION','REMAINING_CONFIRMATION','PAYMENT_OVERDUE',
-                                                          'REFUND_COMPLETED')),
-    booking_id        uuid          NOT NULL,
-    payment_id        uuid          NOT NULL REFERENCES payments(payment_id),
+                                                          'REFUND_COMPLETED','WITHDRAWAL_COMPLETED',
+                                                          'WITHDRAWAL_REJECTED')),
+    -- NULL cho WITHDRAWAL_* (thông báo kết quả rút tiền, không gắn booking / payment — 2026-11-10).
+    booking_id        uuid,
+    payment_id        uuid          REFERENCES payments(payment_id),
     payment_reference varchar(100)  NOT NULL,
     status            varchar(20)   NOT NULL CHECK (status IN ('PENDING','SENT','FAILED')),
     attempts          integer       NOT NULL DEFAULT 0,
@@ -334,6 +336,9 @@ CREATE TABLE IF NOT EXISTS wallet_withdrawals (
 
 CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_wallet_created ON wallet_withdrawals(wallet_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_status_created ON wallet_withdrawals(status, created_at DESC);
+-- 2026-11-10: hàng đợi rút tiền của trung tâm (ví khách / caregiver gắn trung tâm xử lý).
+CREATE INDEX IF NOT EXISTS idx_wallet_withdrawals_center_status
+    ON wallet_withdrawals(center_id, status, created_at DESC) WHERE center_id IS NOT NULL;
 
 
 COMMIT;

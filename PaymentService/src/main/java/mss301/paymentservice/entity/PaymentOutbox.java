@@ -43,10 +43,11 @@ public class PaymentOutbox extends BaseEntity {
     @Column(name = "event_type", nullable = false, length = 30)
     OutboxEventType eventType;
 
-    @Column(name = "booking_id", nullable = false)
+    // NULL với WITHDRAWAL_* (thông báo kết quả rút tiền).
+    @Column(name = "booking_id")
     UUID bookingId;
 
-    @Column(name = "payment_id", nullable = false)
+    @Column(name = "payment_id")
     UUID paymentId;
 
     @Column(name = "payment_reference", nullable = false, length = 100)

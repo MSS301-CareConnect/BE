@@ -7,5 +7,8 @@ public enum OutboxEventType {
     DEPOSIT_CONFIRMATION,
     REMAINING_CONFIRMATION,
     PAYMENT_OVERDUE,
-    REFUND_COMPLETED
+    REFUND_COMPLETED,
+    // 2026-11-10: báo người rút tiền kết quả yêu cầu (không gắn booking / payment — reference "withdrawal=<id>").
+    WITHDRAWAL_COMPLETED,
+    WITHDRAWAL_REJECTED
 }

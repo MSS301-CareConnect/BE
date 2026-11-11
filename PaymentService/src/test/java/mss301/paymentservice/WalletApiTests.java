@@ -36,6 +36,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -328,38 +329,52 @@ class WalletApiTests extends PaymentIntegrationTest {
     }
 
     @Test
-    void withdrawalHoldsBalanceAndAdminRejectsOrCompletesIt() throws Exception {
+    void withdrawalIsHandledByTheRefundingCenterWithASimulatedTransfer() throws Exception {
         UUID customerId = UUID.randomUUID();
-        CancelSetup setup = paidBooking(customerId, UUID.randomUUID(), null, BASE.plus(Duration.ofDays(3)));
+        UUID centerId = UUID.randomUUID();
+        CancelSetup setup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
         // Còn ≥ 24h → hoàn đủ 300.000 mỗi buổi vào ví.
         createRefund("REFUND:CUSTOMER_CANCEL:w3", setup.bookingId(), setup.occurrenceIds(), "CUSTOMER_CANCEL", BASE);
         dispatchDueRefunds();
         assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("600000");
         String token = customer(customerId);
+        String manager = manager(centerId);
 
+        // Tiền hoàn gắn trung tâm đã hoàn → yêu cầu rút gửi về trung tâm đó.
+        mockMvc.perform(get("/api/v1/wallets/me/center-balances").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].centerId").value(centerId.toString()))
+                .andExpect(jsonPath("$.result[0].availableBalance").value(600000));
         withdraw(token, "700000", "0123456789").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(6041));
         withdraw(token, "100000", "12ab").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6048));
         withdraw(token, "100000.5", "0123456789").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6045));
+        withdrawFrom(token, "100000", UUID.randomUUID()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(6054));
 
         JsonNode first = body(withdraw(token, "400000", "0123456789").andExpect(status().isOk())).get("result");
         assertThat(first.get("status").asString()).isEqualTo("PENDING");
+        assertThat(first.get("centerId").asString()).isEqualTo(centerId.toString());
         Wallet wallet = walletRepository.findByOwnerTypeAndOwnerId(WalletOwnerType.CUSTOMER, customerId).orElseThrow();
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("200000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("400000");
-        // Phần đang chờ duyệt không rút lại được.
+        // Phần đang chờ xử lý không rút lại được.
         withdraw(token, "300000", "0123456789").andExpect(status().isConflict());
 
         String firstId = first.get("id").asString();
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/approve", firstId).header("Authorization", token))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", admin())
+        // Chỉ quản lý của trung tâm giữ tiền xử lý: khách 403, admin / trung tâm khác 6055.
+        transfer(firstId, token).andExpect(status().isForbidden());
+        transfer(firstId, admin()).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(6055));
+        transfer(firstId, manager(UUID.randomUUID())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(6055));
+        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", manager)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6050));
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", admin())
+        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", manager)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Sai tên chủ tài khoản\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("REJECTED"))
@@ -368,17 +383,13 @@ class WalletApiTests extends PaymentIntegrationTest {
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("600000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("0");
 
-        String secondId = body(withdraw(token, "250000", "0123456789").andExpect(status().isOk()))
+        String secondId = body(withdrawFrom(token, "250000", centerId).andExpect(status().isOk()))
                 .get("result").get("id").asString();
-        // Chưa duyệt thì chưa xác nhận chuyển khoản được.
-        complete(secondId, "FT123").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(6043));
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/approve", secondId).header("Authorization", admin()))
-                .andExpect(jsonPath("$.result.status").value("APPROVED"));
-        complete(secondId, "").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(6051));
-        complete(secondId, "FT123").andExpect(status().isOk())
+        // Chuyển khoản giả lập thành công → tự hoàn tất, có mã giao dịch; không chuyển lại được.
+        transfer(secondId, manager).andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.result.transferReference").value("FT123"));
-        complete(secondId, "FT123").andExpect(status().isConflict());
+                .andExpect(jsonPath("$.result.transferReference").value(startsWith("SIM")));
+        transfer(secondId, manager).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(6043));
         wallet = walletRepository.findByOwnerTypeAndOwnerId(WalletOwnerType.CUSTOMER, customerId).orElseThrow();
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("350000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("0");
@@ -387,16 +398,47 @@ class WalletApiTests extends PaymentIntegrationTest {
                         WalletTransactionType.WITHDRAWAL_HOLD, WalletTransactionType.WITHDRAWAL_RELEASE,
                         WalletTransactionType.WITHDRAWAL_HOLD, WalletTransactionType.WITHDRAWAL_PAID);
 
-        // Phạm vi: chủ ví thấy yêu cầu của mình, người khác 404, admin thấy tất cả và lọc được.
+        // Người rút được báo cả hai kết quả.
+        List<JsonNode> results = SERVER.notificationBodies().stream()
+                .filter(notification -> notification.get("refType").asString().equals("WALLET_WITHDRAWAL"))
+                .toList();
+        assertThat(results).extracting(notification -> notification.get("type").asString())
+                .containsExactlyInAnyOrder("WALLET_WITHDRAWAL_REJECTED", "WALLET_WITHDRAWAL_COMPLETED");
+        assertThat(results).allSatisfy(notification -> assertThat(notification.get("recipientUserIds").get(0)
+                .asString()).isEqualTo(customerId.toString()));
+
+        // Phạm vi: chủ ví thấy yêu cầu của mình, người khác 404; hàng đợi trung tâm thấy cả hai; admin thấy tất cả.
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", token))
                 .andExpect(jsonPath("$.result.items.length()").value(2));
         mockMvc.perform(get("/api/v1/wallet-withdrawals/{id}", secondId)
                         .header("Authorization", customer(UUID.randomUUID())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(6042));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager).param("scope", "REVIEW"))
+                .andExpect(jsonPath("$.result.items.length()").value(2));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager(UUID.randomUUID()))
+                        .param("scope", "REVIEW"))
+                .andExpect(jsonPath("$.result.items.length()").value(0));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals/{id}", secondId).header("Authorization", manager))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", admin())
                         .param("status", "COMPLETED").param("ownerType", "CUSTOMER"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", token).param("scope", "REVIEW"))
+                .andExpect(status().isForbidden());
+
+        // Dashboard hàng đợi trung tâm: kết quả trong kỳ + tiền khách còn giữ hộ.
+        mockMvc.perform(get("/api/v1/wallet-withdrawals/statistics").header("Authorization", manager)
+                        .param("scope", "REVIEW").param("from", "2026-01-01T00:00:00Z")
+                        .param("to", "2027-01-01T00:00:00Z").param("groupBy", "MONTH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.pendingCount").value(0))
+                .andExpect(jsonPath("$.result.completedCount").value(1))
+                .andExpect(jsonPath("$.result.completedAmount").value(250000))
+                .andExpect(jsonPath("$.result.rejectedCount").value(1))
+                .andExpect(jsonPath("$.result.custodyCustomerBalance").value(350000))
+                .andExpect(jsonPath("$.result.custodyTotal").value(350000));
+
         mockMvc.perform(get("/api/v1/wallets/{id}/transactions", wallet.getId()).header("Authorization", admin())
                         .param("from", FROM).param("to", TO))
                 .andExpect(jsonPath("$.result.items.length()").value(6));
@@ -519,11 +561,16 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
-    private ResultActions complete(String withdrawalId, String reference) throws Exception {
-        return mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/complete", withdrawalId)
-                .header("Authorization", admin())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"transferReference\":\"" + reference + "\"}"));
+    private ResultActions withdrawFrom(String token, String amount, UUID centerId) throws Exception {
+        String body = "{\"amount\":" + amount + ",\"bankName\":\"Vietcombank\",\"bankAccountNumber\":\"0123456789\","
+                + "\"accountHolderName\":\"NGUYEN VAN A\",\"centerId\":\"" + centerId + "\"}";
+        return mockMvc.perform(post("/api/v1/wallet-withdrawals").header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    private ResultActions transfer(String withdrawalId, String token) throws Exception {
+        return mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/transfers", withdrawalId)
+                .header("Authorization", token));
     }
 
     private ResultActions complaint(UUID bookingId, UUID complaintId, String amount) throws Exception {

@@ -88,4 +88,8 @@
   Booking): trung tâm nhận tiền khách đã trả cho buổi − `commissionPercent` snapshot, nền tảng nhận hoa hồng. Booking cũ
   (thu sau hoàn tất) không cộng tự động.
 - Thứ tự khóa: `booking_financials` → `payments` → ví (trung tâm trước nền tảng); `wallet_withdrawals` → ví.
+- Rút tiền theo trung tâm (2026-11-10, `../docs/2026-11-10-DASHBOARD_AND_CENTER_WITHDRAWALS.md`): mọi biến động ví mang
+  `center_id` của trung tâm tạo ra khoản tiền; số dư theo trung tâm (`WalletService.findCenterBalances`) quyết định nơi
+  xử lý yêu cầu rút của khách / caregiver (`wallet_withdrawals.center_id`). Người xử lý chỉ chuyển khoản giả lập
+  (`transfer`) hoặc từ chối — không đổi trạng thái tay; kết quả báo người rút qua `payment_outbox` (`WITHDRAWAL_*`).
 

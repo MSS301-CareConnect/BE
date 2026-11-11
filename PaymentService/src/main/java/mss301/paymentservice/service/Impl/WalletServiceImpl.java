@@ -8,6 +8,7 @@ import mss301.paymentservice.dto.request.WalletPosting;
 import mss301.paymentservice.dto.response.APIResponse;
 import mss301.paymentservice.dto.response.PageResponse;
 import mss301.paymentservice.dto.response.WalletBalanceTotalResponse;
+import mss301.paymentservice.dto.response.WalletCenterBalanceResponse;
 import mss301.paymentservice.dto.response.WalletResponse;
 import mss301.paymentservice.dto.response.WalletSeriesPointResponse;
 import mss301.paymentservice.dto.response.WalletStatisticsResponse;
@@ -33,6 +34,7 @@ import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.WalletMapper;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.repository.WalletCenterTypeTotalView;
 import mss301.paymentservice.repository.WalletRepository;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.repository.WalletWithdrawalRepository;
@@ -57,6 +59,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -149,6 +152,23 @@ public class WalletServiceImpl implements WalletService {
         }
         PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE));
         return buildTransactionPage(walletId, type, from, to, pageRequest);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<WalletCenterBalanceResponse>> listMyCenterBalances(UUID actorId, Set<RoleCode> roles,
+                                                                              UUID claimCenterId) {
+        WalletOwner owner = resolveOwner(actorId, roles, claimCenterId);
+        if (owner.type() != WalletOwnerType.CUSTOMER && owner.type() != WalletOwnerType.CAREGIVER) {
+            throw new AppException(ErrorCode.WALLET_NOT_WITHDRAWABLE);
+        }
+        List<WalletCenterBalanceResponse> balances = walletRepository.findByOwnerTypeAndOwnerId(owner.type(),
+                        owner.id())
+                .map(wallet -> findCenterBalances(wallet.getId()).entrySet().stream()
+                        .map(entry -> walletMapper.toCenterBalanceResponse(entry.getKey(), entry.getValue()))
+                        .toList())
+                .orElse(List.of());
+        return APIResponse.success("Lấy số dư theo trung tâm thành công", balances);
     }
 
     @Override
@@ -307,6 +327,38 @@ public class WalletServiceImpl implements WalletService {
     public Wallet lockWallet(UUID walletId) {
         return walletRepository.findForUpdateById(walletId)
                 .orElseThrow(() -> new AppException(ErrorCode.WALLET_NOT_FOUND));
+    }
+
+    // Cộng dồn theo center_id. Yêu cầu rút trước 2026-11-10 ghi WITHDRAWAL_HOLD / PAID không gắn trung tâm nên nhóm "không
+    // trung tâm" có thể âm — phần âm trừ vào các trung tâm lớn nhất để tổng vẫn khớp số dư khả dụng.
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, BigDecimal> findCenterBalances(UUID walletId) {
+        Map<UUID, BigDecimal> balances = new HashMap<>();
+        for (WalletCenterTypeTotalView row : walletTransactionRepository.sumByCenterForWallet(walletId)) {
+            BigDecimal signed = row.getTotalAmount().multiply(BigDecimal.valueOf(row.getType().availableSign()));
+            balances.merge(row.getCenterId(), signed, BigDecimal::add);
+        }
+        BigDecimal deficit = balances.getOrDefault(null, BigDecimal.ZERO).min(BigDecimal.ZERO).negate();
+        List<UUID> centers = balances.entrySet().stream()
+                .filter(entry -> entry.getKey() != null)
+                .sorted(Map.Entry.<UUID, BigDecimal>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .toList();
+        for (UUID centerId : centers) {
+            if (deficit.signum() <= 0) {
+                break;
+            }
+            BigDecimal taken = balances.get(centerId).max(BigDecimal.ZERO).min(deficit);
+            balances.put(centerId, balances.get(centerId).subtract(taken));
+            deficit = deficit.subtract(taken);
+        }
+        Map<UUID, BigDecimal> positive = new LinkedHashMap<>();
+        balances.entrySet().stream()
+                .filter(entry -> entry.getValue().signum() > 0)
+                .sorted(Map.Entry.<UUID, BigDecimal>comparingByValue().reversed())
+                .forEach(entry -> positive.put(entry.getKey(), entry.getValue()));
+        return positive;
     }
 
     // Ví đã khóa ở caller. Kiểm trùng referenceKey sau khi khóa nên hai lần xử lý cùng sự kiện không thể cùng lọt.

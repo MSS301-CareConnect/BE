@@ -1,6 +1,7 @@
 package mss301.paymentservice.mapper;
 
 import mss301.paymentservice.dto.request.WalletPosting;
+import mss301.paymentservice.dto.response.WalletCenterBalanceResponse;
 import mss301.paymentservice.dto.response.WalletResponse;
 import mss301.paymentservice.dto.response.WalletSeriesPointResponse;
 import mss301.paymentservice.dto.response.WalletStatisticsResponse;
@@ -45,6 +46,8 @@ public interface WalletMapper {
     WalletTransactionResponse toTransactionResponse(WalletTransaction transaction);
 
     List<WalletTransactionResponse> toTransactionResponseList(List<WalletTransaction> transactions);
+
+    WalletCenterBalanceResponse toCenterBalanceResponse(UUID centerId, BigDecimal availableBalance);
 
     WalletSeriesPointResponse toSeriesPoint(String period, BigDecimal income, BigDecimal withdrawn, BigDecimal spent);
 

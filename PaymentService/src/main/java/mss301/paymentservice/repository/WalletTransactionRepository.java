@@ -86,6 +86,28 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
                            @Param("from") Instant from,
                            @Param("to") Instant to);
 
+    // 2026-11-10: số dư một ví theo trung tâm đã tạo ra khoản tiền (center_id của từng biến động) — chọn trung tâm xử lý
+    // yêu cầu rút của khách / caregiver.
+    @Query("""
+            select t.centerId as centerId, w.ownerType as ownerType, t.type as type,
+                   coalesce(sum(t.amount), 0) as totalAmount
+            from WalletTransaction t, Wallet w
+            where w.id = t.walletId and t.walletId = :walletId
+            group by t.centerId, w.ownerType, t.type
+            """)
+    List<WalletCenterTypeTotalView> sumByCenterForWallet(@Param("walletId") UUID walletId);
+
+    // 2026-11-10: tiền của khách / caregiver gắn một trung tâm còn trong ví (trung tâm đang giữ hộ).
+    @Query("""
+            select t.centerId as centerId, w.ownerType as ownerType, t.type as type,
+                   coalesce(sum(t.amount), 0) as totalAmount
+            from WalletTransaction t, Wallet w
+            where w.id = t.walletId and t.centerId = :centerId and w.ownerType in :ownerTypes
+            group by t.centerId, w.ownerType, t.type
+            """)
+    List<WalletCenterTypeTotalView> sumCustodyByCenter(@Param("centerId") UUID centerId,
+                                                       @Param("ownerTypes") Collection<WalletOwnerType> ownerTypes);
+
     // Admin: tổng một loại biến động trên mọi ví của một loại chủ (vd tiền hoàn vào ví khách).
     @Query("""
             select coalesce(sum(t.amount), 0) from WalletTransaction t, Wallet w

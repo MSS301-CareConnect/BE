@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 // Chủ ví lấy từ token; không nhận walletId / ownerType / trạng thái từ request (chống mass assignment).
 @Data
@@ -38,4 +39,9 @@ public class CreateWalletWithdrawalRequest {
     @NotBlank(message = "ACCOUNT_HOLDER_NAME_REQUIRED")
     @Size(max = 100, message = "TEXT_TOO_LONG")
     String accountHolderName;
+
+    // 2026-11-10 — ví khách / caregiver: trung tâm giữ khoản tiền muốn rút (GET /wallets/me/center-balances); trung tâm đó
+    // xử lý yêu cầu. Bỏ trống: phần tiền không gắn trung tâm nếu có, không thì trung tâm duy nhất còn số dư. Ví trung tâm
+    // bỏ qua field này (admin xử lý).
+    UUID centerId;
 }

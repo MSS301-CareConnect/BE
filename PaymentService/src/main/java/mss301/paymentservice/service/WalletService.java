@@ -3,6 +3,7 @@ package mss301.paymentservice.service;
 import mss301.paymentservice.dto.request.WalletPosting;
 import mss301.paymentservice.dto.response.APIResponse;
 import mss301.paymentservice.dto.response.PageResponse;
+import mss301.paymentservice.dto.response.WalletCenterBalanceResponse;
 import mss301.paymentservice.dto.response.WalletResponse;
 import mss301.paymentservice.dto.response.WalletStatisticsResponse;
 import mss301.paymentservice.dto.response.WalletTransactionResponse;
@@ -16,6 +17,8 @@ import mss301.paymentservice.enums.WalletTransactionType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -34,6 +37,10 @@ public interface WalletService {
     APIResponse<PageResponse<WalletTransactionResponse>> listTransactions(UUID walletId, WalletTransactionType type,
                                                                           Instant from, Instant to, int page,
                                                                           int size);
+
+    // 2026-11-10: số dư khả dụng của ví khách / caregiver theo trung tâm giữ khoản tiền (chọn nơi gửi yêu cầu rút).
+    APIResponse<List<WalletCenterBalanceResponse>> listMyCenterBalances(UUID actorId, Set<RoleCode> roles,
+                                                                       UUID claimCenterId);
 
     APIResponse<WalletStatisticsResponse> getMyStatistics(UUID actorId, Set<RoleCode> roles, UUID claimCenterId,
                                                           Instant from, Instant to, StatisticsGroupBy groupBy);
@@ -63,6 +70,9 @@ public interface WalletService {
     Optional<Wallet> findOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);
 
     Wallet lockWallet(UUID walletId);
+
+    // Số dư khả dụng của một ví theo center_id của biến động (key null = tiền không gắn trung tâm); chỉ số dương.
+    Map<UUID, BigDecimal> findCenterBalances(UUID walletId);
 
     // false = referenceKey đã ghi (sự kiện xử lý lại) — không đổi số dư.
     boolean post(Wallet wallet, WalletPosting posting);

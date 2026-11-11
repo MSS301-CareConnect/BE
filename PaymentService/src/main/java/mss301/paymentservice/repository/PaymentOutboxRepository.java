@@ -24,6 +24,9 @@ public interface PaymentOutboxRepository extends JpaRepository<PaymentOutbox, UU
 
     boolean existsByEventTypeAndPaymentId(OutboxEventType eventType, UUID paymentId);
 
+    // Thông báo kết quả rút tiền: khóa trùng theo reference "withdrawal=<id>" (không có payment).
+    boolean existsByEventTypeAndPaymentReference(OutboxEventType eventType, String paymentReference);
+
     boolean existsByEventTypeAndPaymentIdAndPaymentReference(OutboxEventType eventType, UUID paymentId,
                                                              String paymentReference);
 

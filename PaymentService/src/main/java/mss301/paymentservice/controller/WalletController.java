@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.dto.response.APIResponse;
 import mss301.paymentservice.dto.response.PageResponse;
+import mss301.paymentservice.dto.response.WalletCenterBalanceResponse;
 import mss301.paymentservice.dto.response.WalletResponse;
 import mss301.paymentservice.dto.response.WalletStatisticsResponse;
 import mss301.paymentservice.dto.response.WalletTransactionResponse;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -57,6 +59,16 @@ public class WalletController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return walletService.listMyTransactions(actorId, roles, claimCenterId, type, from, to, page, size);
+    }
+
+    // 2026-11-10: số dư theo trung tâm giữ khoản tiền — chọn trung tâm xử lý yêu cầu rút.
+    @GetMapping("/me/center-balances")
+    @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER')")
+    public APIResponse<List<WalletCenterBalanceResponse>> listMyCenterBalances(
+            @CurrentUserId UUID actorId,
+            @CurrentRoles Set<RoleCode> roles,
+            @CurrentCenterId(required = false) UUID claimCenterId) {
+        return walletService.listMyCenterBalances(actorId, roles, claimCenterId);
     }
 
     @GetMapping("/me/statistics")

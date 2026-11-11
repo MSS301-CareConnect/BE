@@ -11,6 +11,7 @@ import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.entity.Payment;
 import mss301.paymentservice.entity.PaymentOutbox;
 import mss301.paymentservice.entity.Refund;
+import mss301.paymentservice.entity.WalletWithdrawal;
 import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.enums.OutboxEventType;
@@ -24,6 +25,7 @@ import mss301.paymentservice.repository.BookingFinancialRepository;
 import mss301.paymentservice.repository.PaymentOutboxRepository;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.repository.WalletWithdrawalRepository;
 import mss301.paymentservice.service.PaymentOutboxService;
 import mss301.paymentservice.service.PaymentTransactionService;
 import mss301.paymentservice.service.RefundService;
@@ -42,8 +44,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -64,12 +68,22 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
     static String REFUND_NOTIFICATION_TYPE = "REFUND_COMPLETED";
     static String REFUND_NOTIFICATION_TITLE = "Hoàn tiền thành công";
     static String BOOKING_REF_TYPE = "BOOKING";
+    static String WITHDRAWAL_REFERENCE_PREFIX = "withdrawal=";
+    static String WITHDRAWAL_REF_TYPE = "WALLET_WITHDRAWAL";
+    static String WITHDRAWAL_COMPLETED_NOTIFICATION_TYPE = "WALLET_WITHDRAWAL_COMPLETED";
+    static String WITHDRAWAL_REJECTED_NOTIFICATION_TYPE = "WALLET_WITHDRAWAL_REJECTED";
+    static String WITHDRAWAL_COMPLETED_TITLE = "Rút tiền thành công";
+    static String WITHDRAWAL_REJECTED_TITLE = "Yêu cầu rút tiền bị từ chối";
+    static int MASKED_ACCOUNT_DIGITS = 4;
+    static Set<OutboxEventType> NOTIFICATION_EVENTS = EnumSet.of(OutboxEventType.REFUND_COMPLETED,
+            OutboxEventType.WITHDRAWAL_COMPLETED, OutboxEventType.WITHDRAWAL_REJECTED);
     static Locale VIETNAMESE = Locale.forLanguageTag("vi-VN");
 
     PaymentOutboxRepository paymentOutboxRepository;
     PaymentRepository paymentRepository;
     RefundRepository refundRepository;
     BookingFinancialRepository bookingFinancialRepository;
+    WalletWithdrawalRepository walletWithdrawalRepository;
     BookingClient bookingClient;
     RefundService refundService;
     PaymentTransactionService paymentTransactionService;
@@ -112,6 +126,21 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
             return;
         }
         save(OutboxEventType.REFUND_COMPLETED, anchor.getBookingId(), anchor.getPaymentId(), reference);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueueWithdrawalResult(WalletWithdrawal withdrawal) {
+        OutboxEventType eventType = switch (withdrawal.getStatus()) {
+            case COMPLETED -> OutboxEventType.WITHDRAWAL_COMPLETED;
+            case REJECTED -> OutboxEventType.WITHDRAWAL_REJECTED;
+            default -> null;
+        };
+        String reference = WITHDRAWAL_REFERENCE_PREFIX + withdrawal.getId();
+        if (eventType == null || paymentOutboxRepository.existsByEventTypeAndPaymentReference(eventType, reference)) {
+            return;
+        }
+        save(eventType, null, null, reference);
     }
 
     private void enqueue(OutboxEventType eventType, Payment payment, String paymentReference) {
@@ -185,6 +214,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                     .build());
             case PAYMENT_OVERDUE -> bookingClient.markPaymentOverdue(bookingId);
             case REFUND_COMPLETED -> sendRefundNotification(outbox);
+            case WITHDRAWAL_COMPLETED, WITHDRAWAL_REJECTED -> sendWithdrawalNotification(outbox);
         }
     }
 
@@ -214,6 +244,41 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
                 .build());
     }
 
+    // Nội dung dựng lúc gửi từ chính yêu cầu rút (số tiền, ngân hàng, mã giao dịch / lý do).
+    private void sendWithdrawalNotification(PaymentOutbox outbox) {
+        UUID withdrawalId = UUID.fromString(outbox.getPaymentReference()
+                .substring(WITHDRAWAL_REFERENCE_PREFIX.length()));
+        WalletWithdrawal withdrawal = walletWithdrawalRepository.findById(withdrawalId).orElse(null);
+        if (withdrawal == null) {
+            log.warn("Withdrawal notification {}: withdrawal {} no longer exists, skipped", outbox.getId(),
+                    withdrawalId);
+            return;
+        }
+        String amount = NumberFormat.getCurrencyInstance(VIETNAMESE).format(withdrawal.getAmount());
+        String account = maskAccount(withdrawal.getBankAccountNumber());
+        boolean completed = outbox.getEventType() == OutboxEventType.WITHDRAWAL_COMPLETED;
+        String body = completed
+                ? "Đã chuyển " + amount + " tới " + withdrawal.getBankName() + " " + account + ". Mã giao dịch: "
+                        + withdrawal.getTransferReference() + "."
+                : "Yêu cầu rút " + amount + " về " + withdrawal.getBankName() + " " + account + " bị từ chối: "
+                        + withdrawal.getRejectReason() + ". Số tiền đã trở lại số dư ví của bạn.";
+        bookingClient.createNotification(BookingNotificationRequest.builder()
+                .recipientUserIds(List.of(withdrawal.getRequesterUserId()))
+                .type(completed ? WITHDRAWAL_COMPLETED_NOTIFICATION_TYPE : WITHDRAWAL_REJECTED_NOTIFICATION_TYPE)
+                .title(completed ? WITHDRAWAL_COMPLETED_TITLE : WITHDRAWAL_REJECTED_TITLE)
+                .body(body)
+                .refType(WITHDRAWAL_REF_TYPE)
+                .refId(withdrawal.getId())
+                .build());
+    }
+
+    private String maskAccount(String accountNumber) {
+        if (accountNumber.length() <= MASKED_ACCOUNT_DIGITS) {
+            return accountNumber;
+        }
+        return "••••" + accountNumber.substring(accountNumber.length() - MASKED_ACCOUNT_DIGITS);
+    }
+
     // Khoản đầu phủ toàn bộ tiền booking (SHIFT 100 %) → Booking đánh dấu đã trả đủ ngay.
     private boolean isFullyPaidByDeposit(UUID bookingId) {
         return bookingFinancialRepository.findById(bookingId)
@@ -238,7 +303,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
         }
         Instant now = clock.instant();
         outbox.setAttempts(outbox.getAttempts() + 1);
-        if (outbox.getEventType() == OutboxEventType.REFUND_COMPLETED) {
+        if (NOTIFICATION_EVENTS.contains(outbox.getEventType())) {
             recordNotificationResult(outbox, outcome, error, now);
             return;
         }
@@ -287,7 +352,7 @@ public class PaymentOutboxServiceImpl implements PaymentOutboxService {
             case REJECTED -> {
                 outbox.setStatus(OutboxStatus.FAILED);
                 outbox.setLastError(truncate("Booking rejected: " + error));
-                log.error("Booking rejected refund notification {} ({})", outbox.getId(), error);
+                log.error("Booking rejected {} notification {} ({})", outbox.getEventType(), outbox.getId(), error);
             }
             case RETRY -> scheduleRetry(outbox, error, now);
         }
