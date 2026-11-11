@@ -39,10 +39,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +131,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
                 checkWithdrawable(actorId, occurrence, earliestStart);
                 targets.add(occurrence);
             }
+            checkWholeDays(actorId, bookingId, targets, occurrenceIds);
             String eventReason = describeReason(request.getReasonCode(), reasonDetail);
             List<CaregiverWithdrawal> withdrawals = new ArrayList<>();
             for (BookingOccurrence occurrence : targets) {
@@ -185,6 +189,26 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         if (caregiverWithdrawalRepository.existsByOccurrenceIdAndCaregiverIdAndDeletedAtIsNull(occurrence.getId(),
                 occurrence.getCaregiverId())) {
             throw new AppException(ErrorCode.WITHDRAWAL_ALREADY_REQUESTED);
+        }
+    }
+
+    // 2026-11-10: một ngày có nhiều buổi (thường là nhiều dịch vụ nối nhau) thì phải xin hủy cả ngày — hủy lẻ một buổi
+    // làm khách nhận hai người chăm sóc khác nhau trong cùng một ngày. Buổi đã xin hủy trước (chờ người thay) không tính.
+    private void checkWholeDays(UUID actorId, UUID bookingId, List<BookingOccurrence> targets,
+                                Set<UUID> occurrenceIds) {
+        ZoneId timezone = bookingProperties.getSchedule().getTimezone();
+        Set<LocalDate> days = new HashSet<>();
+        for (BookingOccurrence target : targets) {
+            days.add(target.getStartAt().atZone(timezone).toLocalDate());
+        }
+        for (BookingOccurrence sibling : bookingOccurrenceRepository.findAllByBooking(bookingId)) {
+            boolean sameDay = days.contains(sibling.getStartAt().atZone(timezone).toLocalDate());
+            boolean stillMine = actorId.equals(sibling.getCaregiverUserId())
+                    && OccurrenceStatus.WORKABLE.contains(sibling.getStatus())
+                    && !Boolean.TRUE.equals(sibling.getNeedsReassignment());
+            if (sameDay && stillMine && !occurrenceIds.contains(sibling.getId())) {
+                throw new AppException(ErrorCode.WITHDRAWAL_WHOLE_DAY_REQUIRED);
+            }
         }
     }
 

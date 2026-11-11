@@ -8,6 +8,7 @@ import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
+import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
 import mss301.bookingservice.dto.request.OccurrenceReschedulePreviewRequest;
 import mss301.bookingservice.dto.request.OccurrenceRescheduleRequest;
 import mss301.bookingservice.dto.request.ReplacementConsentRequest;
@@ -27,6 +28,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -70,6 +72,13 @@ public class BookingOccurrenceController {
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverOccurrenceResponse> acknowledge(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return bookingOccurrenceService.acknowledge(actorId, id);
+    }
+
+    @PostMapping("/acknowledgements")
+    @PreAuthorize("hasRole('CAREGIVER')")
+    public APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(@CurrentUserId UUID actorId,
+                                                                          @Valid @RequestBody OccurrenceAcknowledgementRequest request) {
+        return bookingOccurrenceService.acknowledgeMany(actorId, request);
     }
 
     @PostMapping("/{id}/no-show-reports")

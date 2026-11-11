@@ -3,6 +3,7 @@ package mss301.bookingservice.service;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
+import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
@@ -36,6 +37,10 @@ public interface BookingOccurrenceService {
 
     // CAREGIVER được giao xác nhận nhận ca: SCHEDULED → ACKNOWLEDGED, chỉ khi booking đã xác nhận và buổi chưa bắt đầu.
     APIResponse<CaregiverOccurrenceResponse> acknowledge(UUID actorId, UUID id);
+
+    // 2026-11-10 — CAREGIVER nhận nhanh nhiều buổi SCHEDULED của cùng một booking; một buổi sai thì cả lệnh bị từ chối.
+    APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(UUID actorId,
+                                                                   OccurrenceAcknowledgementRequest request);
 
     // OPS-06 — CAREGIVER được giao báo khách vắng mặt trong [start, end + window); buổi chưa đổi trạng thái.
     APIResponse<CaregiverOccurrenceResponse> reportNoShow(UUID actorId, UUID id, NoShowReportRequest request);

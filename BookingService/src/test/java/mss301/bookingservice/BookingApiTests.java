@@ -2455,7 +2455,15 @@ class BookingApiTests {
         mockMvc.perform(get("/api/v1/statistics/centers").header("Authorization", managerBearer(scenario))
                 .param("centerId", UUID.randomUUID().toString()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.occurrences.completed").value(1))
-                .andExpect(jsonPath("$.result.completionRate").value(100.0));
+                .andExpect(jsonPath("$.result.completionRate").value(100.0))
+                .andExpect(jsonPath("$.result.occurrencesByStatus.COMPLETED").value(1))
+                .andExpect(jsonPath("$.result.trendGroupBy").value("DAY"))
+                .andExpect(jsonPath("$.result.trend").isArray())
+                .andExpect(jsonPath("$.result.ratingDistribution.5").isNumber());
+        mockMvc.perform(get("/api/v1/statistics/centers").header("Authorization", managerBearer(scenario))
+                .param("from", "2026-01-01").param("to", "2026-12-31"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.trendGroupBy").value("MONTH"))
+                .andExpect(jsonPath("$.result.trend.length()").value(12));
         mockMvc.perform(get("/api/v1/statistics/system").header("Authorization", managerBearer(scenario))).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/v1/statistics/system").header("Authorization", adminBearer()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.byCenter.totalElements").isNumber());
@@ -3139,6 +3147,64 @@ class BookingApiTests {
         mockMvc.perform(get("/api/v1/caregiver-withdrawals").param("bookingId", bookingId)
                         .header("Authorization", managerBearer(scenario)))
                 .andExpect(jsonPath("$.result.items[?(@.occurrenceId == '" + firstVisit + "')].state").value("REASSIGNED"));
+    }
+
+    // 2026-11-10: ngày có nhiều buổi thì caregiver phải xin hủy cả ngày; nhận nhanh nhiều buổi trong một lệnh.
+    @Test
+    void caregiverAcknowledgesManyVisitsAndWithdrawsWholeDays() throws Exception {
+        Scenario scenario = newScenario();
+        LocalDate busyDay = LocalDate.now(ZONE).plusDays(5);
+        LocalDate quietDay = busyDay.plusDays(2);
+        Map<String, Object> body = customBody(scenario, List.of(
+                shiftSlot(busyDay, "08:00", "10:00", null),
+                shiftSlot(busyDay, "13:00", "15:00", null),
+                shiftSlot(quietDay, "08:00", "10:00", null)));
+        body.put("caregiverId", scenario.caregiver().caregiverId().toString());
+        String bookingId = createAndGetId(scenario, body);
+        acceptAndConfirm(scenario, bookingId, null);
+        String caregiverBearer = bearer(scenario.caregiver().userId(), scenario.centerId(), "CAREGIVER");
+        List<BookingOccurrence> visits = bookingOccurrenceRepository.findAllByBooking(UUID.fromString(bookingId));
+        String morning = visits.get(0).getId().toString();
+        String afternoon = visits.get(1).getId().toString();
+        String later = visits.get(2).getId().toString();
+
+        // Nhận nhanh: buổi của người khác → 404; cả lệnh thành công thì mọi buổi ACKNOWLEDGED, gửi lại → 409.
+        CaregiverIds stranger = PLATFORM.addActiveCaregiver(scenario.centerId());
+        mockMvc.perform(acknowledgeMany(bearer(stranger.userId(), scenario.centerId(), "CAREGIVER"),
+                        List.of(morning)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(acknowledgeMany(caregiverBearer, List.of()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(acknowledgeMany(caregiverBearer, List.of(morning, afternoon)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(2))
+                .andExpect(jsonPath("$.result[0].status").value("ACKNOWLEDGED"))
+                .andExpect(jsonPath("$.result[1].status").value("ACKNOWLEDGED"));
+        mockMvc.perform(acknowledgeMany(caregiverBearer, List.of(afternoon, later)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_OCCURRENCE_TRANSITION.getCode()));
+        // Lệnh bị từ chối thì không buổi nào đổi trạng thái.
+        assertThat(bookingOccurrenceRepository.findById(UUID.fromString(later)).orElseThrow().getStatus())
+                .isEqualTo(OccurrenceStatus.SCHEDULED);
+
+        // Hủy lẻ một buổi của ngày có hai buổi → phải hủy cả ngày; ngày chỉ một buổi thì hủy lẻ được.
+        mockMvc.perform(withdraw(caregiverBearer, List.of(morning), "PERSONAL", null))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.WITHDRAWAL_WHOLE_DAY_REQUIRED.getCode()));
+        mockMvc.perform(withdraw(caregiverBearer, List.of(morning, afternoon), "PERSONAL", null))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(2));
+        mockMvc.perform(withdraw(caregiverBearer, List.of(later), "PERSONAL", null))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1));
+    }
+
+    org.springframework.test.web.servlet.RequestBuilder acknowledgeMany(String caregiverBearer,
+                                                                        List<String> occurrenceIds) {
+        return post("/api/v1/booking-occurrences/acknowledgements")
+                .header("Authorization", caregiverBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("occurrenceIds", occurrenceIds)));
     }
 
     @Test

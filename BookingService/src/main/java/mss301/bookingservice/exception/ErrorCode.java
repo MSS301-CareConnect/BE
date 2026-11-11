@@ -148,6 +148,8 @@ public enum ErrorCode {
     WITHDRAWAL_NOT_ALLOWED(5262, "This visit can no longer be cancelled", HttpStatus.CONFLICT),
     WITHDRAWAL_REASON_DETAIL_REQUIRED(5263, "Please describe the reason", HttpStatus.BAD_REQUEST),
     WITHDRAWAL_REASON_REQUIRED(5264, "Choose a reason for cancelling", HttpStatus.BAD_REQUEST),
+    // 2026-11-10: ngày có nhiều buổi thì caregiver xin hủy cả ngày, không hủy lẻ một buổi.
+    WITHDRAWAL_WHOLE_DAY_REQUIRED(5265, "This day has several visits, so cancel the whole day instead of one visit", HttpStatus.CONFLICT),
 
     // 2026-11-10: hồ sơ caregiver vắng ca (giải trình + kết luận của trung tâm).
     CAREGIVER_ABSENCE_NOT_FOUND(5270, "Absence record does not exist", HttpStatus.NOT_FOUND),

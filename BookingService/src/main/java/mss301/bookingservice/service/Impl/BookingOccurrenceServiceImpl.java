@@ -9,6 +9,7 @@ import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
+import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
 import mss301.bookingservice.dto.request.TimeSlotRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
@@ -68,6 +69,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -210,29 +212,40 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             // Khóa booking trước rồi mới tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
             Booking lockedBooking = bookingRepository.findForUpdate(occurrence.getBooking().getId())
                     .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
-            BookingOccurrence lockedOccurrence = bookingOccurrenceRepository.findForUpdate(id)
-                    .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
-            // Có thể vừa bị đổi caregiver trong lúc chờ khóa.
-            if (!actorId.equals(lockedOccurrence.getCaregiverUserId())) {
-                throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
-            }
             if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(lockedBooking.getStatus())) {
                 throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
             }
-            Instant now = clock.instant();
-            if (lockedOccurrence.getStatus() != OccurrenceStatus.SCHEDULED || !lockedOccurrence.getStartAt().isAfter(now)) {
-                throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
-            }
-            lockedOccurrence.setStatus(OccurrenceStatus.ACKNOWLEDGED);
-            lockedOccurrence.setAcknowledgedAt(now);
-            bookingEventRepository.save(bookingEventMapper.toStatusEvent(lockedOccurrence,
-                    BookingEventType.OCCURRENCE_ACKNOWLEDGED, OccurrenceStatus.SCHEDULED, OccurrenceStatus.ACKNOWLEDGED,
-                    actorId, null, now));
-            return lockedOccurrence;
+            return markAcknowledged(actorId, id, clock.instant());
         });
         log.info("Occurrence {} acknowledged by caregiver {}", id, actorId);
         CaregiverOccurrenceResponse occurrenceResponse = occurrenceMapper.toCaregiverResponse(acknowledgedOccurrence);
         return APIResponse.success("Đã xác nhận nhận ca", occurrenceResponse);
+    }
+
+    @Override
+    public APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(UUID actorId,
+                                                                          OccurrenceAcknowledgementRequest request) {
+        Set<UUID> occurrenceIds = new LinkedHashSet<>(request.getOccurrenceIds());
+        UUID bookingId = findCommonBooking(actorId, occurrenceIds);
+        List<BookingOccurrence> acknowledgedOccurrences = transactionTemplate.execute(status -> {
+            // Cùng thứ tự khóa booking → buổi như nhận từng buổi; một buổi sai thì rollback cả lệnh.
+            Booking lockedBooking = bookingRepository.findForUpdate(bookingId)
+                    .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+            if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(lockedBooking.getStatus())) {
+                throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
+            }
+            Instant now = clock.instant();
+            List<BookingOccurrence> occurrences = new ArrayList<>();
+            for (UUID occurrenceId : occurrenceIds) {
+                occurrences.add(markAcknowledged(actorId, occurrenceId, now));
+            }
+            return occurrences;
+        });
+        log.info("Caregiver {} acknowledged {} occurrence(s) of booking {}", actorId, occurrenceIds.size(), bookingId);
+        List<CaregiverOccurrenceResponse> occurrenceResponses = acknowledgedOccurrences.stream()
+                .map(occurrenceMapper::toCaregiverResponse)
+                .toList();
+        return APIResponse.success("Đã nhận " + occurrenceResponses.size() + " buổi", occurrenceResponses);
     }
 
     @Override
@@ -506,6 +519,38 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return bookingOccurrenceRepository.findWithBooking(id)
                 .filter(found -> actorId.equals(found.getCaregiverUserId()))
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+    }
+
+    // Mọi buổi phải được giao cho caregiver này và thuộc cùng một booking; khác → 404 (không lộ tồn tại).
+    private UUID findCommonBooking(UUID actorId, Set<UUID> occurrenceIds) {
+        UUID bookingId = null;
+        for (UUID occurrenceId : occurrenceIds) {
+            UUID occurrenceBookingId = findAssignedOccurrence(actorId, occurrenceId).getBooking().getId();
+            if (bookingId != null && !bookingId.equals(occurrenceBookingId)) {
+                throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
+            }
+            bookingId = occurrenceBookingId;
+        }
+        return bookingId;
+    }
+
+    // Gọi khi đã khóa booking: khóa buổi, kiểm lại người được giao (có thể vừa bị đổi lúc chờ khóa) rồi SCHEDULED →
+    // ACKNOWLEDGED kèm event.
+    private BookingOccurrence markAcknowledged(UUID actorId, UUID occurrenceId, Instant now) {
+        BookingOccurrence lockedOccurrence = bookingOccurrenceRepository.findForUpdate(occurrenceId)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        if (!actorId.equals(lockedOccurrence.getCaregiverUserId())) {
+            throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
+        }
+        if (lockedOccurrence.getStatus() != OccurrenceStatus.SCHEDULED || !lockedOccurrence.getStartAt().isAfter(now)) {
+            throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
+        }
+        lockedOccurrence.setStatus(OccurrenceStatus.ACKNOWLEDGED);
+        lockedOccurrence.setAcknowledgedAt(now);
+        bookingEventRepository.save(bookingEventMapper.toStatusEvent(lockedOccurrence,
+                BookingEventType.OCCURRENCE_ACKNOWLEDGED, OccurrenceStatus.SCHEDULED, OccurrenceStatus.ACKNOWLEDGED,
+                actorId, null, now));
+        return lockedOccurrence;
     }
 
     // ADMIN / SERVICE không giới hạn; manager cùng trung tâm (center_id trong token); khách chủ booking.

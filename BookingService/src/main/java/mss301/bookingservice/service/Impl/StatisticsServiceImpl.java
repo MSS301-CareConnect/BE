@@ -10,6 +10,7 @@ import mss301.bookingservice.dto.response.ComplaintStatisticsResponse;
 import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.dto.response.ResponsivenessStatisticsResponse;
+import mss301.bookingservice.dto.response.StatisticsTrendPointResponse;
 import mss301.bookingservice.enums.BookingExpiredReason;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.OccurrenceStatus;
@@ -23,6 +24,7 @@ import mss301.bookingservice.repository.BookingRepository;
 import mss301.bookingservice.repository.BookingResponseTimeView;
 import mss301.bookingservice.repository.StatisticsCountView;
 import mss301.bookingservice.repository.FeedbackRatingView;
+import mss301.bookingservice.repository.OccurrenceStartView;
 import mss301.bookingservice.service.StatisticsService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,7 +35,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +55,12 @@ public class StatisticsServiceImpl implements StatisticsService {
     // Trung tâm trả lời booking chờ xác nhận: xác nhận (chờ thanh toán / chờ phân công) hoặc từ chối.
     static Set<BookingStatus> CENTER_ANSWERS = EnumSet.of(BookingStatus.AWAITING_INITIAL_PAYMENT,
             BookingStatus.PENDING_CAREGIVER_ASSIGNMENT, BookingStatus.REJECTED);
+    static int MAX_RATING = 5;
+    // Kỳ ngắn hơn ~2 tháng vẽ theo ngày, dài hơn theo tháng (kỳ tối đa 366 ngày → ≤ 13 cột).
+    static long DAILY_TREND_MAX_DAYS = 62;
+    static String TREND_DAY = "DAY";
+    static String TREND_MONTH = "MONTH";
+    static DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM");
     static Set<BookingExpiredReason> CENTER_TIMEOUTS = EnumSet.of(BookingExpiredReason.CENTER_CONFIRMATION_TIMEOUT,
             BookingExpiredReason.ASSIGNMENT_TIMEOUT);
 
@@ -70,6 +80,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         validateRange(start, end);
         OperationalStatisticsResponse response = aggregate(effectiveCenterId, start.atStartOfDay(ZONE).toInstant(),
                 end.plusDays(1).atStartOfDay(ZONE).toInstant());
+        addCharts(response, effectiveCenterId, start, end);
         return APIResponse.success("Lấy thống kê trung tâm thành công", response);
     }
 
@@ -85,6 +96,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         Instant fromInstant = start.atStartOfDay(ZONE).toInstant();
         Instant toInstant = end.plusDays(1).atStartOfDay(ZONE).toInstant();
         OperationalStatisticsResponse response = aggregate(null, fromInstant, toInstant);
+        addCharts(response, null, start, end);
         Page<UUID> centers = bookingRepository.findCenterIds(fromInstant, toInstant, PageRequest.of(page, size));
         List<CenterOperationalStatsResponse> items = centers.getContent().stream()
                 .map(id -> statisticsMapper.toCenterResponse(id, aggregate(id, fromInstant, toInstant))).toList();
@@ -115,6 +127,60 @@ public class StatisticsServiceImpl implements StatisticsService {
                         CareSessionStatus.ENDED, PageRequest.of(0, 10))));
         response.setResponsiveness(responsiveness(centerId, from, to));
         return response;
+    }
+
+    // Số liệu biểu đồ chỉ cho số tổng của kỳ (không chạy cho từng trung tâm của byCenter).
+    private void addCharts(OperationalStatisticsResponse response, UUID centerId, LocalDate start, LocalDate end) {
+        Instant from = start.atStartOfDay(ZONE).toInstant();
+        Instant to = end.plusDays(1).atStartOfDay(ZONE).toInstant();
+        response.setOccurrencesByStatus(toCounts(bookingRepository.countOccurrences(centerId, from, to)));
+        response.setBookingsByType(toCounts(bookingRepository.countBookingTypes(centerId, from, to)));
+        Map<String, Long> ratings = new LinkedHashMap<>();
+        for (int star = 1; star <= MAX_RATING; star++) {
+            ratings.put(String.valueOf(star), 0L);
+        }
+        bookingRepository.countRatings(centerId, from, to, FeedbackVisibility.VISIBLE).stream()
+                .filter(row -> row.getRating() != null)
+                .forEach(row -> ratings.merge(String.valueOf(row.getRating()), row.getCount(), Long::sum));
+        response.setRatingDistribution(ratings);
+        boolean daily = ChronoUnit.DAYS.between(start, end) < DAILY_TREND_MAX_DAYS;
+        response.setTrendGroupBy(daily ? TREND_DAY : TREND_MONTH);
+        response.setTrend(trend(centerId, start, end, from, to, daily));
+    }
+
+    // Mọi kỳ con đều có điểm (kể cả 0) để biểu đồ không bị hụt cột.
+    private List<StatisticsTrendPointResponse> trend(UUID centerId, LocalDate start, LocalDate end, Instant from,
+                                                     Instant to, boolean daily) {
+        DateTimeFormatter format = daily ? DateTimeFormatter.ISO_LOCAL_DATE : MONTH_FORMAT;
+        Map<String, long[]> buckets = new LinkedHashMap<>();
+        LocalDate cursor = daily ? start : start.withDayOfMonth(1);
+        while (!cursor.isAfter(end)) {
+            buckets.put(cursor.format(format), new long[4]);
+            cursor = daily ? cursor.plusDays(1) : cursor.plusMonths(1);
+        }
+        for (Instant createdAt : bookingRepository.findCreatedAts(centerId, from, to)) {
+            long[] bucket = buckets.get(createdAt.atZone(ZONE).toLocalDate().format(format));
+            if (bucket != null) {
+                bucket[0]++;
+            }
+        }
+        for (OccurrenceStartView occurrence : bookingRepository.findOccurrenceStarts(centerId, from, to)) {
+            long[] bucket = buckets.get(occurrence.getStartAt().atZone(ZONE).toLocalDate().format(format));
+            if (bucket == null || occurrence.getStatus() == null) {
+                continue;
+            }
+            switch (occurrence.getStatus()) {
+                case COMPLETED -> bucket[1]++;
+                case CANCELLED -> bucket[2]++;
+                case CAREGIVER_MISSED, CUSTOMER_NO_SHOW -> bucket[3]++;
+                default -> {
+                }
+            }
+        }
+        List<StatisticsTrendPointResponse> points = new ArrayList<>();
+        buckets.forEach((period, values) -> points.add(statisticsMapper.toTrendPointResponse(period, values[0],
+                values[1], values[2], values[3])));
+        return points;
     }
 
     private ResponsivenessStatisticsResponse responsiveness(UUID centerId, Instant from, Instant to) {

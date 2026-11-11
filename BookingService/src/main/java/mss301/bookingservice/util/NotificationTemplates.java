@@ -47,6 +47,8 @@ public final class NotificationTemplates {
             case OCCURRENCE_RESCHEDULED_NOTIFICATION -> "Buổi chăm sóc đã được dời lịch";
             case CHECK_IN_LATE -> "Đã tới giờ nhưng người chăm sóc chưa check-in";
             case CAREGIVER_ABSENCE_UPDATED -> "Hồ sơ vắng ca vừa được cập nhật";
+            case WALLET_WITHDRAWAL_COMPLETED -> "Rút tiền thành công";
+            case WALLET_WITHDRAWAL_REJECTED -> "Yêu cầu rút tiền bị từ chối";
         };
     }
 }

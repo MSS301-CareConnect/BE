@@ -28,5 +28,8 @@ public enum NotificationType {
     // 2026-11-10: tới giờ mà caregiver chưa check-in (cảnh báo sớm trước mốc MISSED); hồ sơ vắng ca được ghi / giải trình /
     // kết luận.
     CHECK_IN_LATE,
-    CAREGIVER_ABSENCE_UPDATED
+    CAREGIVER_ABSENCE_UPDATED,
+    // 2026-11-10: PaymentService báo người rút tiền — đã chuyển khoản (giả lập) xong / bị từ chối.
+    WALLET_WITHDRAWAL_COMPLETED,
+    WALLET_WITHDRAWAL_REJECTED
 }

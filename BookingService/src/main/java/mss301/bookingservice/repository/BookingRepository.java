@@ -143,6 +143,21 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("select o.status as category, count(o) as count from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId) group by o.status")
     List<StatisticsCountView> countOccurrences(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
 
+    // Dashboard 2026-11-10: booking theo loại (SHIFT / RECURRING / CUSTOM) tạo trong kỳ.
+    @Query("select b.bookingType as category, count(b) as count from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId) group by b.bookingType")
+    List<StatisticsCountView> countBookingTypes(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    // Lúc tạo của từng booking trong kỳ — gom theo ngày / tháng (giờ VN) ở service, kỳ tối đa 366 ngày.
+    @Query("select b.createdAt from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId)")
+    List<Instant> findCreatedAts(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select o.startAt as startAt, o.status as status from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId)")
+    List<OccurrenceStartView> findOccurrenceStarts(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select f.rating as rating, count(f) as count from Feedback f where f.deletedAt is null and f.visibility = :visibility and f.createdAt >= :from and f.createdAt < :to and (:centerId is null or f.centerId = :centerId) group by f.rating")
+    List<RatingCountView> countRatings(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
+                                       @Param("visibility") FeedbackVisibility visibility);
+
     @Query("select c.status as category, count(c) as count from Complaint c where c.deletedAt is null and c.createdAt >= :from and c.createdAt < :to and (:centerId is null or c.centerId = :centerId) group by c.status")
     List<StatisticsCountView> countComplaints(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
 
