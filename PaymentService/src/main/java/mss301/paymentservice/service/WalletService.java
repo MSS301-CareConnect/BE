@@ -64,7 +64,7 @@ public interface WalletService {
     // trên tiền vừa hoàn → trừ lại ví nền tảng (trần = hoa hồng đã thu − đã trừ của booking).
     void debitComplaintCommission(UUID centerId, UUID bookingId, UUID complaintId, BigDecimal amount);
 
-    // Ví của chính người gọi, đã khóa (tạo nếu chưa có) — ví nền tảng không rút → WALLET_NOT_WITHDRAWABLE.
+    // Ví của chính người gọi, đã khóa (tạo nếu chưa có) — ví trung tâm / nền tảng không rút → WALLET_NOT_WITHDRAWABLE.
     Wallet lockOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);
 
     Optional<Wallet> findOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId);

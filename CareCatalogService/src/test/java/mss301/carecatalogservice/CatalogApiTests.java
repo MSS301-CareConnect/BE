@@ -177,6 +177,37 @@ class CatalogApiTests {
     }
 
     @Test
+    void managerSearchesOfferingsByNameAndPagesPricePlans() throws Exception {
+        UUID centerId = UUID.randomUUID();
+        CenterOffering bathing = saveOffering(centerId, saveItem("Tắm gội", ServiceStatus.ACTIVE), ServiceStatus.ACTIVE);
+        saveOffering(centerId, saveItem("Cho ăn", ServiceStatus.ACTIVE), ServiceStatus.INACTIVE);
+        savePlan(bathing, "Theo giờ", new BigDecimal("100000"), true);
+        savePlan(bathing, "Theo ngày", new BigDecimal("700000"), true);
+        savePlan(bathing, "Theo ca", new BigDecimal("400000"), false);
+
+        mockMvc.perform(get("/api/v1/center-services/center/" + centerId).param("keyword", "TẮM")
+                        .with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(bathing.getId().toString()));
+        // "%" trong từ khóa không được hiểu là ký tự đại diện.
+        mockMvc.perform(get("/api/v1/center-services/center/" + centerId).param("keyword", "%")
+                        .param("status", "INACTIVE").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1));
+
+        mockMvc.perform(get("/api/v1/price-plans").param("centerOfferingId", bathing.getId().toString())
+                        .param("page", "1").param("size", "2").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(3))
+                .andExpect(jsonPath("$.result.totalPages").value(2))
+                .andExpect(jsonPath("$.result.items.length()").value(1));
+        mockMvc.perform(get("/api/v1/price-plans").param("centerOfferingId", bathing.getId().toString())
+                        .param("size", "0").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void statusChangesAndDeletionAreGuarded() throws Exception {
         UUID centerId = UUID.randomUUID();
         CatalogItem item = saveItem("Vật lý trị liệu", ServiceStatus.ACTIVE);

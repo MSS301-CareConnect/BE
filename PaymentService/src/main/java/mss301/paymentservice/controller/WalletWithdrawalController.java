@@ -79,8 +79,9 @@ public class WalletWithdrawalController {
         return walletWithdrawalService.get(actorId, roles, claimCenterId, withdrawalId);
     }
 
+    // 2026-11-11: tiền buổi vào thẳng tài khoản trung tâm / nền tảng → chỉ khách và caregiver gửi yêu cầu rút.
     @PostMapping
-    @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER')")
+    @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER')")
     public APIResponse<WalletWithdrawalResponse> create(@CurrentUserId UUID actorId,
                                                         @CurrentRoles Set<RoleCode> roles,
                                                         @CurrentCenterId(required = false) UUID claimCenterId,

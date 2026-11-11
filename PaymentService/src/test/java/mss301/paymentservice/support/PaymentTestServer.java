@@ -24,6 +24,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,6 +84,7 @@ public final class PaymentTestServer {
         server.createContext("/api/v1/auth/service-token", this::handleServiceToken);
         server.createContext("/api/v1/bookings/", this::handleBookings);
         server.createContext("/api/v1/notifications", this::handleNotifications);
+        server.createContext("/api/v1/users/batch", this::handleUserBatch);
         server.createContext(VNPAY_API_PATH, this::handleVnPayApi);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
@@ -284,6 +286,15 @@ public final class PaymentTestServer {
             return;
         }
         write(exchange, 404, "{\"code\":404}");
+    }
+
+    // Identity /users/batch giả: mỗi id có tên "User <8 ký tự đầu>" để test kiểm tên người yêu cầu rút tiền.
+    private void handleUserBatch(HttpExchange exchange) throws IOException {
+        JsonNode body = objectMapper.readTree(exchange.getRequestBody().readAllBytes());
+        List<Map<String, Object>> users = new ArrayList<>();
+        body.get("userIds").forEach(id -> users.add(Map.of("id", id.asString(),
+                "fullName", "User " + id.asString().substring(0, 8), "phoneNumber", "0900000000")));
+        writeSuccess(exchange, users);
     }
 
     private void handleNotifications(HttpExchange exchange) throws IOException {

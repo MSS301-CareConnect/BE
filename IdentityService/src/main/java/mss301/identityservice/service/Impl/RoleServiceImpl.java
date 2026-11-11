@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.identityservice.dto.request.RolePermissionsRequest;
 import mss301.identityservice.dto.request.RoleRequest;
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.PermissionResponse;
 import mss301.identityservice.dto.response.RoleResponse;
@@ -26,11 +27,13 @@ import mss301.identityservice.repository.PermissionRepository;
 import mss301.identityservice.repository.RolePermissionRepository;
 import mss301.identityservice.repository.RoleRepository;
 import mss301.identityservice.repository.UserRepository;
+import mss301.identityservice.repository.UserRoleRepository;
 import mss301.identityservice.security.Permissions;
 import mss301.identityservice.service.RoleService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -47,6 +50,7 @@ public class RoleServiceImpl implements RoleService {
     PermissionRepository permissionRepository;
     RolePermissionRepository rolePermissionRepository;
     UserRepository userRepository;
+    UserRoleRepository userRoleRepository;
     IdentityAuditRepository identityAuditRepository;
     RoleMapper roleMapper;
     IdentityAuditMapper identityAuditMapper;
@@ -67,7 +71,7 @@ public class RoleServiceImpl implements RoleService {
         if (RoleCode.SERVICE.name().equals(request.getRoleCode())) {
             throw new AppException(ErrorCode.INVALID_ROLE);
         }
-        if (roleRepository.findByRoleCodeAndDeletedAtIsNull(request.getRoleCode()).isPresent()) {
+        if (roleRepository.existsByRoleCode(request.getRoleCode())) {
             throw new AppException(ErrorCode.ROLE_EXISTED);
         }
         Role role = roleRepository.saveAndFlush(roleMapper.toRole(request));
@@ -75,6 +79,34 @@ public class RoleServiceImpl implements RoleService {
         log.info("Role {} created by {}", role.getRoleCode(), actorId);
         RoleResponse roleResponse = roleMapper.toResponse(role);
         return APIResponse.success("Tạo role thành công", roleResponse);
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<RoleResponse> update(UUID actorId, UUID id, RoleUpdateRequest request) {
+        Role role = findCustomRoleForChange(actorId, id);
+        role.setRoleName(request.getRoleName().trim());
+        role.setDescription(request.getDescription());
+        if (request.getActive() != null) {
+            role.setActive(request.getActive());
+        }
+        writeAudit(actorId, id, AuditAction.ROLE_UPDATED, role.getRoleCode());
+        RoleResponse roleResponse = roleMapper.toResponse(role);
+        return APIResponse.success("Cập nhật role thành công", roleResponse);
+    }
+
+    @Override
+    @Transactional
+    public APIResponse<Void> delete(UUID actorId, UUID id) {
+        Role role = findCustomRoleForChange(actorId, id);
+        // Không xóa role còn tài khoản đang giữ: admin phải thu hồi trước để không ai mất quyền mà không biết.
+        if (userRoleRepository.existsByRole_IdAndUser_DeletedAtIsNull(id)) {
+            throw new AppException(ErrorCode.ROLE_IN_USE);
+        }
+        role.setDeletedAt(Instant.now());
+        writeAudit(actorId, id, AuditAction.ROLE_DELETED, role.getRoleCode());
+        log.info("Role {} deleted by {}", role.getRoleCode(), actorId);
+        return APIResponse.success("Xóa role thành công");
     }
 
     @Override
@@ -117,6 +149,19 @@ public class RoleServiceImpl implements RoleService {
         if (!isRoleManager) {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
+    }
+
+    // Cùng mutex với gán/thu hồi role; 4 role nền tảng không sửa, không xóa.
+    private Role findCustomRoleForChange(UUID actorId, UUID id) {
+        roleRepository.findForUpdate(RoleCode.ADMIN.name())
+                .orElseThrow(() -> new AppException(ErrorCode.DEFAULT_ROLE_NOT_FOUND));
+        checkRoleManager(actorId);
+        Role role = roleRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+        if (isBuiltInRole(role)) {
+            throw new AppException(ErrorCode.INVALID_ROLE);
+        }
+        return role;
     }
 
     private boolean isBuiltInRole(Role role) {

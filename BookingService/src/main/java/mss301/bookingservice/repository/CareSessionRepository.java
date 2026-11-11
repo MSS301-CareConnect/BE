@@ -3,6 +3,8 @@ package mss301.bookingservice.repository;
 import jakarta.persistence.LockModeType;
 import mss301.bookingservice.entity.CareSession;
 import mss301.bookingservice.enums.CareSessionStatus;
+import mss301.bookingservice.enums.SessionCompletionReview;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -30,6 +32,30 @@ public interface CareSessionRepository extends JpaRepository<CareSession, UUID> 
     Optional<CareSession> findForUpdate(@Param("id") UUID id);
 
     boolean existsByOccurrenceIdAndDeletedAtIsNull(UUID occurrenceId);
+
+    // Chặn check-in buổi mới khi caregiver còn ca khác chưa check-out (2026-11-11).
+    boolean existsByCaregiverUserIdAndStatusAndDeletedAtIsNull(UUID caregiverUserId, CareSessionStatus status);
+
+    @Query("""
+            select s.occurrence.id from CareSession s
+            where s.booking.id = :bookingId and s.completionReview = :review and s.deletedAt is null
+            """)
+    List<UUID> findOccurrenceIdsByBookingAndReview(@Param("bookingId") UUID bookingId,
+                                                   @Param("review") SessionCompletionReview review);
+
+    // Hàng đợi của trung tâm: ca tự đóng theo trạng thái xem lại, buổi kết thúc sớm nhất trước.
+    @Query(value = """
+            select s from CareSession s join fetch s.occurrence o join fetch s.booking b
+            where b.centerId = :centerId and s.completionReview = :review and s.deletedAt is null
+            order by o.endAt
+            """,
+            countQuery = """
+            select count(s) from CareSession s join s.booking b
+            where b.centerId = :centerId and s.completionReview = :review and s.deletedAt is null
+            """)
+    Page<CareSession> findByCenterAndReview(@Param("centerId") UUID centerId,
+                                            @Param("review") SessionCompletionReview review,
+                                            Pageable pageable);
 
     Optional<CareSession> findByOccurrenceIdAndDeletedAtIsNull(UUID occurrenceId);
 

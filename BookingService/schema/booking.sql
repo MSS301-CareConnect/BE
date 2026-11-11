@@ -355,12 +355,23 @@ CREATE TABLE care_sessions (
     end_reason           text,
     overdue_reminded_at  timestamptz,
     auto_closed          boolean       NOT NULL DEFAULT false,
+    -- 2026-11-11: chấm công (trễ / về sớm), cờ vị trí check-in, xác nhận của trung tâm cho ca hệ thống tự đóng.
+    late_minutes         integer       NOT NULL DEFAULT 0,
+    early_leave_minutes  integer,
+    check_in_distance_m  integer,
+    location_flag        varchar(20),
+    completion_review    varchar(20),
+    reviewed_by          uuid,
+    reviewed_at          timestamptz,
+    review_note          text,
     created_at           timestamptz   NOT NULL,
     updated_at           timestamptz   NOT NULL,
     deleted_at           timestamptz,
     version              bigint        NOT NULL DEFAULT 0,
 
     CONSTRAINT uk_care_sessions_occurrence UNIQUE (occurrence_id),
+    CONSTRAINT ck_care_sessions_location_flag CHECK (location_flag IS NULL OR location_flag IN ('NO_LOCATION', 'OUT_OF_RANGE')),
+    CONSTRAINT ck_care_sessions_completion_review CHECK (completion_review IS NULL OR completion_review IN ('PENDING', 'CONFIRMED', 'NOT_DELIVERED')),
     CONSTRAINT ck_care_sessions_status CHECK (status IN ('IN_PROGRESS', 'ENDED')),
     CONSTRAINT ck_care_sessions_checkout CHECK (check_out_at IS NULL OR check_out_at >= check_in_at),
     CONSTRAINT ck_care_sessions_version CHECK (version >= 0)
@@ -429,7 +440,7 @@ COMMIT;
 CREATE TABLE notifications (
     notification_id uuid PRIMARY KEY,
     recipient_user_id uuid NOT NULL,
-    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE', 'CAREGIVER_CHANGE_REQUEST_CREATED', 'CAREGIVER_CHANGE_REQUEST_DECIDED', 'EMERGENCY_REPLACEMENT_NOTIFIED', 'OCCURRENCE_RESCHEDULED_NOTIFICATION', 'CHECK_IN_LATE', 'CAREGIVER_ABSENCE_UPDATED', 'WALLET_WITHDRAWAL_COMPLETED', 'WALLET_WITHDRAWAL_REJECTED')),
+    type varchar(40) NOT NULL CHECK (type IN ('BOOKING_CREATED','BOOKING_ACCEPTED','BOOKING_REJECTED','BOOKING_CONFIRMED','BOOKING_CANCELLED','OCCURRENCE_CANCELLED','CAREGIVER_ASSIGNED','CAREGIVER_UNASSIGNED','SESSION_STARTED','SESSION_ENDED','REPORT_SUBMITTED','OCCURRENCE_MISSED','NO_SHOW_REPORTED','BOOKING_COMPLETED','PAYMENT_SUCCEEDED','REFUND_COMPLETED','REMAINING_DUE','REMAINING_OVERDUE','COMPLAINT_UPDATED','REVIEW_CREATED','REVIEW_REPLIED','SETTLEMENT_UPDATED','CENTER_ACTIVATED','SHIFT_REMINDER','RECIPIENT_INVITATION','BOOKING_EXPIRED','OUTBOX_FAILED','NO_SHOW_AUTO_ACCEPTED','SESSION_AUTO_CLOSED','CAREGIVER_REQUEST','BOOKING_HANDED_OVER','BOOKING_ADDRESS_CHANGED','CENTER_ACTION_DUE', 'CAREGIVER_CHANGE_REQUEST_CREATED', 'CAREGIVER_CHANGE_REQUEST_DECIDED', 'EMERGENCY_REPLACEMENT_NOTIFIED', 'OCCURRENCE_RESCHEDULED_NOTIFICATION', 'CHECK_IN_LATE', 'CAREGIVER_ABSENCE_UPDATED', 'WALLET_WITHDRAWAL_COMPLETED', 'WALLET_WITHDRAWAL_REJECTED', 'SESSION_LOCATION_FLAGGED', 'CUSTOMER_VISIT_REPORT')),
     title varchar(200) NOT NULL,
     body varchar(1000) NOT NULL,
     ref_type varchar(80),
@@ -558,6 +569,9 @@ ALTER TABLE complaint_events ADD CONSTRAINT fk_complaint_event FOREIGN KEY (comp
 ALTER TABLE booking_occurrences ADD COLUMN reminder_sent_at timestamptz;
 -- 2026-11-10: đã cảnh báo "tới giờ mà caregiver chưa check-in" (một lần mỗi buổi, xóa khi đổi người / dời lịch).
 ALTER TABLE booking_occurrences ADD COLUMN late_warned_at timestamptz;
+-- 2026-11-11: khách báo nhanh về buổi (chưa thấy người đến / không thực hiện đúng).
+ALTER TABLE booking_occurrences ADD COLUMN customer_reported_at timestamptz;
+ALTER TABLE booking_occurrences ADD COLUMN customer_report_note text;
 
 
 -- Yêu cầu thay đổi caregiver từ khách hàng (2026-11-05, spec v3.0)
@@ -637,7 +651,7 @@ CREATE TABLE caregiver_absences (
     created_at         timestamptz  NOT NULL,
     updated_at         timestamptz  NOT NULL,
     deleted_at         timestamptz,
-    CONSTRAINT ck_caregiver_absences_source CHECK (source IN ('MISSED_CHECK_IN', 'NO_SHOW_REPORT_REJECTED')),
+    CONSTRAINT ck_caregiver_absences_source CHECK (source IN ('MISSED_CHECK_IN', 'NO_SHOW_REPORT_REJECTED', 'SESSION_NOT_DELIVERED')),
     CONSTRAINT ck_caregiver_absences_status CHECK (status IN ('PENDING', 'EXCUSED', 'CONFIRMED')),
     CONSTRAINT ck_caregiver_absences_explanation CHECK ((explanation IS NULL) = (explained_at IS NULL)),
     CONSTRAINT ck_caregiver_absences_concluded CHECK ((status = 'PENDING') = (concluded_at IS NULL)),

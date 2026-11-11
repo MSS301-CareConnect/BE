@@ -4,5 +4,7 @@ package mss301.bookingservice.enums;
 // thấy quá hạn check-in mà không ai check-in; NO_SHOW_REPORT_REJECTED: trung tâm bác báo cáo "khách vắng" của caregiver.
 public enum CaregiverAbsenceSource {
     MISSED_CHECK_IN,
-    NO_SHOW_REPORT_REJECTED
+    NO_SHOW_REPORT_REJECTED,
+    // 2026-11-11: ca bị hệ thống tự đóng và trung tâm kết luận buổi không được thực hiện.
+    SESSION_NOT_DELIVERED
 }

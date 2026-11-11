@@ -1,5 +1,6 @@
 package mss301.paymentservice.mapper;
 
+import mss301.paymentservice.client.dto.IdentityUserResponse;
 import mss301.paymentservice.dto.request.CreateWalletWithdrawalRequest;
 import mss301.paymentservice.dto.response.WalletWithdrawalResponse;
 import mss301.paymentservice.dto.response.WalletWithdrawalStatisticsResponse;
@@ -11,6 +12,7 @@ import mss301.paymentservice.enums.StatisticsGroupBy;
 import mss301.paymentservice.enums.WalletOwnerType;
 import mss301.paymentservice.enums.WalletWithdrawalScope;
 import mss301.paymentservice.enums.WalletWithdrawalStatus;
+import org.mapstruct.Context;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -18,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Mapper(config = MapStructConfig.class)
@@ -39,9 +42,16 @@ public interface WalletWithdrawalMapper {
     WalletWithdrawal toWithdrawal(CreateWalletWithdrawalRequest request, Wallet wallet, UUID requesterUserId,
                                   UUID routedCenterId, WalletWithdrawalStatus status);
 
-    WalletWithdrawalResponse toResponse(WalletWithdrawal withdrawal);
+    // Lệnh ghi (tạo / chuyển / từ chối) truyền Map.of(): không gọi Identity trong transaction ghi — FE đọc lại danh sách.
+    @Mapping(target = "requesterName",
+            expression = "java(requesters.containsKey(withdrawal.getRequesterUserId()) ? requesters.get(withdrawal.getRequesterUserId()).getFullName() : null)")
+    @Mapping(target = "requesterPhoneNumber",
+            expression = "java(requesters.containsKey(withdrawal.getRequesterUserId()) ? requesters.get(withdrawal.getRequesterUserId()).getPhoneNumber() : null)")
+    WalletWithdrawalResponse toResponse(WalletWithdrawal withdrawal,
+                                        @Context Map<UUID, IdentityUserResponse> requesters);
 
-    List<WalletWithdrawalResponse> toResponseList(List<WalletWithdrawal> withdrawals);
+    List<WalletWithdrawalResponse> toResponseList(List<WalletWithdrawal> withdrawals,
+                                                  @Context Map<UUID, IdentityUserResponse> requesters);
 
     WithdrawalSeriesPointResponse toSeriesPoint(String period, BigDecimal requested, BigDecimal completed);
 

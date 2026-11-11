@@ -1129,6 +1129,49 @@ class ProviderIntegrationTests {
                 .andExpect(jsonPath("$.result.email").doesNotExist());
     }
 
+    // 2026-11-11: danh bạ trung tâm tìm không dấu ("binh an" khớp "Bình An") — FE phân trang và tìm trên server.
+    @Test
+    void publicCenterSearchIgnoresVietnameseDiacritics() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Trung tâm Bình An Đức " + tag, CenterStatus.ACTIVE);
+
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "binh an duc " + tag))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].centerId").value(center.getId().toString()));
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "BÌNH AN").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[?(@.centerId == '" + center.getId() + "')]").exists());
+    }
+
+    // 2026-11-11: danh bạ người chăm sóc toàn nền tảng cho ADMIN — lọc theo trung tâm / xác minh / tên, xếp theo tên.
+    @Test
+    void adminCaregiverDirectoryFiltersAcrossCentersAndIsAdminOnly() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Directory " + tag, CenterStatus.ACTIVE);
+        CaregiverProfile verified = saveCaregiver(center, UUID.randomUUID());
+        verified.setFullName("Trần Thị Bình " + tag);
+        caregiverProfileRepository.save(verified);
+        CaregiverProfile pending = saveCaregiver(center, UUID.randomUUID());
+        pending.setFullName("Lê Văn An " + tag);
+        pending.setVerificationStatus(VerificationStatus.PENDING);
+        caregiverProfileRepository.save(pending);
+
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("centerId", center.getId().toString())
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].centerName").value(center.getCenterName()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("verification", "PENDING").param("keyword", "le van an " + tag)
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").with(user(center.getManagerUserId(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+    }
+
     // CR-6: danh bạ trung tâm mở cho khách chưa đăng nhập, chỉ GET; token hỏng / hết hạn bị bỏ qua.
     @Test
     void publicCentersAreReadableAnonymouslyAndIgnoreStaleTokens() throws Exception {

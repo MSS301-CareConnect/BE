@@ -8,6 +8,7 @@ import mss301.carecatalogservice.dto.request.PricePlanBatchUpdateRequest;
 import mss301.carecatalogservice.dto.request.PricePlanDraftRequest;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
+import mss301.carecatalogservice.dto.response.PageResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -18,6 +19,9 @@ import mss301.carecatalogservice.mapper.PricePlanMapper;
 import mss301.carecatalogservice.repository.CenterOfferingRepository;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.PricePlanService;
+import mss301.carecatalogservice.util.PageRequests;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +38,7 @@ import java.util.UUID;
 public class PricePlanServiceImpl implements PricePlanService {
 
     static int HOUR_DURATION_MINUTES = 60;
+    static Sort CREATED_ASC = Sort.by(Sort.Direction.ASC, "createdAt");
 
     PricePlanRepository pricePlanRepository;
     CenterOfferingRepository centerOfferingRepository;
@@ -106,6 +111,19 @@ public class PricePlanServiceImpl implements PricePlanService {
                 .map(pricePlanMapper::toResponse)
                 .toList();
         return APIResponse.success("Lấy danh sách bảng giá thành công", pricePlans);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<PricePlanResponse>> list(UUID centerOfferingId, int page, int size) {
+        Page<PricePlan> pricePlans = pricePlanRepository.findByCenterOfferingIdAndDeletedAtIsNull(centerOfferingId,
+                PageRequests.of(page, size, CREATED_ASC));
+        List<PricePlanResponse> pricePlanResponses = pricePlans.getContent()
+                .stream()
+                .map(pricePlanMapper::toResponse)
+                .toList();
+        PageResponse<PricePlanResponse> pageResponse = PageResponse.of(pricePlans, pricePlanResponses);
+        return APIResponse.success("Lấy danh sách bảng giá thành công", pageResponse);
     }
 
     @Override

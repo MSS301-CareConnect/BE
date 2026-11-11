@@ -1,17 +1,22 @@
 package mss301.bookingservice.service;
 
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
+import mss301.bookingservice.dto.request.CustomerVisitReportRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
 import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
+import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
+import mss301.bookingservice.entity.Booking;
+import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -54,6 +59,10 @@ public interface BookingOccurrenceService {
 
     void markMissed(UUID id);
 
+    // 2026-11-11: ca tự đóng mà trung tâm kết luận buổi không được thực hiện → CAREGIVER_MISSED (hoàn tiền khách, ghi
+    // vắng ca). Gọi trong transaction đang giữ khóa booking.
+    void markNotDelivered(Booking booking, BookingOccurrence occurrence, UUID actorId, String note, Instant now);
+
     // 2026-11-10 — cảnh báo sớm: buổi đã tới giờ mà caregiver chưa check-in (còn trong hạn check-in trễ) → báo caregiver,
     // trung tâm và khách một lần, trước khi job MISSED ghi nhận vắng ca.
     List<UUID> findLateCheckInIds();
@@ -75,6 +84,10 @@ public interface BookingOccurrenceService {
                                         mss301.bookingservice.dto.request.EmergencyReassignmentRequest request);
 
     // Module 2 (SPEC V3): Khách phản hồi người thay thế khẩn cấp (ACCEPT, RESCHEDULE, REJECT_AND_CANCEL)
+    // 2026-11-11: khách chủ booking báo nhanh về buổi. Buổi tới giờ chưa ai check-in → báo trung tâm; buổi COMPLETED trong
+    // cửa sổ phản ánh → ca chuyển "chờ trung tâm xác nhận" (giữ quyết toán).
+    APIResponse<OccurrenceResponse> reportByCustomer(UUID actorId, UUID occurrenceId, CustomerVisitReportRequest request);
+
     APIResponse<Void> consentReplacement(UUID actorId, UUID occurrenceId,
                                          mss301.bookingservice.dto.request.ReplacementConsentRequest request);
 

@@ -5,6 +5,10 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.paymentservice.client.IdentityClient;
+import mss301.paymentservice.client.dto.IdentityUserBatchRequest;
+import mss301.paymentservice.client.dto.IdentityUserResponse;
+import mss301.paymentservice.client.dto.RemoteApiResponse;
 import mss301.paymentservice.dto.request.CreateWalletWithdrawalRequest;
 import mss301.paymentservice.dto.request.RejectWalletWithdrawalRequest;
 import mss301.paymentservice.dto.request.WalletPosting;
@@ -55,6 +59,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -85,6 +91,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
     WalletService walletService;
     PaymentOutboxService paymentOutboxService;
     WalletWithdrawalMapper walletWithdrawalMapper;
+    IdentityClient identityClient;
     Clock clock;
 
     @Override
@@ -114,7 +121,8 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         Page<WalletWithdrawal> withdrawals = walletWithdrawalRepository.findAll(
                 scopeSpecification.get().and(filters), pageRequest);
         PageResponse<WalletWithdrawalResponse> pageResponse = PageResponse.of(withdrawals,
-                walletWithdrawalMapper.toResponseList(withdrawals.getContent()));
+                walletWithdrawalMapper.toResponseList(withdrawals.getContent(),
+                        findRequesters(withdrawals.getContent())));
         return APIResponse.success("Lấy danh sách yêu cầu rút tiền thành công", pageResponse);
     }
 
@@ -205,7 +213,8 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
                 throw new AppException(ErrorCode.WITHDRAWAL_NOT_FOUND);
             }
         }
-        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal);
+        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal,
+                findRequesters(List.of(withdrawal)));
         return APIResponse.success("Lấy yêu cầu rút tiền thành công", withdrawalResponse);
     }
 
@@ -218,9 +227,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         if (request.getAmount().compareTo(wallet.getAvailableBalance()) > 0) {
             throw new AppException(ErrorCode.INSUFFICIENT_WALLET_BALANCE);
         }
-        UUID centerId = wallet.getOwnerType() == WalletOwnerType.CENTER
-                ? wallet.getOwnerId()
-                : chooseSourceCenter(wallet, request);
+        UUID centerId = chooseSourceCenter(wallet, request);
         WalletWithdrawal withdrawal = walletWithdrawalRepository.saveAndFlush(walletWithdrawalMapper.toWithdrawal(
                 request, wallet, actorId, centerId, WalletWithdrawalStatus.PENDING));
         walletService.post(wallet, new WalletPosting(WalletTransactionType.WITHDRAWAL_HOLD, withdrawal.getAmount(),
@@ -228,7 +235,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         log.info("Withdrawal {} of {} requested from wallet {} ({}), handled by {}", withdrawal.getId(),
                 withdrawal.getAmount(), wallet.getId(), wallet.getOwnerType(),
                 isCenterRouted(withdrawal) ? "center " + centerId : "admin");
-        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal);
+        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal, Map.of());
         return APIResponse.success("Đã gửi yêu cầu rút tiền", withdrawalResponse);
     }
 
@@ -259,7 +266,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         withdrawal.setCompletedAt(now);
         paymentOutboxService.enqueueWithdrawalResult(withdrawal);
         log.info("Withdrawal {} transferred ({}) by {}", withdrawalId, transferReference, actorId);
-        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal);
+        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal, Map.of());
         return APIResponse.success("Chuyển khoản thành công, yêu cầu rút tiền đã hoàn tất", withdrawalResponse);
     }
 
@@ -282,7 +289,7 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         withdrawal.setReviewedAt(clock.instant());
         paymentOutboxService.enqueueWithdrawalResult(withdrawal);
         log.info("Withdrawal {} rejected by {}", withdrawalId, actorId);
-        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal);
+        WalletWithdrawalResponse withdrawalResponse = walletWithdrawalMapper.toResponse(withdrawal, Map.of());
         return APIResponse.success("Đã từ chối yêu cầu rút tiền", withdrawalResponse);
     }
 
@@ -469,5 +476,29 @@ public class WalletWithdrawalServiceImpl implements WalletWithdrawalService {
         long rejectedCount;
         BigDecimal rejectedAmount = BigDecimal.ZERO;
         long processingMinutes;
+    }
+
+    // Tên người yêu cầu chỉ để hiển thị: Identity lỗi thì vẫn trả danh sách (tên null), không làm hỏng màn hình xử lý.
+    private Map<UUID, IdentityUserResponse> findRequesters(List<WalletWithdrawal> withdrawals) {
+        List<UUID> userIds = withdrawals.stream()
+                .map(WalletWithdrawal::getRequesterUserId)
+                .distinct()
+                .limit(IdentityUserBatchRequest.MAX_SIZE)
+                .toList();
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            RemoteApiResponse<List<IdentityUserResponse>> response = identityClient.list(
+                    IdentityUserBatchRequest.builder().userIds(userIds).build());
+            if (response == null || response.getResult() == null) {
+                return Map.of();
+            }
+            return response.getResult().stream()
+                    .collect(Collectors.toMap(IdentityUserResponse::getId, Function.identity(), (first, second) -> first));
+        } catch (RuntimeException exception) {
+            log.warn("Không lấy được tên người yêu cầu rút tiền từ Identity: {}", exception.getMessage());
+            return Map.of();
+        }
     }
 }

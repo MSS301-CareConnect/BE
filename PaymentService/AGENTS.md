@@ -92,4 +92,8 @@
   `center_id` của trung tâm tạo ra khoản tiền; số dư theo trung tâm (`WalletService.findCenterBalances`) quyết định nơi
   xử lý yêu cầu rút của khách / caregiver (`wallet_withdrawals.center_id`). Người xử lý chỉ chuyển khoản giả lập
   (`transfer`) hoặc từ chối — không đổi trạng thái tay; kết quả báo người rút qua `payment_outbox` (`WITHDRAWAL_*`).
+- Doanh thu (2026-11-11, `../docs/2026-11-11-REVENUE_AND_BOOKING_SETTLEMENT.md`): tiền vào thẳng tài khoản trung tâm /
+  nền tảng → sổ CENTER / PLATFORM chỉ là doanh thu, **không rút** (`WalletServiceImpl.WITHDRAWABLE_OWNERS` = khách,
+  caregiver; `POST /wallet-withdrawals` chỉ CUSTOMER / CAREGIVER). Quyết toán một booking:
+  `GET /wallets/bookings/{bookingId}/settlement` (ADMIN, CENTER_MANAGER của trung tâm) từ `occurrence_financials` + sổ ví.
 

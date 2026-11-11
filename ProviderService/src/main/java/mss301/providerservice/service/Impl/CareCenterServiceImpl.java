@@ -27,6 +27,7 @@ import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CareCenterMapper;
 import mss301.providerservice.repository.CareCenterRepository;
 import mss301.providerservice.util.CareCenterSpecifications;
+import mss301.providerservice.util.VietnameseText;
 import mss301.providerservice.service.CareCenterService;
 import mss301.providerservice.service.IdentityAccountService;
 import mss301.providerservice.service.ProviderMediaService;
@@ -147,16 +148,17 @@ public class CareCenterServiceImpl implements CareCenterService {
                 : fetchPriceSummariesQuietly();
         String normalizedKeyword = normalizeNullable(keyword);
         String keywordPattern = normalizedKeyword == null
-                ? null : "%" + normalizedKeyword.toLowerCase(Locale.ROOT) + "%";
+                ? null : "%" + VietnameseText.fold(normalizedKeyword) + "%";
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "centerName"));
         Page<CareCenter> centerPage;
         if (!filterByCatalog) {
-            centerPage = careCenterRepository.searchPublic(CenterStatus.ACTIVE, keywordPattern, pageRequest);
+            centerPage = careCenterRepository.searchPublic(CenterStatus.ACTIVE, keywordPattern,
+                    VietnameseText.ACCENTED, VietnameseText.PLAIN, pageRequest);
         } else if (priceSummaries.isEmpty()) {
             centerPage = Page.empty(pageRequest);
         } else {
             centerPage = careCenterRepository.searchPublicByIds(CenterStatus.ACTIVE, priceSummaries.keySet(),
-                    keywordPattern, pageRequest);
+                    keywordPattern, VietnameseText.ACCENTED, VietnameseText.PLAIN, pageRequest);
         }
         List<UUID> centerIds = centerPage.stream()
                 .map(CareCenter::getId)

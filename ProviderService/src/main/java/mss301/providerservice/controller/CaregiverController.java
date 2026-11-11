@@ -50,6 +50,20 @@ public class CaregiverController {
         return caregiverService.listPendingVerification(centerId, page, size);
     }
 
+    // Danh bạ người chăm sóc toàn nền tảng cho ADMIN (2026-11-11): lọc theo trung tâm / xác minh / trạng thái / tên,
+    // xếp theo tên trung tâm rồi tên người để trang admin gom nhóm theo trung tâm.
+    @GetMapping("/directory")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<PageResponse<CaregiverResponse>> listDirectory(
+            @RequestParam(required = false) UUID centerId,
+            @RequestParam(required = false) VerificationStatus verification,
+            @RequestParam(required = false) CaregiverStatus status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return caregiverService.listDirectory(centerId, verification, status, keyword, page, size);
+    }
+
     // Công khai cho cả khách chưa đăng nhập (2026-11-09): chỉ DTO thẻ, không có trường nội bộ.
     @GetMapping
     @PreAuthorize("permitAll()")

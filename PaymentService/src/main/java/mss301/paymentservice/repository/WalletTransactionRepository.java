@@ -118,4 +118,14 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
                               @Param("type") WalletTransactionType type,
                               @Param("from") Instant from,
                               @Param("to") Instant to);
+
+    // 2026-11-11: quyết toán booking — tổng theo buổi / loại chủ ví / loại biến động.
+    @Query("""
+            select t.occurrenceId as occurrenceId, w.ownerType as ownerType, t.type as type,
+                   coalesce(sum(t.amount), 0) as totalAmount
+            from WalletTransaction t, Wallet w
+            where w.id = t.walletId and t.bookingId = :bookingId
+            group by t.occurrenceId, w.ownerType, t.type
+            """)
+    List<WalletBookingTotalView> sumByBookingForSettlement(@Param("bookingId") UUID bookingId);
 }

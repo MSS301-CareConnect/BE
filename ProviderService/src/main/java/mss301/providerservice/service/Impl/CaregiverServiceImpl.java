@@ -59,6 +59,7 @@ import mss301.providerservice.service.CaregiverService;
 import mss301.providerservice.service.IdentityAccountService;
 import mss301.providerservice.service.ProviderMediaService;
 import mss301.providerservice.util.ProviderTime;
+import mss301.providerservice.util.VietnameseText;
 import mss301.providerservice.util.TimeWindow;
 import mss301.providerservice.util.TimeWindows;
 import org.springframework.data.domain.Page;
@@ -900,6 +901,34 @@ public class CaregiverServiceImpl implements CaregiverService {
         }, PageRequest.of(page, size));
         PageResponse<CaregiverResponse> response = PageResponse.of(profiles, caregiverMapper.toResponseList(profiles.getContent()));
         return APIResponse.success("Lấy hồ sơ chờ xác minh thành công", response);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<CaregiverResponse>> listDirectory(UUID centerId, VerificationStatus verification,
+                                                                      CaregiverStatus status, String keyword,
+                                                                      int page, int size) {
+        validatePage(page, size);
+        // Tìm không dấu như danh bạ trung tâm: gập từ khóa ở Java, gập cột bằng translate.
+        String pattern = keyword == null || keyword.isBlank()
+                ? null : "%" + VietnameseText.fold(keyword.trim()) + "%";
+        Page<CaregiverProfile> profiles = caregiverProfileRepository.findAll((root, query, builder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(builder.isNull(root.get("deletedAt")));
+            predicates.add(builder.isNull(root.get("center").get("deletedAt")));
+            if (centerId != null) predicates.add(builder.equal(root.get("center").get("id"), centerId));
+            if (verification != null) predicates.add(builder.equal(root.get("verificationStatus"), verification));
+            if (status != null) predicates.add(builder.equal(root.get("caregiverStatus"), status));
+            if (pattern != null) {
+                predicates.add(builder.like(builder.function("translate", String.class,
+                        builder.lower(root.get("fullName")), builder.literal(VietnameseText.ACCENTED),
+                        builder.literal(VietnameseText.PLAIN)), pattern));
+            }
+            return builder.and(predicates.toArray(Predicate[]::new));
+        }, PageRequest.of(page, size, Sort.by("center.centerName", "fullName", "id")));
+        PageResponse<CaregiverResponse> response =
+                PageResponse.of(profiles, caregiverMapper.toResponseList(profiles.getContent()));
+        return APIResponse.success("Lấy danh bạ người chăm sóc thành công", response);
     }
 
     private void checkReadScope(CaregiverProfile caregiver, UUID actorId) {

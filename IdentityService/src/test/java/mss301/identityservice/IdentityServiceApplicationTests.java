@@ -208,6 +208,37 @@ class IdentityServiceApplicationTests {
         assertThat(roles.findByRoleCodeAndDeletedAtIsNull("SERVICE")).isEmpty();
     }
 
+    // 2026-11-11: role bổ sung sửa / xóa được; role nền tảng thì không, role còn người giữ không xóa được, mã cũ không dùng lại.
+    @Test void customRoleCanBeUpdatedAndDeletedButNotWhileAssignedOrBuiltIn() throws Exception {
+        String code = "R" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String auth = "Bearer " + token(admin);
+        mvc.perform(post("/api/v1/roles").header("Authorization", auth).contentType("application/json")
+                .content(body(Map.of("roleCode", code, "roleName", "Support")))).andExpect(status().isOk());
+        UUID roleId = roles.findByRoleCodeAndDeletedAtIsNull(code).orElseThrow().getId();
+
+        mvc.perform(put("/api/v1/roles/{id}", roleId).header("Authorization", auth).contentType("application/json")
+                .content(body(Map.of("roleName", "Support desk", "description", "Read only", "active", false))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.roleName").value("Support desk"))
+                .andExpect(jsonPath("$.result.active").value(false)).andExpect(jsonPath("$.result.roleCode").value(code));
+        mvc.perform(put("/api/v1/roles/{id}", roleId).header("Authorization", auth).contentType("application/json")
+                .content(body(Map.of("roleName", " ")))).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1109));
+        UUID adminRoleId = roles.findByRoleCodeAndDeletedAtIsNull("ADMIN").orElseThrow().getId();
+        mvc.perform(delete("/api/v1/roles/{id}", adminRoleId).header("Authorization", auth))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1101));
+
+        // Role đang ngừng dùng không gán được: bật lại rồi mới gán.
+        mvc.perform(put("/api/v1/roles/{id}", roleId).header("Authorization", auth).contentType("application/json")
+                .content(body(Map.of("roleName", "Support desk", "active", true)))).andExpect(status().isOk());
+        accounts.assign(admin.getId(), customer.getId(), roleId);
+        mvc.perform(delete("/api/v1/roles/{id}", roleId).header("Authorization", auth))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1120));
+        accounts.revoke(admin.getId(), customer.getId(), roleId);
+        mvc.perform(delete("/api/v1/roles/{id}", roleId).header("Authorization", auth)).andExpect(status().isOk());
+        assertThat(roles.findByRoleCodeAndDeletedAtIsNull(code)).isEmpty();
+        mvc.perform(post("/api/v1/roles").header("Authorization", auth).contentType("application/json")
+                .content(body(Map.of("roleCode", code, "roleName", "Again")))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(1102));
+    }
+
     @Test void missingTokenIs401() throws Exception {
         mvc.perform(get("/api/v1/users/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(401));
     }

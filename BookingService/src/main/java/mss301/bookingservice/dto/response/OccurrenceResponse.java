@@ -67,5 +67,8 @@ public class OccurrenceResponse {
 
     ReplacementConsentStatus replacementConsentStatus;
 
+    // 2026-11-11: khách đã báo nhanh về buổi này lúc nào.
+    Instant customerReportedAt;
+
     String note;
 }

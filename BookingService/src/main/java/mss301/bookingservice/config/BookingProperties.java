@@ -159,6 +159,14 @@ public class BookingProperties {
         @NotNull
         Duration overdueScanInterval = Duration.ofMinutes(5);
 
+        // 2026-11-11: check-in xa địa chỉ chăm sóc hơn bán kính này (mét) thì gắn cờ cho trung tâm, không chặn.
+        @Min(50)
+        int checkInRadiusMeters = 300;
+
+        // 2026-11-11: sau khi buổi kết thúc, khách có khoảng này để phản ánh; trong lúc đó buổi chưa được quyết toán.
+        @NotNull
+        Duration customerReportWindow = Duration.ofHours(24);
+
         // D21 (H-10): ca quên check-out quá giờ kết thúc buổi + autoCloseAfter → hệ thống tự đóng, tính COMPLETED.
         @NotNull
         Duration autoCloseAfter = Duration.ofHours(4);

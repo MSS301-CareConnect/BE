@@ -415,7 +415,9 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(6042));
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager).param("scope", "REVIEW"))
-                .andExpect(jsonPath("$.result.items.length()").value(2));
+                .andExpect(jsonPath("$.result.items.length()").value(2))
+                .andExpect(jsonPath("$.result.items[0].requesterName")
+                        .value("User " + customerId.toString().substring(0, 8)));
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager(UUID.randomUUID()))
                         .param("scope", "REVIEW"))
                 .andExpect(jsonPath("$.result.items.length()").value(0));
@@ -470,6 +472,11 @@ class WalletApiTests extends PaymentIntegrationTest {
         occurrences.get(1).put("status", "CANCELLED");
         occurrences.get(2).put("status", "IN_PROGRESS");
         clock.set(BASE.plus(Duration.ofDays(4)));
+        // 2026-11-11: ca tự đóng chờ trung tâm xác nhận → chưa quyết toán; trung tâm xác nhận xong mới cộng ví.
+        occurrences.get(0).put("settlementHeld", true);
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        occurrences.get(0).put("settlementHeld", false);
         settleDue();
         settleDue();
 
@@ -512,6 +519,64 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.ownerType").value("PLATFORM"))
                 .andExpect(jsonPath("$.result.liabilities").isArray())
                 .andExpect(jsonPath("$.result.pendingWithdrawalCount").isNumber());
+    }
+
+    // 2026-11-11: một booking vừa có buổi caregiver vắng (hoàn 100 % vào ví khách) vừa có buổi làm đủ → trung tâm và nền
+    // tảng chỉ nhận tiền buổi làm đủ; quyết toán booking cho quản lý / admin ra đúng số cuối. Trung tâm không gửi yêu cầu rút.
+    @Test
+    void bookingWithMissedAndCompletedVisitsSettlesOnlyServedVisits() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(1 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        SERVER.setPaymentTerms(bookingId, 100, null);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+
+        UUID missed = occurrenceIds.get(0);
+        createRefund("REFUND:CAREGIVER_MISSED:" + missed, bookingId, List.of(missed), "CAREGIVER_MISSED",
+                BASE.plus(Duration.ofDays(1)).plus(Duration.ofMinutes(30)));
+        dispatchDueRefunds();
+        occurrences.get(0).put("status", "CAREGIVER_MISSED");
+        occurrences.get(1).put("status", "COMPLETED");
+        occurrences.get(2).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(5)));
+        settleDue();
+        settleDue();
+
+        assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("1000000");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("1800000");
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", manager(centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.paidAmount").value(3000000))
+                .andExpect(jsonPath("$.result.refundedAmount").value(1000000))
+                .andExpect(jsonPath("$.result.centerServiceAmount").value(1800000))
+                .andExpect(jsonPath("$.result.centerNetAmount").value(1800000))
+                .andExpect(jsonPath("$.result.commissionAmount").value(200000))
+                .andExpect(jsonPath("$.result.pendingCount").value(0))
+                .andExpect(jsonPath("$.result.occurrences[0].finalStatus").value("MISSED"))
+                .andExpect(jsonPath("$.result.occurrences[0].centerAmount").value(0))
+                .andExpect(jsonPath("$.result.occurrences[1].centerAmount").value(900000))
+                .andExpect(jsonPath("$.result.occurrences[1].commissionAmount").value(100000));
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId).header("Authorization", admin()))
+                .andExpect(jsonPath("$.result.commissionAmount").value(200000));
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", manager(UUID.randomUUID())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", customer(customerId)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/wallets/me").header("Authorization", manager(centerId)))
+                .andExpect(jsonPath("$.result.withdrawable").value(false));
+        withdraw(manager(centerId), "100000", "0123456789").andExpect(status().isForbidden());
     }
 
     // ===== helpers =====

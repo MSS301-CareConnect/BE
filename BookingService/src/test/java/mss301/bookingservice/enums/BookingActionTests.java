@@ -127,7 +127,10 @@ class BookingActionTests {
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.EXPIRED)).isFalse();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.COMPLETED)).isTrue();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.CANCELLED)).isFalse();
-        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.COMPLETED, OccurrenceStatus.CANCELLED,
+        // 2026-11-11: ca tự đóng mà trung tâm kết luận không thực hiện → COMPLETED thành CAREGIVER_MISSED (duy nhất).
+        assertThat(OccurrenceStatus.COMPLETED.canTransitionTo(OccurrenceStatus.CAREGIVER_MISSED)).isTrue();
+        assertThat(OccurrenceStatus.COMPLETED.canTransitionTo(OccurrenceStatus.CANCELLED)).isFalse();
+        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.CANCELLED,
                 OccurrenceStatus.EXPIRED, OccurrenceStatus.CUSTOMER_NO_SHOW, OccurrenceStatus.CAREGIVER_MISSED)) {
             for (OccurrenceStatus target : OccurrenceStatus.values()) {
                 assertThat(terminal.canTransitionTo(target)).isFalse();

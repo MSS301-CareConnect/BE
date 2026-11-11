@@ -528,3 +528,35 @@ Chi tiết, bảng hoàn tiền theo tình huống và tồn đọng: `2026-11-1
 warning` · `fix(booking): per-visit refund key when a customer rejects an emergency replacement` · `fix(payment): refund
 center-fault cancellations to the customer wallet, no-refund rule under 2 hours, no double payout on complaint refunds` ·
 FE `feat(booking): caregiver absence queues for manager, caregiver and admin`
+
+## Lịch Định kỳ / Tự chọn buổi theo dịch vụ + nhận buổi muộn (2026-11-11) — XONG, chưa commit
+
+- **FE đặt lịch (Định kỳ, Tự chọn buổi)** — không còn tạo buổi sẵn. Bộ dựng lịch lặp (`schedule-pattern.tsx`): tần suất /
+  thứ / khoảng ngày, rồi **giờ riêng cho từng dịch vụ** đã chọn (`schedule-service-times.tsx`, như Theo ca: gói DAY /
+  SHIFT cố định độ dài, HOUR tối thiểu; tick dịch vụ làm trong ngày — ít nhất 1, không bắt buộc đủ). Bấm "Tạo N buổi"
+  (Định kỳ, thay danh sách) / "Thêm N buổi" (Tự chọn buổi, nối thêm) mới sinh buổi. Danh sách gom **một thẻ / ngày**
+  (`schedule-day-list.tsx`, `schedule-day-card.tsx`): đổi ngày dời cả ngày, sao chép / xóa ngày, mỗi dịch vụ một dòng
+  giờ, nút "Thêm <dịch vụ>" cho dịch vụ ngày đó chưa có; chọn nhiều ngày để đặt giờ (theo dịch vụ) hoặc xóa. RECURRING
+  luôn gửi `slots` (giờ quy tắc = khoảng ngoài cùng của các buổi).
+- **Trùng lịch caregiver** — FE đọc `GET /bookings/held-schedules` theo khối 31 ngày (`use-caregiver-busy.ts`), đánh dấu
+  từng buổi trùng (`busy`) hoặc sát dưới 60 phút di chuyển (`buffer`), chặn Tiếp tục, có nút bỏ mọi buổi trùng; bộ dựng
+  báo trước số buổi sẽ trùng. **BE** `quote` kiểm như lúc tạo: caregiver nghỉ / không có ca (Provider, `5226`), trùng
+  booking khác (`5215` / `5248`), người bệnh trùng (`5216`).
+- **Nhận buổi muộn** — BE `acknowledge` / `acknowledgements` nhận tới khi đóng cửa sổ check-in (giờ bắt đầu +
+  `check_in_late_minutes`, trước giờ kết thúc) thay vì chỉ trước giờ bắt đầu; check-in thẳng từ SCHEDULED ghi
+  `acknowledged_at`. Web + mobile: buổi SCHEDULED trong cửa sổ check-in hiện "Bắt đầu ca" (check-in = nhận), trước cửa
+  sổ hiện "Nhận buổi", hết cửa sổ thì không còn nút (job đánh MISSED như cũ). "Nhận tất cả / nhận cả ngày" bỏ buổi đã
+  đóng cửa sổ để lệnh all-or-nothing không hỏng. Nhắc 2 giờ trước cho caregiver + trung tâm khi chưa nhận đã có sẵn.
+- **Bổ sung cùng ngày** — nút "Xóa tất cả" ở danh sách ngày (hỏi xác nhận). Bộ tạo lịch (Định kỳ / Thêm nhanh) chặn
+  ngay từ đầu buổi quá sớm, trùng lịch hoặc sát lịch (dưới 60 phút) của người chăm sóc: dưới từng dịch vụ ghi các ngày
+  vướng, nút tạo bị khóa (cả lúc đang kiểm tra lịch), kèm nút "Bỏ qua N buổi vướng, dùng M buổi còn lại". Danh sách
+  ngày vẫn báo lỗi nếu khách sửa giờ sau khi tạo. FE booking 45 / 45, kiểm trên trình duyệt với lịch thật của Chị Hoa.
+- Không đổi schema / OpenAPI. Test: Booking 154 (2 skip có sẵn) · FE 515 / 515 · mobile `visits.test.ts` 11 / 11;
+  typecheck + eslint sạch. Đã kiểm trên trình duyệt (khách, 2 dịch vụ, Chị Hoa): thẻ theo ngày, bỏ / thêm
+  dịch vụ trong ngày, báo trùng lịch + bỏ buổi trùng, Định kỳ tạo / tạo lại; sửa ô chọn dịch vụ bị rớt mũi tên (`block`
+  → `flex`). Chưa rebuild Docker BookingService (kiểm trùng ở báo giá và nhận buổi muộn chưa chạy live).
+
+**Commit đề xuất:** BE `feat(booking): quote checks caregiver and recipient conflicts; caregivers accept a visit until
+check-in closes` · FE `feat(booking): per-service times and day cards for recurring and custom schedules, caregiver
+conflict warnings` · `fix(caregiver): start a visit not accepted in time inside its check-in window` · mobile
+`fix(visits): start a visit not accepted in time inside its check-in window`

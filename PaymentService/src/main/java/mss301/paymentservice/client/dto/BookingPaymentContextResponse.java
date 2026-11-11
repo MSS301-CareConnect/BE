@@ -86,5 +86,9 @@ public class BookingPaymentContextResponse {
         UUID caregiverUserId;
 
         boolean hasSession;
+
+        // 2026-11-11: ca tự đóng đang chờ trung tâm xác nhận — chưa quyết toán buổi này.
+        // Boolean (không phải boolean): BookingService bản cũ không gửi field này.
+        Boolean settlementHeld;
     }
 }

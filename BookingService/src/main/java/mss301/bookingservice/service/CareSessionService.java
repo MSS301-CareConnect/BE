@@ -2,6 +2,7 @@ package mss301.bookingservice.service;
 
 import mss301.bookingservice.dto.request.CareSessionEndRequest;
 import mss301.bookingservice.dto.request.CareSessionForceEndRequest;
+import mss301.bookingservice.dto.request.CareSessionReviewRequest;
 import mss301.bookingservice.dto.request.CareSessionStartRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.request.CareTaskCreateRequest;
@@ -12,6 +13,7 @@ import mss301.bookingservice.dto.response.SessionNoteResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.dto.response.CareSessionResponse;
 import mss301.bookingservice.enums.RoleCode;
+import mss301.bookingservice.enums.SessionCompletionReview;
 
 import java.util.List;
 import java.util.Set;
@@ -32,6 +34,12 @@ public interface CareSessionService {
 
     // OPS-04: manager trung tâm buộc kết thúc ca caregiver quên đóng — việc PENDING thành SKIPPED.
     APIResponse<CareSessionResponse> forceEnd(UUID actorId, UUID centerId, UUID id, CareSessionForceEndRequest request);
+
+    // 2026-11-11: ca hệ thống tự đóng chờ trung tâm xác nhận (theo trang) và kết luận của trung tâm.
+    APIResponse<PageResponse<CareSessionResponse>> listForReview(UUID centerId, SessionCompletionReview review, int page,
+                                                                 int size);
+
+    APIResponse<CareSessionResponse> review(UUID actorId, UUID centerId, UUID id, CareSessionReviewRequest request);
 
     APIResponse<CareTaskResponse> updateTask(UUID actorId, UUID sessionId, UUID taskId, CareTaskUpdateRequest request);
 

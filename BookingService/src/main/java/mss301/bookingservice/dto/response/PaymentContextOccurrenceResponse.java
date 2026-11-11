@@ -37,4 +37,6 @@ public class PaymentContextOccurrenceResponse {
     UUID caregiverUserId;
 
     boolean hasSession;
+    // 2026-11-11: ca tự đóng đang chờ trung tâm xác nhận — PaymentService chưa quyết toán buổi này.
+    boolean settlementHeld;
 }

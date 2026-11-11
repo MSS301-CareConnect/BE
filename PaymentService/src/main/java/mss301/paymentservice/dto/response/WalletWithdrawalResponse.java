@@ -25,6 +25,11 @@ public class WalletWithdrawalResponse {
 
     UUID requesterUserId;
 
+    // Tên / SĐT từ Identity (2026-11-11) — chỉ có ở danh sách và chi tiết; null khi Identity không trả lời.
+    String requesterName;
+
+    String requesterPhoneNumber;
+
     WalletOwnerType ownerType;
 
     UUID centerId;

@@ -83,4 +83,8 @@ public interface CaregiverService {
     // tại (không lộ trạng thái nội bộ).
     CaregiverProfile findBookableCaregiver(UUID id);
     APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(UUID centerId, int page, int size);
+
+    APIResponse<PageResponse<CaregiverResponse>> listDirectory(UUID centerId, VerificationStatus verification,
+                                                               CaregiverStatus status, String keyword,
+                                                               int page, int size);
 }

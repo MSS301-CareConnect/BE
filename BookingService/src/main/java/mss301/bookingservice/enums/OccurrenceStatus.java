@@ -48,7 +48,9 @@ public enum OccurrenceStatus {
             case ACKNOWLEDGED -> targetStatus == SCHEDULED || targetStatus == IN_PROGRESS || targetStatus == CANCELLED
                     || targetStatus == CAREGIVER_MISSED || targetStatus == CUSTOMER_NO_SHOW || targetStatus == EXPIRED;
             case IN_PROGRESS -> targetStatus == COMPLETED;
-            case COMPLETED, CANCELLED, EXPIRED, CUSTOMER_NO_SHOW, CAREGIVER_MISSED -> false;
+            // 2026-11-11: ca tự đóng mà trung tâm kết luận không thực hiện → coi như caregiver vắng (hoàn tiền khách).
+            case COMPLETED -> targetStatus == CAREGIVER_MISSED;
+            case CANCELLED, EXPIRED, CUSTOMER_NO_SHOW, CAREGIVER_MISSED -> false;
         };
     }
 }

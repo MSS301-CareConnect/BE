@@ -12,6 +12,7 @@ import mss301.bookingservice.dto.response.CareTaskResponse;
 import mss301.bookingservice.dto.response.SessionNoteResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.RoleCode;
+import mss301.bookingservice.enums.SessionCompletionReview;
 import mss301.bookingservice.security.CurrentCenterId;
 import mss301.bookingservice.security.CurrentRoles;
 import mss301.bookingservice.security.CurrentUserId;
@@ -30,6 +31,17 @@ import java.util.UUID;
 public class CareSessionController {
 
     CareSessionService careSessionService;
+
+    // Ca hệ thống tự đóng của trung tâm theo trạng thái xem lại (mặc định: đang chờ xác nhận).
+    @GetMapping
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<PageResponse<CareSessionResponse>> listForReview(
+            @CurrentCenterId UUID centerId,
+            @RequestParam(defaultValue = "PENDING") SessionCompletionReview review,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return careSessionService.listForReview(centerId, review, page, size);
+    }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CUSTOMER', 'CENTER_MANAGER', 'ADMIN', 'SERVICE')")
@@ -75,6 +87,15 @@ public class CareSessionController {
                                                 @PathVariable UUID id,
                                                 @Valid @RequestBody(required = false) CareSessionEndRequest request) {
         return careSessionService.end(actorId, id, request);
+    }
+
+    @PostMapping("/{id}/review")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<CareSessionResponse> review(@CurrentUserId UUID actorId,
+                                                   @CurrentCenterId UUID centerId,
+                                                   @PathVariable UUID id,
+                                                   @Valid @RequestBody CareSessionReviewRequest request) {
+        return careSessionService.review(actorId, centerId, id, request);
     }
 
     @PostMapping("/{id}/force-end")

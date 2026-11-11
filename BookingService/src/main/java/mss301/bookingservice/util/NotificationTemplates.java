@@ -49,6 +49,8 @@ public final class NotificationTemplates {
             case CAREGIVER_ABSENCE_UPDATED -> "Hồ sơ vắng ca vừa được cập nhật";
             case WALLET_WITHDRAWAL_COMPLETED -> "Rút tiền thành công";
             case WALLET_WITHDRAWAL_REJECTED -> "Yêu cầu rút tiền bị từ chối";
+            case SESSION_LOCATION_FLAGGED -> "Check-in cần xem lại vị trí";
+            case CUSTOMER_VISIT_REPORT -> "Khách hàng vừa phản ánh về một buổi chăm sóc";
         };
     }
 }

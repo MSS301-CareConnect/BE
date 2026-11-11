@@ -14,6 +14,9 @@ import mss301.carecatalogservice.enums.ServiceStatus;
 public class CenterOfferingSearchRequest {
     ServiceStatus status;
 
+    // Lọc theo tên dịch vụ chuẩn (không phân biệt hoa thường); chỉ áp dụng cho bên quản lý trung tâm.
+    String keyword;
+
     @Builder.Default
     int page = 0;
 

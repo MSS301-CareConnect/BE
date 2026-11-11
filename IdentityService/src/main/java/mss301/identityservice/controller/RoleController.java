@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.identityservice.dto.request.RolePermissionsRequest;
 import mss301.identityservice.dto.request.RoleRequest;
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.RoleResponse;
 import mss301.identityservice.security.CurrentUserId;
@@ -34,6 +35,18 @@ public class RoleController {
     @PostMapping
     public APIResponse<RoleResponse> create(@CurrentUserId UUID actorId, @Valid @RequestBody RoleRequest request) {
         return roleService.create(actorId, request);
+    }
+
+    @PutMapping("/{id}")
+    public APIResponse<RoleResponse> update(@CurrentUserId UUID actorId,
+                                            @PathVariable UUID id,
+                                            @Valid @RequestBody RoleUpdateRequest request) {
+        return roleService.update(actorId, id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    public APIResponse<Void> delete(@CurrentUserId UUID actorId, @PathVariable UUID id) {
+        return roleService.delete(actorId, id);
     }
 
     @PutMapping("/{id}/permissions")

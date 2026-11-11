@@ -2,6 +2,8 @@ package mss301.carecatalogservice.repository;
 
 import mss301.carecatalogservice.entity.PricePlan;
 import mss301.carecatalogservice.enums.ServiceStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +19,8 @@ public interface PricePlanRepository extends JpaRepository<PricePlan, UUID> {
     Optional<PricePlan> findByIdAndDeletedAtIsNull(UUID id);
 
     List<PricePlan> findByCenterOfferingIdAndDeletedAtIsNull(UUID centerOfferingId);
+
+    Page<PricePlan> findByCenterOfferingIdAndDeletedAtIsNull(UUID centerOfferingId, Pageable pageable);
 
     Optional<PricePlan> findByIdAndCenterOfferingIdAndDeletedAtIsNull(UUID id, UUID centerOfferingId);
 

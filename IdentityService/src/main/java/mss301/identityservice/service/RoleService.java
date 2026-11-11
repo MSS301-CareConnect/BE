@@ -2,6 +2,7 @@ package mss301.identityservice.service;
 
 import mss301.identityservice.dto.request.RolePermissionsRequest;
 import mss301.identityservice.dto.request.RoleRequest;
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.PermissionResponse;
 import mss301.identityservice.dto.response.RoleResponse;
@@ -13,6 +14,10 @@ public interface RoleService {
     APIResponse<List<RoleResponse>> list(UUID actorId);
 
     APIResponse<RoleResponse> create(UUID actorId, RoleRequest request);
+
+    APIResponse<RoleResponse> update(UUID actorId, UUID id, RoleUpdateRequest request);
+
+    APIResponse<Void> delete(UUID actorId, UUID id);
 
     APIResponse<RoleResponse> updatePermissions(UUID actorId, UUID id, RolePermissionsRequest request);
 

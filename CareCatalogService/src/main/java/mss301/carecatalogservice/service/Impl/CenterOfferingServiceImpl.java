@@ -70,11 +70,12 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         if (!fullView) {
             offerings = centerOfferingRepository.findSellableByCenter(centerId, ServiceStatus.ACTIVE,
                     PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
-        } else if (request.getStatus() == null) {
-            offerings = centerOfferingRepository.findByCenterIdAndDeletedAtIsNull(centerId,
-                    PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
         } else {
-            offerings = centerOfferingRepository.findByCenterIdAndStatusAndDeletedAtIsNull(centerId, request.getStatus(),
+            List<ServiceStatus> statuses = request.getStatus() == null
+                    ? List.of(ServiceStatus.values())
+                    : List.of(request.getStatus());
+            offerings = centerOfferingRepository.searchByCenter(centerId, statuses,
+                    buildNamePattern(request.getKeyword()),
                     PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
         }
         Map<UUID, List<PricePlan>> plansByOffering = findPlansByOffering(offerings.getContent(), fullView);
@@ -213,6 +214,12 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     }
 
     // ADMIN và manager của chính trung tâm đó thấy mọi trạng thái + mọi gói giá.
+    // "%" khi không có từ khóa; ký tự đại diện của LIKE trong từ khóa bị bỏ để người dùng không tự mở rộng mẫu.
+    private String buildNamePattern(String keyword) {
+        String cleaned = keyword == null ? "" : keyword.replace("%", "").replace("_", "").trim().toLowerCase();
+        return "%" + cleaned + "%";
+    }
+
     private boolean canManage(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId) {
         return roles.contains(RoleCode.ADMIN)
                 || (roles.contains(RoleCode.CENTER_MANAGER) && centerId.equals(scopeCenterId));

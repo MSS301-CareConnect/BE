@@ -4,6 +4,7 @@ import mss301.carecatalogservice.dto.request.PricePlanBatchUpdateRequest;
 import mss301.carecatalogservice.dto.request.PricePlanDraftRequest;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
+import mss301.carecatalogservice.dto.response.PageResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -22,6 +23,8 @@ public interface PricePlanService {
     List<PricePlan> createForOffering(CenterOffering centerOffering, List<PricePlanDraftRequest> drafts);
 
     APIResponse<List<PricePlanResponse>> listByCenterOffering(UUID centerOfferingId);
+
+    APIResponse<PageResponse<PricePlanResponse>> list(UUID centerOfferingId, int page, int size);
 
     APIResponse<PricePlanResponse> get(UUID id);
 

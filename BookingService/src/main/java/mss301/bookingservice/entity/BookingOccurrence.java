@@ -157,6 +157,13 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "late_warned_at")
     Instant lateWarnedAt;
 
+    // 2026-11-11: khách báo nhanh về buổi (chưa thấy người đến / không thực hiện đúng) — một lần mỗi buổi.
+    @Column(name = "customer_reported_at")
+    Instant customerReportedAt;
+
+    @Column(name = "customer_report_note", columnDefinition = "text")
+    String customerReportNote;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;

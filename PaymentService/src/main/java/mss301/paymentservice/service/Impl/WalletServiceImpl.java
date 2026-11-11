@@ -74,6 +74,8 @@ import java.util.UUID;
 public class WalletServiceImpl implements WalletService {
     // Ví nền tảng có đúng một dòng: owner_id cố định là UUID 0.
     static UUID PLATFORM_OWNER_ID = new UUID(0L, 0L);
+    // 2026-11-11: trung tâm / nền tảng nhận tiền thẳng vào tài khoản của mình — sổ của họ là doanh thu, không rút.
+    static Set<WalletOwnerType> WITHDRAWABLE_OWNERS = EnumSet.of(WalletOwnerType.CUSTOMER, WalletOwnerType.CAREGIVER);
     static ZoneId ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     static DateTimeFormatter DAY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     static DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM");
@@ -309,7 +311,7 @@ public class WalletServiceImpl implements WalletService {
     @Transactional(propagation = Propagation.MANDATORY)
     public Wallet lockOwnWallet(UUID actorId, Set<RoleCode> roles, UUID claimCenterId) {
         WalletOwner owner = resolveOwner(actorId, roles, claimCenterId);
-        if (owner.type() == WalletOwnerType.PLATFORM) {
+        if (!WITHDRAWABLE_OWNERS.contains(owner.type())) {
             throw new AppException(ErrorCode.WALLET_NOT_WITHDRAWABLE);
         }
         return lockOrCreateWallet(owner.type(), owner.id());
@@ -433,7 +435,7 @@ public class WalletServiceImpl implements WalletService {
     }
 
     private boolean isWithdrawable(Wallet wallet) {
-        return wallet.getOwnerType() != WalletOwnerType.PLATFORM && wallet.getAvailableBalance().signum() > 0;
+        return WITHDRAWABLE_OWNERS.contains(wallet.getOwnerType()) && wallet.getAvailableBalance().signum() > 0;
     }
 
     private APIResponse<PageResponse<WalletTransactionResponse>> buildTransactionPage(UUID walletId,

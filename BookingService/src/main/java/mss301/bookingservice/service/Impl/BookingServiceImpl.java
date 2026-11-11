@@ -39,6 +39,7 @@ import mss301.bookingservice.dto.response.CancellationPreviewResponse;
 import mss301.bookingservice.dto.response.CancellationRefundResponse;
 import mss301.bookingservice.dto.response.SystemCancellationResponse;
 import mss301.bookingservice.dto.response.PaymentContextResponse;
+import mss301.bookingservice.dto.response.PaymentHeldOccurrences;
 import mss301.bookingservice.dto.response.BookingStatusCountResponse;
 import mss301.bookingservice.dto.response.BookingStatusCountsResponse;
 import mss301.bookingservice.dto.response.BookingSummaryResponse;
@@ -60,6 +61,7 @@ import mss301.bookingservice.enums.RefundReason;
 import mss301.bookingservice.enums.SystemCancellationReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
+import mss301.bookingservice.enums.SessionCompletionReview;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.BookingDetailMapper;
@@ -374,7 +376,8 @@ public class BookingServiceImpl implements BookingService {
                 .orElse(null);
         CenterBookingPolicy policy = centerBookingPolicyService.findEffective(booking.getCenterId());
         PaymentContextResponse paymentContextResponse = bookingMapper.toPaymentContextResponse(booking, occurrences,
-                firstStartAt, policy, findOccurrenceIdsWithSession(id));
+                firstStartAt, policy, findOccurrenceIdsWithSession(id),
+                new PaymentHeldOccurrences(findSettlementHeldIds(id, occurrences)));
         return APIResponse.success("Lấy dữ liệu thanh toán của booking thành công", paymentContextResponse);
     }
 
@@ -386,6 +389,14 @@ public class BookingServiceImpl implements BookingService {
         centerPort.checkBookable(request.getCenterId());
         CenterBookingPolicy policy = centerBookingPolicyService.findEffective(request.getCenterId());
         checkBookableTiming(request.getBookingType(), slots, policy);
+        // 2026-11-11: báo giá kiểm trùng lịch như lúc tạo (caregiver nghỉ / không có ca ở Provider, booking khác của
+        // caregiver kèm trừ hao di chuyển, booking khác của người bệnh) để khách biết ngay ở bước chọn lịch. Chỉ đọc —
+        // tạo booking vẫn kiểm lại dưới khóa lịch.
+        if (request.getCaregiverId() != null) {
+            caregiverPort.checkAvailable(request.getCaregiverId(), slots);
+            checkCaregiverAvailable(request.getCaregiverId(), slots, null);
+        }
+        checkRecipientAvailable(request.getRecipientId(), slots, null);
         BookingQuote bookingQuote = bookingPriceCalculator.calculate(
                 careServiceCatalogPort.quote(request.getCenterId(), request.getServices()), slots);
         BigDecimal initialPaymentPercent = resolveInitialPaymentPercent(
@@ -1518,6 +1529,20 @@ public class BookingServiceImpl implements BookingService {
     }
 
     // Buổi đã có care session — PaymentService không hoàn tiền cho buổi đã bắt đầu.
+    // Chưa quyết toán (2026-11-11): ca chờ trung tâm xác nhận, hoặc buổi COMPLETED còn trong cửa sổ khách phản ánh.
+    private Set<UUID> findSettlementHeldIds(UUID bookingId, List<BookingOccurrence> occurrences) {
+        Set<UUID> heldIds = new HashSet<>(careSessionRepository.findOccurrenceIdsByBookingAndReview(bookingId,
+                SessionCompletionReview.PENDING));
+        Instant endedAfter = clock.instant().minus(bookingProperties.getSession().getCustomerReportWindow());
+        for (BookingOccurrence occurrence : occurrences) {
+            if (occurrence.getStatus() == OccurrenceStatus.COMPLETED && occurrence.getActualEndAt() != null
+                    && occurrence.getActualEndAt().isAfter(endedAfter)) {
+                heldIds.add(occurrence.getId());
+            }
+        }
+        return heldIds;
+    }
+
     private Set<UUID> findOccurrenceIdsWithSession(UUID bookingId) {
         return Set.copyOf(careSessionRepository.findOccurrenceIdsByBooking(bookingId));
     }

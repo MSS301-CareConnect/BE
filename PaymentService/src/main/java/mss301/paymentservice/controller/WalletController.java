@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.dto.response.APIResponse;
+import mss301.paymentservice.dto.response.BookingSettlementResponse;
 import mss301.paymentservice.dto.response.PageResponse;
 import mss301.paymentservice.dto.response.WalletCenterBalanceResponse;
 import mss301.paymentservice.dto.response.WalletResponse;
@@ -17,6 +18,7 @@ import mss301.paymentservice.security.CurrentCenterId;
 import mss301.paymentservice.security.CurrentRoles;
 import mss301.paymentservice.security.CurrentUserId;
 import mss301.paymentservice.service.WalletService;
+import mss301.paymentservice.service.WalletSettlementService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,6 +40,7 @@ import java.util.UUID;
 public class WalletController {
 
     WalletService walletService;
+    WalletSettlementService walletSettlementService;
 
     @GetMapping("/me")
     @PreAuthorize("hasAnyRole('CUSTOMER','CAREGIVER','CENTER_MANAGER','ADMIN')")
@@ -81,6 +84,16 @@ public class WalletController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(required = false) StatisticsGroupBy groupBy) {
         return walletService.getMyStatistics(actorId, roles, claimCenterId, from, to, groupBy);
+    }
+
+    // 2026-11-11: quyết toán một booking — khách trả, hoàn (vắng / hủy / khiếu nại), trung tâm thực nhận, hoa hồng.
+    @GetMapping("/bookings/{bookingId}/settlement")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<BookingSettlementResponse> getBookingSettlement(
+            @CurrentRoles Set<RoleCode> roles,
+            @CurrentCenterId(required = false) UUID claimCenterId,
+            @PathVariable UUID bookingId) {
+        return walletSettlementService.getBookingSettlement(roles, claimCenterId, bookingId);
     }
 
     @GetMapping("/{walletId}")

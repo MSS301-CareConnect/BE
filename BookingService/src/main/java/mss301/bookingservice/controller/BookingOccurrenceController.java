@@ -6,6 +6,7 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
+import mss301.bookingservice.dto.request.CustomerVisitReportRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
 import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
@@ -16,6 +17,7 @@ import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
 import mss301.bookingservice.dto.response.OccurrenceRescheduleResponse;
+import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RoleCode;
@@ -105,6 +107,15 @@ public class BookingOccurrenceController {
                                                 @PathVariable UUID id,
                                                 @Valid @RequestBody ReplacementConsentRequest request) {
         return bookingOccurrenceService.consentReplacement(actorId, id, request);
+    }
+
+    // 2026-11-11: khách báo nhanh — chưa thấy người chăm sóc đến, hoặc buổi đã kết thúc nhưng không được thực hiện đúng.
+    @PostMapping("/{id}/customer-reports")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public APIResponse<OccurrenceResponse> reportByCustomer(@CurrentUserId UUID actorId,
+                                                            @PathVariable UUID id,
+                                                            @Valid @RequestBody(required = false) CustomerVisitReportRequest request) {
+        return bookingOccurrenceService.reportByCustomer(actorId, id, request);
     }
 
     // Module 3 (SPEC V3): Khách hàng hoặc trung tâm kiểm tra tính khả thi khi dời lịch

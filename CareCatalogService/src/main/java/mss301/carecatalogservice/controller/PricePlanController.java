@@ -8,6 +8,7 @@ import lombok.experimental.FieldDefaults;
 import mss301.carecatalogservice.dto.request.PricePlanBatchUpdateRequest;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
+import mss301.carecatalogservice.dto.response.PageResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
 import mss301.carecatalogservice.security.CurrentCenterId;
 import mss301.carecatalogservice.service.PricePlanService;
@@ -24,6 +25,15 @@ import java.util.UUID;
 @Tag(name = "Price plan", description = "Bảng giá theo giờ / ngày / ca của dịch vụ trung tâm.")
 public class PricePlanController {
     PricePlanService pricePlanService;
+
+    // Bảng giá của một dịch vụ trung tâm theo trang (màn quản lý); danh sách đầy đủ bên dưới vẫn giữ cho khách đặt lịch.
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public APIResponse<PageResponse<PricePlanResponse>> list(@RequestParam UUID centerOfferingId,
+                                                             @RequestParam(defaultValue = "0") int page,
+                                                             @RequestParam(defaultValue = "20") int size) {
+        return pricePlanService.list(centerOfferingId, page, size);
+    }
 
     @GetMapping({"/center-offering/{centerOfferingId}", "/center-service/{centerOfferingId}"})
     @PreAuthorize("permitAll()")

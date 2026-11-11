@@ -31,5 +31,9 @@ public enum NotificationType {
     CAREGIVER_ABSENCE_UPDATED,
     // 2026-11-10: PaymentService báo người rút tiền — đã chuyển khoản (giả lập) xong / bị từ chối.
     WALLET_WITHDRAWAL_COMPLETED,
-    WALLET_WITHDRAWAL_REJECTED
+    WALLET_WITHDRAWAL_REJECTED,
+    // 2026-11-11: check-in không có vị trí hoặc xa địa chỉ chăm sóc — báo trung tâm xem lại.
+    SESSION_LOCATION_FLAGGED,
+    // 2026-11-11: khách báo chưa thấy người chăm sóc đến / buổi không được thực hiện đúng — báo trung tâm.
+    CUSTOMER_VISIT_REPORT
 }

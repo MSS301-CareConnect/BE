@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,9 +17,26 @@ import java.util.UUID;
 public interface CenterOfferingRepository extends JpaRepository<CenterOffering, UUID> {
     Optional<CenterOffering> findByIdAndDeletedAtIsNull(UUID id);
 
-    Page<CenterOffering> findByCenterIdAndDeletedAtIsNull(UUID centerId, Pageable pageable);
-
-    Page<CenterOffering> findByCenterIdAndStatusAndDeletedAtIsNull(UUID centerId, ServiceStatus status, Pageable pageable);
+    // Danh sách của bên quản lý: lọc trạng thái + tên. namePattern luôn khác null ("%" = mọi tên) và statuses luôn
+    // có phần tử, để không phải bind tham số null trên PostgreSQL.
+    @Query(value = """
+            select o from CenterOffering o join fetch o.catalogItem i
+            where o.centerId = :centerId
+              and o.deletedAt is null
+              and o.status in :statuses
+              and lower(i.name) like :namePattern
+            """,
+            countQuery = """
+            select count(o) from CenterOffering o join o.catalogItem i
+            where o.centerId = :centerId
+              and o.deletedAt is null
+              and o.status in :statuses
+              and lower(i.name) like :namePattern
+            """)
+    Page<CenterOffering> searchByCenter(@Param("centerId") UUID centerId,
+                                        @Param("statuses") Collection<ServiceStatus> statuses,
+                                        @Param("namePattern") String namePattern,
+                                        Pageable pageable);
 
     Optional<CenterOffering> findByIdAndCenterIdAndDeletedAtIsNull(UUID id, UUID centerId);
 

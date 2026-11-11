@@ -18,6 +18,7 @@ import mss301.bookingservice.dto.response.BookingQuote;
 import mss301.bookingservice.dto.response.BookingQuoteResponse;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.dto.response.PaymentContextOccurrenceResponse;
+import mss301.bookingservice.dto.response.PaymentHeldOccurrences;
 import mss301.bookingservice.dto.response.PaymentContextResponse;
 import mss301.bookingservice.dto.response.QuoteLineResponse;
 import mss301.bookingservice.dto.response.QuoteOccurrenceResponse;
@@ -108,14 +109,17 @@ public interface BookingMapper {
     @Mapping(target = "overduePaymentForfeitPercent", source = "policy.overduePaymentForfeitPercent")
     PaymentContextResponse toPaymentContextResponse(Booking booking, List<BookingOccurrence> occurrences,
                                                     Instant firstStartAt, CenterBookingPolicy policy,
-                                                    @Context Set<UUID> occurrenceIdsWithSession);
+                                                    @Context Set<UUID> occurrenceIdsWithSession,
+                                                    @Context PaymentHeldOccurrences heldOccurrences);
 
     // depositAmount từng buổi do PaymentService ghi khi xác nhận cọc (PAY-08) — chưa có cột ở Booking.
     @Mapping(target = "occurrenceId", source = "id")
     @Mapping(target = "depositAmount", ignore = true)
     @Mapping(target = "hasSession", expression = "java(occurrenceIdsWithSession.contains(occurrence.getId()))")
+    @Mapping(target = "settlementHeld", expression = "java(heldOccurrences.contains(occurrence.getId()))")
     PaymentContextOccurrenceResponse toPaymentContextOccurrenceResponse(BookingOccurrence occurrence,
-                                                                        @Context Set<UUID> occurrenceIdsWithSession);
+                                                                        @Context Set<UUID> occurrenceIdsWithSession,
+                                                                        @Context PaymentHeldOccurrences heldOccurrences);
 
     // customerProfiles rỗng (màn hình khách) → customer null; trung tâm / admin truyền kết quả batch Identity.
     @Mapping(target = "recipientName", source = "recipientSnapshot.fullName")
