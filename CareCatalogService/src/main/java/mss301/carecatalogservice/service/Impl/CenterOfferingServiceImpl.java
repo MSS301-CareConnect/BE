@@ -24,7 +24,7 @@ import mss301.carecatalogservice.exception.ErrorCode;
 import mss301.carecatalogservice.mapper.CenterOfferingMapper;
 import mss301.carecatalogservice.repository.CatalogItemRepository;
 import mss301.carecatalogservice.repository.CenterOfferingRepository;
-import mss301.carecatalogservice.repository.CenterPriceView;
+import mss301.carecatalogservice.repository.projection.CenterPriceView;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.CatalogQuoteService;
 import mss301.carecatalogservice.service.CenterOfferingService;
@@ -60,6 +60,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     CatalogQuoteService catalogQuoteService;
     PricePlanService pricePlanService;
 
+    // Danh sách dịch vụ trung tâm; người ngoài trung tâm chỉ thấy dịch vụ đang bán.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CenterOfferingResponse>> listByCenter(Set<RoleCode> roles, UUID scopeCenterId,
@@ -70,11 +71,12 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         if (!fullView) {
             offerings = centerOfferingRepository.findSellableByCenter(centerId, ServiceStatus.ACTIVE,
                     PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
-        } else if (request.getStatus() == null) {
-            offerings = centerOfferingRepository.findByCenterIdAndDeletedAtIsNull(centerId,
-                    PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
         } else {
-            offerings = centerOfferingRepository.findByCenterIdAndStatusAndDeletedAtIsNull(centerId, request.getStatus(),
+            List<ServiceStatus> statuses = request.getStatus() == null
+                    ? List.of(ServiceStatus.values())
+                    : List.of(request.getStatus());
+            offerings = centerOfferingRepository.searchByCenter(centerId, statuses,
+                    buildNamePattern(request.getKeyword()),
                     PageRequests.of(request.getPage(), request.getSize(), CREATED_ASC));
         }
         Map<UUID, List<PricePlan>> plansByOffering = findPlansByOffering(offerings.getContent(), fullView);
@@ -87,6 +89,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Lấy danh sách dịch vụ của trung tâm thành công", pageResponse);
     }
 
+    // Chi tiết dịch vụ trung tâm theo quyền xem của người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CenterOfferingResponse> get(Set<RoleCode> roles, UUID scopeCenterId, UUID id) {
@@ -102,6 +105,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Lấy thông tin dịch vụ trung tâm thành công", centerOfferingResponse);
     }
 
+    // Tìm giá thấp nhất (trong khoảng lọc) của dịch vụ theo từng trung tâm.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<PriceSummaryResponse>> listPriceSummaries(PriceSummaryRequest request) {
@@ -124,6 +128,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Lấy giá thấp nhất theo trung tâm thành công", priceSummaryResponses);
     }
 
+    // Thêm dịch vụ cho trung tâm và tạo luôn các gói giá đi kèm.
     @Override
     @Transactional
     public APIResponse<CenterOfferingResponse> create(UUID centerId, CenterOfferingRequest request) {
@@ -148,6 +153,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Đăng ký dịch vụ cho trung tâm thành công", centerOfferingResponse);
     }
 
+    // Báo giá dịch vụ cho booking qua CatalogQuoteService.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<ServiceQuoteResponse>> quote(ServiceQuoteRequest request) {
@@ -155,6 +161,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Báo giá dịch vụ thành công", serviceQuoteResponses);
     }
 
+    // Cập nhật dịch vụ trung tâm sau khi kiểm tra quyền sở hữu.
     @Override
     @Transactional
     public APIResponse<CenterOfferingResponse> update(UUID centerId, UUID id, CenterOfferingRequest request) {
@@ -179,6 +186,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Cập nhật dịch vụ trung tâm thành công", centerOfferingResponse);
     }
 
+    // Đổi trạng thái dịch vụ trung tâm sau khi kiểm tra quyền sở hữu.
     @Override
     @Transactional
     public APIResponse<CenterOfferingResponse> updateStatus(UUID centerId, UUID id, ServiceStatusRequest request) {
@@ -194,6 +202,7 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
         return APIResponse.success("Cập nhật trạng thái dịch vụ trung tâm thành công", centerOfferingResponse);
     }
 
+    // Xóa mềm dịch vụ trung tâm cùng các gói giá; chặn nếu còn gói giá đang hoạt động.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID centerId, UUID id) {
@@ -213,6 +222,13 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
     }
 
     // ADMIN và manager của chính trung tâm đó thấy mọi trạng thái + mọi gói giá.
+    // "%" khi không có từ khóa; ký tự đại diện của LIKE trong từ khóa bị bỏ để người dùng không tự mở rộng mẫu.
+    private String buildNamePattern(String keyword) {
+        String cleaned = keyword == null ? "" : keyword.replace("%", "").replace("_", "").trim().toLowerCase();
+        return "%" + cleaned + "%";
+    }
+
+    // Kiểm tra người gọi được quản lý dịch vụ của trung tâm này.
     private boolean canManage(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId) {
         return roles.contains(RoleCode.ADMIN)
                 || (roles.contains(RoleCode.CENTER_MANAGER) && centerId.equals(scopeCenterId));
@@ -233,38 +249,45 @@ public class CenterOfferingServiceImpl implements CenterOfferingService {
                 .collect(Collectors.groupingBy(pricePlan -> pricePlan.getCenterOffering().getId()));
     }
 
+    // Kiểm tra dịch vụ đang bán được (đang hoạt động và có gói giá hoạt động).
     private boolean isSellable(CenterOffering offering, List<PricePlan> activePricePlans) {
         return offering.getStatus() == ServiceStatus.ACTIVE
                 && offering.getCatalogItem().getStatus() == ServiceStatus.ACTIVE
                 && !activePricePlans.isEmpty();
     }
 
+    // Lấy giá sau giảm của một gói giá.
     private BigDecimal findFinalPrice(CenterPriceView price) {
         return PricePlan.applyDiscount(price.getBasePrice(), price.getDiscountPercent());
     }
 
+    // Kiểm tra giá nằm trong khoảng lọc min / max.
     private boolean isInRange(BigDecimal price, BigDecimal minPrice, BigDecimal maxPrice) {
         return (minPrice == null || price.compareTo(minPrice) >= 0)
                 && (maxPrice == null || price.compareTo(maxPrice) <= 0);
     }
 
+    // Báo lỗi nếu dịch vụ không thuộc trung tâm của người gọi.
     private void checkCenterOwnership(CenterOffering offering, UUID centerId) {
         if (!offering.getCenterId().equals(centerId)) {
             throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
         }
     }
 
+    // Báo lỗi nếu dịch vụ chuẩn không còn hoạt động.
     private void checkCatalogItemActive(CatalogItem catalogItem) {
         if (catalogItem.getStatus() != ServiceStatus.ACTIVE) {
             throw new AppException(ErrorCode.SERVICE_NOT_ACTIVE);
         }
     }
 
+    // Tìm dịch vụ trung tâm chưa xóa, không có thì báo lỗi.
     private CenterOffering findActiveOffering(UUID id) {
         return centerOfferingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_SERVICE_NOT_FOUND));
     }
 
+    // Tìm dịch vụ chuẩn chưa xóa, không có thì báo lỗi.
     private CatalogItem findActiveCatalogItem(UUID id) {
         return catalogItemRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));

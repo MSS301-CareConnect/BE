@@ -7,5 +7,6 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ChatValidationService {
+    // Kiểm tra câu hỏi và ảnh gửi kèm, trả về câu hỏi đã chuẩn hóa.
     String validateAndNormalize(UUID userId, ChatPromptRequest request, List<MultipartFile> images);
 }

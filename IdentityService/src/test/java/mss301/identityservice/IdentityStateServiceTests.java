@@ -1,13 +1,16 @@
 package mss301.identityservice;
 
 import mss301.identityservice.config.IdentityProperties;
-import mss301.identityservice.exception.*;
+import mss301.identityservice.exception.AppException;
+import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.service.Impl.IdentityStateServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
 
 class IdentityStateServiceTests {
     @Test void redisFailureNeverBypassesRevocation() {

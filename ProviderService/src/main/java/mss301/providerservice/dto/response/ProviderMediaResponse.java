@@ -14,11 +14,18 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ProviderMediaResponse {
     UUID mediaFileId;
+
     MediaFileType mediaFileType;
+
     String originalFileName;
+
     String contentType;
+
     Long fileSize;
+
     Integer displayOrder;
+
     String downloadUrl;
+
     Instant downloadUrlExpiresAt;
 }

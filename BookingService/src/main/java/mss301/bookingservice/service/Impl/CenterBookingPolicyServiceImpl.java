@@ -27,10 +27,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Center booking policy (spec §8). Không @Transactional ở update: admin sửa trung tâm khác phải hỏi ProviderService
- * (mạng) trước, phần ghi chạy trong TransactionTemplate (rule #24).
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -56,6 +52,7 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
         return APIResponse.success("Lấy chính sách booking của trung tâm thành công", policyResponse);
     }
 
+    // Cập nhật chính sách booking của trung tâm (admin chọn trung tâm, manager trung tâm mình).
     @Override
     public APIResponse<CenterBookingPolicyResponse> update(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                            UUID centerId, CenterBookingPolicyRequest request) {
@@ -77,6 +74,7 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
         return APIResponse.success("Cập nhật chính sách booking của trung tâm thành công", policyResponse);
     }
 
+    // Chính sách booking của trung tâm, chưa có thì dùng mặc định.
     @Override
     @Transactional(readOnly = true)
     public CenterBookingPolicy findEffective(UUID centerId) {
@@ -84,6 +82,7 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
                 .orElseGet(() -> buildDefaultPolicy(centerId));
     }
 
+    // Tạo mới hoặc cập nhật chính sách booking của trung tâm.
     private CenterBookingPolicy savePolicy(UUID actorId, UUID centerId, CenterBookingPolicyRequest request) {
         Optional<CenterBookingPolicy> existing = centerBookingPolicyRepository.findByCenterIdAndDeletedAtIsNull(centerId);
         if (existing.isEmpty()) {
@@ -113,6 +112,10 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
         if (request.getRefundPercentAfterThreshold().compareTo(request.getRefundPercentBeforeThreshold()) > 0) {
             throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);
         }
+        // Mốc "không hoàn" nằm trong khoảng sau mốc hoàn: dài hơn mốc hoàn thì phần "% sau mốc" không bao giờ áp dụng.
+        if (request.getLateCancelNoRefundMinutes() > request.getRefundThresholdMinutes()) {
+            throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);
+        }
         if (new HashSet<>(request.getRemainingPaymentReminderMinutes()).size()
                 != request.getRemainingPaymentReminderMinutes().size()) {
             throw new AppException(ErrorCode.INVALID_BOOKING_POLICY);
@@ -129,6 +132,7 @@ public class CenterBookingPolicyServiceImpl implements CenterBookingPolicyServic
         }
     }
 
+    // Dựng chính sách booking mặc định từ cấu hình.
     private CenterBookingPolicy buildDefaultPolicy(UUID centerId) {
         return centerBookingPolicyMapper.toDefaultPolicy(bookingProperties.getPolicyDefaults(), centerId);
     }

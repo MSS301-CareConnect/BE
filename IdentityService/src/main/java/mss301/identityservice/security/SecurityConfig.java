@@ -69,6 +69,7 @@ public class SecurityConfig {
     SecurityErrorHandler securityErrorHandler;
     DefaultBearerTokenResolver headerTokenResolver = new DefaultBearerTokenResolver();
 
+    // Cấu hình bảo mật: stateless, CORS, CSRF cookie, endpoint public, xác thực JWT.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -113,6 +114,7 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình CORS theo danh sách origin cho phép.
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
@@ -128,6 +130,7 @@ public class SecurityConfig {
         return source;
     }
 
+    // Lưu CSRF token trong cookie XSRF-TOKEN để FE đọc được.
     private CookieCsrfTokenRepository csrfTokenRepository() {
         CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
         repository.setCookieCustomizer(cookie -> cookie
@@ -137,6 +140,7 @@ public class SecurityConfig {
         return repository;
     }
 
+    // Cấu hình cách đọc CSRF token từ header của request.
     private CsrfTokenRequestAttributeHandler csrfTokenRequestHandler() {
         CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
         // Token trả qua /auth/csrf; JS gửi nguyên giá trị trong header X-XSRF-TOKEN.
@@ -167,6 +171,7 @@ public class SecurityConfig {
         return true;
     }
 
+    // Lấy access token từ header hoặc cookie, bỏ qua các endpoint cấp / làm mới token.
     private String resolveToken(HttpServletRequest request) {
         if (TOKEN_FLOW_PATHS.contains(request.getRequestURI())) {
             return null;

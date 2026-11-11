@@ -55,6 +55,7 @@ public class RedisTokenStore implements TokenStore {
 
     StringRedisTemplate stringRedisTemplate;
 
+    // Xoay vòng refresh token (Lua): thu hồi token cũ, lưu token mới.
     @Override
     public boolean rotateRefreshToken(String tokenHash, String nextTokenHash, long authzVersion,
                                       String accessJti, Instant expiresAt, Duration ttl) {
@@ -67,6 +68,7 @@ public class RedisTokenStore implements TokenStore {
                 RedisKeys.FIELD_AUTHZ_VERSION, Long.toString(authzVersion), RedisKeys.USER_SESSIONS)));
     }
 
+    // Tìm chủ của refresh token đã bị thu hồi (phát hiện dùng lại).
     @Override
     public UUID findRevokedTokenOwner(String tokenHash) {
         return execute(() -> {
@@ -75,6 +77,7 @@ public class RedisTokenStore implements TokenStore {
         });
     }
 
+    // Lưu refresh token (đã băm) kèm thông tin phiên.
     @Override
     public void storeRefreshToken(String tokenHash, UUID userId, String sessionId, String deviceId,
                                   String userAgent, String ip, Duration ttl) {
@@ -94,6 +97,7 @@ public class RedisTokenStore implements TokenStore {
         });
     }
 
+    // Đọc dữ liệu của refresh token.
     @Override
     public Map<String, String> getRefreshToken(String tokenHash) {
         return execute(() -> {
@@ -108,6 +112,7 @@ public class RedisTokenStore implements TokenStore {
         });
     }
 
+    // Thu hồi refresh token của người dùng.
     @Override
     public boolean revokeRefreshToken(String tokenHash, UUID userId) {
         return Boolean.TRUE.equals(execute(() -> {
@@ -116,22 +121,7 @@ public class RedisTokenStore implements TokenStore {
         }));
     }
 
-    @Override
-    public void recordRevokedToken(String tokenHash, UUID userId, Duration ttl) {
-        if (ttl.isNegative() || ttl.isZero()) {
-            return;
-        }
-        execute(() -> {
-            stringRedisTemplate.opsForValue().set(RedisKeys.REVOKED_REFRESH + tokenHash, userId.toString(), ttl);
-            return null;
-        });
-    }
-
-    @Override
-    public boolean isTokenRevoked(String tokenHash) {
-        return Boolean.TRUE.equals(execute(() -> stringRedisTemplate.hasKey(RedisKeys.REVOKED_REFRESH + tokenHash)));
-    }
-
+    // Đưa access token jti vào blacklist trong thời gian còn hiệu lực.
     @Override
     public void blacklistAccessToken(String jti, Duration ttl) {
         if (ttl.isNegative() || ttl.isZero()) {
@@ -143,11 +133,13 @@ public class RedisTokenStore implements TokenStore {
         });
     }
 
+    // Kiểm tra access token jti có trong blacklist.
     @Override
     public boolean isAccessTokenBlacklisted(String jti) {
         return Boolean.TRUE.equals(execute(() -> stringRedisTemplate.hasKey(RedisKeys.BLACKLIST + jti)));
     }
 
+    // Chạy thao tác Redis, lỗi kết nối thì báo lỗi dịch vụ không khả dụng.
     private <T> T execute(Supplier<T> operation) {
         try {
             return operation.get();

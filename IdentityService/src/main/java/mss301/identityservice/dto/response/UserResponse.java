@@ -16,14 +16,23 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class UserResponse {
     UUID id;
+
     String email;
+
     String fullName;
+
     String phoneNumber;
+
     UserStatus status;
+
     String statusReason;
+
     UUID centerId;
+
     Set<String> roles;
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     Set<String> permissions;
+
     Instant createdAt;
 }

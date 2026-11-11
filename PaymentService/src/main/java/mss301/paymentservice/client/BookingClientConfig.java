@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 // Cấu hình riêng của BookingClient — không @Configuration để interceptor token SERVICE không lan sang client khác.
 public class BookingClientConfig {
 
+    // Gắn token SERVICE vào mọi lời gọi BookingService.
     @Bean
     public RequestInterceptor bookingServiceTokenInterceptor(ServiceTokenProvider serviceTokenProvider) {
         return new ServiceTokenInterceptor(serviceTokenProvider);

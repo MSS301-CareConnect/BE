@@ -7,11 +7,6 @@ import mss301.bookingservice.enums.CaregiverWithdrawalReason;
 
 import java.util.UUID;
 
-/**
- * Caregiver xin hủy một buổi được giao (2026-11-09). Ghi một lần, không có trạng thái riêng: buổi được đánh cờ
- * needs_reassignment và việc xử lý (đổi người / kết thúc) đọc từ chính buổi. Hai id caregiver lưu để biết ai đã xin hủy
- * kể cả sau khi buổi sang người khác.
- */
 @Entity
 @Table(name = "caregiver_withdrawals")
 @Getter

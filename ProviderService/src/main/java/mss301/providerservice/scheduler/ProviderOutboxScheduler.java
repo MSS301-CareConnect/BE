@@ -16,6 +16,7 @@ import java.util.UUID;
 public class ProviderOutboxScheduler {
     ProviderOutboxService providerOutboxService;
 
+    // Định kỳ gửi các sự kiện outbox tới hạn; lỗi một sự kiện không dừng cả lượt.
     @Scheduled(fixedDelayString = "${PROVIDER_OUTBOX_SCAN_INTERVAL:30s}")
     public void dispatch() {
         for (UUID id : providerOutboxService.findDueIds()) {

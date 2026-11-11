@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenApiConfig {
 
+    // Cấu hình tài liệu OpenAPI của MediaService.
     @Bean
     public OpenAPI mediaOpenApi() {
         SecurityScheme bearer = new SecurityScheme()

@@ -12,6 +12,7 @@ import java.time.Clock;
 @EnableScheduling
 public class AppConfig {
 
+    // Bean Clock UTC, cho phép thay khi test.
     @Bean
     Clock clock() {
         return Clock.systemUTC();

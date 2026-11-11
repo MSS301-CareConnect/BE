@@ -10,10 +10,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * API của PaymentService (qua gateway). C2.1: chính sách thanh toán hiệu lực của trung tâm — Booking chỉ dùng
- * depositPercent để HIỂN THỊ cọc dự kiến khi báo giá (BK-01). Dùng qua PaymentPort, không gọi trực tiếp.
- */
 @FeignClient(name = "payment", url = "${booking.payment.url}", configuration = PaymentClientConfig.class)
 public interface PaymentClient {
 
@@ -21,6 +17,7 @@ public interface PaymentClient {
     @GetMapping("/api/v1/payments/me/outstanding")
     RemoteApiResponse<OutstandingDebtResponse> findMyOutstanding();
 
+    // Gọi PaymentService lấy chính sách thanh toán hiệu lực của trung tâm.
     @GetMapping("/api/v1/payment-policies/effective")
     RemoteApiResponse<PaymentPolicyResponse> findEffectivePolicy(@RequestParam("centerId") UUID centerId,
                                                                  @RequestParam("at") Instant at);

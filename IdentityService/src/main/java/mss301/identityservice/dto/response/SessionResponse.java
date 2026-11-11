@@ -13,10 +13,15 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SessionResponse {
     String sessionId;
+
     String deviceId;
+
     String userAgent;
+
     String ip;
+
     Instant createdAt;
+
     Instant lastActiveAt;
 
     @JsonProperty("isCurrent")

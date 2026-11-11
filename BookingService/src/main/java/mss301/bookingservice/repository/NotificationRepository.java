@@ -1,5 +1,7 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.NotificationLinkView;
+import mss301.bookingservice.repository.projection.NotificationBookingLinkView;
 import mss301.bookingservice.entity.Notification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -14,7 +16,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface NotificationRepository extends JpaRepository<Notification, UUID>, JpaSpecificationExecutor<Notification> {
+public interface NotificationRepository extends JpaRepository<Notification, UUID>,
+        JpaSpecificationExecutor<Notification> {
     Optional<Notification> findByIdAndRecipientUserIdAndDeletedAtIsNull(UUID id, UUID recipientUserId);
     long countByRecipientUserIdAndReadAtIsNullAndDeletedAtIsNull(UUID recipientUserId);
 

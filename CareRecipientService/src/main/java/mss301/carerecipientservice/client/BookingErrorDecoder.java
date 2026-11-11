@@ -6,16 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.carerecipientservice.exception.AppException;
 import mss301.carerecipientservice.exception.ErrorCode;
 
-/**
- * HTTP lỗi từ BookingService → BOOKING_UNAVAILABLE (503). caregiver-access luôn trả 200 khi hợp lệ nên mọi lỗi đều là
- * lỗi tích hợp / hạ tầng — không đoán là "được phép".
- */
 @Slf4j
 public class BookingErrorDecoder implements ErrorDecoder {
 
     private static final int UNAUTHORIZED = 401;
     private static final int FORBIDDEN = 403;
 
+    // Đổi mã lỗi HTTP từ BookingService sang ErrorCode của service này.
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

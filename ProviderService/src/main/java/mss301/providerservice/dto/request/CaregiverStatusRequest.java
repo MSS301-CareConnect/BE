@@ -13,6 +13,7 @@ import mss301.providerservice.enums.CaregiverStatus;
 public class CaregiverStatusRequest {
     @NotNull(message = "INVALID_REQUEST")
     CaregiverStatus status;
+
     @NotNull(message = "INVALID_REQUEST")
     Long version;
 }

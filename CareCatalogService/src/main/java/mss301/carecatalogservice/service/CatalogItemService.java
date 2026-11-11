@@ -16,20 +16,25 @@ import java.util.UUID;
 
 // Danh mục dịch vụ chuẩn: ADMIN quản lý; ADMIN / CENTER_MANAGER thấy mọi trạng thái, người khác chỉ thấy ACTIVE.
 public interface CatalogItemService {
+    // Danh sách dịch vụ chuẩn có lọc và phân trang.
     APIResponse<PageResponse<CatalogItemResponse>> list(Set<RoleCode> roles, CatalogItemSearchRequest request);
 
+    // Chi tiết một dịch vụ chuẩn.
     APIResponse<CatalogItemResponse> get(Set<RoleCode> roles, UUID id);
 
     // Ảnh minh họa: 302 tới URL tải có hạn của MediaService (ngoại lệ rule #3 — thẻ <img> không đọc được APIResponse).
     ResponseEntity<Void> redirectToImage(UUID mediaFileId);
 
+    // Tạo dịch vụ chuẩn.
     APIResponse<CatalogItemResponse> create(CatalogItemRequest request);
 
     // ADMIN tải ảnh minh họa lên MediaService; trả đường dẫn cố định để lưu vào imageUrl của dịch vụ chuẩn.
     APIResponse<CatalogImageResponse> uploadImage(UUID actorId, MultipartFile file);
 
+    // Cập nhật dịch vụ chuẩn.
     APIResponse<CatalogItemResponse> update(UUID id, CatalogItemRequest request);
 
+    // Đổi trạng thái dịch vụ chuẩn.
     APIResponse<CatalogItemResponse> updateStatus(UUID id, ServiceStatusRequest request);
 
     // Chỉ xóa mềm khi không trung tâm nào còn dùng (offering ACTIVE hoặc gói giá active) — ngược lại 409, dùng updateStatus.

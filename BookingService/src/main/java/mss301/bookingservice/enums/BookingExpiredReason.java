@@ -8,6 +8,7 @@ public enum BookingExpiredReason {
     INITIAL_PAYMENT_TIMEOUT,
     PAYMENT_OVERDUE;
 
+    // Lý do hết hạn tương ứng với trạng thái booking lúc hết hạn.
     public static BookingExpiredReason from(BookingStatus status) {
         return switch (status) {
             case PENDING_CENTER_CONFIRMATION -> CENTER_CONFIRMATION_TIMEOUT;

@@ -6,6 +6,9 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import mss301.paymentservice.client.BookingClient;
+import mss301.paymentservice.client.dto.BookingPaymentContextResponse;
+import mss301.paymentservice.client.dto.RemoteApiResponse;
 import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.dto.request.CreateCheckoutRequest;
 import mss301.paymentservice.dto.request.RemainingInvoiceRequest;
@@ -87,9 +90,11 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
     RemainingInvoiceMapper remainingInvoiceMapper;
     PaymentMapper paymentMapper;
     PaymentProperties paymentProperties;
+    BookingClient bookingClient;
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Danh sách hóa đơn phần còn lại; khách xem của mình, admin lọc theo khách.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<RemainingInvoiceResponse>> list(UUID actorId, Set<RoleCode> roles, UUID customerId,
@@ -113,6 +118,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return APIResponse.success("Lấy danh sách hóa đơn thành công", pageResponse);
     }
 
+    // Tổng nợ quá hạn của khách hàng.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OutstandingDebtResponse> getOutstanding(UUID customerId) {
@@ -125,6 +131,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return APIResponse.success("Kiểm tra công nợ thành công", outstandingDebtResponse);
     }
 
+    // Tạo hóa đơn phần còn lại khi booking xong (idempotent); không còn nợ thì không phát sinh.
     @Override
     @Transactional
     public APIResponse<RemainingInvoiceResultResponse> create(String idempotencyKey, RemainingInvoiceRequest request) {
@@ -179,6 +186,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return APIResponse.success("Đã tạo hóa đơn phần còn lại", resultResponse);
     }
 
+    // Mở phiên thanh toán cho hóa đơn phần còn lại.
     @Override
     public APIResponse<CheckoutResponse> pay(UUID customerId, UUID invoiceId, CreateCheckoutRequest request,
                                              HttpServletRequest httpServletRequest) {
@@ -191,6 +199,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return APIResponse.success("Tạo phiên thanh toán thành công", checkoutResponse);
     }
 
+    // Miễn thu hóa đơn phần còn lại kèm lý do.
     @Override
     @Transactional
     public APIResponse<RemainingInvoiceResponse> waive(UUID actorId, UUID invoiceId, WaiveInvoiceRequest request) {
@@ -211,6 +220,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return APIResponse.success("Đã miễn hóa đơn", remainingInvoiceResponse);
     }
 
+    // Mở hóa đơn phần còn lại trước buổi chăm sóc khi tới hạn thu.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void openBeforeService(BookingFinancial financial) {
@@ -229,6 +239,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         log.info("Remaining invoice {} for booking {} due before the first visit: {}", invoice.getId(), bookingId, remaining);
     }
 
+    // Đánh dấu hóa đơn đã trả khi thanh toán phần còn lại thành công.
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean markPaid(Payment payment, String paymentReference) {
@@ -270,12 +281,53 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return true;
     }
 
+    // Lấy id hóa đơn đang chờ đã quá hạn.
     @Override
     public List<UUID> findOverdueCandidateIds() {
         return remainingInvoiceRepository.findDueIds(InvoiceStatus.PENDING, clock.instant(),
                 PageRequest.of(0, paymentProperties.getInvoice().getBatchSize()));
     }
 
+    // Không @Transactional: gọi Booking qua mạng trước, ghi bằng transaction ngắn (rule #24).
+    @Override
+    public void refreshCaregivers(UUID invoiceId) {
+        RemainingInvoice invoice = remainingInvoiceRepository.findById(invoiceId).orElse(null);
+        if (invoice == null || invoice.getStatus() != InvoiceStatus.PENDING) {
+            return;
+        }
+        UUID bookingId = invoice.getBookingId();
+        BookingPaymentContextResponse context;
+        try {
+            RemoteApiResponse<BookingPaymentContextResponse> response = bookingClient.getPaymentContext(bookingId);
+            context = response == null ? null : response.getResult();
+        } catch (RuntimeException e) {
+            log.warn("Caregivers of booking {} not refreshed before the overdue check ({})", bookingId,
+                    e.getClass().getSimpleName());
+            return;
+        }
+        if (context == null || context.getOccurrences() == null) {
+            return;
+        }
+        Map<UUID, BookingPaymentContextResponse.Occurrence> contextOccurrences = new HashMap<>();
+        for (BookingPaymentContextResponse.Occurrence occurrence : context.getOccurrences()) {
+            contextOccurrences.put(occurrence.getOccurrenceId(), occurrence);
+        }
+        transactionTemplate.executeWithoutResult(status -> {
+            // Cùng thứ tự khóa với mọi lệnh tiền của booking.
+            if (bookingFinancialRepository.findForUpdate(bookingId).isEmpty()) {
+                return;
+            }
+            for (OccurrenceFinancial occurrenceFinancial : occurrenceFinancialRepository.findAllByBookingId(bookingId)) {
+                BookingPaymentContextResponse.Occurrence occurrence = contextOccurrences.get(
+                        occurrenceFinancial.getOccurrenceId());
+                if (occurrence != null && occurrenceFinancial.getFinalStatus() == null) {
+                    occurrenceFinancial.assignCaregiver(occurrence.getCaregiverId(), occurrence.getCaregiverUserId());
+                }
+            }
+        });
+    }
+
+    // Đánh dấu hóa đơn quá hạn và báo BookingService.
     @Override
     @Transactional
     public void markOverdue(UUID invoiceId) {
@@ -311,6 +363,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
                 invoice.getBookingId());
     }
 
+    // Khóa hóa đơn của khách và mở lần thanh toán mới.
     private PaymentAttempt openRemainingAttempt(UUID customerId, UUID invoiceId, CreateCheckoutRequest request) {
         RemainingInvoice invoice = remainingInvoiceRepository.findForUpdate(invoiceId)
                 .filter(found -> found.getCustomerId().equals(customerId))
@@ -358,6 +411,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return unpaid;
     }
 
+    // Số tiền chưa trả của một buổi (giá − cọc − đã thu).
     private static BigDecimal unpaidOf(OccurrenceFinancial occurrenceFinancial) {
         return VndMoney.nonNegative(occurrenceFinancial.getPriceAmount()
                 .subtract(occurrenceFinancial.getDepositAmount())
@@ -375,6 +429,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         return BigDecimal.ZERO;
     }
 
+    // Đổi trạng thái buổi sang trạng thái tài chính cuối.
     private OccurrenceFinalStatus toFinalStatus(OccurrenceStatus status) {
         return switch (status) {
             case COMPLETED -> OccurrenceFinalStatus.COMPLETED;
@@ -387,6 +442,7 @@ public class RemainingInvoiceServiceImpl implements RemainingInvoiceService {
         };
     }
 
+    // Response khi booking không phát sinh hóa đơn phần còn lại.
     private APIResponse<RemainingInvoiceResultResponse> notRequired(UUID bookingId) {
         RemainingInvoiceResultResponse resultResponse = remainingInvoiceMapper.toNotRequiredResponse(bookingId);
         return APIResponse.success("Không phát sinh hóa đơn phần còn lại", resultResponse);

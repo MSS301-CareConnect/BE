@@ -3,7 +3,6 @@ package mss301.providerservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.providerservice.client.IdentityClient;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.dto.response.APIResponse;
@@ -18,7 +17,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class IdentityAccountServiceImpl implements IdentityAccountService {
 
     static String ACTIVE_STATUS = "ACTIVE";

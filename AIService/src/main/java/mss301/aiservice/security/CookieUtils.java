@@ -8,9 +8,11 @@ public final class CookieUtils {
 
     public static final String CSRF = "XSRF-TOKEN";
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private CookieUtils() {
     }
 
+    // Đọc giá trị cookie theo tên.
     public static String read(HttpServletRequest request, String cookieName) {
         Cookie[] cookies = request.getCookies();
 

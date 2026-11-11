@@ -14,10 +14,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
-/**
- * Tạo cùng một ca cho nhiều ngày (tối đa 31), tất cả hoặc không ca nào. Hạn đăng ký tính riêng cho từng ngày:
- * {@code registrationLeadMinutes} phút trước giờ bắt đầu; bỏ trống → mặc định như khi tạo một ca.
- */
 @Data
 @Builder
 @NoArgsConstructor

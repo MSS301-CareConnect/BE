@@ -19,7 +19,10 @@ import mss301.aiservice.enums.CertificateWarningCode;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CertificateWarningResponse {
     CertificateWarningCode code;
+
     CertificateCheckField field;
+
     String declaredValue;
+
     String extractedValue;
 }

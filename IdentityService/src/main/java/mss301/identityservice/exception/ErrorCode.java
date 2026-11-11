@@ -89,6 +89,7 @@ public enum ErrorCode {
     CLIENT_ID_REQUIRED(1115, "clientId is required", HttpStatus.BAD_REQUEST),
     CLIENT_SECRET_REQUIRED(1116, "clientSecret is required", HttpStatus.BAD_REQUEST),
     SERVICE_CLIENT_DISABLED(1117, "Service client has been disabled", HttpStatus.UNAUTHORIZED),
+    ROLE_IN_USE(1120, "Role is still assigned to accounts", HttpStatus.CONFLICT),
 
     // PHIÊN & BẢO MẬT HỢP NHẤT
     LOGIN_ATTEMPTS_EXCEEDED(1082, "Too many incorrect password attempts (5). Please try again in 15 minutes.", HttpStatus.TOO_MANY_REQUESTS),

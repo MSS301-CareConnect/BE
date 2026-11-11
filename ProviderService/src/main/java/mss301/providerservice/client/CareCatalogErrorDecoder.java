@@ -14,6 +14,7 @@ public class CareCatalogErrorDecoder implements ErrorDecoder {
     private static final int FORBIDDEN = 403;
     private static final String GET_CENTER_SERVICE_METHOD = "#getCenterService(";
 
+    // Đổi mã lỗi HTTP từ CareCatalogService sang ErrorCode (404 dịch vụ trung tâm…).
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

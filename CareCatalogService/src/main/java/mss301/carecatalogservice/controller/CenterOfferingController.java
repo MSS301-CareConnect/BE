@@ -31,6 +31,7 @@ import java.util.UUID;
 public class CenterOfferingController {
     CenterOfferingService centerOfferingService;
 
+    // API danh sách dịch vụ trung tâm cung cấp, có lọc và phân trang.
     @GetMapping("/center/{centerId}")
     @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CenterOfferingResponse>> listByCenter(@CurrentRoles Set<RoleCode> roles,
@@ -40,12 +41,14 @@ public class CenterOfferingController {
         return centerOfferingService.listByCenter(roles, scopeCenterId, centerId, request);
     }
 
+    // API tóm tắt khoảng giá dịch vụ của các trung tâm.
     @GetMapping("/price-summary")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<List<PriceSummaryResponse>> listPriceSummaries(@Valid @ParameterObject PriceSummaryRequest request) {
         return centerOfferingService.listPriceSummaries(request);
     }
 
+    // API xem chi tiết một dịch vụ trung tâm.
     @GetMapping("/{id}")
     @PreAuthorize("permitAll()")
     public APIResponse<CenterOfferingResponse> get(@CurrentRoles Set<RoleCode> roles,
@@ -54,6 +57,7 @@ public class CenterOfferingController {
         return centerOfferingService.get(roles, scopeCenterId, id);
     }
 
+    // API manager thêm dịch vụ cho trung tâm kèm bảng giá.
     @PostMapping
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CenterOfferingResponse> create(@CurrentCenterId UUID centerId,
@@ -61,12 +65,14 @@ public class CenterOfferingController {
         return centerOfferingService.create(centerId, request);
     }
 
+    // API báo giá dịch vụ cho booking.
     @PostMapping("/quote")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<List<ServiceQuoteResponse>> quote(@Valid @RequestBody ServiceQuoteRequest request) {
         return centerOfferingService.quote(request);
     }
 
+    // API manager cập nhật dịch vụ trung tâm.
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CenterOfferingResponse> update(@CurrentCenterId UUID centerId,
@@ -75,6 +81,7 @@ public class CenterOfferingController {
         return centerOfferingService.update(centerId, id, request);
     }
 
+    // API manager đổi trạng thái dịch vụ trung tâm.
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CenterOfferingResponse> updateStatus(@CurrentCenterId UUID centerId,
@@ -83,6 +90,7 @@ public class CenterOfferingController {
         return centerOfferingService.updateStatus(centerId, id, request);
     }
 
+    // API manager xóa dịch vụ trung tâm.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<Void> delete(@CurrentCenterId UUID centerId, @PathVariable UUID id) {

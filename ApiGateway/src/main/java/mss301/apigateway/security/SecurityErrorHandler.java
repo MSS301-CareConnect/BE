@@ -22,10 +22,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Lỗi trong filter (không tới @ControllerAdvice) trả CÙNG envelope APIResponse với các service:
- * token thiếu/sai → 401, thiếu quyền → 403, không lấy được JWKS của Identity → 503, URL bị firewall từ chối → 400.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -34,6 +30,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
     ObjectMapper objectMapper;
 
+    // Trả 401 dạng APIResponse khi request chưa xác thực.
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException exception) throws IOException {
@@ -43,12 +40,14 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, errorCode);
     }
 
+    // Trả 401 dạng APIResponse khi token không hợp lệ.
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
         commence(request, response, exception);
     }
 
+    // Trả 403 dạng APIResponse khi thiếu quyền truy cập.
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException exception) throws IOException {
@@ -62,6 +61,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, ErrorCode.INVALID_REQUEST);
     }
 
+    // Ghi APIResponse lỗi từ ErrorCode vào response.
     public void writeError(HttpServletResponse response, ErrorCode errorCode) throws IOException {
         APIResponse<Void> body = APIResponse.<Void>builder()
                 .code(errorCode.getCode())

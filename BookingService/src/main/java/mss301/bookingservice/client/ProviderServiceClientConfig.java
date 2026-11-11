@@ -10,11 +10,13 @@ import org.springframework.context.annotation.Bean;
 // không dùng được (fail-closed: không đặt / phân công khi chưa xác minh được lịch rảnh).
 public class ProviderServiceClientConfig {
 
+    // Gắn token SERVICE vào lời gọi ProviderService.
     @Bean
     public RequestInterceptor providerServiceRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Dịch lỗi HTTP từ ProviderService, phân biệt lỗi tạm thời và lỗi hẳn.
     @Bean
     public ErrorDecoder providerServiceErrorDecoder() {
         // 404 caregiver → CAREGIVER_NOT_FOUND, còn lại → PROVIDER_UNAVAILABLE (giống ProviderClient).

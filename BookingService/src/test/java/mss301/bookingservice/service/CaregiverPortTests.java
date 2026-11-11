@@ -20,9 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-/**
- * Xác minh caregiver qua Provider. Kỹ năng: null, [] hoặc thiếu dịch vụ → từ chối (PRV-01).
- */
 @ExtendWith(MockitoExtension.class)
 class CaregiverPortTests {
 

@@ -12,6 +12,7 @@ public class AiClientConfig {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Bộ dịch lỗi HTTP khi gọi AIService.
     @Bean
     public ErrorDecoder aiErrorDecoder() {
         return new AiErrorDecoder();

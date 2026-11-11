@@ -1,6 +1,5 @@
 package mss301.providerservice.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -44,6 +43,7 @@ public class CertificateController {
         return certificateService.listPendingAudit(centerId, riskLevel, aiCheckStatus, page, size);
     }
 
+    // API thống kê chứng chỉ chờ admin duyệt theo mức rủi ro.
     @GetMapping("/pending-audit/statistics")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CertificatePendingAuditStatisticsResponse> getPendingAuditStatistics(
@@ -51,6 +51,7 @@ public class CertificateController {
         return certificateService.getPendingAuditStatistics(centerId);
     }
 
+    // API danh sách chứng chỉ của caregiver.
     @GetMapping("/caregivers/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<CertificateResponse>> list(@CurrentUserId UUID actorId,
@@ -58,6 +59,7 @@ public class CertificateController {
         return certificateService.list(actorId, caregiverId);
     }
 
+    // API danh sách chứng chỉ đã xác minh (công khai).
     @GetMapping("/caregivers/{caregiverId}/verified")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<List<CertificateResponse>> listVerified(@PathVariable UUID caregiverId) {
@@ -66,6 +68,7 @@ public class CertificateController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API thêm chứng chỉ cho caregiver.
     @PostMapping("/caregivers/{caregiverId}")
     @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<CertificateResponse> create(@CurrentUserId UUID actorId,
@@ -83,6 +86,7 @@ public class CertificateController {
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
+    // API cập nhật chứng chỉ.
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<CertificateResponse> update(@CurrentUserId UUID actorId,
@@ -93,6 +97,7 @@ public class CertificateController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API manager xác nhận chứng chỉ.
     @PatchMapping("/{id}/center-verification")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CertificateResponse> verifyCenter(@CurrentUserId UUID actorId, @PathVariable UUID id,
@@ -100,6 +105,7 @@ public class CertificateController {
         return certificateService.verifyCenter(actorId, id, request);
     }
 
+    // API admin duyệt chứng chỉ.
     @PatchMapping("/{id}/verification")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CertificateResponse> verify(@CurrentUserId UUID actorId,
@@ -110,6 +116,7 @@ public class CertificateController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API xóa chứng chỉ.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,
@@ -117,6 +124,5 @@ public class CertificateController {
                                     @RequestParam Long version) {
         return certificateService.delete(actorId, id, version);
     }
-
 
 }

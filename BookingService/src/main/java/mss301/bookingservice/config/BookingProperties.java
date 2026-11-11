@@ -14,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.UUID;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,7 +93,7 @@ public class BookingProperties {
     // H-08 / H-09: Identity chưa có API tra người dùng theo vai trò → cấu hình danh sách admin nhận thông báo vận hành.
     @Data
     public static class Notification {
-        java.util.List<java.util.UUID> adminUserIds = new java.util.ArrayList<>();
+        List<UUID> adminUserIds = new ArrayList<>();
     }
 
     // BK-03: previewToken hủy booking. Khóa trống = khóa ngẫu nhiên theo tiến trình (chỉ dev, một instance).
@@ -141,6 +142,7 @@ public class BookingProperties {
         @NotNull
         Duration readTimeout = Duration.ofSeconds(3);
 
+        // Kiểm tra đã cấu hình đủ clientId và clientSecret.
         public boolean isConfigured() {
             return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
         }
@@ -159,6 +161,14 @@ public class BookingProperties {
         @NotNull
         Duration overdueScanInterval = Duration.ofMinutes(5);
 
+        // 2026-11-11: check-in xa địa chỉ chăm sóc hơn bán kính này (mét) thì gắn cờ cho trung tâm, không chặn.
+        @Min(50)
+        int checkInRadiusMeters = 300;
+
+        // 2026-11-11: sau khi buổi kết thúc, khách có khoảng này để phản ánh; trong lúc đó buổi chưa được quyết toán.
+        @NotNull
+        Duration customerReportWindow = Duration.ofHours(24);
+
         // D21 (H-10): ca quên check-out quá giờ kết thúc buổi + autoCloseAfter → hệ thống tự đóng, tính COMPLETED.
         @NotNull
         Duration autoCloseAfter = Duration.ofHours(4);
@@ -166,6 +176,11 @@ public class BookingProperties {
         // OPS-06: chu kỳ quét buổi chưa check-in sau giờ bắt đầu + check_in_late_minutes của booking → MISSED.
         @NotNull
         Duration missedScanInterval = Duration.ofMinutes(5);
+
+        // 2026-11-10: chu kỳ quét buổi đã tới giờ mà chưa check-in để cảnh báo sớm (OccurrenceMissedScheduler đọc thẳng
+        // placeholder; khai báo ở đây để kiểm khi khởi động).
+        @NotNull
+        Duration lateWarningScanInterval = Duration.ofMinutes(1);
 
         // D21: báo vắng chưa được quyết định sau giờ kết thúc + noShowDecisionReminderAfter → hệ thống tự chấp nhận.
         @NotNull
@@ -244,6 +259,10 @@ public class BookingProperties {
 
         @NotNull
         BigDecimal refundPercentAfterThreshold = BigDecimal.valueOf(70);
+
+        // 2026-11-10 (quyết định 2026-11-05): hủy còn dưới 2 giờ thì không hoàn.
+        @Min(0)
+        Integer lateCancelNoRefundMinutes = 120;
 
         @NotNull
         BigDecimal overduePaymentForfeitPercent = BigDecimal.valueOf(100);

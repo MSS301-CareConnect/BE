@@ -19,10 +19,16 @@ import java.util.List;
 public class CertificateCheckClientRequest {
     // Họ tên trên hồ sơ caregiver — so với tên in trên chứng chỉ.
     String holderName;
+
     String certificateName;
+
     String issuedBy;
+
     String credentialNumber;
+
     LocalDate issuedDate;
+
     LocalDate expiryDate;
+
     List<CertificateImageClientRequest> images;
 }

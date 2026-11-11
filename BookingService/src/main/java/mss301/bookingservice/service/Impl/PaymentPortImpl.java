@@ -29,6 +29,7 @@ public class PaymentPortImpl implements PaymentPort {
     PaymentClient paymentClient;
     PaymentServiceClient paymentServiceClient;
 
+    // Chặn đặt lịch mới khi khách còn nợ quá hạn.
     @Override
     public void checkNoOutstandingDebt() {
         RemoteApiResponse<OutstandingDebtResponse> response;
@@ -48,6 +49,7 @@ public class PaymentPortImpl implements PaymentPort {
         }
     }
 
+    // Gọi PaymentService tính trước phí hủy và tiền hoàn.
     @Override
     public RefundQuoteResponse quoteRefund(RefundQuoteRequest request) {
         RemoteApiResponse<RefundQuoteResponse> response;
@@ -65,6 +67,7 @@ public class PaymentPortImpl implements PaymentPort {
         return response.getResult();
     }
 
+    // Lấy chính sách thanh toán hiệu lực của trung tâm (lỗi thì rỗng).
     @Override
     public Optional<PaymentPolicyResponse> findEffective(UUID centerId, Instant at) {
         try {

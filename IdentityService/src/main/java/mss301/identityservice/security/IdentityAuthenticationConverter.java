@@ -27,11 +27,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Access token (đã qua decoder) → Authentication với quyền HIỆN HÀNH từ DB, không tin roles/permissions
- * trong JWT: khóa tài khoản / thu hồi quyền có hiệu lực ngay tại IdentityService.
- * Tên authentication = userId (đọc bằng {@link CurrentUserId}).
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -43,6 +38,7 @@ public class IdentityAuthenticationConverter implements Converter<Jwt, AbstractA
     JwtService jwtService;
     ServiceClientService serviceClientService;
 
+    // Kiểm token chưa bị thu hồi, tài khoản còn hoạt động, authz_version khớp rồi nạp quyền hiện hành từ DB.
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         try {
@@ -80,6 +76,7 @@ public class IdentityAuthenticationConverter implements Converter<Jwt, AbstractA
         return new JwtAuthenticationToken(jwt, authorities, clientUuid.toString());
     }
 
+    // Đổi role và permission của người dùng thành danh sách quyền Spring Security.
     private Set<SimpleGrantedAuthority> toAuthorities(UserResponse user) {
         Set<SimpleGrantedAuthority> authorities = new HashSet<>();
         for (String role : user.getRoles()) {

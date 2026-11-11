@@ -10,9 +10,11 @@ public final class PageRequests {
 
     private static final int MAX_PAGE_SIZE = 100;
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private PageRequests() {
     }
 
+    // Tạo PageRequest sau khi kiểm tra page / size hợp lệ.
     public static PageRequest of(int page, int size, Sort sort) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);

@@ -20,6 +20,9 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
 
     List<Role> findAllByDeletedAtIsNull();
 
+    // uk_roles_code tính cả role đã xóa mềm: mã cũ không dùng lại được.
+    boolean existsByRoleCode(String roleCode);
+
     // Khóa dòng role làm mutex: các thao tác có thể làm mất ADMIN cuối cùng chạy tuần tự.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Role r where r.roleCode = :roleCode")

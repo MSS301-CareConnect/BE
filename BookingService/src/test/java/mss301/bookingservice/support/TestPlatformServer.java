@@ -41,11 +41,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Các service phía ngoài giả cho test BookingService trên một HttpServer: Identity (JWKS + /internal/users/batch),
- * CareRecipient (/internal/care-recipients/{id}/access|snapshot), Provider (/internal/centers|caregivers/{id}).
- * Mỗi service kiểm secret RIÊNG của mình; có thể tắt từng service (500) để kiểm fallback / 503.
- */
 public final class TestPlatformServer {
 
     public static final String ISSUER = "https://identity.test";

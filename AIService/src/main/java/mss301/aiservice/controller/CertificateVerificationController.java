@@ -1,6 +1,5 @@
 package mss301.aiservice.controller;
 
-import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
@@ -24,14 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class CertificateVerificationController {
     CertificateVerificationService certificateVerificationService;
 
+    // Chỉ ProviderService gọi (token SERVICE): đọc ảnh bằng OCR, kiểm QR rồi so với thông tin chứng chỉ đã khai báo.
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
-    @Operation(summary = "Kiểm tra chứng chỉ",
-            description = """
-                    API nội bộ dành cho ProviderService.
-                    Đọc nội dung ảnh bằng OCR, kiểm tra QR và so sánh
-                    với thông tin chứng chỉ caregiver đã khai báo.
-                    """)
     public APIResponse<CertificateVerificationResponse> verify(@Valid @RequestBody CertificateVerificationRequest request) {
         return certificateVerificationService.verify(request);
     }

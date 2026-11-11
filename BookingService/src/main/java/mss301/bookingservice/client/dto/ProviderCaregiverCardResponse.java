@@ -16,8 +16,12 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ProviderCaregiverCardResponse {
     UUID caregiverId;
+
     UUID centerId;
+
     BigDecimal ratingAverage;
+
     Integer ratingCount;
+
     Integer experienceYears;
 }

@@ -17,6 +17,7 @@ import java.util.UUID;
 public class CareReportMediaId implements Serializable {
     @Column(name = "report_id")
     UUID reportId;
+
     @Column(name = "media_file_id")
     UUID mediaFileId;
 }

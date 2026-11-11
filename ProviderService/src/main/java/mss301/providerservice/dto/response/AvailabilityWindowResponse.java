@@ -13,5 +13,6 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class AvailabilityWindowResponse {
     Instant startAt;
+
     Instant endAt;
 }

@@ -12,10 +12,6 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * State machine (docs/2026-10-09-PLAN_BOOKING.md §4): kiểm MỌI cặp (hành động × trạng thái) — hợp lệ ra đúng trạng thái
- * đích, còn lại ném INVALID_BOOKING_TRANSITION.
- */
 class BookingActionTests {
 
     static final Map<BookingAction, Set<BookingStatus>> EXPECTED_SOURCES = new EnumMap<>(BookingAction.class);
@@ -127,7 +123,10 @@ class BookingActionTests {
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.EXPIRED)).isFalse();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.COMPLETED)).isTrue();
         assertThat(OccurrenceStatus.IN_PROGRESS.canTransitionTo(OccurrenceStatus.CANCELLED)).isFalse();
-        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.COMPLETED, OccurrenceStatus.CANCELLED,
+        // 2026-11-11: ca tự đóng mà trung tâm kết luận không thực hiện → COMPLETED thành CAREGIVER_MISSED (duy nhất).
+        assertThat(OccurrenceStatus.COMPLETED.canTransitionTo(OccurrenceStatus.CAREGIVER_MISSED)).isTrue();
+        assertThat(OccurrenceStatus.COMPLETED.canTransitionTo(OccurrenceStatus.CANCELLED)).isFalse();
+        for (OccurrenceStatus terminal : EnumSet.of(OccurrenceStatus.CANCELLED,
                 OccurrenceStatus.EXPIRED, OccurrenceStatus.CUSTOMER_NO_SHOW, OccurrenceStatus.CAREGIVER_MISSED)) {
             for (OccurrenceStatus target : OccurrenceStatus.values()) {
                 assertThat(terminal.canTransitionTo(target)).isFalse();

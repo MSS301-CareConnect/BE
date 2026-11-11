@@ -18,16 +18,21 @@ import java.math.BigDecimal;
 public class SessionVitals {
     @Positive(message = "INVALID_VITALS")
     Integer systolic;
+
     @Positive(message = "INVALID_VITALS")
     Integer diastolic;
+
     @Positive(message = "INVALID_VITALS")
     Integer heartRate;
+
     @DecimalMin(value = "30", message = "INVALID_VITALS")
     @DecimalMax(value = "45", message = "INVALID_VITALS")
     BigDecimal temperature;
+
     @Min(value = 0, message = "INVALID_VITALS")
     @Max(value = 100, message = "INVALID_VITALS")
     Integer spo2;
+
     @PositiveOrZero(message = "INVALID_VITALS")
     BigDecimal bloodGlucose;
 }

@@ -40,6 +40,7 @@ public class CaregiverPortImpl implements CaregiverPort {
     ProviderServiceClient providerServiceClient;
     OccurrenceMapper occurrenceMapper;
 
+    // Kiểm caregiver thuộc trung tâm, đang hoạt động và có đủ kỹ năng dịch vụ.
     @Override
     public AssignedCaregiver resolveAssignable(UUID centerId, UUID caregiverId, Collection<UUID> careServiceIds) {
         RemoteApiResponse<ProviderCaregiverResponse> response;
@@ -72,6 +73,7 @@ public class CaregiverPortImpl implements CaregiverPort {
                 .build();
     }
 
+    // Kiểm caregiver rảnh mọi khung giờ (hỏi ProviderService theo lô).
     @Override
     public void checkAvailable(UUID caregiverId, List<OccurrenceSlot> slots) {
         // Provider nhận tối đa 60 khoảng / lần — booking dài hơn thì hỏi nhiều lần.
@@ -86,6 +88,7 @@ public class CaregiverPortImpl implements CaregiverPort {
         }
     }
 
+    // Lấy ca làm việc caregiver đã nhận để đặt booking theo ca.
     @Override
     public ProviderScheduleResponse findBookableSchedule(UUID centerId, UUID caregiverId, UUID scheduleId) {
         RemoteApiResponse<ProviderScheduleResponse> response;
@@ -110,6 +113,7 @@ public class CaregiverPortImpl implements CaregiverPort {
         return schedule;
     }
 
+    // Tìm caregiver của trung tâm có kỹ năng và rảnh mọi khung giờ.
     @Override
     public List<ProviderCaregiverCardResponse> findFreeCaregivers(UUID centerId, Collection<UUID> careServiceIds,
                                                                   List<OccurrenceSlot> slots) {
@@ -135,6 +139,7 @@ public class CaregiverPortImpl implements CaregiverPort {
         return candidates == null ? List.of() : new ArrayList<>(candidates.values());
     }
 
+    // Gọi ProviderService tìm caregiver phù hợp cho một lô khung giờ.
     private List<ProviderCaregiverCardResponse> requestCandidates(UUID centerId, Collection<UUID> careServiceIds,
                                                                   List<String> slots) {
         RemoteApiResponse<ProviderCaregiverCardPageResponse> response;
@@ -153,6 +158,7 @@ public class CaregiverPortImpl implements CaregiverPort {
         return response.getResult().getItems() == null ? List.of() : response.getResult().getItems();
     }
 
+    // Gọi ProviderService kiểm tra caregiver rảnh các khung giờ.
     private AvailabilityCheckResponse requestAvailability(UUID caregiverId, List<OccurrenceSlot> slots) {
         RemoteApiResponse<AvailabilityCheckResponse> response;
         try {

@@ -16,6 +16,8 @@ import lombok.experimental.FieldDefaults;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RemoteApiResponse<T> {
     int code;
+
     String message;
+
     T result;
 }

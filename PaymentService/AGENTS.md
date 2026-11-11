@@ -80,10 +80,20 @@
   Không `setAvailableBalance` ở chỗ khác. Thời điểm lấy từ `Clock`.
 - Khóa sổ: `REFUND:<refundId>`, `FORFEIT:<occurrenceId>` (một buổi chỉ bị giữ cọc một lần), `SETTLE:` / `COMMISSION:<occurrenceId>`,
   `COMPLAINT:<complaintId>`, `WD_HOLD|WD_RELEASE|WD_PAID:<withdrawalId>`.
-- Hoàn lý do `CUSTOMER_CANCEL` → `refunds.channel = WALLET`: dispatcher không gọi cổng, cộng ví khách khi đánh REFUNDED.
-  Lý do khác vẫn qua cổng. Cọc bị giữ: caregiver của buổi, chưa có người thì ví trung tâm (`DepositForfeitureServiceImpl`).
+- Hoàn lý do `CUSTOMER_CANCEL` và (2026-11-10) lỗi phía trung tâm `CAREGIVER_MISSED` / `CENTER_CANCEL` / `CENTER_REJECT` /
+  `CENTER_LOCKED` → `refunds.channel = WALLET`: dispatcher không gọi cổng, cộng ví khách khi đánh REFUNDED.
+  Lý do khác vẫn qua cổng. Khách hủy còn dưới 2 giờ → rule `LATE_NO_REFUND` (hoàn 0, vẫn ghi cọc bị giữ). Hoàn khiếu nại:
+  trừ ví trung tâm → ghi `refunded_amount` vào buổi chưa đối soát → trừ lại hoa hồng nền tảng (không trả hai lần). Cọc bị giữ: caregiver của buổi, chưa có người thì ví trung tâm (`DepositForfeitureServiceImpl`).
 - Buổi `COMPLETED` / `CUSTOMER_NO_SHOW` được cộng bởi `WalletSettlementScheduler` (hỏi payment-context, không cần sự kiện
   Booking): trung tâm nhận tiền khách đã trả cho buổi − `commissionPercent` snapshot, nền tảng nhận hoa hồng. Booking cũ
   (thu sau hoàn tất) không cộng tự động.
 - Thứ tự khóa: `booking_financials` → `payments` → ví (trung tâm trước nền tảng); `wallet_withdrawals` → ví.
+- Rút tiền theo trung tâm (2026-11-10, `../docs/2026-11-10-DASHBOARD_AND_CENTER_WITHDRAWALS.md`): mọi biến động ví mang
+  `center_id` của trung tâm tạo ra khoản tiền; số dư theo trung tâm (`WalletService.findCenterBalances`) quyết định nơi
+  xử lý yêu cầu rút của khách / caregiver (`wallet_withdrawals.center_id`). Người xử lý chỉ chuyển khoản giả lập
+  (`transfer`) hoặc từ chối — không đổi trạng thái tay; kết quả báo người rút qua `payment_outbox` (`WITHDRAWAL_*`).
+- Doanh thu (2026-11-11, `../docs/2026-11-11-REVENUE_AND_BOOKING_SETTLEMENT.md`): tiền vào thẳng tài khoản trung tâm /
+  nền tảng → sổ CENTER / PLATFORM chỉ là doanh thu, **không rút** (`WalletServiceImpl.WITHDRAWABLE_OWNERS` = khách,
+  caregiver; `POST /wallet-withdrawals` chỉ CUSTOMER / CAREGIVER). Quyết toán một booking:
+  `GET /wallets/bookings/{bookingId}/settlement` (ADMIN, CENTER_MANAGER của trung tâm) từ `occurrence_financials` + sổ ví.
 

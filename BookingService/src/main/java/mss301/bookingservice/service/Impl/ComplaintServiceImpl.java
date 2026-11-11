@@ -6,7 +6,6 @@ import mss301.bookingservice.config.BookingProperties;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.dto.request.ComplaintRequest;
 import mss301.bookingservice.dto.request.ComplaintAdminResolutionRequest;
 import mss301.bookingservice.dto.response.APIResponse;
@@ -60,7 +59,6 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class ComplaintServiceImpl implements ComplaintService {
     ComplaintRepository complaintRepository;
     ComplaintEventRepository complaintEventRepository;
@@ -75,6 +73,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     BookingProperties bookingProperties;
     Clock clock;
 
+    // Danh sách khiếu nại theo phạm vi người gọi và bộ lọc.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<ComplaintResponse>> list(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
@@ -111,6 +110,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return APIResponse.success("Lấy danh sách khiếu nại thành công", response);
     }
 
+    // Chi tiết khiếu nại kèm lịch sử xử lý.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<ComplaintResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id) {
@@ -121,6 +121,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return APIResponse.success("Lấy khiếu nại thành công", response);
     }
 
+    // Khách tạo khiếu nại cho booking / buổi (mỗi buổi tối đa một khiếu nại đang mở).
     @Override
     @Transactional
     public APIResponse<ComplaintResponse> create(UUID actorId, ComplaintRequest request) {
@@ -168,6 +169,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return APIResponse.success("Gửi khiếu nại thành công", response);
     }
 
+    // Chuyển trạng thái khiếu nại theo hành động hợp lệ của người gọi và ghi sự kiện.
     @Override
     @Transactional
     public APIResponse<ComplaintResponse> transition(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id,
@@ -222,6 +224,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return APIResponse.success("Cập nhật khiếu nại thành công", response);
     }
 
+    // Admin giải quyết khiếu nại, có thể kèm hoàn tiền qua PaymentService.
     @Override
     public APIResponse<ComplaintResponse> adminResolve(UUID actorId, UUID id, ComplaintAdminResolutionRequest request) {
         Complaint snapshot = complaintRepository.findByIdAndDeletedAtIsNull(id)
@@ -256,6 +259,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return APIResponse.success("Admin đã giải quyết khiếu nại", response);
     }
 
+    // Tổng tiền còn hoàn được của booking từ các khoản thanh toán.
     private BigDecimal findRefundableAmount(UUID bookingId) {
         BigDecimal refundable = BigDecimal.ZERO;
         int page = 0;
@@ -280,6 +284,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         return refundable.max(BigDecimal.ZERO);
     }
 
+    // Ghi sự kiện xử lý khiếu nại.
     private void recordEvent(Complaint complaint, UUID actorId, ComplaintAction action, ComplaintStatus from, String note) {
         complaintEventRepository.saveAndFlush(complaintMapper.toComplaintEvent(complaint.getId(), actorId, action,
                 from, complaint.getStatus(), note));
@@ -289,11 +294,13 @@ public class ComplaintServiceImpl implements ComplaintService {
                 "COMPLAINT", complaint.getId());
     }
 
+    // Map khiếu nại sang response kèm lịch sử sự kiện.
     private ComplaintResponse toResponse(Complaint complaint) {
         return complaintMapper.toResponse(complaint, complaintMapper.toEventResponseList(
                 complaintEventRepository.findByComplaintIdAndDeletedAtIsNullOrderByCreatedAtAsc(complaint.getId())));
     }
 
+    // Người gọi được xem khiếu nại này.
     private boolean canRead(UUID actorId, Set<RoleCode> roles, UUID centerId, Complaint complaint) {
         return roles.contains(RoleCode.ADMIN)
                 || (roles.contains(RoleCode.CUSTOMER) && actorId.equals(complaint.getCustomerId()))
@@ -311,7 +318,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     // Khiếu nại cấp booking: tính theo buổi đã diễn ra gần nhất; booking hủy trước khi có buổi nào → tính từ lúc hủy.
     private void checkBookingWindow(Booking booking) {
         Instant now = clock.instant();
-        Instant lastEnd = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+        Instant lastEnd = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
                 .filter(occurrence -> !occurrence.getStartAt().isAfter(now))
                 .map(BookingOccurrence::getEndAt)
                 .max(Comparator.naturalOrder())
@@ -321,18 +328,21 @@ public class ComplaintServiceImpl implements ComplaintService {
         }
     }
 
+    // Báo lỗi nếu chuyển trạng thái không hợp lệ.
     private void checkTransition(boolean allowed) {
         if (!allowed) {
             throw new AppException(ErrorCode.INVALID_COMPLAINT_TRANSITION);
         }
     }
 
+    // Bắt buộc ghi chú xử lý và không quá dài.
     private void checkNote(String note) {
         if (note == null || note.isBlank() || note.length() > 4000) {
             throw new AppException(ErrorCode.RESOLUTION_REQUIRED);
         }
     }
 
+    // Sinh mã khiếu nại theo ngày, không trùng.
     private String generateCode() {
         String date = LocalDate.now(clock.withZone(ZoneId.of("Asia/Ho_Chi_Minh"))).format(DateTimeFormatter.BASIC_ISO_DATE);
         for (int attempt = 0; attempt < 20; attempt++) {

@@ -6,6 +6,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.identityservice.dto.request.RolePermissionsRequest;
 import mss301.identityservice.dto.request.RoleRequest;
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.response.APIResponse;
 import mss301.identityservice.dto.response.PermissionResponse;
 import mss301.identityservice.dto.response.RoleResponse;
@@ -26,11 +27,13 @@ import mss301.identityservice.repository.PermissionRepository;
 import mss301.identityservice.repository.RolePermissionRepository;
 import mss301.identityservice.repository.RoleRepository;
 import mss301.identityservice.repository.UserRepository;
+import mss301.identityservice.repository.UserRoleRepository;
 import mss301.identityservice.security.Permissions;
 import mss301.identityservice.service.RoleService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -47,10 +50,12 @@ public class RoleServiceImpl implements RoleService {
     PermissionRepository permissionRepository;
     RolePermissionRepository rolePermissionRepository;
     UserRepository userRepository;
+    UserRoleRepository userRoleRepository;
     IdentityAuditRepository identityAuditRepository;
     RoleMapper roleMapper;
     IdentityAuditMapper identityAuditMapper;
 
+    // Danh sách role chưa xóa (người có quyền quản lý role).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<RoleResponse>> list(UUID actorId) {
@@ -59,6 +64,7 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Lấy danh sách role thành công", roleResponses);
     }
 
+    // Tạo role tùy chỉnh (không cho dùng mã SERVICE hoặc mã đã tồn tại).
     @Override
     @Transactional
     public APIResponse<RoleResponse> create(UUID actorId, RoleRequest request) {
@@ -67,7 +73,7 @@ public class RoleServiceImpl implements RoleService {
         if (RoleCode.SERVICE.name().equals(request.getRoleCode())) {
             throw new AppException(ErrorCode.INVALID_ROLE);
         }
-        if (roleRepository.findByRoleCodeAndDeletedAtIsNull(request.getRoleCode()).isPresent()) {
+        if (roleRepository.existsByRoleCode(request.getRoleCode())) {
             throw new AppException(ErrorCode.ROLE_EXISTED);
         }
         Role role = roleRepository.saveAndFlush(roleMapper.toRole(request));
@@ -77,6 +83,33 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Tạo role thành công", roleResponse);
     }
 
+    // Cập nhật role tùy chỉnh và ghi audit.
+    @Override
+    @Transactional
+    public APIResponse<RoleResponse> update(UUID actorId, UUID id, RoleUpdateRequest request) {
+        Role role = findCustomRoleForChange(actorId, id);
+        roleMapper.update(request, role);
+        writeAudit(actorId, id, AuditAction.ROLE_UPDATED, role.getRoleCode());
+        RoleResponse roleResponse = roleMapper.toResponse(role);
+        return APIResponse.success("Cập nhật role thành công", roleResponse);
+    }
+
+    // Xóa role tùy chỉnh khi không còn người dùng nào giữ role.
+    @Override
+    @Transactional
+    public APIResponse<Void> delete(UUID actorId, UUID id) {
+        Role role = findCustomRoleForChange(actorId, id);
+        // Không xóa role còn tài khoản đang giữ: admin phải thu hồi trước để không ai mất quyền mà không biết.
+        if (userRoleRepository.existsByRole_IdAndUser_DeletedAtIsNull(id)) {
+            throw new AppException(ErrorCode.ROLE_IN_USE);
+        }
+        role.setDeletedAt(Instant.now());
+        writeAudit(actorId, id, AuditAction.ROLE_DELETED, role.getRoleCode());
+        log.info("Role {} deleted by {}", role.getRoleCode(), actorId);
+        return APIResponse.success("Xóa role thành công");
+    }
+
+    // Gán lại danh sách permission của role và ghi audit.
     @Override
     @Transactional
     public APIResponse<RoleResponse> updatePermissions(UUID actorId, UUID id, RolePermissionsRequest request) {
@@ -98,6 +131,7 @@ public class RoleServiceImpl implements RoleService {
         return APIResponse.success("Cập nhật permissions thành công", roleResponse);
     }
 
+    // Danh sách permission (người có quyền quản lý role).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<PermissionResponse>> listPermissions(UUID actorId) {
@@ -119,11 +153,26 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
+    // Cùng mutex với gán/thu hồi role; 4 role nền tảng không sửa, không xóa.
+    private Role findCustomRoleForChange(UUID actorId, UUID id) {
+        roleRepository.findForUpdate(RoleCode.ADMIN.name())
+                .orElseThrow(() -> new AppException(ErrorCode.DEFAULT_ROLE_NOT_FOUND));
+        checkRoleManager(actorId);
+        Role role = roleRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+        if (isBuiltInRole(role)) {
+            throw new AppException(ErrorCode.INVALID_ROLE);
+        }
+        return role;
+    }
+
+    // Kiểm tra role là role hệ thống.
     private boolean isBuiltInRole(Role role) {
         return Arrays.stream(RoleCode.values())
                 .anyMatch(roleCode -> roleCode.name().equals(role.getRoleCode()));
     }
 
+    // Tìm các permission theo id, thiếu thì báo lỗi.
     private Set<Permission> findPermissions(Set<UUID> permissionIds) {
         Set<Permission> permissions = new HashSet<>();
         for (UUID permissionId : permissionIds) {
@@ -134,6 +183,7 @@ public class RoleServiceImpl implements RoleService {
         return permissions;
     }
 
+    // Gỡ các permission không còn được chọn khỏi role.
     private void removeUnselectedGrants(Role role, Set<Permission> selectedPermissions) {
         for (RolePermission rolePermission : new HashSet<>(role.getRolePermissions())) {
             if (!selectedPermissions.contains(rolePermission.getPermission())) {
@@ -143,6 +193,7 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
+    // Thêm các permission mới được chọn vào role.
     private void addMissingGrants(Role role, Set<Permission> selectedPermissions) {
         for (Permission permission : selectedPermissions) {
             if (!rolePermissionRepository.existsById(new RolePermissionId(role.getId(), permission.getId()))) {
@@ -153,6 +204,7 @@ public class RoleServiceImpl implements RoleService {
         }
     }
 
+    // Ghi audit thay đổi role.
     private void writeAudit(UUID actorId, UUID roleId, AuditAction action, String detail) {
         identityAuditRepository.save(identityAuditMapper.toAudit(actorId, roleId, null, action, detail));
     }

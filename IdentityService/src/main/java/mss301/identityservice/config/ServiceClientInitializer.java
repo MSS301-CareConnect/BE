@@ -16,10 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/**
- * Seed idempotent bảng service_clients từ IDENTITY_SERVICE_CLIENTS ("booking:<bcrypt>,payment:<bcrypt>").
- * Client đã có thì cập nhật hash khi đổi secret; client không còn trong env KHÔNG bị xóa/tắt tự động.
- */
 @Component
 @Order(1)
 @RequiredArgsConstructor
@@ -35,6 +31,7 @@ public class ServiceClientInitializer implements ApplicationRunner {
     ServiceClientRepository serviceClientRepository;
     ServiceClientMapper serviceClientMapper;
 
+    // Nạp danh sách service client (clientId + hash secret) từ cấu hình khi khởi động.
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -60,6 +57,7 @@ public class ServiceClientInitializer implements ApplicationRunner {
         }
     }
 
+    // Tạo mới hoặc cập nhật hash secret của một service client.
     private void seedClient(String clientId, String secretHash) {
         Optional<ServiceClient> existing = serviceClientRepository.findByClientIdAndDeletedAtIsNull(clientId);
         if (existing.isEmpty()) {

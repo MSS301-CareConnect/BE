@@ -51,6 +51,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
     ConcurrentHashMap<UUID, UUID> managerIds = new ConcurrentHashMap<>();
     ConcurrentHashMap<UUID, Instant> expiresAt = new ConcurrentHashMap<>();
 
+    // Gửi thông báo cho khách / caregiver / trung tâm theo hành động trên booking.
     @Override
     public void notifyLifecycle(Booking booking, List<BookingOccurrence> occurrences, BookingAction action) {
         NotificationType type = switch (action) {
@@ -106,6 +107,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         }
     }
 
+    // Gửi thông báo về một buổi cho khách và caregiver được giao.
     @Override
     public void notifyOccurrence(BookingOccurrence occurrence, NotificationType type) {
         List<UUID> recipients = new ArrayList<>();
@@ -117,6 +119,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         notifyCenter(occurrence.getBooking().getCenterId(), type, "BOOKING_OCCURRENCE", occurrence.getId());
     }
 
+    // Báo khách và caregiver các buổi đã bị hủy.
     @Override
     public void notifyOccurrencesCancelled(Booking booking, List<BookingOccurrence> occurrences) {
         List<UUID> recipients = new ArrayList<>();
@@ -129,6 +132,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         notifyCenter(booking.getCenterId(), NotificationType.OCCURRENCE_CANCELLED, "BOOKING", booking.getId());
     }
 
+    // Nhắc khách thanh toán phần còn lại trước hạn.
     @Override
     public void notifyRemainingDue(Booking booking) {
         String body = "Lịch " + booking.getBookingCode() + ": vui lòng thanh toán phần còn lại trước "
@@ -137,6 +141,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                 "BOOKING", booking.getId());
     }
 
+    // Báo caregiver có yêu cầu booking cần trả lời trước hạn.
     @Override
     public void notifyCaregiverRequest(Booking booking) {
         String body = "Lịch " + booking.getBookingCode() + ": vui lòng trả lời trước "
@@ -145,6 +150,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                 Map.of("body", body), "BOOKING", booking.getId());
     }
 
+    // Báo khách và caregiver địa chỉ phục vụ đã đổi.
     @Override
     public void notifyAddressChanged(Booking booking, List<UUID> caregiverUserIds) {
         List<UUID> recipients = new ArrayList<>();
@@ -161,6 +167,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         return instant == null ? "" : TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(instant);
     }
 
+    // Gửi thông báo vận hành cho các admin đã cấu hình.
     @Override
     public void notifyAdmins(NotificationType type, String refType, UUID refId) {
         List<UUID> adminIds = bookingProperties.getNotification().getAdminUserIds();
@@ -171,6 +178,7 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
         notificationService.notify(adminIds, type, Map.of(), refType, refId);
     }
 
+    // Nhắc trung tâm xác nhận / phân công booking sắp tới hạn.
     @Override
     public void notifyCenterActionDue(Booking booking) {
         boolean confirming = booking.getStatus() == BookingStatus.PENDING_CENTER_CONFIRMATION;
@@ -181,11 +189,13 @@ public class BookingNotificationServiceImpl implements BookingNotificationServic
                 booking.getId());
     }
 
+    // Gửi thông báo cho manager của trung tâm.
     @Override
     public void notifyCenter(UUID centerId, NotificationType type, String refType, UUID refId) {
         notifyCenter(centerId, type, Map.of(), refType, refId);
     }
 
+    // Gửi thông báo có tham số cho manager trung tâm (sau commit, lỗi chỉ ghi log).
     @Override
     public void notifyCenter(UUID centerId, NotificationType type, Map<String, Object> params, String refType,
                              UUID refId) {

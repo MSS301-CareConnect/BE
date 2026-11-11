@@ -43,11 +43,26 @@ public class CaregiverController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // API danh sách caregiver chờ xác minh của trung tâm.
     @GetMapping("/pending-verification")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<PageResponse<CaregiverResponse>> listPendingVerification(@RequestParam(required = false) UUID centerId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
         return caregiverService.listPendingVerification(centerId, page, size);
+    }
+
+    // Danh bạ người chăm sóc toàn nền tảng cho ADMIN (2026-11-11): lọc theo trung tâm / xác minh / trạng thái / tên,
+    // xếp theo tên trung tâm rồi tên người để trang admin gom nhóm theo trung tâm.
+    @GetMapping("/directory")
+    @PreAuthorize("hasRole('ADMIN')")
+    public APIResponse<PageResponse<CaregiverResponse>> listDirectory(
+            @RequestParam(required = false) UUID centerId,
+            @RequestParam(required = false) VerificationStatus verification,
+            @RequestParam(required = false) CaregiverStatus status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return caregiverService.listDirectory(centerId, verification, status, keyword, page, size);
     }
 
     // Công khai cho cả khách chưa đăng nhập (2026-11-09): chỉ DTO thẻ, không có trường nội bộ.
@@ -69,6 +84,7 @@ public class CaregiverController {
         return caregiverService.search(request);
     }
 
+    // API danh sách caregiver của một trung tâm.
     @GetMapping("/centers/{centerId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<PageResponse<CaregiverResponse>> listByCenter(
@@ -81,12 +97,14 @@ public class CaregiverController {
         return caregiverService.listByCenter(actorId, centerId, verification, status, page, size);
     }
 
+    // API hồ sơ caregiver của người đang đăng nhập.
     @GetMapping("/me")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CaregiverResponse> getMe(@CurrentUserId UUID actorId) {
         return caregiverService.getMe(actorId);
     }
 
+    // API lịch làm việc của caregiver đang đăng nhập.
     @GetMapping("/me/schedules")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<PageResponse<ScheduleResponse>> listMySchedules(
@@ -110,12 +128,14 @@ public class CaregiverController {
         return caregiverService.get(actorId, caregiverId);
     }
 
+    // API hồ sơ công khai của caregiver.
     @GetMapping("/{caregiverId}/public")
     @PreAuthorize("permitAll()")
     public APIResponse<CaregiverPublicResponse> getPublic(@PathVariable UUID caregiverId) {
         return caregiverService.getPublic(caregiverId);
     }
 
+    // API danh sách dịch vụ (kỹ năng) caregiver làm được.
     @GetMapping("/{caregiverId}/services")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<CaregiverSkillResponse>> listServices(@CurrentUserId UUID actorId,
@@ -123,6 +143,7 @@ public class CaregiverController {
         return caregiverService.listServices(actorId, caregiverId);
     }
 
+    // API danh sách ngày nghỉ của caregiver trong khoảng thời gian.
     @GetMapping("/{caregiverId}/time-offs")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<TimeOffResponse>> listTimeOffs(@CurrentUserId UUID actorId,
@@ -132,6 +153,7 @@ public class CaregiverController {
         return caregiverService.listTimeOffs(actorId, caregiverId, from, to);
     }
 
+    // API các khung giờ rảnh của caregiver trong khoảng thời gian.
     @GetMapping("/{caregiverId}/availability")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<List<AvailabilityWindowResponse>> getAvailability(@PathVariable UUID caregiverId,
@@ -150,6 +172,7 @@ public class CaregiverController {
         return caregiverScheduleService.listBookable(caregiverId, from, to);
     }
 
+    // API tìm hồ sơ caregiver theo userId (cho service khác).
     @GetMapping("/by-user/{userId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','SERVICE','CUSTOMER')")
     public APIResponse<CaregiverResponse> getByUser(@PathVariable UUID userId) {
@@ -158,6 +181,7 @@ public class CaregiverController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API manager tạo hồ sơ caregiver.
     @PostMapping("/centers/{centerId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<CaregiverResponse> create(@CurrentUserId UUID actorId,
@@ -166,6 +190,7 @@ public class CaregiverController {
         return caregiverService.create(actorId, centerId, request);
     }
 
+    // API thêm ngày nghỉ cho caregiver.
     @PostMapping("/{caregiverId}/time-offs")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<TimeOffResponse> createTimeOff(@CurrentUserId UUID actorId,
@@ -183,12 +208,14 @@ public class CaregiverController {
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
+    // API cho BookingService cập nhật điểm đánh giá caregiver.
     @PutMapping("/{caregiverId}/rating")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<Void> updateRating(@PathVariable UUID caregiverId, @Valid @RequestBody CaregiverRatingRequest request) {
         return caregiverService.updateRating(caregiverId, request);
     }
 
+    // API cập nhật hồ sơ caregiver.
     @PutMapping("/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<CaregiverResponse> update(@CurrentUserId UUID actorId,
@@ -197,6 +224,7 @@ public class CaregiverController {
         return caregiverService.update(actorId, caregiverId, request);
     }
 
+    // API thay toàn bộ danh sách dịch vụ caregiver làm được.
     @PutMapping("/{caregiverId}/services")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<List<CaregiverSkillResponse>> replaceServices(@CurrentUserId UUID actorId,
@@ -207,6 +235,7 @@ public class CaregiverController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API admin xác minh hồ sơ caregiver.
     @PatchMapping("/{id}/verification")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CaregiverResponse> verify(@CurrentUserId UUID actorId,
@@ -225,6 +254,7 @@ public class CaregiverController {
         return caregiverScheduleService.updateStatus(actorId, id, request);
     }
 
+    // API đổi trạng thái hoạt động của caregiver.
     @PatchMapping("/{caregiverId}/status")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<CaregiverResponse> updateStatus(@CurrentUserId UUID actorId,
@@ -235,6 +265,7 @@ public class CaregiverController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API lưu trữ hồ sơ caregiver.
     @DeleteMapping("/{caregiverId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<Void> archive(@CurrentUserId UUID actorId,
@@ -243,6 +274,7 @@ public class CaregiverController {
         return caregiverService.archive(actorId, caregiverId, version);
     }
 
+    // API xóa ngày nghỉ của caregiver.
     @DeleteMapping("/{caregiverId}/time-offs/{timeOffId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<Void> deleteTimeOff(@CurrentUserId UUID actorId,

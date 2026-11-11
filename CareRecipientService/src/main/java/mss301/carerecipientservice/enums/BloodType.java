@@ -25,6 +25,7 @@ public enum BloodType {
     @JsonValue
     String value;
 
+    // Đổi ký hiệu nhóm máu (A+, O-…) sang enum, sai ký hiệu thì báo lỗi.
     @JsonCreator
     public static BloodType fromValue(String value) {
         for (BloodType bloodType : values()) {

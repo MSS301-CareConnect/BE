@@ -13,6 +13,7 @@ public class BookingClientConfig {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Bộ dịch lỗi HTTP khi gọi BookingService.
     @Bean
     public ErrorDecoder bookingErrorDecoder() {
         return new BookingErrorDecoder();

@@ -15,18 +15,17 @@ import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.util.Arrays;
 
-/**
- * Lỗi khi gateway tự xử lý / chuyển tiếp (không phải phản hồi lỗi của service — phản hồi đó được chuyển nguyên).
- */
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
+    // Trả 404 dạng APIResponse khi không có route khớp.
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<APIResponse<Void>> handlingNoResourceFound(NoResourceFoundException exception) {
         return toResponse(ErrorCode.PATH_NOT_FOUND);
     }
 
+    // Trả lỗi khi gọi sai HTTP method cho route.
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<APIResponse<Void>> handlingMethodNotSupported(HttpRequestMethodNotSupportedException exception) {
         return toResponse(ErrorCode.PATH_NOT_FOUND);
@@ -40,6 +39,7 @@ public class GlobalExceptionHandler {
         return toResponse(timeout ? ErrorCode.GATEWAY_UPSTREAM_TIMEOUT : ErrorCode.GATEWAY_UPSTREAM_UNAVAILABLE);
     }
 
+    // Bắt mọi lỗi chưa xử lý: chỉ log tên lỗi + stack, trả lỗi chung.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<APIResponse<Void>> handlingRuntimeException(Exception exception) {
         // Chỉ ghi frame, không ghi message có thể chứa URL/header nhạy cảm từ dependency.
@@ -48,6 +48,7 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.UNCATEGORIZED_EXCEPTION);
     }
 
+    // Kiểm tra chuỗi nguyên nhân của exception có chứa loại lỗi cho trước.
     private boolean hasCause(Throwable throwable, Class<? extends Throwable> type) {
         Throwable current = throwable;
         while (current != null) {
@@ -59,6 +60,7 @@ public class GlobalExceptionHandler {
         return false;
     }
 
+    // Dựng ResponseEntity APIResponse từ ErrorCode.
     private ResponseEntity<APIResponse<Void>> toResponse(ErrorCode errorCode) {
         APIResponse<Void> response = APIResponse.<Void>builder()
                 .code(errorCode.getCode())

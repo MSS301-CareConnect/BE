@@ -29,6 +29,7 @@ public class RedisRateLimiter implements RateLimiter {
 
     StringRedisTemplate stringRedisTemplate;
 
+    // Chặn đăng nhập khi email + IP sai quá số lần cho phép.
     @Override
     public void checkLoginRateLimit(String email, String ip) {
         String key = rateLimitKey(email, ip);
@@ -44,6 +45,7 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Ghi nhận một lần đăng nhập sai.
     @Override
     public void recordLoginFailure(String email, String ip) {
         String key = rateLimitKey(email, ip);
@@ -58,6 +60,7 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Xóa bộ đếm đăng nhập sai sau khi đăng nhập thành công.
     @Override
     public void resetLoginAttempts(String email, String ip) {
         String key = rateLimitKey(email, ip);
@@ -69,6 +72,7 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Chặn xin token SERVICE khi clientId + IP sai quá số lần cho phép.
     @Override
     public void checkServiceTokenRateLimit(String clientId, String ip) {
         String key = buildServiceTokenKey(clientId, ip);
@@ -84,6 +88,7 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Ghi nhận một lần xin token SERVICE thất bại.
     @Override
     public void recordServiceTokenFailure(String clientId, String ip) {
         String key = buildServiceTokenKey(clientId, ip);
@@ -98,6 +103,7 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Xóa bộ đếm xin token SERVICE sai.
     @Override
     public void resetServiceTokenAttempts(String clientId, String ip) {
         try {
@@ -108,15 +114,18 @@ public class RedisRateLimiter implements RateLimiter {
         }
     }
 
+    // Key Redis rate limit cho clientId + IP (đã băm).
     private String buildServiceTokenKey(String clientId, String ip) {
         return RedisKeys.RATE_LIMIT_SERVICE_TOKEN + sha256Hex(clientId.trim().toLowerCase() + ":" + ip);
     }
 
+    // Key Redis rate limit cho email + IP (đã băm).
     private String rateLimitKey(String email, String ip) {
         String normalized = (email != null ? email.trim().toLowerCase() : "") + ":" + (ip != null ? ip.trim() : "unknown");
         return RedisKeys.RATE_LIMIT_LOGIN + sha256Hex(normalized);
     }
 
+    // Băm SHA-256 sang hex.
     private String sha256Hex(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

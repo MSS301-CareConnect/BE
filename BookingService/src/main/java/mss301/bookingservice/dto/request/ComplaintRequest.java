@@ -17,14 +17,19 @@ import jakarta.validation.constraints.Size;
 public class ComplaintRequest {
     @NotNull(message = "INVALID_REQUEST")
     UUID bookingId;
+
     UUID occurrenceId;
+
     @NotNull(message = "INVALID_REQUEST")
     ComplaintTargetType targetType;
+
     @NotNull(message = "INVALID_REQUEST")
     ComplaintCategory category;
+
     @NotBlank(message = "COMPLAINT_CONTENT_REQUIRED")
     @Size(max = 200, message = "INVALID_REQUEST")
     String title;
+
     @NotBlank(message = "COMPLAINT_CONTENT_REQUIRED")
     @Size(max = 4000, message = "INVALID_REQUEST")
     String content;

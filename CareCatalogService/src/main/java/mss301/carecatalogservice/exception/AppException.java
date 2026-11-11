@@ -14,10 +14,12 @@ public class AppException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
+    // Lấy ErrorCode của exception.
     public ErrorCode getErrorCode() {
         return errorCode;
     }
 
+    // Gán ErrorCode cho exception.
     public void setErrorCode(ErrorCode errorCode) {
         this.errorCode = errorCode;
     }

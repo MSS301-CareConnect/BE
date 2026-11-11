@@ -41,6 +41,7 @@ public class SecurityConfig {
             .map(path -> (RequestMatcher) PathPatternRequestMatcher.withDefaults().matcher(path))
             .toList());
 
+    // Cấu hình bảo mật: stateless, endpoint public (VNPay, Stripe), xác thực JWT.
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -78,6 +79,7 @@ public class SecurityConfig {
         return bearerToken == null ? cookieToken : bearerToken;
     }
 
+    // Đọc access token từ cookie khi request không có header Authorization.
     private static String readAccessCookie(HttpServletRequest request) {
         if (request.getCookies() == null) {
             return null;

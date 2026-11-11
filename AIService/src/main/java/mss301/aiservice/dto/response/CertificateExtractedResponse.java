@@ -19,9 +19,14 @@ import java.time.LocalDate;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CertificateExtractedResponse {
     String holderName;
+
     String credentialNumber;
+
     String certificateName;
+
     String issuedBy;
+
     LocalDate issuedDate;
+
     LocalDate expiryDate;
 }

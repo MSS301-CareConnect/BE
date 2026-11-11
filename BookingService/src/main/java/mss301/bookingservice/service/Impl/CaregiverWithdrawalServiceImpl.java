@@ -39,22 +39,19 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Caregiver xin hủy buổi được giao (2026-11-09). Không đổi trạng thái buổi, không đụng tiền: buổi được đánh cờ
- * needs_reassignment (check-in bị chặn, nhắc ca bỏ qua), hệ thống tự tìm người thay (CaregiverAssignmentService) và
- * Center Manager vẫn phân tay bằng API đổi caregiver sẵn có — đổi xong cờ tự bỏ (BookingOccurrence.assignCaregiver).
- * Còn ≤ unassigned-cancel-lead mà chưa có người → hủy buổi, hoàn 100 % (BookingService.cancelUnassigned).
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -80,6 +77,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Danh sách lần caregiver rút khỏi buổi theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverWithdrawalResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -102,6 +100,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         return APIResponse.success("Lấy danh sách yêu cầu hủy buổi thành công", withdrawalResponses);
     }
 
+    // Caregiver rút khỏi một buổi hoặc cả ngày; buổi bị rút chờ phân công lại.
     @Override
     public APIResponse<List<CaregiverWithdrawalResponse>> create(UUID actorId, CaregiverWithdrawalRequest request) {
         String reasonDetail = request.getReasonDetail() == null || request.getReasonDetail().isBlank()
@@ -128,6 +127,7 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
                 checkWithdrawable(actorId, occurrence, earliestStart);
                 targets.add(occurrence);
             }
+            checkWholeDays(actorId, bookingId, targets, occurrenceIds);
             String eventReason = describeReason(request.getReasonCode(), reasonDetail);
             List<CaregiverWithdrawal> withdrawals = new ArrayList<>();
             for (BookingOccurrence occurrence : targets) {
@@ -188,6 +188,27 @@ public class CaregiverWithdrawalServiceImpl implements CaregiverWithdrawalServic
         }
     }
 
+    // 2026-11-10: một ngày có nhiều buổi (thường là nhiều dịch vụ nối nhau) thì phải xin hủy cả ngày — hủy lẻ một buổi
+    // làm khách nhận hai người chăm sóc khác nhau trong cùng một ngày. Buổi đã xin hủy trước (chờ người thay) không tính.
+    private void checkWholeDays(UUID actorId, UUID bookingId, List<BookingOccurrence> targets,
+                                Set<UUID> occurrenceIds) {
+        ZoneId timezone = bookingProperties.getSchedule().getTimezone();
+        Set<LocalDate> days = new HashSet<>();
+        for (BookingOccurrence target : targets) {
+            days.add(target.getStartAt().atZone(timezone).toLocalDate());
+        }
+        for (BookingOccurrence sibling : bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId)) {
+            boolean sameDay = days.contains(sibling.getStartAt().atZone(timezone).toLocalDate());
+            boolean stillMine = actorId.equals(sibling.getCaregiverUserId())
+                    && OccurrenceStatus.WORKABLE.contains(sibling.getStatus())
+                    && !Boolean.TRUE.equals(sibling.getNeedsReassignment());
+            if (sameDay && stillMine && !occurrenceIds.contains(sibling.getId())) {
+                throw new AppException(ErrorCode.WITHDRAWAL_WHOLE_DAY_REQUIRED);
+            }
+        }
+    }
+
+    // Mô tả lý do rút (kèm chi tiết khi là lý do cá nhân).
     private String describeReason(CaregiverWithdrawalReason reasonCode, String reasonDetail) {
         if (reasonCode == CaregiverWithdrawalReason.PERSONAL) {
             return reasonDetail == null ? PERSONAL_REASON_LABEL : PERSONAL_REASON_LABEL + ": " + reasonDetail;

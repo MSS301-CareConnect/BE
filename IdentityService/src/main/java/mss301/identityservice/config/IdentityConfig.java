@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @EnableConfigurationProperties(IdentityProperties.class)
 public class IdentityConfig {
 
+    // Bean mã hóa mật khẩu BCrypt.
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();

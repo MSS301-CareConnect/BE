@@ -13,11 +13,6 @@ import org.springframework.context.annotation.Configuration;
 import java.time.Duration;
 import java.util.Set;
 
-/**
- * Circuit breaker cho Feign → IdentityService / CareCatalogService. Cấu hình bằng Java (không qua resilience4j.* yaml) để không phụ thuộc
- * module resilience4j-spring-boot. Time limiter tắt (spring.cloud.circuitbreaker.resilience4j.disable-time-limiter):
- * timeout do connect/read timeout của Feign đảm nhiệm, lời gọi chạy trên chính thread request.
- */
 @Configuration
 public class ResilienceConfig {
 
@@ -30,6 +25,7 @@ public class ResilienceConfig {
     private static final Set<ErrorCode> BUSINESS_ERRORS = Set.of(
             ErrorCode.IDENTITY_USER_NOT_FOUND, ErrorCode.CAREGIVER_SERVICE_NOT_ACTIVE);
 
+    // Cấu hình circuit breaker mặc định cho lời gọi service khác.
     @Bean
     public Customizer<Resilience4JCircuitBreakerFactory> defaultCircuitBreakerCustomizer() {
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
@@ -47,6 +43,7 @@ public class ResilienceConfig {
                 .build());
     }
 
+    // Lỗi nghiệp vụ (không tìm thấy…) không tính là lỗi của circuit breaker.
     private static boolean isBusinessError(Throwable throwable) {
         return throwable instanceof AppException appException
                 && BUSINESS_ERRORS.contains(appException.getErrorCode());

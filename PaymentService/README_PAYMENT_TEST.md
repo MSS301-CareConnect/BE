@@ -64,7 +64,8 @@ PAYMENT_DB_URL=jdbc:postgresql://localhost:5447/CARECONNECT_PAYMENT
 PAYMENT_DB_USERNAME=postgres
 PAYMENT_DB_PASSWORD=postgres
 
-PAYMENT_JWT_ISSUER=careconnect-identity
+# Phải bằng đúng IDENTITY_JWT_ISSUER (claim iss), lệch là mọi API Payment trả 401.
+PAYMENT_JWT_ISSUER=http://localhost:8081
 PAYMENT_JWT_JWKS_URI=http://localhost:8081/.well-known/jwks.json
 PAYMENT_IDENTITY_URL=http://localhost:8080
 PAYMENT_BOOKING_URL=http://localhost:8080

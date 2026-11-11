@@ -1,5 +1,7 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.OccurrenceStatsView;
+import mss301.bookingservice.repository.projection.CaregiverLoadView;
 import jakarta.persistence.LockModeType;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.BookingStatus;
@@ -34,21 +36,11 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                               @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                               @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
-    @Query("select o from BookingOccurrence o where o.booking.id = :bookingId and o.deletedAt is null order by o.occurrenceNo")
-    List<BookingOccurrence> findAllByBooking(@Param("bookingId") UUID bookingId);
+    List<BookingOccurrence> findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(UUID bookingId);
 
     // BK-06: buổi của booking theo trang (lọc trạng thái).
-    @Query(value = """
-            select o from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            order by o.occurrenceNo
-            """, countQuery = """
-            select count(o) from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            """)
-    Page<BookingOccurrence> findPageByBooking(@Param("bookingId") UUID bookingId,
-                                              @Param("statuses") Collection<OccurrenceStatus> statuses,
-                                              Pageable pageable);
+    Page<BookingOccurrence> findByBookingIdAndDeletedAtIsNullAndStatusInOrderByOccurrenceNoAsc(
+            UUID bookingId, Collection<OccurrenceStatus> statuses, Pageable pageable);
 
     // BK-06: tổng số buổi / đã hoàn thành / buổi kế tiếp của mỗi booking trong trang danh sách — một truy vấn.
     @Query("""
@@ -201,6 +193,26 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                              @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
                              @Param("now") Instant now,
                              Pageable pageable);
+
+    // 2026-11-10: buổi đã tới giờ, còn trong hạn check-in trễ, có caregiver nhưng chưa check-in / chưa báo vắng và chưa
+    // cảnh báo → báo sớm cho caregiver, trung tâm, khách trước khi job MISSED chạy.
+    @Query("""
+            select o.id from BookingOccurrence o join o.booking b
+            where o.deletedAt is null
+              and b.deletedAt is null
+              and o.status in :occurrenceStatuses
+              and b.status in :bookingStatuses
+              and o.caregiverUserId is not null
+              and o.lateWarnedAt is null
+              and o.noShowReportedAt is null
+              and o.startAt <= :now
+              and o.startAt + (b.checkInLateMinutes) minute > :now
+            order by o.startAt
+            """)
+    List<UUID> findLateCheckInIds(@Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
+                                  @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                  @Param("now") Instant now,
+                                  Pageable pageable);
 
     // BK-04: buổi tương lai còn hoạt động của caregiver bị khóa, chưa đánh dấu cần đổi người.
     @Query("""

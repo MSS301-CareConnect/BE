@@ -1,5 +1,11 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.TopCaregiverView;
+import mss301.bookingservice.repository.projection.StatisticsCountView;
+import mss301.bookingservice.repository.projection.RatingCountView;
+import mss301.bookingservice.repository.projection.OccurrenceStartView;
+import mss301.bookingservice.repository.projection.FeedbackRatingView;
+import mss301.bookingservice.repository.projection.BookingResponseTimeView;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import mss301.bookingservice.entity.Booking;
@@ -107,15 +113,12 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query(value = "select 1 from (select pg_advisory_xact_lock(hashtext(:lockKey))) as schedule_lock", nativeQuery = true)
     Integer lockScheduleKey(@Param("lockKey") String lockKey);
     @Query("select b.status as category, count(b) as count from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId) group by b.status")
-    List<StatisticsCountView> countBookings(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+    List<StatisticsCountView> countBookings(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                            @Param("to") Instant to);
 
     // Hàng đợi trung tâm: số booking theo trạng thái (mọi thời điểm); centerId null = toàn hệ thống (admin).
     @Query("select b.status as category, count(b) as count from Booking b where b.deletedAt is null and (:centerId is null or b.centerId = :centerId) group by b.status")
     List<StatisticsCountView> countByStatus(@Param("centerId") UUID centerId);
-
-    // Booking đang có hạn (chờ xác nhận / phân công / thanh toán) để tính hạn gần nhất và số sắp quá hạn.
-    @Query("select b from Booking b where b.deletedAt is null and (:centerId is null or b.centerId = :centerId) and b.status in :statuses")
-    List<Booking> findTimed(@Param("centerId") UUID centerId, @Param("statuses") Collection<BookingStatus> statuses);
 
     // SLA: trung tâm trả lời (xác nhận / từ chối) booking tạo trong kỳ — thời gian từ lúc tạo tới lúc trả lời.
     @Query("select h.booking.createdAt as createdAt, h.changedAt as changedAt from BookingStatusHistory h where h.fromStatus = :fromStatus and h.toStatus in :toStatuses and h.booking.createdAt >= :from and h.booking.createdAt < :to and (:centerId is null or h.booking.centerId = :centerId)")
@@ -141,10 +144,29 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
                                      @Param("now") Instant now, @Param("windowEnd") Instant windowEnd, Pageable pageable);
 
     @Query("select o.status as category, count(o) as count from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId) group by o.status")
-    List<StatisticsCountView> countOccurrences(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+    List<StatisticsCountView> countOccurrences(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                               @Param("to") Instant to);
+
+    // Dashboard 2026-11-10: booking theo loại (SHIFT / RECURRING / CUSTOM) tạo trong kỳ.
+    @Query("select b.bookingType as category, count(b) as count from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId) group by b.bookingType")
+    List<StatisticsCountView> countBookingTypes(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                                @Param("to") Instant to);
+
+    // Lúc tạo của từng booking trong kỳ — gom theo ngày / tháng (giờ VN) ở service, kỳ tối đa 366 ngày.
+    @Query("select b.createdAt from Booking b where b.deletedAt is null and b.createdAt >= :from and b.createdAt < :to and (:centerId is null or b.centerId = :centerId)")
+    List<Instant> findCreatedAts(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+
+    @Query("select o.startAt as startAt, o.status as status from BookingOccurrence o where o.deletedAt is null and o.startAt >= :from and o.startAt < :to and (:centerId is null or o.booking.centerId = :centerId)")
+    List<OccurrenceStartView> findOccurrenceStarts(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                                   @Param("to") Instant to);
+
+    @Query("select f.rating as rating, count(f) as count from Feedback f where f.deletedAt is null and f.visibility = :visibility and f.createdAt >= :from and f.createdAt < :to and (:centerId is null or f.centerId = :centerId) group by f.rating")
+    List<RatingCountView> countRatings(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
+                                       @Param("visibility") FeedbackVisibility visibility);
 
     @Query("select c.status as category, count(c) as count from Complaint c where c.deletedAt is null and c.createdAt >= :from and c.createdAt < :to and (:centerId is null or c.centerId = :centerId) group by c.status")
-    List<StatisticsCountView> countComplaints(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to);
+    List<StatisticsCountView> countComplaints(@Param("centerId") UUID centerId, @Param("from") Instant from,
+                                              @Param("to") Instant to);
 
     @Query("select avg(f.rating) as ratingAverage, count(f) as ratingCount from Feedback f where f.deletedAt is null and f.visibility = :visibility and f.createdAt >= :from and f.createdAt < :to and (:centerId is null or f.centerId = :centerId)")
     FeedbackRatingView summarizeRating(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
@@ -174,5 +196,5 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     Page<UUID> findCenterIds(@Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
 
     // M-07: booking chưa kết thúc của người bệnh.
-    long countByRecipientIdAndStatusInAndDeletedAtIsNull(UUID recipientId, java.util.Collection<BookingStatus> statuses);
+    long countByRecipientIdAndStatusInAndDeletedAtIsNull(UUID recipientId, Collection<BookingStatus> statuses);
 }

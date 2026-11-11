@@ -7,11 +7,6 @@ import lombok.experimental.FieldDefaults;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Kỹ năng của caregiver = offering của trung tâm (CareCatalogService) mà caregiver được phép làm (PRV-01).
- * Entity con của aggregate CaregiverProfile (chỉ có repository). Bảng liên kết: thay toàn bộ = xóa dòng cũ + thêm dòng
- * mới, không xóa mềm. {@code care_service_id} (dịch vụ chuẩn) lưu kèm để Booking so khớp không cần gọi Catalog.
- */
 @Entity
 @Table(name = "caregiver_services", indexes = @Index(
         name = "idx_caregiver_services_care_service", columnList = "care_service_id"))

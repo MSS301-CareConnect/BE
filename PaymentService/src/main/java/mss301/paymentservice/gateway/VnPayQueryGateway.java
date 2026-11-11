@@ -17,11 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * API truy vấn giao dịch VNPay (vnp_Command=querydr, PAY-07). Chữ ký HMAC-SHA512 trên
- * vnp_RequestId|vnp_Version|vnp_Command|vnp_TmnCode|vnp_TxnRef|vnp_TransactionDate|vnp_CreateDate|vnp_IpAddr|vnp_OrderInfo.
- * vnp_TransactionDate = vnp_CreateDate của lệnh pay (= createdAt của phiên). Gọi mạng — ngoài transaction.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -39,6 +34,7 @@ public class VnPayQueryGateway {
     PaymentProperties paymentProperties;
     Clock clock;
 
+    // Gọi API VNPay tra cứu trạng thái giao dịch.
     public QueryResult query(String transactionReference, Instant transactionDate) {
         PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
         String requestId = UUID.randomUUID().toString().replace("-", "");

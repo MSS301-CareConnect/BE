@@ -21,11 +21,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Test hợp đồng phía Payment: file JSON trong {@code contracts/payment/} giống hệt bản ở BookingService. Request mẫu
- * của Booking gửi tới Payment phải được nhận (fail-on-unknown-properties bật → tên field lệch là 400); response thật
- * của Payment phải có đủ field mà mẫu (Booking đọc) có.
- */
 class PaymentContractTests extends PaymentIntegrationTest {
 
     static final String FIXTURES = "contracts/payment/";

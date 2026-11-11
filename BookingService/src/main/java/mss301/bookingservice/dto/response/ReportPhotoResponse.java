@@ -12,7 +12,10 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ReportPhotoResponse {
     UUID mediaFileId;
+
     Integer displayOrder;
+
     String downloadUrl;
+
     Instant expiresAt;
 }

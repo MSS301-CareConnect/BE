@@ -17,11 +17,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
 
-/**
- * Thông tin chung + quy tắc lịch của một lần đặt. Mỗi buổi chăm sóc là một {@link BookingOccurrence}.
- * Tham chiếu service khác bằng UUID, không FK: customer/caregiverUser = Identity, recipient = CareRecipient,
- * center/caregiver = Provider. Không có API xóa — deleted_at chỉ do kế thừa BaseEntity.
- */
 @Entity
 @Table(name = "bookings")
 @Getter

@@ -11,12 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Tự phân công caregiver (2026-11-09) mỗi booking.schedule.auto-assign-interval: booking đã cọc có buổi chưa có người
- * hoặc chờ thay người (caregiver xin hủy / bị khóa). Sau đó buổi đã cọc vẫn chưa có người khi còn ≤
- * unassigned-cancel-lead tới giờ bắt đầu → hủy + hoàn 100 % (Q-B2). Lỗi một booking chỉ log, không dừng lô; mọi ghi DB
- * khóa / kiểm lại trong transaction nên chạy song song nhiều instance vẫn đúng.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -26,6 +20,7 @@ public class CaregiverAutoAssignScheduler {
     CaregiverAssignmentService caregiverAssignmentService;
     BookingService bookingService;
 
+    // Định kỳ tự phân công caregiver, quá hạn mà chưa có người thì hủy.
     @Scheduled(fixedDelayString = "${booking.schedule.auto-assign-interval:1m}",
             initialDelayString = "${booking.schedule.expiry-initial-delay:30s}")
     public void assignAndCancelUnassigned() {

@@ -43,6 +43,7 @@ public class SecurityConfig {
     SecurityErrorHandler securityErrorHandler;
     DefaultBearerTokenResolver headerTokenResolver = new DefaultBearerTokenResolver();
 
+    // Cấu hình bảo mật: stateless, CSRF cho request dùng cookie, xác thực JWT, endpoint public.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -101,12 +102,14 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình cách đọc CSRF token từ header của request.
     private CsrfTokenRequestAttributeHandler csrfTokenRequestHandler() {
         CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
         handler.setCsrfRequestAttributeName(null);
         return handler;
     }
 
+    // Chỉ yêu cầu CSRF với request ghi có dùng cookie access_token.
     private boolean requiresCsrf(HttpServletRequest request) {
         if (SAFE_METHODS.contains(request.getMethod())) {
             return false;
@@ -115,6 +118,7 @@ public class SecurityConfig {
         return CookieUtils.read(request, CookieUtils.ACCESS) != null;
     }
 
+    // Lấy access token từ header hoặc cookie, bỏ qua các path không cần token.
     private String resolveToken(HttpServletRequest request) {
         String path = request.getRequestURI();
 

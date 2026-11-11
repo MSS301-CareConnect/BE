@@ -14,10 +14,16 @@ import mss301.bookingservice.enums.ComplaintAction;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ComplaintEventResponse {
     UUID id;
+
     UUID actorId;
+
     ComplaintAction action;
+
     ComplaintStatus fromStatus;
+
     ComplaintStatus toStatus;
+
     String note;
+
     Instant createdAt;
 }

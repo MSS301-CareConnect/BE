@@ -14,6 +14,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 public class FeignAuthForwardingInterceptor implements RequestInterceptor {
 
+    // Chuyển tiếp access token của người dùng hiện tại sang service được gọi.
     @Override
     public void apply(RequestTemplate template) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();

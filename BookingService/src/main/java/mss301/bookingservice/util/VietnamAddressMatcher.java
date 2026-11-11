@@ -4,9 +4,11 @@ import java.text.Normalizer;
 
 public final class VietnamAddressMatcher {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private VietnamAddressMatcher() {
     }
 
+    // Bỏ dấu tiếng Việt.
     public static String removeDiacritics(String input) {
         if (input == null) {
             return "";
@@ -16,6 +18,7 @@ public final class VietnamAddressMatcher {
         return nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
     }
 
+    // Chuẩn hóa tên đơn vị hành chính để so khớp (bỏ dấu, tiền tố).
     public static String normalizeUnit(String input) {
         if (input == null) {
             return "";

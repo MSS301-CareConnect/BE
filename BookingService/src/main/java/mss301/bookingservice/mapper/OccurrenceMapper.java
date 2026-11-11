@@ -1,5 +1,7 @@
 package mss301.bookingservice.mapper;
 
+import java.time.Instant;
+import mss301.bookingservice.dto.response.OccurrenceRescheduleResponse;
 import mss301.bookingservice.client.dto.AvailabilityCheckRequest;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
 import mss301.bookingservice.dto.response.OccurrenceResponse;
@@ -40,6 +42,9 @@ public interface OccurrenceMapper {
 
     @IgnoreServerManagedFields
     @Mapping(target = "reminderSentAt", ignore = true)
+    @Mapping(target = "lateWarnedAt", ignore = true)
+    @Mapping(target = "customerReportedAt", ignore = true)
+    @Mapping(target = "customerReportNote", ignore = true)
     @Mapping(target = "booking", expression = "java(booking)")
     @Mapping(target = "caregiverId", expression = "java(booking.getCaregiverId())")
     @Mapping(target = "caregiverUserId", expression = "java(booking.getCaregiverUserId())")
@@ -68,7 +73,7 @@ public interface OccurrenceMapper {
     @Mapping(target = "originalEndAt", ignore = true)
     @Mapping(target = "isEmergencyReplacement", constant = "false")
     @Mapping(target = "replacementReason", ignore = true)
-    @Mapping(target = "replacementConsentStatus", expression = "java(mss301.bookingservice.enums.ReplacementConsentStatus.NONE)")
+    @Mapping(target = "replacementConsentStatus", constant = "NONE")
     BookingOccurrence toOccurrence(OccurrenceSlot slot, @Context Booking booking, @Context OccurrenceStatus initialStatus);
 
     // Buổi đã lưu → khoảng thời gian để kiểm trùng lịch khi đổi caregiver.
@@ -124,13 +129,20 @@ public interface OccurrenceMapper {
     AvailabilityCheckRequest.Slot toAvailabilitySlot(OccurrenceSlot slot);
 
     // Phần chi tiết cần dữ liệu ngoài buổi (dịch vụ của booking, khách từ Identity, session, các buổi cùng booking) —
-    // gắn sau khi map buổi.
-    @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "services", source = "services")
     @Mapping(target = "customerPhone", source = "customerPhone")
     @Mapping(target = "customerName", source = "customerName")
     @Mapping(target = "sessionId", source = "sessionId")
     @Mapping(target = "bookingVisits", source = "bookingVisits")
+    // gắn sau khi map buổi.
+    @BeanMapping(ignoreByDefault = true)
     void updateDetail(List<BookingDetail> services, String customerPhone, String customerName, UUID sessionId,
                       List<BookingOccurrence> bookingVisits, @MappingTarget CaregiverOccurrenceResponse response);
+
+    // Giờ gốc = giờ trước lần dời đầu tiên; buổi chưa dời lần nào thì giờ gốc là giờ hiện tại của buổi.
+    @Mapping(target = "occurrenceId", source = "occurrence.id")
+    @Mapping(target = "originalStartAt", expression = "java(occurrence.getOriginalStartAt() != null ? occurrence.getOriginalStartAt() : occurrence.getStartAt())")
+    @Mapping(target = "originalEndAt", expression = "java(occurrence.getOriginalEndAt() != null ? occurrence.getOriginalEndAt() : occurrence.getEndAt())")
+    OccurrenceRescheduleResponse toRescheduleResponse(BookingOccurrence occurrence, UUID bookingId, Instant newStartAt,
+                                                      Instant newEndAt, Boolean available, String message);
 }

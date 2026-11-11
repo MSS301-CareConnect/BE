@@ -7,10 +7,6 @@ import lombok.experimental.FieldDefaults;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Ngày nghỉ của caregiver (PRV-02) — entity con của aggregate CaregiverProfile: chỉ có repository, nghiệp vụ nằm ở
- * CaregiverServiceImpl. Khoảng nghỉ là [startAt, endAt) nửa mở; xóa = xóa mềm (deleted_at).
- */
 @Entity
 @Table(name = "caregiver_time_offs", indexes = @Index(
         name = "idx_caregiver_time_offs_caregiver_start", columnList = "caregiver_id, start_at"))

@@ -61,11 +61,6 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     BigDecimal sumPaidByCustomer(@Param("customerId") UUID customerId, @Param("status") PaymentStatus status,
                                  @Param("from") Instant from, @Param("to") Instant to);
 
-    @Query("""
-            select p from Payment p
-            where p.customerId = :customerId and p.status = :status and p.paidAt >= :from and p.paidAt <= :to
-            order by p.paidAt
-            """)
-    List<Payment> findAllPaidByCustomer(@Param("customerId") UUID customerId, @Param("status") PaymentStatus status,
-                                        @Param("from") Instant from, @Param("to") Instant to);
+    List<Payment> findByCustomerIdAndStatusAndPaidAtBetweenOrderByPaidAtAsc(UUID customerId, PaymentStatus status,
+                                                                         Instant from, Instant to);
 }

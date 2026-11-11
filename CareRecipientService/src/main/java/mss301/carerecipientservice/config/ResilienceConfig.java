@@ -12,11 +12,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 
-/**
- * Circuit breaker cho Feign → IdentityService. Cấu hình bằng Java (không qua resilience4j.* yaml) để không phụ thuộc
- * module resilience4j-spring-boot. Time limiter tắt (spring.cloud.circuitbreaker.resilience4j.disable-time-limiter):
- * timeout do connect/read timeout của Feign đảm nhiệm, lời gọi chạy trên chính thread request.
- */
 @Configuration
 public class ResilienceConfig {
 
@@ -26,6 +21,7 @@ public class ResilienceConfig {
     private static final Duration WAIT_IN_OPEN_STATE = Duration.ofSeconds(10);
     private static final int CALLS_IN_HALF_OPEN_STATE = 2;
 
+    // Cấu hình circuit breaker mặc định cho lời gọi service khác.
     @Bean
     public Customizer<Resilience4JCircuitBreakerFactory> defaultCircuitBreakerCustomizer() {
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
@@ -43,6 +39,7 @@ public class ResilienceConfig {
                 .build());
     }
 
+    // Lỗi nghiệp vụ (không tìm thấy người dùng) không tính là lỗi của circuit breaker.
     private static boolean isBusinessError(Throwable throwable) {
         return throwable instanceof AppException appException
                 && appException.getErrorCode() == ErrorCode.IDENTITY_USER_NOT_FOUND;

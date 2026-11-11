@@ -11,9 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Gửi lại các dòng booking_outbox chưa gửi được (bên nhận lỗi lúc commit). Lỗi một dòng không dừng lô.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -22,6 +19,7 @@ public class BookingOutboxScheduler {
 
     BookingOutboxService bookingOutboxService;
 
+    // Định kỳ gửi các việc outbox tới hạn.
     @Scheduled(fixedDelayString = "${booking.outbox.scan-interval:30s}",
             initialDelayString = "${booking.outbox.scan-interval:30s}")
     public void dispatchDueMessages() {

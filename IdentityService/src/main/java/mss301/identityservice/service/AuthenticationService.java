@@ -16,20 +16,25 @@ import java.util.List;
 import java.util.UUID;
 
 public interface AuthenticationService {
+    // Lấy CSRF token cho web.
     APIResponse<CsrfResponse> getCsrf(CsrfToken csrfToken);
 
     // Unified auth methods
     APIResponse<AuthenticationResponse> login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
 
+    // Làm mới access token bằng refresh token.
     APIResponse<AuthenticationResponse> refresh(RefreshRequest refreshRequest, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
 
     // allSessions = true → đăng xuất mọi phiên của tài khoản (gộp /auth/logout-all, 2026-10-22).
     APIResponse<Void> logout(LogoutRequest logoutRequest, HttpServletRequest httpRequest, HttpServletResponse httpResponse);
 
+    // Thông tin người dùng đang đăng nhập.
     APIResponse<UserResponse> me(UUID actorId);
 
+    // Danh sách phiên đăng nhập của người dùng.
     APIResponse<List<SessionResponse>> listSessions(UUID actorId, HttpServletRequest httpRequest);
 
+    // Thu hồi một phiên đăng nhập.
     APIResponse<Void> revokeSession(UUID actorId, String sessionId);
 
     // Deprecated methods for backward compatibility
@@ -37,6 +42,7 @@ public interface AuthenticationService {
     @Deprecated
     APIResponse<AuthenticationResponse> loginMobile(LoginRequest request, HttpServletResponse httpResponse);
 
+    // Làm mới token cho mobile (endpoint cũ).
     @Deprecated
     APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request, HttpServletResponse httpResponse);
 }

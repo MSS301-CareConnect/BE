@@ -7,16 +7,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Phân bổ cọc theo buổi (PAY-04, GAP_ANALYSIS D2): sắp theo giờ bắt đầu rồi số thứ tự buổi; tổng cọc =
- * round(% × Σ giá); mỗi buổi trừ buổi cuối = round(% × giá_i); buổi cuối = tổng − Σ các buổi khác (phần lệch do làm tròn
- * dồn vào buổi cuối). Hàm thuần — không đọc DB, không phụ thuộc Spring.
- */
 public final class DepositAllocator {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private DepositAllocator() {
     }
 
+    // Phân bổ tiền cọc cho từng buổi theo thứ tự thời gian.
     public static Result allocate(List<Line> lines, BigDecimal depositPercent) {
         List<Line> sorted = new ArrayList<>(lines);
         sorted.sort(Comparator.comparing(Line::startAt)
@@ -55,12 +52,15 @@ public final class DepositAllocator {
         }
     }
 
+    // Một buổi đầu vào để phân bổ cọc.
     public record Line(UUID occurrenceId, Integer occurrenceNo, Instant startAt, BigDecimal priceAmount) {
     }
 
+    // Tiền cọc được phân bổ cho một buổi.
     public record Allocation(UUID occurrenceId, Instant startAt, BigDecimal priceAmount, BigDecimal depositAmount) {
     }
 
+    // Kết quả phân bổ: từng buổi, tổng giá và tổng cọc.
     public record Result(List<Allocation> allocations, BigDecimal totalPrice, BigDecimal totalDeposit) {
     }
 }

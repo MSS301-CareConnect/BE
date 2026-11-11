@@ -37,10 +37,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * IdentityService giả cho test: JWKS (khóa RSA sinh lúc chạy) + API /api/v1/users/** chuyển tiếp Bearer token.
- * Cho phép tắt (trả 500) để kiểm fallback, và ghi lại header nhận được.
- */
 public final class TestIdentityServer {
 
     public static final String ISSUER = "https://identity.test";

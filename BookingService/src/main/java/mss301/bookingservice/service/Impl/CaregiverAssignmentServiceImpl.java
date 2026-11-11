@@ -21,7 +21,7 @@ import mss301.bookingservice.repository.BookingDetailRepository;
 import mss301.bookingservice.repository.BookingEventRepository;
 import mss301.bookingservice.repository.BookingOccurrenceRepository;
 import mss301.bookingservice.repository.BookingRepository;
-import mss301.bookingservice.repository.CaregiverLoadView;
+import mss301.bookingservice.repository.projection.CaregiverLoadView;
 import mss301.bookingservice.repository.CaregiverWithdrawalRepository;
 import mss301.bookingservice.service.BookingNotificationService;
 import mss301.bookingservice.service.CaregiverAssignmentService;
@@ -75,6 +75,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Xếp hạng caregiver rảnh có đủ kỹ năng theo tải công việc.
     @Override
     public List<AssignedCaregiver> rankCandidates(UUID centerId, Collection<UUID> careServiceIds,
                                                   List<OccurrenceSlot> slots, Set<UUID> excludedCaregiverIds) {
@@ -115,6 +116,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
         return candidates;
     }
 
+    // Chọn ứng viên đầu tiên còn rảnh mọi buổi (khóa lịch từng người khi kiểm).
     @Override
     public Optional<AssignedCaregiver> pickFree(List<AssignedCaregiver> candidates, List<OccurrenceSlot> slots,
                                                 UUID excludeBookingId) {
@@ -127,6 +129,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
         return Optional.empty();
     }
 
+    // Lấy id booking đã cọc tới lúc cần tự phân công.
     @Override
     public List<UUID> findAutoAssignIds() {
         Instant now = clock.instant();
@@ -137,6 +140,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
                 PageRequest.of(0, schedule.getExpiryBatchSize()));
     }
 
+    // Tự phân công caregiver cho các buổi chưa có người của booking.
     @Override
     public void autoAssign(UUID bookingId) {
         Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(bookingId).orElse(null);
@@ -149,7 +153,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
             recordAttempt(bookingId, false);
             return;
         }
-        List<UUID> allServiceIds = bookingDetailRepository.findAllByBooking(bookingId).stream()
+        List<UUID> allServiceIds = bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(bookingId).stream()
                 .map(BookingDetail::getCareServiceId)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -184,7 +188,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
     // unassigned-cancel-lead do job hủy + hoàn xử lý, không gán nữa.
     private List<BookingOccurrence> findTargets(UUID bookingId, Instant now) {
         Instant earliestStart = now.plus(bookingProperties.getSchedule().getUnassignedCancelLead());
-        return bookingOccurrenceRepository.findAllByBooking(bookingId).stream()
+        return bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId).stream()
                 .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()))
                 .filter(occurrence -> occurrence.getStatus() == OccurrenceStatus.PENDING_ASSIGNMENT
                         || Boolean.TRUE.equals(occurrence.getNeedsReassignment()))
@@ -272,7 +276,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
 
     // Caregiver cấp booking: chưa có thì lấy người vừa gán; mọi buổi tương lai cùng một người thì đổi theo người đó.
     private void syncBookingCaregiver(Booking booking, AssignedCaregiver caregiver, Instant now) {
-        boolean allUpcomingSame = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+        boolean allUpcomingSame = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
                 .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()))
                 .filter(occurrence -> occurrence.getStartAt().isAfter(now))
                 .allMatch(occurrence -> caregiver.getCaregiverId().equals(occurrence.getCaregiverId()));
@@ -282,6 +286,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
         }
     }
 
+    // Đếm số buổi đang nhận của từng ứng viên quanh khoảng thời gian.
     private Map<UUID, Long> findLoads(List<ProviderCaregiverCardResponse> cards, List<OccurrenceSlot> slots) {
         Instant rangeStart = slots.stream().map(OccurrenceSlot::getStartAt).min(Comparator.naturalOrder()).orElseThrow();
         Instant rangeEnd = slots.stream().map(OccurrenceSlot::getEndAt).max(Comparator.naturalOrder()).orElseThrow();
@@ -338,14 +343,17 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
                 }));
     }
 
+    // Đổi các buổi sang khung giờ.
     private List<OccurrenceSlot> toSlots(List<BookingOccurrence> occurrences) {
         return occurrenceMapper.toSlotList(occurrences);
     }
 
+    // Lấy id các buổi.
     private static List<UUID> collectIds(List<BookingOccurrence> occurrences) {
         return occurrences.stream().map(BookingOccurrence::getId).toList();
     }
 
+    // Tổng số buổi trong các lượt phân công.
     private static int countOccurrences(List<Assignment> assignments) {
         return assignments.stream().mapToInt(assignment -> assignment.occurrences().size()).sum();
     }

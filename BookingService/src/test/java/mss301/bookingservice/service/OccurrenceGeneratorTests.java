@@ -25,10 +25,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Sinh buổi chăm sóc theo loại booking (spec §4) — thuần, không Spring. "Bây giờ" cố định: 2026-10-09 02:00 UTC = 09:00
- * giờ Việt Nam (Thứ Sáu). Thời gian đặt trước tối thiểu theo center policy kiểm ở BookingService (BookingApiTests).
- */
 class OccurrenceGeneratorTests {
 
     static final Instant NOW = Instant.parse("2026-10-09T02:00:00Z");

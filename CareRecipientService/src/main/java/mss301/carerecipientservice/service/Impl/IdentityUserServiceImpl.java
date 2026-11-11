@@ -27,6 +27,7 @@ public class IdentityUserServiceImpl implements IdentityUserService {
 
     IdentityClient identityClient;
 
+    // Tìm khách hàng đang hoạt động theo email qua IdentityService.
     @Override
     public IdentityUserResponse getActiveCustomer(String email) {
         IdentityApiResponse<IdentityUserResponse> response;
@@ -52,6 +53,7 @@ public class IdentityUserServiceImpl implements IdentityUserService {
         return user;
     }
 
+    // Lấy thông tin nhiều người dùng từ IdentityService theo từng lô.
     @Override
     public Map<UUID, IdentityUserResponse> getProfiles(Collection<UUID> userIds) {
         Map<UUID, IdentityUserResponse> profiles = new HashMap<>();

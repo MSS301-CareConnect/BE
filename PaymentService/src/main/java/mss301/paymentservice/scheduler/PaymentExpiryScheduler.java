@@ -19,6 +19,7 @@ import java.util.UUID;
 public class PaymentExpiryScheduler {
     PaymentService paymentService;
 
+    // Định kỳ đối soát các lần thanh toán treo quá lâu.
     @Scheduled(fixedDelayString = "${payment.expiry.scan-interval:5m}",
             initialDelayString = "${payment.expiry.scan-interval:5m}")
     public void reconcileStaleAttempts() {

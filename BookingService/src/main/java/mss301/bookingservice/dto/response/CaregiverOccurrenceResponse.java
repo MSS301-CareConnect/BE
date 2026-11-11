@@ -55,6 +55,7 @@ public class CaregiverOccurrenceResponse {
 
     // SHIFT: lịch caregiver (ca làm việc ở ProviderService) mà buổi giữ.
     UUID caregiverScheduleId;
+
     // Chờ trung tâm phân người khác (caregiver đã xin hủy buổi, hoặc tài khoản bị khóa) — check-in bị chặn (2026-11-09).
     Boolean needsReassignment;
 

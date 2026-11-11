@@ -1,5 +1,6 @@
 package mss301.providerservice.repository;
 
+import mss301.providerservice.repository.projection.StatisticsCountView;
 import mss301.providerservice.entity.CareCenter;
 import mss301.providerservice.enums.CenterStatus;
 import org.springframework.data.domain.Page;
@@ -34,17 +35,20 @@ public interface CareCenterRepository extends JpaRepository<CareCenter, UUID>, J
 
     Optional<CareCenter> findByIdAndCenterStatusAndDeletedAtIsNull(UUID id, CenterStatus centerStatus);
 
-    // Danh sách công khai (SRCH-02): keyword theo tên / địa chỉ — không theo email nội bộ.
+    // Danh sách công khai (SRCH-02): keyword theo tên / địa chỉ — không theo email nội bộ. Tìm không dấu:
+    // keywordPattern đã gập bằng VietnameseText.fold, cột gập bằng translate với cùng hai bảng ký tự.
     @Query("""
             select c from CareCenter c
             where c.deletedAt is null
               and c.centerStatus = :status
               and (:keywordPattern is null
-                   or lower(c.centerName) like :keywordPattern
-                   or lower(c.address) like :keywordPattern)
+                   or cast(function('translate', lower(c.centerName), :accented, :plain) as string) like :keywordPattern
+                   or cast(function('translate', lower(c.address), :accented, :plain) as string) like :keywordPattern)
             """)
     Page<CareCenter> searchPublic(@Param("status") CenterStatus status,
                                   @Param("keywordPattern") String keywordPattern,
+                                  @Param("accented") String accented,
+                                  @Param("plain") String plain,
                                   Pageable pageable);
 
     // Như searchPublic nhưng giới hạn trong các trung tâm Catalog trả về khi lọc dịch vụ / giá.
@@ -54,12 +58,14 @@ public interface CareCenterRepository extends JpaRepository<CareCenter, UUID>, J
               and c.centerStatus = :status
               and c.id in :centerIds
               and (:keywordPattern is null
-                   or lower(c.centerName) like :keywordPattern
-                   or lower(c.address) like :keywordPattern)
+                   or cast(function('translate', lower(c.centerName), :accented, :plain) as string) like :keywordPattern
+                   or cast(function('translate', lower(c.address), :accented, :plain) as string) like :keywordPattern)
             """)
     Page<CareCenter> searchPublicByIds(@Param("status") CenterStatus status,
                                        @Param("centerIds") Collection<UUID> centerIds,
                                        @Param("keywordPattern") String keywordPattern,
+                                       @Param("accented") String accented,
+                                       @Param("plain") String plain,
                                        Pageable pageable);
 
     // Mỗi manager quản lý tối đa một trung tâm chưa xóa (uk_care_centers_manager_active).

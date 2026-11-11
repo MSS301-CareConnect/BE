@@ -9,11 +9,13 @@ import org.springframework.context.annotation.Bean;
 // Cấu hình riêng của PaymentServiceClient — không @Configuration. Token SERVICE của Booking, không phải token người dùng.
 public class PaymentServiceClientConfig {
 
+    // Gắn token SERVICE vào lời gọi PaymentService.
     @Bean
     public RequestInterceptor paymentServiceRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Dịch lỗi HTTP từ PaymentService, phân biệt lỗi tạm thời và lỗi hẳn.
     @Bean
     public ErrorDecoder paymentServiceErrorDecoder() {
         return (methodKey, response) -> {

@@ -23,10 +23,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Chatbot CareConnect. Khách chưa đăng nhập: hỏi đáp không lưu lịch sử, giới hạn lượt/ngày, không gửi ảnh.
- * Mọi tài khoản đăng nhập (mọi role): lưu cuộc trò chuyện, tối đa 3 ảnh mỗi câu hỏi, đổi tên / xóa cuộc trò chuyện.
- */
 @RestController
 @RequestMapping("/api/v1/ai")
 @RequiredArgsConstructor
@@ -37,6 +33,7 @@ public class ChatController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // API xem số lượt chat còn lại của người dùng hoặc khách.
     @GetMapping("/chat/quota")
     @SecurityRequirements({})
     public APIResponse<ChatQuotaResponse> getQuota(@CurrentUserId(required = false) UUID userId,
@@ -44,11 +41,13 @@ public class ChatController {
         return chatService.getQuota(userId, httpServletRequest);
     }
 
+    // API danh sách hội thoại của người dùng.
     @GetMapping("/conversations")
     public APIResponse<List<ConversationSummaryResponse>> list(@CurrentUserId UUID userId) {
         return chatService.list(userId);
     }
 
+    // API xem chi tiết một hội thoại kèm tin nhắn.
     @GetMapping("/conversations/{conversationId}")
     public APIResponse<ConversationDetailResponse> get(@CurrentUserId UUID userId,
                                                        @PathVariable UUID conversationId) {
@@ -57,6 +56,7 @@ public class ChatController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API gửi câu hỏi (kèm ảnh) và nhận câu trả lời từ AI.
     @PostMapping(value = "/chat", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SecurityRequirements({})
     public APIResponse<ChatResponse> chat(@CurrentUserId(required = false) UUID userId,
@@ -68,6 +68,7 @@ public class ChatController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API đổi tên hội thoại.
     @PatchMapping("/conversations/{conversationId}")
     public APIResponse<ConversationSummaryResponse> update(@CurrentUserId UUID userId,
                                                            @PathVariable UUID conversationId,
@@ -77,6 +78,7 @@ public class ChatController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API xóa hội thoại.
     @DeleteMapping("/conversations/{conversationId}")
     public APIResponse<Void> delete(@CurrentUserId UUID userId,
                                     @PathVariable UUID conversationId) {

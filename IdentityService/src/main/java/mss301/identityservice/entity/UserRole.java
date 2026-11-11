@@ -35,6 +35,7 @@ public class UserRole {
     @Column(name = "assigned_at", nullable = false, updatable = false)
     Instant assignedAt;
 
+    // Gán thời điểm gán role.
     @PrePersist
     void onCreate() {
         assignedAt = Instant.now();

@@ -13,14 +13,23 @@ import mss301.bookingservice.enums.NotificationType;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class NotificationResponse {
     UUID id;
+
     NotificationType type;
+
     String title;
+
     String body;
+
     String refType;
+
     UUID refId;
+
     Instant readAt;
+
     Instant createdAt;
+
     // Đích điều hướng suy từ ref (booking / buổi chứa nó); null khi ref không thuộc booking.
     UUID bookingId;
+
     UUID occurrenceId;
 }

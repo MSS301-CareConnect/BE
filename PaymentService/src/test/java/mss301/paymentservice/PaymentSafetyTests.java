@@ -41,10 +41,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Đợt 1b — an toàn thu tiền: outbox xác nhận cọc, Booking từ chối → hoàn, trả trễ / trả trùng, job phiên quá hạn +
- * querydr.
- */
 class PaymentSafetyTests extends PaymentIntegrationTest {
 
     static final long PRICE = 1_000_000L;

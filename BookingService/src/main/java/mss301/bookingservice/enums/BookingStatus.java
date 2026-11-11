@@ -40,6 +40,7 @@ public enum BookingStatus {
     public static final Set<BookingStatus> CAREGIVER_CHANGEABLE = EnumSet.of(PENDING_CENTER_CONFIRMATION,
             PENDING_CAREGIVER_ASSIGNMENT, AWAITING_INITIAL_PAYMENT, CONFIRMED, IN_PROGRESS);
 
+    // Trạng thái kết thúc (hoàn thành, từ chối, hủy, hết hạn).
     public boolean isTerminal() {
         return this == COMPLETED || this == REJECTED || this == CANCELLED || this == EXPIRED;
     }

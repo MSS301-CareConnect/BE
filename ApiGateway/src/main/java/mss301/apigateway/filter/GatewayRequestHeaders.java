@@ -12,15 +12,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 
-/**
- * Before-filter cho mọi route: làm sạch header client gửi rồi gắn header do gateway quản lý.
- * - Xóa mọi X-User-* (client tự đặt) và gắn lại X-User-Id / X-User-Roles từ JWT đã xác minh — CHỈ để log/tracing,
- *   service phía sau vẫn tự xác minh JWT, không phân quyền theo header này.
- * - Xóa X-Internal-Secret và mọi X-Service-* (không cho client giả danh cơ chế service-to-service).
- * - Xóa Origin: gateway đã xử lý CORS; service phía sau không thêm header CORS trùng.
- * - Đặt X-Request-Id = id của gateway (RequestIdFilter).
- * Authorization, Cookie (access_token, refresh_token, XSRF-TOKEN) và X-XSRF-TOKEN được chuyển nguyên.
- */
 public final class GatewayRequestHeaders {
 
     public static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
@@ -30,9 +21,11 @@ public final class GatewayRequestHeaders {
     public static final String USER_ROLES_HEADER = "X-User-Roles";
     public static final String INTERNAL_SECRET_HEADER = "X-Internal-Secret";
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private GatewayRequestHeaders() {
     }
 
+    // Bộ lọc trước route: xóa header client tự đặt và gắn header người dùng từ JWT.
     public static Function<ServerRequest, ServerRequest> sanitize() {
         return request -> ServerRequest.from(request)
                 .headers(headers -> {
@@ -48,6 +41,7 @@ public final class GatewayRequestHeaders {
                 .build();
     }
 
+    // Xóa các header X-User-* do client gửi để không giả mạo danh tính.
     private static void removeClientControlledHeaders(HttpHeaders headers) {
         List<String> headerNames = new ArrayList<>(headers.headerNames());
         for (String headerName : headerNames) {
@@ -61,6 +55,7 @@ public final class GatewayRequestHeaders {
         }
     }
 
+    // Gắn X-User-Id / X-User-Roles từ JWT đã xác thực (chỉ để log).
     private static void addUserHeaders(HttpHeaders headers) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication)) {

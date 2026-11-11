@@ -8,11 +8,13 @@ import org.springframework.web.servlet.function.ServerRequest;
 
 @Component
 public class TrustedClientIpHeadersFilter implements RequestHttpHeadersFilter, Ordered {
+    // Thứ tự chạy của bộ lọc header IP client.
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE;
     }
 
+    // Gắn lại X-Forwarded-For bằng IP thật của client và bỏ header Forwarded khi chuyển tiếp.
     @Override
     public HttpHeaders apply(HttpHeaders headers, ServerRequest request) {
         // Gateway bỏ XFF mặc định; gắn lại từ peer thật sau các bộ lọc của framework.

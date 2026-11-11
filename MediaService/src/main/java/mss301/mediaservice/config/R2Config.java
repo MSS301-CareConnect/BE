@@ -14,6 +14,7 @@ import java.net.URI;
 @Configuration
 public class R2Config {
 
+    // Cấu hình S3 client dùng path-style cho Cloudflare R2.
     @Bean
     public S3Configuration s3Configuration() {
         return S3Configuration.builder()
@@ -22,6 +23,7 @@ public class R2Config {
                 .build();
     }
 
+    // Tạo S3Client kết nối Cloudflare R2 bằng khóa và endpoint từ cấu hình.
     @Bean
     public S3Client s3Client(MediaProperties mediaProperties, S3Configuration s3Configuration) {
         MediaProperties.R2 r2 = mediaProperties.getR2();
@@ -36,6 +38,7 @@ public class R2Config {
                 .build();
     }
 
+    // Tạo S3Presigner để sinh URL tải file có thời hạn.
     @Bean
     public S3Presigner s3Presigner(MediaProperties mediaProperties, S3Configuration s3Configuration) {
         MediaProperties.R2 r2 = mediaProperties.getR2();

@@ -1,15 +1,17 @@
 package mss301.identityservice;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.net.httpserver.HttpServer;
 import mss301.identityservice.config.BrevoConfig;
 import mss301.identityservice.config.IdentityProperties;
-import mss301.identityservice.exception.*;
+import mss301.identityservice.exception.AppException;
+import mss301.identityservice.exception.ErrorCode;
 import mss301.identityservice.service.Impl.EmailServiceImpl;
 import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
-import static org.assertj.core.api.Assertions.*;
 
 class EmailServiceTests {
     private EmailServiceImpl emailService(IdentityProperties properties) {

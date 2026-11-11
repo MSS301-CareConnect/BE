@@ -11,9 +11,11 @@ import mss301.paymentservice.enums.WalletOwnerType;
 import mss301.paymentservice.enums.WalletTransactionType;
 import mss301.paymentservice.repository.OccurrenceFinancialRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.repository.RemainingInvoiceRepository;
 import mss301.paymentservice.repository.WalletRepository;
 import mss301.paymentservice.repository.WalletTransactionRepository;
 import mss301.paymentservice.service.RefundDispatchService;
+import mss301.paymentservice.service.RemainingInvoiceService;
 import mss301.paymentservice.service.WalletSettlementService;
 import mss301.paymentservice.support.PaymentIntegrationTest;
 import mss301.paymentservice.support.PaymentTestServer;
@@ -34,12 +36,14 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // Ví 2026-11-09: hoàn vào ví khi khách hủy, cọc bị giữ → caregiver / trung tâm, rút tiền, cộng tiền buổi hoàn tất, trừ khiếu nại.
+// 2026-11-10: lỗi phía trung tâm (caregiver vắng, trung tâm hủy) cũng hoàn vào ví; hoàn khiếu nại không trả hai lần.
 class WalletApiTests extends PaymentIntegrationTest {
     static final long PRICE = 1_000_000L;
     static final String FROM = "2000-01-01T00:00:00Z";
@@ -63,6 +67,12 @@ class WalletApiTests extends PaymentIntegrationTest {
 
     @Autowired
     WalletTransactionRepository walletTransactionRepository;
+
+    @Autowired
+    RemainingInvoiceRepository remainingInvoiceRepository;
+
+    @Autowired
+    RemainingInvoiceService remainingInvoiceService;
 
     @Test
     void customerCancelRefundsIntoWalletAndKeptDepositGoesToCaregiverOrCenter() throws Exception {
@@ -141,46 +151,230 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.forfeitIncome").value(90000))
                 .andExpect(jsonPath("$.result.bookingCount").value(1));
 
-        // Trung tâm hủy → hoàn 100 % qua cổng như cũ.
+        // Lý do hệ thống (không phải lỗi trung tâm) → vẫn hoàn 100 % qua cổng.
         CancelSetup other = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
-        createRefund("REFUND:CENTER_CANCEL:w2", other.bookingId(), other.occurrenceIds(), "CENTER_CANCEL", BASE);
+        createRefund("REFUND:EXPIRED:w2", other.bookingId(), other.occurrenceIds(), "EXPIRED", BASE);
         assertThat(refundRepository.findAllByBookingIdOrderByCreatedAtAsc(other.bookingId()))
                 .allSatisfy(refund -> assertThat(refund.getChannel()).isEqualTo(RefundChannel.GATEWAY));
     }
 
+    // 2026-11-10: caregiver vắng / trung tâm hủy → khách nhận lại 100 % tiền buổi vào ví ngay, không ai được giữ phần nào,
+    // buổi vắng không được cộng cho trung tâm.
     @Test
-    void withdrawalHoldsBalanceAndAdminRejectsOrCompletesIt() throws Exception {
+    void caregiverMissedAndCenterCancelRefundTheWholeVisitIntoTheCustomerWallet() throws Exception {
         UUID customerId = UUID.randomUUID();
-        CancelSetup setup = paidBooking(customerId, UUID.randomUUID(), null, BASE.plus(Duration.ofDays(3)));
+        UUID centerId = UUID.randomUUID();
+        UUID caregiverUserId = UUID.randomUUID();
+        CancelSetup setup = paidBooking(customerId, centerId, caregiverUserId, BASE.plus(Duration.ofHours(5)));
+        UUID missed = setup.occurrenceIds().get(0);
+        UUID cancelled = setup.occurrenceIds().get(1);
+
+        // Buổi 1: quá hạn check-in, Booking báo CAREGIVER_MISSED (gửi lại cùng key không hoàn trùng).
+        Instant missedAt = BASE.plus(Duration.ofHours(5)).plus(Duration.ofMinutes(30));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            createRefund("REFUND:CAREGIVER_MISSED:" + missed, setup.bookingId(), List.of(missed), "CAREGIVER_MISSED",
+                    missedAt);
+        }
+        // Buổi 2: trung tâm hủy sát giờ — vẫn hoàn đủ.
+        createRefund("REFUND:CENTER_CANCEL:" + cancelled, setup.bookingId(), List.of(cancelled), "CENTER_CANCEL",
+                missedAt);
+
+        List<Refund> refunds = refundRepository.findAllByBookingIdOrderByCreatedAtAsc(setup.bookingId());
+        assertThat(refunds).hasSize(2).allSatisfy(refund -> {
+            assertThat(refund.getChannel()).isEqualTo(RefundChannel.WALLET);
+            assertThat(refund.getAmount()).isEqualByComparingTo("300000");
+            assertThat(refund.getFeeAmount()).isEqualByComparingTo("0");
+        });
+        assertThat(occurrenceFinancialRepository.findById(missed).orElseThrow().getFinalStatus()).hasToString("MISSED");
+
+        paymentProperties.getRefund().setMode(RefundMode.VNPAY);
+        dispatchDueRefunds();
+        assertThat(SERVER.vnPayRequests()).isEmpty();
+        assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("600000");
+        assertThat(balanceOf(WalletOwnerType.CAREGIVER, caregiverUserId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        mockMvc.perform(get("/api/v1/refunds").header("Authorization", customer(customerId)))
+                .andExpect(jsonPath("$.result.items.length()").value(2))
+                .andExpect(jsonPath("$.result.items[0].channel").value("WALLET"))
+                .andExpect(jsonPath("$.result.items[0].status").value("REFUNDED"));
+
+        // Job cộng tiền buổi thấy CAREGIVER_MISSED → không cộng cho trung tâm / nền tảng.
+        clock.set(BASE.plus(Duration.ofDays(2)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+    }
+
+    // 2026-11-10: một lệnh hoàn (cùng idempotency key, nhiều buổi) → đúng một thông báo cho khách, ghi tổng tiền và nơi tiền về;
+    // dispatch lại không gửi thêm.
+    @Test
+    void customerIsNotifiedOncePerCompletedRefundOrder() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        CancelSetup walletSetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:CENTER_CANCEL:n1", walletSetup.bookingId(), walletSetup.occurrenceIds(), "CENTER_CANCEL",
+                BASE);
+        CancelSetup gatewaySetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:EXPIRED:n2", gatewaySetup.bookingId(), gatewaySetup.occurrenceIds(), "EXPIRED", BASE);
+
+        dispatchDueRefunds();
+        dispatchDueRefunds();
+
+        assertThat(SERVER.notificationBodies()).hasSize(2);
+        JsonNode wallet = SERVER.notificationBodies().stream()
+                .filter(body -> body.get("refId").asString().equals(walletSetup.bookingId().toString()))
+                .findFirst().orElseThrow();
+        assertThat(wallet.get("type").asString()).isEqualTo("REFUND_COMPLETED");
+        assertThat(wallet.get("refType").asString()).isEqualTo("BOOKING");
+        assertThat(wallet.get("recipientUserIds").get(0).asString()).isEqualTo(customerId.toString());
+        // Hai buổi × 300.000 gộp trong một thông báo.
+        assertThat(wallet.get("body").asString()).contains("600.000").contains("ví CareConnect");
+        JsonNode gateway = SERVER.notificationBodies().stream()
+                .filter(body -> body.get("refId").asString().equals(gatewaySetup.bookingId().toString()))
+                .findFirst().orElseThrow();
+        assertThat(gateway.get("body").asString()).contains("phương thức thanh toán");
+
+        // Lệnh hoàn chưa xong hết (một dòng còn chờ) thì chưa báo.
+        paymentProperties.getRefund().setMode(RefundMode.VNPAY);
+        SERVER.setVnPayResponse("00", 503, 0);
+        CancelSetup pendingSetup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
+        createRefund("REFUND:EXPIRED:n3", pendingSetup.bookingId(), pendingSetup.occurrenceIds(), "EXPIRED", BASE);
+        dispatchDueRefunds();
+        assertThat(SERVER.notificationBodies()).hasSize(2);
+    }
+
+    // 2026-11-10: hoàn khiếu nại không được trả hai lần — trung tâm trả lại phần đã nhận, phần còn lại trừ vào buổi chưa
+    // đối soát (để lúc cộng buổi đó không tính lại), hết buổi thì nền tảng trả lại hoa hồng đã thu.
+    @Test
+    void complaintRefundIsNotPaidTwiceAcrossSettledAndUnsettledVisits() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(1 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        SERVER.setPaymentTerms(bookingId, 100, null);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        BigDecimal platformBefore = balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER);
+
+        // Buổi 1 xong và đã cộng (trung tâm 900.000, hoa hồng 100.000); buổi 2 chưa diễn ra.
+        occurrences.get(0).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(1)).plus(Duration.ofHours(3)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("900000");
+
+        // Hoàn khiếu nại 1.000.000: trung tâm trả lại 900.000, 100.000 còn lại ghi vào buổi 2 (chưa đối soát).
+        complaint(bookingId, UUID.randomUUID(), "1000000").andExpect(status().isOk());
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(1)).orElseThrow().getRefundedAmount())
+                .isEqualByComparingTo("100000");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("100000");
+
+        // Buổi 2 xong: chỉ còn 900.000 của khách → trung tâm 810.000, hoa hồng 90.000. Tổng chi = đúng 2.000.000 đã thu.
+        occurrences.get(1).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(3)));
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("810000");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("190000");
+
+        // Hoàn tiếp 1.000.000 khi mọi buổi đã đối soát: trung tâm trả 810.000, nền tảng trả lại 190.000 hoa hồng.
+        complaint(bookingId, UUID.randomUUID(), "1000000").andExpect(status().isOk());
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("0");
+    }
+
+    // 2026-11-10: buổi được phân người SAU khi khách trả khoản đầu — cọc bị giữ vì quá hạn phải vào ví caregiver đang được
+    // giao (đọc lại từ Booking trước khi xử lý quá hạn), không vào ví trung tâm theo bản chụp cũ.
+    @Test
+    void overdueForfeitGoesToTheCaregiverAssignedAfterTheDeposit() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID caregiverUserId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(5 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        Instant dueAt = BASE.plus(Duration.ofDays(2));
+        SERVER.setPaymentTerms(bookingId, 30, dueAt);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(0)).orElseThrow().getCaregiverUserId())
+                .isNull();
+
+        // Sau khi trả cọc, hệ thống tự phân người cho buổi 1; buổi 2 vẫn chưa có người.
+        occurrences.get(0).put("caregiverId", UUID.randomUUID().toString());
+        occurrences.get(0).put("caregiverUserId", caregiverUserId.toString());
+        clock.set(dueAt);
+        UUID invoiceId = remainingInvoiceRepository.findByBookingId(bookingId).orElseThrow().getId();
+        remainingInvoiceService.refreshCaregivers(invoiceId);
+        remainingInvoiceService.markOverdue(invoiceId);
+
+        // Giữ 100 % cọc (300.000 mỗi buổi): buổi 1 → caregiver, buổi 2 → trung tâm.
+        assertThat(balanceOf(WalletOwnerType.CAREGIVER, caregiverUserId)).isEqualByComparingTo("300000");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("300000");
+
+        // Booking lỗi lúc đọc lại → vẫn xử lý được quá hạn bằng bản chụp cũ (không ném lỗi).
+        remainingInvoiceService.refreshCaregivers(UUID.randomUUID());
+    }
+
+    @Test
+    void withdrawalIsHandledByTheRefundingCenterWithASimulatedTransfer() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        CancelSetup setup = paidBooking(customerId, centerId, null, BASE.plus(Duration.ofDays(3)));
         // Còn ≥ 24h → hoàn đủ 300.000 mỗi buổi vào ví.
         createRefund("REFUND:CUSTOMER_CANCEL:w3", setup.bookingId(), setup.occurrenceIds(), "CUSTOMER_CANCEL", BASE);
         dispatchDueRefunds();
         assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("600000");
         String token = customer(customerId);
+        String manager = manager(centerId);
 
+        // Tiền hoàn gắn trung tâm đã hoàn → yêu cầu rút gửi về trung tâm đó.
+        mockMvc.perform(get("/api/v1/wallets/me/center-balances").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.length()").value(1))
+                .andExpect(jsonPath("$.result[0].centerId").value(centerId.toString()))
+                .andExpect(jsonPath("$.result[0].availableBalance").value(600000));
         withdraw(token, "700000", "0123456789").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(6041));
         withdraw(token, "100000", "12ab").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6048));
         withdraw(token, "100000.5", "0123456789").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6045));
+        withdrawFrom(token, "100000", UUID.randomUUID()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(6054));
 
         JsonNode first = body(withdraw(token, "400000", "0123456789").andExpect(status().isOk())).get("result");
         assertThat(first.get("status").asString()).isEqualTo("PENDING");
+        assertThat(first.get("centerId").asString()).isEqualTo(centerId.toString());
         Wallet wallet = walletRepository.findByOwnerTypeAndOwnerId(WalletOwnerType.CUSTOMER, customerId).orElseThrow();
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("200000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("400000");
-        // Phần đang chờ duyệt không rút lại được.
+        // Phần đang chờ xử lý không rút lại được.
         withdraw(token, "300000", "0123456789").andExpect(status().isConflict());
 
         String firstId = first.get("id").asString();
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/approve", firstId).header("Authorization", token))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", admin())
+        // Chỉ quản lý của trung tâm giữ tiền xử lý: khách 403, admin / trung tâm khác 6055.
+        transfer(firstId, token).andExpect(status().isForbidden());
+        transfer(firstId, admin()).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(6055));
+        transfer(firstId, manager(UUID.randomUUID())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(6055));
+        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", manager)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(6050));
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", admin())
+        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/reject", firstId).header("Authorization", manager)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Sai tên chủ tài khoản\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("REJECTED"))
@@ -189,17 +383,13 @@ class WalletApiTests extends PaymentIntegrationTest {
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("600000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("0");
 
-        String secondId = body(withdraw(token, "250000", "0123456789").andExpect(status().isOk()))
+        String secondId = body(withdrawFrom(token, "250000", centerId).andExpect(status().isOk()))
                 .get("result").get("id").asString();
-        // Chưa duyệt thì chưa xác nhận chuyển khoản được.
-        complete(secondId, "FT123").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(6043));
-        mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/approve", secondId).header("Authorization", admin()))
-                .andExpect(jsonPath("$.result.status").value("APPROVED"));
-        complete(secondId, "").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(6051));
-        complete(secondId, "FT123").andExpect(status().isOk())
+        // Chuyển khoản giả lập thành công → tự hoàn tất, có mã giao dịch; không chuyển lại được.
+        transfer(secondId, manager).andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.result.transferReference").value("FT123"));
-        complete(secondId, "FT123").andExpect(status().isConflict());
+                .andExpect(jsonPath("$.result.transferReference").value(startsWith("SIM")));
+        transfer(secondId, manager).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(6043));
         wallet = walletRepository.findByOwnerTypeAndOwnerId(WalletOwnerType.CUSTOMER, customerId).orElseThrow();
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("350000");
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("0");
@@ -208,16 +398,49 @@ class WalletApiTests extends PaymentIntegrationTest {
                         WalletTransactionType.WITHDRAWAL_HOLD, WalletTransactionType.WITHDRAWAL_RELEASE,
                         WalletTransactionType.WITHDRAWAL_HOLD, WalletTransactionType.WITHDRAWAL_PAID);
 
-        // Phạm vi: chủ ví thấy yêu cầu của mình, người khác 404, admin thấy tất cả và lọc được.
+        // Người rút được báo cả hai kết quả.
+        List<JsonNode> results = SERVER.notificationBodies().stream()
+                .filter(notification -> notification.get("refType").asString().equals("WALLET_WITHDRAWAL"))
+                .toList();
+        assertThat(results).extracting(notification -> notification.get("type").asString())
+                .containsExactlyInAnyOrder("WALLET_WITHDRAWAL_REJECTED", "WALLET_WITHDRAWAL_COMPLETED");
+        assertThat(results).allSatisfy(notification -> assertThat(notification.get("recipientUserIds").get(0)
+                .asString()).isEqualTo(customerId.toString()));
+
+        // Phạm vi: chủ ví thấy yêu cầu của mình, người khác 404; hàng đợi trung tâm thấy cả hai; admin thấy tất cả.
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", token))
                 .andExpect(jsonPath("$.result.items.length()").value(2));
         mockMvc.perform(get("/api/v1/wallet-withdrawals/{id}", secondId)
                         .header("Authorization", customer(UUID.randomUUID())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(6042));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager).param("scope", "REVIEW"))
+                .andExpect(jsonPath("$.result.items.length()").value(2))
+                .andExpect(jsonPath("$.result.items[0].requesterName")
+                        .value("User " + customerId.toString().substring(0, 8)));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", manager(UUID.randomUUID()))
+                        .param("scope", "REVIEW"))
+                .andExpect(jsonPath("$.result.items.length()").value(0));
+        mockMvc.perform(get("/api/v1/wallet-withdrawals/{id}", secondId).header("Authorization", manager))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", admin())
                         .param("status", "COMPLETED").param("ownerType", "CUSTOMER"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/wallet-withdrawals").header("Authorization", token).param("scope", "REVIEW"))
+                .andExpect(status().isForbidden());
+
+        // Dashboard hàng đợi trung tâm: kết quả trong kỳ + tiền khách còn giữ hộ.
+        mockMvc.perform(get("/api/v1/wallet-withdrawals/statistics").header("Authorization", manager)
+                        .param("scope", "REVIEW").param("from", "2026-01-01T00:00:00Z")
+                        .param("to", "2027-01-01T00:00:00Z").param("groupBy", "MONTH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.pendingCount").value(0))
+                .andExpect(jsonPath("$.result.completedCount").value(1))
+                .andExpect(jsonPath("$.result.completedAmount").value(250000))
+                .andExpect(jsonPath("$.result.rejectedCount").value(1))
+                .andExpect(jsonPath("$.result.custodyCustomerBalance").value(350000))
+                .andExpect(jsonPath("$.result.custodyTotal").value(350000));
+
         mockMvc.perform(get("/api/v1/wallets/{id}/transactions", wallet.getId()).header("Authorization", admin())
                         .param("from", FROM).param("to", TO))
                 .andExpect(jsonPath("$.result.items.length()").value(6));
@@ -249,6 +472,11 @@ class WalletApiTests extends PaymentIntegrationTest {
         occurrences.get(1).put("status", "CANCELLED");
         occurrences.get(2).put("status", "IN_PROGRESS");
         clock.set(BASE.plus(Duration.ofDays(4)));
+        // 2026-11-11: ca tự đóng chờ trung tâm xác nhận → chưa quyết toán; trung tâm xác nhận xong mới cộng ví.
+        occurrences.get(0).put("settlementHeld", true);
+        settleDue();
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("0");
+        occurrences.get(0).put("settlementHeld", false);
         settleDue();
         settleDue();
 
@@ -291,6 +519,64 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.ownerType").value("PLATFORM"))
                 .andExpect(jsonPath("$.result.liabilities").isArray())
                 .andExpect(jsonPath("$.result.pendingWithdrawalCount").isNumber());
+    }
+
+    // 2026-11-11: một booking vừa có buổi caregiver vắng (hoàn 100 % vào ví khách) vừa có buổi làm đủ → trung tâm và nền
+    // tảng chỉ nhận tiền buổi làm đủ; quyết toán booking cho quản lý / admin ra đúng số cuối. Trung tâm không gửi yêu cầu rút.
+    @Test
+    void bookingWithMissedAndCompletedVisitsSettlesOnlyServedVisits() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(1 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        SERVER.setPaymentTerms(bookingId, 100, null);
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+
+        UUID missed = occurrenceIds.get(0);
+        createRefund("REFUND:CAREGIVER_MISSED:" + missed, bookingId, List.of(missed), "CAREGIVER_MISSED",
+                BASE.plus(Duration.ofDays(1)).plus(Duration.ofMinutes(30)));
+        dispatchDueRefunds();
+        occurrences.get(0).put("status", "CAREGIVER_MISSED");
+        occurrences.get(1).put("status", "COMPLETED");
+        occurrences.get(2).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(5)));
+        settleDue();
+        settleDue();
+
+        assertThat(balanceOf(WalletOwnerType.CUSTOMER, customerId)).isEqualByComparingTo("1000000");
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("1800000");
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", manager(centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.paidAmount").value(3000000))
+                .andExpect(jsonPath("$.result.refundedAmount").value(1000000))
+                .andExpect(jsonPath("$.result.centerServiceAmount").value(1800000))
+                .andExpect(jsonPath("$.result.centerNetAmount").value(1800000))
+                .andExpect(jsonPath("$.result.commissionAmount").value(200000))
+                .andExpect(jsonPath("$.result.pendingCount").value(0))
+                .andExpect(jsonPath("$.result.occurrences[0].finalStatus").value("MISSED"))
+                .andExpect(jsonPath("$.result.occurrences[0].centerAmount").value(0))
+                .andExpect(jsonPath("$.result.occurrences[1].centerAmount").value(900000))
+                .andExpect(jsonPath("$.result.occurrences[1].commissionAmount").value(100000));
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId).header("Authorization", admin()))
+                .andExpect(jsonPath("$.result.commissionAmount").value(200000));
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", manager(UUID.randomUUID())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", customer(customerId)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/wallets/me").header("Authorization", manager(centerId)))
+                .andExpect(jsonPath("$.result.withdrawable").value(false));
+        withdraw(manager(centerId), "100000", "0123456789").andExpect(status().isForbidden());
     }
 
     // ===== helpers =====
@@ -340,11 +626,16 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
-    private ResultActions complete(String withdrawalId, String reference) throws Exception {
-        return mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/complete", withdrawalId)
-                .header("Authorization", admin())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"transferReference\":\"" + reference + "\"}"));
+    private ResultActions withdrawFrom(String token, String amount, UUID centerId) throws Exception {
+        String body = "{\"amount\":" + amount + ",\"bankName\":\"Vietcombank\",\"bankAccountNumber\":\"0123456789\","
+                + "\"accountHolderName\":\"NGUYEN VAN A\",\"centerId\":\"" + centerId + "\"}";
+        return mockMvc.perform(post("/api/v1/wallet-withdrawals").header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    private ResultActions transfer(String withdrawalId, String token) throws Exception {
+        return mockMvc.perform(post("/api/v1/wallet-withdrawals/{id}/transfers", withdrawalId)
+                .header("Authorization", token));
     }
 
     private ResultActions complaint(UUID bookingId, UUID complaintId, String amount) throws Exception {

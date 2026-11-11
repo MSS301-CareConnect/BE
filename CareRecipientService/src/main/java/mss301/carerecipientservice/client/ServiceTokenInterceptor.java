@@ -10,22 +10,13 @@ import mss301.carerecipientservice.security.TokenClaims;
 import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 
-/**
- * Gắn token SERVICE của CareRecipientService (không phải token người dùng) vào lời gọi Feign. Chỉ khai báo trong
- * {@code *ClientConfig} của client gọi endpoint {@code hasRole('SERVICE')}, ví dụ:
- * <pre>
- * &#64;Bean
- * public RequestInterceptor paymentRequestInterceptor(ServiceTokenProvider serviceTokenProvider) {
- *     return new ServiceTokenInterceptor(serviceTokenProvider);
- * }
- * </pre>
- */
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ServiceTokenInterceptor implements RequestInterceptor {
 
     ServiceTokenProvider serviceTokenProvider;
 
+    // Gắn token SERVICE và request id vào header của request Feign.
     @Override
     public void apply(RequestTemplate template) {
         template.removeHeader(HttpHeaders.AUTHORIZATION);

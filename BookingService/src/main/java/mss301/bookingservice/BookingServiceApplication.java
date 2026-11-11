@@ -12,6 +12,7 @@ import java.util.TimeZone;
 @EnableScheduling
 public class BookingServiceApplication {
 
+    // Khởi động BookingService với múi giờ mặc định UTC.
     public static void main(String[] args) {
         // Mọi thời điểm lưu/so sánh theo UTC (Instant ↔ timestamptz); lịch được sinh theo booking.schedule.timezone.
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

@@ -8,11 +8,13 @@ import mss301.carerecipientservice.enums.BloodType;
 @Converter(autoApply = true)
 public class BloodTypeConverter implements AttributeConverter<BloodType, String> {
 
+    // Đổi nhóm máu sang ký hiệu lưu DB (A+, O-…).
     @Override
     public String convertToDatabaseColumn(BloodType bloodType) {
         return bloodType == null ? null : bloodType.getValue();
     }
 
+    // Đổi ký hiệu nhóm máu trong DB sang enum.
     @Override
     public BloodType convertToEntityAttribute(String value) {
         return value == null ? null : BloodType.fromValue(value);

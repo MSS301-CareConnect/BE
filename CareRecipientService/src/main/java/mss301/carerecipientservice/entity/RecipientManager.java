@@ -55,6 +55,7 @@ public class RecipientManager {
     @Column(name = "updated_at", nullable = false)
     Instant updatedAt;
 
+    // Gán createdAt / updatedAt khi thêm người quản lý.
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -62,6 +63,7 @@ public class RecipientManager {
         updatedAt = now;
     }
 
+    // Cập nhật updatedAt mỗi lần sửa người quản lý.
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();

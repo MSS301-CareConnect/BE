@@ -26,6 +26,7 @@ public class ProviderMediaController {
 
     ProviderMediaService providerMediaService;
 
+    // API danh sách ảnh / file của trung tâm hoặc caregiver.
     @GetMapping("/{ownerType}/{ownerId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER','CUSTOMER')")
     public APIResponse<List<ProviderMediaResponse>> list(@CurrentUserId UUID actorId,
@@ -34,6 +35,7 @@ public class ProviderMediaController {
         return providerMediaService.list(actorId, ownerType, ownerId);
     }
 
+    // API upload ảnh / file cho trung tâm hoặc caregiver.
     @PostMapping(value = "/{ownerType}/{ownerId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<List<ProviderMediaResponse>> upload(@CurrentUserId UUID actorId,
@@ -43,6 +45,7 @@ public class ProviderMediaController {
         return providerMediaService.upload(actorId, ownerType, ownerId, files);
     }
 
+    // API xóa một ảnh / file.
     @DeleteMapping("/{ownerType}/{ownerId}/{mediaFileId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,

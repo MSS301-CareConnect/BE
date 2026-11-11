@@ -15,6 +15,7 @@ import org.springframework.http.HttpHeaders;
 public class ServiceTokenInterceptor implements RequestInterceptor {
     ServiceTokenProvider serviceTokenProvider;
 
+    // Gắn token SERVICE và request id vào header của request Feign.
     @Override
     public void apply(RequestTemplate template) {
         template.removeHeader(HttpHeaders.AUTHORIZATION);

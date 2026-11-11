@@ -12,13 +12,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Access token → Authentication: roles[] → ROLE_<code>. Tên authentication = sub (userId) — GatewayRequestHeaders gắn
- * X-User-Id / X-User-Roles từ token này (chỉ để log). Gateway không phân quyền theo role, service phía sau tự làm.
- */
 @Component
 public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    // Chuyển JWT thành Authentication với quyền từ claim roles và permissions.
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
@@ -28,6 +25,7 @@ public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticat
         return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
     }
 
+    // Đọc một claim dạng danh sách chuỗi từ JWT.
     private List<String> readList(Jwt jwt, String claim) {
         List<String> values = jwt.getClaimAsStringList(claim);
         return values == null ? List.of() : values;

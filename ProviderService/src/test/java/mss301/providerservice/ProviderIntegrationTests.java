@@ -1,5 +1,6 @@
 package mss301.providerservice;
 
+import java.util.Comparator;
 import mss301.providerservice.client.dto.SystemCancellationRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -103,10 +104,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Test tích hợp trên H2 + repository thật: kỹ năng caregiver (PRV-01) với Catalog / Identity giả trên JDK HttpServer
- * (token SERVICE thật qua ServiceTokenProvider + Feign), và sửa lỗi ca làm việc (PRV-03) không mock count.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ProviderIntegrationTests {
@@ -1129,6 +1126,49 @@ class ProviderIntegrationTests {
                 .andExpect(jsonPath("$.result.email").doesNotExist());
     }
 
+    // 2026-11-11: danh bạ trung tâm tìm không dấu ("binh an" khớp "Bình An") — FE phân trang và tìm trên server.
+    @Test
+    void publicCenterSearchIgnoresVietnameseDiacritics() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Trung tâm Bình An Đức " + tag, CenterStatus.ACTIVE);
+
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "binh an duc " + tag))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].centerId").value(center.getId().toString()));
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "BÌNH AN").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[?(@.centerId == '" + center.getId() + "')]").exists());
+    }
+
+    // 2026-11-11: danh bạ người chăm sóc toàn nền tảng cho ADMIN — lọc theo trung tâm / xác minh / tên, xếp theo tên.
+    @Test
+    void adminCaregiverDirectoryFiltersAcrossCentersAndIsAdminOnly() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Directory " + tag, CenterStatus.ACTIVE);
+        CaregiverProfile verified = saveCaregiver(center, UUID.randomUUID());
+        verified.setFullName("Trần Thị Bình " + tag);
+        caregiverProfileRepository.save(verified);
+        CaregiverProfile pending = saveCaregiver(center, UUID.randomUUID());
+        pending.setFullName("Lê Văn An " + tag);
+        pending.setVerificationStatus(VerificationStatus.PENDING);
+        caregiverProfileRepository.save(pending);
+
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("centerId", center.getId().toString())
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].centerName").value(center.getCenterName()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("verification", "PENDING").param("keyword", "le van an " + tag)
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").with(user(center.getManagerUserId(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+    }
+
     // CR-6: danh bạ trung tâm mở cho khách chưa đăng nhập, chỉ GET; token hỏng / hết hạn bị bỏ qua.
     @Test
     void publicCentersAreReadableAnonymouslyAndIgnoreStaleTokens() throws Exception {
@@ -1368,7 +1408,7 @@ class ProviderIntegrationTests {
     void archivedCenterCannotBeRestoredWhenItsEmailWasReused() throws Exception {
         CareCenter center = saveCenter(UUID.randomUUID());
         center.setCenterStatus(CenterStatus.ARCHIVED);
-        center.setDeletedAt(java.time.Instant.now());
+        center.setDeletedAt(Instant.now());
         center = careCenterRepository.saveAndFlush(center);
         CareCenter reuse = saveCenter(UUID.randomUUID());
         reuse.setEmail(center.getEmail());
@@ -1421,7 +1461,7 @@ class ProviderIntegrationTests {
                 .andExpect(status().isOk());
         List<ProviderOutbox> rows = providerOutboxRepository.findAll().stream()
                 .filter(item -> item.getCenterId().equals(center.getId()))
-                .sorted(java.util.Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
+                .sorted(Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
         ProviderOutbox suspend = rows.getFirst();
         ProviderOutbox resume = rows.getLast();
         assertThat(suspend.getStatus()).isEqualTo("FAILED");
@@ -1675,7 +1715,6 @@ class ProviderIntegrationTests {
     }
 
 
-    /** Identity (service-token) + Catalog (center-services) + Booking (busy-caregivers) giả qua "gateway" duy nhất. */
     static final class StubPlatform {
         final HttpServer server;
         final Map<UUID, String> offerings = new ConcurrentHashMap<>();

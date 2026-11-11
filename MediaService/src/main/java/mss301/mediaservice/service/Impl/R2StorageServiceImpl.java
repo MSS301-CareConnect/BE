@@ -35,6 +35,7 @@ public class R2StorageServiceImpl implements R2StorageService {
     S3Presigner s3Presigner;
     MediaProperties mediaProperties;
 
+    // Upload nội dung file lên R2 với key cho trước.
     @Override
     public String upload(String objectKey, String contentType, long contentLength, InputStream inputStream) {
         PutObjectRequest request = PutObjectRequest.builder()
@@ -68,6 +69,7 @@ public class R2StorageServiceImpl implements R2StorageService {
         }
     }
 
+    // Sinh URL tải có thời hạn cho object trên R2.
     @Override
     public String createDownloadUrl(String objectKey) {
         GetObjectPresignRequest request = GetObjectPresignRequest.builder()
@@ -85,6 +87,7 @@ public class R2StorageServiceImpl implements R2StorageService {
         }
     }
 
+    // Xóa object trên R2.
     @Override
     public void delete(String objectKey) {
         DeleteObjectRequest request = DeleteObjectRequest.builder()
@@ -102,6 +105,7 @@ public class R2StorageServiceImpl implements R2StorageService {
         }
     }
 
+    // Xóa file tạm dùng khi upload.
     private void deleteTemporaryUpload(Path uploadFile) {
         try {
             Files.deleteIfExists(uploadFile);

@@ -32,11 +32,6 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 
-/**
- * IdentityService + CareRecipientService giả: echo lại path và header nhận được (tên header viết thường) để test
- * kiểm gateway chuyển tiếp gì. Identity giả còn có JWKS, /auth/login đặt cookie như Identity thật (Path=/), và
- * /users/slow ngủ lâu để test timeout.
- */
 public final class TestUpstreams {
 
     public static final String ISSUER = "https://identity.test";

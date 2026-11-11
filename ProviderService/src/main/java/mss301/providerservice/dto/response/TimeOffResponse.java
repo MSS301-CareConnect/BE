@@ -13,13 +13,22 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TimeOffResponse {
     UUID id;
+
     UUID caregiverId;
+
     String caregiverName;
+
     Instant startAt;
+
     Instant endAt;
+
     String reason;
+
     UUID createdBy;
+
     Long version;
+
     Instant createdAt;
+
     Instant updatedAt;
 }

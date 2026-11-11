@@ -21,13 +21,17 @@ public class NotificationRequest {
     List<@NotNull(message = "INVALID_REQUEST") UUID> recipientUserIds;
     @NotNull(message = "INVALID_REQUEST")
     NotificationType type;
+
     @NotBlank(message = "INVALID_REQUEST")
     @Size(max = 200, message = "INVALID_REQUEST")
     String title;
+
     @NotBlank(message = "INVALID_REQUEST")
     @Size(max = 1000, message = "INVALID_REQUEST")
     String body;
+
     @Size(max = 80, message = "INVALID_REQUEST")
     String refType;
+
     UUID refId;
 }

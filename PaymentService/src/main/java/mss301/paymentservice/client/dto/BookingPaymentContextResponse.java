@@ -46,6 +46,9 @@ public class BookingPaymentContextResponse {
 
     BigDecimal refundPercentAfterThreshold;
 
+    // 2026-11-10: khách hủy còn dưới mốc này → không hoàn. Booking cũ không gửi → snapshot để trống, tính như 120 phút.
+    Integer lateCancelNoRefundMinutes;
+
     BigDecimal overduePaymentForfeitPercent;
 
     BigDecimal totalAmount;
@@ -83,5 +86,9 @@ public class BookingPaymentContextResponse {
         UUID caregiverUserId;
 
         boolean hasSession;
+
+        // 2026-11-11: ca tự đóng đang chờ trung tâm xác nhận — chưa quyết toán buổi này.
+        // Boolean (không phải boolean): BookingService bản cũ không gửi field này.
+        Boolean settlementHeld;
     }
 }

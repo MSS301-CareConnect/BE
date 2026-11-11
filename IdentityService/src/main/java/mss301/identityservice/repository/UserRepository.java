@@ -1,5 +1,6 @@
 package mss301.identityservice.repository;
 
+import mss301.identityservice.repository.projection.StatisticsCountView;
 import jakarta.persistence.LockModeType;
 import mss301.identityservice.entity.User;
 import mss301.identityservice.enums.UserStatus;
@@ -49,19 +50,6 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
             """)
     long countActiveByRoleCode(@Param("roleCode") String roleCode, @Param("status") UserStatus status);
 
-    // Caregiver cùng trung tâm, loại tài khoản đồng thời có role quản trị để manager không thao tác được.
-    @Query("""
-            select distinct u from User u join u.userRoles ur
-            where u.deletedAt is null and u.centerId = :centerId
-            and ur.role.roleCode = :roleCode and ur.role.active = true and ur.role.deletedAt is null
-            and not exists (select privileged from UserRole privileged where privileged.user = u
-                and privileged.role.roleCode in :excludedRoleCodes
-                and privileged.role.active = true and privileged.role.deletedAt is null)
-            """)
-    Page<User> findByCenterAndRole(@Param("centerId") UUID centerId,
-                                   @Param("roleCode") String roleCode,
-                                   @Param("excludedRoleCodes") Collection<String> excludedRoleCodes,
-                                   Pageable pageable);
     @Query("select r.roleCode as category, count(distinct u) as count from User u join u.userRoles ur join ur.role r where u.deletedAt is null and r.deletedAt is null and r.active = true group by r.roleCode")
     List<StatisticsCountView> countUsersByRole();
 

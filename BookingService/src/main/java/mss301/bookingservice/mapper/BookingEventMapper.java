@@ -18,7 +18,6 @@ public interface BookingEventMapper {
 
     // Sự kiện đổi trạng thái một buổi (nhận ca, check-in, check-out, hủy…). Bảng chỉ ghi thêm → ignore id tại chỗ.
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "booking", source = "occurrence.booking")
     @Mapping(target = "occurrenceId", source = "occurrence.id")
     @Mapping(target = "oldCaregiverId", ignore = true)
     @Mapping(target = "newCaregiverId", ignore = true)
@@ -30,7 +29,6 @@ public interface BookingEventMapper {
 
     // Đổi caregiver của một buổi (BK-05 dùng cho lịch sử).
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "booking", source = "booking")
     @Mapping(target = "eventType", constant = "CAREGIVER_CHANGED")
     @Mapping(target = "fromStatus", ignore = true)
     @Mapping(target = "toStatus", ignore = true)
@@ -42,7 +40,6 @@ public interface BookingEventMapper {
 
     // CR-2: đổi địa chỉ chăm sóc của cả booking (không gắn một buổi).
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "booking", source = "booking")
     @Mapping(target = "occurrenceId", ignore = true)
     @Mapping(target = "eventType", constant = "SERVICE_ADDRESS_CHANGED")
     @Mapping(target = "oldCaregiverId", ignore = true)

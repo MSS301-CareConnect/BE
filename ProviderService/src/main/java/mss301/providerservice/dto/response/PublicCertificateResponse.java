@@ -13,7 +13,10 @@ import java.time.LocalDate;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PublicCertificateResponse {
     String certificateName;
+
     String issuedBy;
+
     LocalDate issuedDate;
+
     LocalDate expiryDate;
 }

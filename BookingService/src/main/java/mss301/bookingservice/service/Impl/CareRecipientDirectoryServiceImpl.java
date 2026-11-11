@@ -24,6 +24,7 @@ public class CareRecipientDirectoryServiceImpl implements CareRecipientDirectory
 
     CareRecipientClient careRecipientClient;
 
+    // Kiểm khách có quyền đặt lịch cho người bệnh rồi lấy ảnh chụp hồ sơ.
     @Override
     public RecipientSnapshot getBookableSnapshot(UUID recipientId, UUID customerId) {
         RemoteApiResponse<RecipientAccessResponse> accessResponse = careRecipientClient.checkAccess(recipientId,

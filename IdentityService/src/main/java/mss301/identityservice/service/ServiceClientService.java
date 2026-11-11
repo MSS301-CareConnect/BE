@@ -8,6 +8,7 @@ import mss301.identityservice.dto.response.ServiceTokenResponse;
 import java.util.UUID;
 
 public interface ServiceClientService {
+    // Cấp token SERVICE cho service client.
     APIResponse<ServiceTokenResponse> issueToken(ServiceTokenRequest request, HttpServletRequest httpServletRequest);
 
     // Kiểm ở mỗi request mang token SERVICE: client còn tồn tại, đúng clientId và chưa bị tắt.

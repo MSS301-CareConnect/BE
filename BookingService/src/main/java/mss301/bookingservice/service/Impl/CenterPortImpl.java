@@ -21,6 +21,7 @@ public class CenterPortImpl implements CenterPort {
 
     ProviderClient providerClient;
 
+    // Lấy thông tin trung tâm từ ProviderService, không có thì báo lỗi.
     @Override
     public ProviderCenterResponse getCenter(UUID centerId) {
         RemoteApiResponse<ProviderCenterResponse> response = providerClient.getCenter(centerId);
@@ -31,6 +32,7 @@ public class CenterPortImpl implements CenterPort {
         return center;
     }
 
+    // Báo lỗi nếu trung tâm không hoạt động.
     @Override
     public void checkBookable(UUID centerId) {
         ProviderCenterResponse center = getCenter(centerId);
@@ -39,6 +41,7 @@ public class CenterPortImpl implements CenterPort {
         }
     }
 
+    // Báo lỗi nếu trung tâm không phục vụ tỉnh / thành của địa chỉ chăm sóc.
     @Override
     public void checkServiceArea(UUID centerId, String careProvince) {
         ProviderCenterResponse center = getCenter(centerId);
@@ -50,6 +53,7 @@ public class CenterPortImpl implements CenterPort {
         }
     }
 
+    // Báo lỗi nếu trung tâm không tồn tại.
     @Override
     public void checkExists(UUID centerId) {
         RemoteApiResponse<ProviderCenterResponse> response = providerClient.getCenter(centerId);

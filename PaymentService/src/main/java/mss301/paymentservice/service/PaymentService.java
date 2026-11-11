@@ -20,27 +20,35 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface PaymentService {
+    // Chi tiết khoản thanh toán.
     APIResponse<PaymentResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID paymentId);
 
+    // Khoản thanh toán của booking.
     APIResponse<PaymentResponse> getByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId,
                                               PaymentType paymentType);
 
+    // Danh sách thanh toán.
     APIResponse<PageResponse<PaymentResponse>> list(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId,
                                                     PaymentStatus status, PaymentType paymentType, int page, int size);
 
+    // Doanh thu trong khoảng thời gian.
     APIResponse<RevenueResponse> getRevenue(Set<RoleCode> roles, UUID claimCenterId, Instant from, Instant to,
                                             UUID centerId);
 
+    // Tạo thanh toán cọc.
     APIResponse<CheckoutResponse> createCheckout(UUID customerId, UUID bookingId, CreateCheckoutRequest request,
                                                  HttpServletRequest httpServletRequest);
 
     // Ngoại lệ rule #3: JSON thô {RspCode, Message} theo chuẩn VNPay.
     VnPayIpnResponse handleVnPayIpn(Map<String, String> params);
 
+    // Xử lý khi khách quay lại từ VNPay.
     APIResponse<PaymentReturnResponse> handleVnPayReturn(Map<String, String> params);
 
+    // Xử lý webhook Stripe.
     APIResponse<Void> handleStripeWebhook(String payload, String signature);
 
+    // Xử lý khi khách quay lại từ Stripe.
     APIResponse<PaymentReturnResponse> handleStripeReturn(String sessionId);
 
     // PAY-07: phiên PENDING đã quá hạn + thời gian chờ IPN trễ.

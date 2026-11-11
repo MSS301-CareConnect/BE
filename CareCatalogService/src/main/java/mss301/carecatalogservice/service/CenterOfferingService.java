@@ -19,20 +19,26 @@ import java.util.UUID;
 // Dịch vụ mà trung tâm đăng ký cung cấp, dựa trên danh mục chuẩn (CatalogItem). ADMIN và manager của chính trung tâm
 // thấy mọi trạng thái; người khác chỉ thấy dịch vụ đang bán được (offering + danh mục ACTIVE, có gói giá active).
 public interface CenterOfferingService {
+    // Danh sách dịch vụ của trung tâm có lọc và phân trang.
     APIResponse<PageResponse<CenterOfferingResponse>> listByCenter(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId,
                                                                    CenterOfferingSearchRequest request);
 
+    // Chi tiết một dịch vụ trung tâm.
     APIResponse<CenterOfferingResponse> get(Set<RoleCode> roles, UUID scopeCenterId, UUID id);
 
     // SERVICE (ProviderService, SRCH-02): giá thấp nhất trong khoảng lọc của từng trung tâm.
     APIResponse<List<PriceSummaryResponse>> listPriceSummaries(PriceSummaryRequest request);
 
+    // Thêm dịch vụ cho trung tâm kèm bảng giá.
     APIResponse<CenterOfferingResponse> create(UUID centerId, CenterOfferingRequest request);
 
+    // Báo giá dịch vụ cho booking.
     APIResponse<List<ServiceQuoteResponse>> quote(ServiceQuoteRequest request);
 
+    // Cập nhật dịch vụ trung tâm.
     APIResponse<CenterOfferingResponse> update(UUID centerId, UUID id, CenterOfferingRequest request);
 
+    // Đổi trạng thái dịch vụ trung tâm.
     APIResponse<CenterOfferingResponse> updateStatus(UUID centerId, UUID id, ServiceStatusRequest request);
 
     // Chỉ khi không còn gói giá active; xóa mềm luôn các gói giá con trong cùng transaction.

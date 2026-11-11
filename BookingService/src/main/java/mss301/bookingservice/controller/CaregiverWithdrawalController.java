@@ -30,6 +30,7 @@ public class CaregiverWithdrawalController {
 
     CaregiverWithdrawalService caregiverWithdrawalService;
 
+    // API danh sách lần caregiver rút khỏi buổi.
     @GetMapping
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CENTER_MANAGER')")
     public APIResponse<PageResponse<CaregiverWithdrawalResponse>> list(@CurrentUserId UUID actorId,
@@ -42,6 +43,7 @@ public class CaregiverWithdrawalController {
         return caregiverWithdrawalService.list(actorId, roles, centerId, bookingId, pendingOnly, page, size);
     }
 
+    // API caregiver xin rút khỏi buổi / cả ngày.
     @PostMapping
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<List<CaregiverWithdrawalResponse>> create(@CurrentUserId UUID actorId,

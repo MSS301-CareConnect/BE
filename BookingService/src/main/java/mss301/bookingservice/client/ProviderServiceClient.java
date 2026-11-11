@@ -19,16 +19,14 @@ import mss301.bookingservice.client.dto.ProviderCenterResponse;
 import mss301.bookingservice.client.dto.CaregiverRatingRequest;
 import org.springframework.web.bind.annotation.PutMapping;
 
-/**
- * API của ProviderService chỉ dành cho service khác (token SERVICE), khác ProviderClient (token người dùng).
- * C5.2: caregiver có lịch làm việc và không nghỉ trong các buổi đặt (PRV-02). Dùng qua CaregiverPort.
- */
 @FeignClient(name = "provider", contextId = "providerServiceClient", url = "${booking.provider.url}",
         configuration = ProviderServiceClientConfig.class)
 public interface ProviderServiceClient {
+    // Gọi ProviderService lấy thông tin trung tâm (token SERVICE).
     @GetMapping("/api/v1/care-centers/{centerId}")
     RemoteApiResponse<ProviderCenterResponse> getCenter(@PathVariable("centerId") UUID centerId);
 
+    // Gọi ProviderService cập nhật điểm đánh giá caregiver.
     @PutMapping("/api/v1/caregivers/{caregiverId}/rating")
     void updateRating(@PathVariable("caregiverId") UUID caregiverId, @RequestBody CaregiverRatingRequest request);
 
@@ -42,6 +40,7 @@ public interface ProviderServiceClient {
     @GetMapping("/api/v1/caregivers/schedules/{scheduleId}")
     RemoteApiResponse<ProviderScheduleResponse> getSchedule(@PathVariable("scheduleId") UUID scheduleId);
 
+    // Gọi ProviderService kiểm tra caregiver rảnh các khung giờ.
     @PostMapping("/api/v1/caregivers/availability-checks")
     RemoteApiResponse<AvailabilityCheckResponse> checkAvailability(@RequestBody AvailabilityCheckRequest request);
 

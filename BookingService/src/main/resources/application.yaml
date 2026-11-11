@@ -177,6 +177,7 @@ booking:
     refund-threshold-minutes: ${BOOKING_POLICY_REFUND_THRESHOLD_MINUTES:1440}
     refund-percent-before-threshold: ${BOOKING_POLICY_REFUND_PERCENT_BEFORE_THRESHOLD:100}
     refund-percent-after-threshold: ${BOOKING_POLICY_REFUND_PERCENT_AFTER_THRESHOLD:70}
+    late-cancel-no-refund-minutes: ${BOOKING_POLICY_LATE_CANCEL_NO_REFUND_MINUTES:120}
     overdue-payment-forfeit-percent: ${BOOKING_POLICY_OVERDUE_PAYMENT_FORFEIT_PERCENT:100}
 
   # Ca chăm sóc (OPS-02 / OPS-04): nhắc session quên kết thúc sau giờ kết thúc + 60 phút. Cửa sổ check-in và mốc MISSED
@@ -186,8 +187,14 @@ booking:
     overdue-scan-interval: ${BOOKING_SESSION_OVERDUE_SCAN_INTERVAL:5m}
     # D21: ca quên check-out tự đóng sau giờ kết thúc buổi + 4h (COMPLETED, cờ auto_closed, báo trung tâm).
     auto-close-after: ${BOOKING_SESSION_AUTO_CLOSE_AFTER:4h}
+    # 2026-11-11: check-in xa địa chỉ chăm sóc hơn bán kính này thì gắn cờ cho trung tâm xem lại (không chặn).
+    check-in-radius-meters: ${BOOKING_CHECK_IN_RADIUS_METERS:300}
+    # 2026-11-11: khách phản ánh buổi trong khoảng này sau khi buổi kết thúc; PaymentService chưa quyết toán trong lúc đó.
+    customer-report-window: ${BOOKING_CUSTOMER_REPORT_WINDOW:24h}
     # D22 / Q12: chưa check-in sau giờ bắt đầu + check_in_late_minutes → MISSED (hoàn 100 % phần đã trả của buổi).
     missed-scan-interval: ${BOOKING_MISSED_SCAN_INTERVAL:5m}
+    # 2026-11-10: tới giờ mà caregiver chưa check-in → cảnh báo sớm caregiver / trung tâm / khách (một lần mỗi buổi).
+    late-warning-scan-interval: ${BOOKING_LATE_WARNING_SCAN_INTERVAL:1m}
     no-show-decision-reminder-after: ${BOOKING_NO_SHOW_DECISION_REMINDER_AFTER:24h}
 
   # BK-03: previewToken hủy booking ký HMAC, hạn 10 phút. Production phải đặt khóa chung cho mọi instance.

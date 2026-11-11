@@ -36,7 +36,7 @@ import mss301.providerservice.exception.AppException;
 import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CertificateMapper;
 import mss301.providerservice.repository.CertificateRepository;
-import mss301.providerservice.repository.CertificateRiskCount;
+import mss301.providerservice.repository.projection.CertificateRiskCount;
 import mss301.providerservice.repository.ProviderMediaRepository;
 import mss301.providerservice.security.ProviderAuthorization;
 import mss301.providerservice.service.CaregiverService;
@@ -91,6 +91,7 @@ public class CertificateServiceImpl implements CertificateService {
     ObjectMapper objectMapper;
     ProviderProperties providerProperties;
 
+    // Caregiver thêm chứng chỉ của mình.
     @Override
     @Transactional
     public APIResponse<CertificateResponse> create(UUID actorId, UUID caregiverId, CertificateRequest request) {
@@ -106,6 +107,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Tạo chứng chỉ thành công", certificateResponse);
     }
 
+    // Danh sách chứng chỉ của caregiver (chính caregiver hoặc người quản lý).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CertificateResponse>> list(UUID actorId, UUID caregiverId) {
@@ -120,6 +122,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Lấy danh sách chứng chỉ thành công", certificateResponses);
     }
 
+    // Chứng chỉ đã duyệt của caregiver đã xác minh (công khai).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<CertificateResponse>> listVerified(UUID caregiverId) {
@@ -138,6 +141,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Lấy chứng chỉ đã xác minh thành công", certificateResponses);
     }
 
+    // Caregiver cập nhật chứng chỉ của mình.
     @Override
     @Transactional
     public APIResponse<CertificateResponse> update(UUID actorId, UUID id, CertificateRequest request) {
@@ -154,6 +158,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Cập nhật chứng chỉ thành công", certificateResponse);
     }
 
+    // Admin duyệt / từ chối chứng chỉ có kiểm version.
     @Override
     @Transactional
     public APIResponse<CertificateResponse> verify(UUID actorId, UUID id, CertificateVerificationRequest request) {
@@ -179,6 +184,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Xác minh chứng chỉ thành công", response);
     }
 
+    // Manager của trung tâm xác nhận chứng chỉ, sau đó xếp AI kiểm tra.
     @Override
     @Transactional
     public APIResponse<CertificateResponse> verifyCenter(UUID actorId, UUID id, CertificateVerificationRequest request) {
@@ -209,6 +215,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Trung tâm xác minh chứng chỉ thành công", response);
     }
 
+    // Danh sách chứng chỉ chờ admin duyệt, lọc theo rủi ro / trạng thái AI.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CertificateResponse>> listPendingAudit(UUID centerId, CertificateRiskLevel riskLevel,
@@ -251,6 +258,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Lấy chứng chỉ chờ duyệt thành công", response);
     }
 
+    // Đếm chứng chỉ chờ duyệt theo mức rủi ro AI.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CertificatePendingAuditStatisticsResponse> getPendingAuditStatistics(UUID centerId) {
@@ -285,6 +293,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Lấy thống kê chứng chỉ chờ duyệt thành công", response);
     }
 
+    // Xếp lại AI kiểm tra cho chứng chỉ đã được trung tâm xác nhận.
     @Override
     @Transactional
     public APIResponse<CertificateResponse> startAiCheck(UUID actorId, UUID id) {
@@ -298,6 +307,7 @@ public class CertificateServiceImpl implements CertificateService {
         return APIResponse.success("Đã xếp lịch kiểm tra chứng chỉ bằng AI", response);
     }
 
+    // Caregiver xóa chứng chỉ của mình có kiểm version.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
@@ -314,6 +324,7 @@ public class CertificateServiceImpl implements CertificateService {
 
     // ─── Kiểm tra bằng AI (bước 4) ─────────────────────────────────────────────────────────────────────────────
 
+    // Lấy id chứng chỉ tới hạn chạy AI kiểm tra.
     @Override
     public List<UUID> findDueAiCheckIds() {
         return certificateRepository.findDueAiCheckIds(DUE_AI_CHECK_STATUSES, clock.instant(),
@@ -349,6 +360,7 @@ public class CertificateServiceImpl implements CertificateService {
         }
     }
 
+    // Nhận việc AI kiểm tra một chứng chỉ (chống chạy trùng).
     private AiCheckJob claimAiCheck(UUID id) {
         Certificate certificate = certificateRepository.findWithCaregiverById(id).orElse(null);
         if (certificate == null || certificate.getAiCheckId() == null
@@ -377,6 +389,7 @@ public class CertificateServiceImpl implements CertificateService {
         return images;
     }
 
+    // Ghi lỗi AI kiểm tra, hẹn chạy lại hoặc đánh dấu thất bại hẳn.
     private void failAiCheck(UUID id, AiCheckJob job, RuntimeException exception) {
         int attempts = job.attempts() + 1;
         boolean permanent = exception instanceof AppException appException
@@ -401,6 +414,7 @@ public class CertificateServiceImpl implements CertificateService {
         return delay.compareTo(maxBackoff) > 0 ? maxBackoff : delay;
     }
 
+    // AI đã chạy xong và mức rủi ro chấp nhận được.
     private boolean hasAcceptableAiResult(Certificate certificate) {
         return certificate.getAiCheckStatus() == CertificateAiCheckStatus.COMPLETED
                 && ACCEPTABLE_RISK_LEVELS.contains(certificate.getAiRiskLevel());
@@ -408,6 +422,7 @@ public class CertificateServiceImpl implements CertificateService {
 
     // ─── Phản hồi cho ADMIN (kèm kết quả AI đọc từ cột JSON) ─────────────────────────────────────────────────
 
+    // Map danh sách chứng chỉ sang response cho admin (kèm kết quả AI).
     private List<CertificateResponse> toAdminResponseList(List<Certificate> certificates) {
         List<CertificateResponse> responses = new ArrayList<>();
         for (Certificate certificate : certificates) {
@@ -416,11 +431,13 @@ public class CertificateServiceImpl implements CertificateService {
         return responses;
     }
 
+    // Map chứng chỉ sang response cho admin kèm cảnh báo và dữ liệu AI đọc được.
     private CertificateResponse toAdminResponse(Certificate certificate) {
         return certificateMapper.toAdminResponse(certificate, readWarnings(certificate.getAiWarnings()),
                 readExtracted(certificate.getAiExtracted()));
     }
 
+    // Đọc danh sách cảnh báo AI từ JSON đã lưu.
     private List<CertificateAiWarningResponse> readWarnings(String json) {
         if (isBlank(json)) {
             return null;
@@ -433,6 +450,7 @@ public class CertificateServiceImpl implements CertificateService {
         }
     }
 
+    // Đọc thông tin AI trích từ chứng chỉ (JSON đã lưu).
     private CertificateAiExtractedResponse readExtracted(String json) {
         if (isBlank(json)) {
             return null;
@@ -447,6 +465,7 @@ public class CertificateServiceImpl implements CertificateService {
 
     // ─── Kiểm tra chung ──────────────────────────────────────────────────────────────────────────────────────
 
+    // Kiểm tra yêu cầu duyệt: bắt buộc kết quả, từ chối thì phải có lý do.
     private void checkVerificationRequest(Certificate certificate, CertificateVerificationRequest request) {
         if (request.getApproved() == null) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -460,6 +479,7 @@ public class CertificateServiceImpl implements CertificateService {
         }
     }
 
+    // Lấy kết quả từ MediaService, thiếu thì báo dịch vụ file không khả dụng.
     private <T> T requireMediaResult(APIResponse<T> response) {
         if (response == null || response.getResult() == null) {
             throw new AppException(ErrorCode.MEDIA_SERVICE_UNAVAILABLE);
@@ -467,6 +487,7 @@ public class CertificateServiceImpl implements CertificateService {
         return response.getResult();
     }
 
+    // Lấy kết quả từ AIService, thiếu mức rủi ro thì báo AI không khả dụng.
     private CertificateCheckClientResponse requireAiResult(RemoteApiResponse<CertificateCheckClientResponse> response) {
         if (response == null || response.getResult() == null || response.getResult().getRiskLevel() == null) {
             throw new AppException(ErrorCode.AI_SERVICE_UNAVAILABLE);
@@ -474,17 +495,20 @@ public class CertificateServiceImpl implements CertificateService {
         return response.getResult();
     }
 
+    // Khóa chứng chỉ để cập nhật, không có thì báo lỗi.
     private Certificate lockCertificate(UUID id) {
         return certificateRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
     }
 
+    // Chuẩn hóa tên chứng chỉ, đơn vị cấp và số hiệu.
     private void normalizeFields(Certificate certificate) {
         certificate.setCertificateName(certificate.getCertificateName().trim());
         certificate.setIssuedBy(certificate.getIssuedBy().trim());
         certificate.setCredentialNumber(normalize(certificate.getCredentialNumber()));
     }
 
+    // Báo lỗi nếu ngày hết hạn trước ngày cấp.
     private void validateDates(CertificateRequest request) {
         if (request.getIssuedDate() != null && request.getExpiryDate() != null
                 && request.getExpiryDate().isBefore(request.getIssuedDate())) {
@@ -492,20 +516,24 @@ public class CertificateServiceImpl implements CertificateService {
         }
     }
 
+    // Báo xung đột nếu version gửi lên không khớp.
     private void checkVersion(Certificate certificate, Long version) {
         if (version == null || !version.equals(certificate.getVersion())) {
             throw new AppException(ErrorCode.CERTIFICATE_VERSION_CONFLICT);
         }
     }
 
+    // Trim chuỗi, rỗng thì trả null.
     private String normalize(String value) {
         return isBlank(value) ? null : value.trim();
     }
 
+    // Cắt chuỗi về độ dài tối đa.
     private String truncate(String value, int maxLength) {
         return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
+    // Kiểm tra chuỗi rỗng hoặc null.
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }

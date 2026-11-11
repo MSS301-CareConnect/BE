@@ -1,5 +1,6 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.FeedbackRatingView;
 import mss301.bookingservice.entity.Feedback;
 import mss301.bookingservice.enums.FeedbackVisibility;
 import org.springframework.data.jpa.repository.JpaRepository;

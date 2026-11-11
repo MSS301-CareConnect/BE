@@ -14,10 +14,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Một buổi chăm sóc (thay vai trò care session): giờ theo lịch lưu UTC, caregiver mặc định theo booking nhưng đổi
- * riêng được. Hủy buổi = CANCELLED (không xóa mềm; deleted_at chỉ do kế thừa BaseEntity).
- */
 @Entity
 @Table(name = "booking_occurrences")
 @Getter
@@ -153,6 +149,17 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "reminder_sent_at")
     Instant reminderSentAt;
 
+    // 2026-11-10: đã cảnh báo "tới giờ mà chưa check-in" cho buổi này (một lần); xóa khi đổi người / dời lịch.
+    @Column(name = "late_warned_at")
+    Instant lateWarnedAt;
+
+    // 2026-11-11: khách báo nhanh về buổi (chưa thấy người đến / không thực hiện đúng) — một lần mỗi buổi.
+    @Column(name = "customer_reported_at")
+    Instant customerReportedAt;
+
+    @Column(name = "customer_report_note", columnDefinition = "text")
+    String customerReportNote;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;
@@ -173,6 +180,7 @@ public class BookingOccurrence extends BaseEntity {
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;
             reminderSentAt = null;
+            lateWarnedAt = null;
             // Lịch Provider gắn với caregiver cũ (SHIFT) — người mới không giữ lịch đó.
             caregiverScheduleId = null;
         }

@@ -14,10 +14,6 @@ import lombok.experimental.FieldDefaults;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * Yêu cầu kiểm tra một chứng chỉ (chỉ ProviderService gọi, token SERVICE): thông tin caregiver đã khai báo và các file
- * của chứng chỉ. AI chỉ đọc ảnh; việc đối chiếu và tính mức rủi ro do AIService làm bằng code.
- */
 @Data
 @Builder
 @NoArgsConstructor

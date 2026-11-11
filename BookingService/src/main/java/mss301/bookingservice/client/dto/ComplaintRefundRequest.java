@@ -14,8 +14,12 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ComplaintRefundRequest {
     UUID bookingId;
+
     UUID complaintId;
+
     BigDecimal amount;
+
     UUID decidedBy;
+
     String note;
 }

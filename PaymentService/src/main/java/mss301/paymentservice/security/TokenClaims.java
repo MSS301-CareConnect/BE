@@ -12,6 +12,7 @@ public final class TokenClaims {
     // Cookie access token do IdentityService đặt cho web (HttpOnly, Path=/).
     public static final String ACCESS_COOKIE = "access_token";
 
+    // Lớp chỉ chứa hằng tên claim, không cho khởi tạo.
     private TokenClaims() {
     }
 }

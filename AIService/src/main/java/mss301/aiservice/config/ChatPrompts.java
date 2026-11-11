@@ -16,6 +16,7 @@ public final class ChatPrompts {
             không thay thế tư vấn của nhân viên y tế.
             """;
 
+    // Lớp chỉ chứa prompt của chat, không cho khởi tạo.
     private ChatPrompts() {
     }
 }

@@ -60,7 +60,11 @@ public enum ErrorCode {
     ACCOUNT_HOLDER_NAME_REQUIRED(6049, "Please enter the account holder name", HttpStatus.BAD_REQUEST),
     REJECT_REASON_REQUIRED(6050, "Please enter a reason for rejecting", HttpStatus.BAD_REQUEST),
     TRANSFER_REFERENCE_REQUIRED(6051, "Please enter the bank transfer reference", HttpStatus.BAD_REQUEST),
-    WALLET_NOT_WITHDRAWABLE(6052, "This wallet cannot be withdrawn from", HttpStatus.FORBIDDEN);
+    WALLET_NOT_WITHDRAWABLE(6052, "This wallet cannot be withdrawn from", HttpStatus.FORBIDDEN),
+    WITHDRAWAL_CENTER_REQUIRED(6053, "Please choose which center's balance to withdraw", HttpStatus.BAD_REQUEST),
+    INSUFFICIENT_CENTER_BALANCE(6054, "The amount exceeds your balance at this center", HttpStatus.CONFLICT),
+    WITHDRAWAL_NOT_REVIEWER(6055, "This withdrawal request is handled by another center or by the platform",
+            HttpStatus.FORBIDDEN);
 
     private final int code;
     private final String message;

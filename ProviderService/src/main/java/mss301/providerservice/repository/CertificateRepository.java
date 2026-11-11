@@ -1,5 +1,7 @@
 package mss301.providerservice.repository;
 
+import mss301.providerservice.repository.projection.CertificateRiskCount;
+import mss301.providerservice.repository.projection.CaregiverCertificateCount;
 import mss301.providerservice.entity.Certificate;
 import mss301.providerservice.enums.CertificateVerificationStatus;
 import mss301.providerservice.enums.CertificateAiCheckStatus;

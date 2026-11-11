@@ -9,10 +9,6 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
-/**
- * State machine của booking — NGUỒN DUY NHẤT về chuyển trạng thái hợp lệ (spec §11.1).
- * Mỗi hành động có tập trạng thái nguồn và đúng một trạng thái đích. "Ai được làm" kiểm ở service (role + phạm vi).
- */
 @Getter
 public enum BookingAction {
     // Trung tâm xác nhận booking đã có caregiver → chờ thanh toán khoản đầu.
@@ -65,6 +61,7 @@ public enum BookingAction {
         this.sourceStatuses = Collections.unmodifiableSet(EnumSet.copyOf(Arrays.asList(sourceStatuses)));
     }
 
+    // Kiểm tra hành động được phép từ trạng thái booking hiện tại.
     public boolean isAllowedFrom(BookingStatus currentStatus) {
         return sourceStatuses.contains(currentStatus);
     }

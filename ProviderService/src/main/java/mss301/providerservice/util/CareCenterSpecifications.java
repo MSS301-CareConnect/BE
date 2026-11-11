@@ -11,9 +11,11 @@ import java.util.Locale;
 
 public final class CareCenterSpecifications {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private CareCenterSpecifications() {
     }
 
+    // Điều kiện lọc trung tâm theo trạng thái, từ khóa, có lấy bản đã xóa không.
     public static Specification<CareCenter> filter(CenterStatus status, String keyword, boolean includeDeleted) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();

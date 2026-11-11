@@ -13,9 +13,14 @@ import mss301.bookingservice.dto.request.SessionVitals;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SessionNoteResponse {
     UUID id;
+
     UUID sessionId;
+
     String content;
+
     SessionVitals vitals;
+
     UUID createdBy;
+
     Instant createdAt;
 }

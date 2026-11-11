@@ -13,11 +13,13 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 import java.util.UUID;
 
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
+    // Nhận tham số UUID có @CurrentUserId.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentUserId.class) && UUID.class.equals(parameter.getParameterType());
     }
 
+    // Lấy userId (sub) của người gọi, không hợp lệ thì báo 401.
     @Override
     public UUID resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                 NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {

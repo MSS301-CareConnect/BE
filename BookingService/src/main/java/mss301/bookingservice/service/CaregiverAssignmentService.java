@@ -9,13 +9,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Tự phân công caregiver (2026-11-09, yêu cầu B). Ứng viên: cùng trung tâm, VERIFIED + ACTIVE, làm được mọi dịch vụ, rảnh
- * mọi buổi (ProviderService tìm, Booking khóa + kiểm trùng lại khi gán). Xếp hạng: ít phút đã nhận quanh lịch → đánh giá
- * cao → nhiều lượt đánh giá → nhiều kinh nghiệm. Ưu tiên một người cho cả booking, không được thì từng buổi. Center Manager
- * vẫn phân / đổi tay bằng API sẵn có và luôn ghi đè được — tự phân công chỉ chạm buổi chưa có người (PENDING_ASSIGNMENT)
- * hoặc đang chờ thay người (needsReassignment).
- */
 public interface CaregiverAssignmentService {
 
     // Gọi NGOÀI transaction (Provider + Identity). Ứng viên đã xếp hạng và tra hồ sơ (tối đa auto-assign-candidates),

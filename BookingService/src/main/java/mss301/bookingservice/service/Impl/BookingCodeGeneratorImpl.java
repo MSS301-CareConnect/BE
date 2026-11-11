@@ -49,6 +49,7 @@ public class BookingCodeGeneratorImpl implements BookingCodeGenerator {
         throw new AppException(ErrorCode.SERVICE_UNAVAILABLE);
     }
 
+    // Sinh phần đuôi ngẫu nhiên của mã booking.
     private String randomSuffix() {
         StringBuilder suffix = new StringBuilder(SUFFIX_LENGTH);
         for (int index = 0; index < SUFFIX_LENGTH; index++) {

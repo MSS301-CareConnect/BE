@@ -5,10 +5,12 @@ import java.time.Instant;
 // Khoảng thời gian nửa mở [startAt, endAt) dùng khi tính lịch rảnh (PRV-02) — giá trị nội bộ, không phải DTO API.
 public record TimeWindow(Instant startAt, Instant endAt) {
 
+    // Hai khoảng thời gian có giao nhau.
     public boolean overlaps(TimeWindow other) {
         return startAt.isBefore(other.endAt) && endAt.isAfter(other.startAt);
     }
 
+    // Khoảng này chứa trọn khoảng kia.
     public boolean contains(TimeWindow other) {
         return !startAt.isAfter(other.startAt) && !endAt.isBefore(other.endAt);
     }

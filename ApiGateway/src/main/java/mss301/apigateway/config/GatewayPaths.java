@@ -1,9 +1,5 @@
 package mss301.apigateway.config;
 
-/**
- * Đường dẫn public của gateway — một nguồn duy nhất cho route (RouteConfig) và bảo mật (SecurityConfig).
- * Mọi service tự khai báo prefix /api/v1 nên gateway chuyển tiếp nguyên path, không cắt prefix.
- */
 public final class GatewayPaths {
     public static final String API_PREFIX = "/api/v1";
 
@@ -25,7 +21,9 @@ public final class GatewayPaths {
             // H-08: admin xử lý outbox FAILED.
             "/api/v1/booking-outbox/**",
             // Spec v3: manager duyệt / từ chối yêu cầu đổi caregiver của khách; 2026-11-09: caregiver xin hủy buổi.
-            "/api/v1/caregiver-change-requests/**", "/api/v1/caregiver-withdrawals/**"
+            "/api/v1/caregiver-change-requests/**", "/api/v1/caregiver-withdrawals/**",
+            // 2026-11-10: hồ sơ caregiver vắng ca (giải trình, kết luận).
+            "/api/v1/caregiver-absences/**"
     };
 
     // SSE thông báo: route riêng không read timeout, không buffer (SseProxyHandler), xếp TRƯỚC route booking chung.
@@ -109,6 +107,7 @@ public final class GatewayPaths {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };
 
+    // Lớp chỉ chứa hằng đường dẫn, không cho khởi tạo.
     private GatewayPaths() {
     }
 }

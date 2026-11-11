@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public interface PaymentPolicyService {
+    // Chính sách thanh toán hiệu lực.
     APIResponse<PaymentPolicyResponse> getEffective(UUID centerId, Instant at);
 
     // Bản CENTER mới nhất có hiệu lực tại thời điểm at, không có thì GLOBAL; không có → NO_EFFECTIVE_POLICY.

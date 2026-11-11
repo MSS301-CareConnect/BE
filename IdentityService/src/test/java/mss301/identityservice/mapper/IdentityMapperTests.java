@@ -1,5 +1,6 @@
 package mss301.identityservice.mapper;
 
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.request.ProvisionRequest;
 import mss301.identityservice.dto.request.RegisterRequest;
 import mss301.identityservice.dto.request.RoleRequest;
@@ -26,10 +27,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Unit test cho các mapping không hiển nhiên: trường nhạy cảm / server quản lý bị bỏ qua, update một phần, quyền hiệu
- * lực, khóa ghép. Dùng thẳng code MapStruct sinh ra (không cần Spring).
- */
 class IdentityMapperTests {
 
     private final UserMapper userMapper = new UserMapperImpl();
@@ -183,5 +180,18 @@ class IdentityMapperTests {
         userRole.setUser(user);
         userRole.setRole(role);
         return userRole;
+    }
+
+    @Test
+    void roleUpdateTrimsNameKeepsActiveWhenNullAndOverwritesDescription() {
+        Role role = Role.builder().roleCode("SUPPORT").roleName("Old").description("old").active(false).build();
+        roleMapper.update(RoleUpdateRequest.builder().roleName("  Support  ").build(), role);
+        assertThat(role.getRoleName()).isEqualTo("Support");
+        assertThat(role.isActive()).isFalse();
+        assertThat(role.getDescription()).isNull();
+        assertThat(role.getRoleCode()).isEqualTo("SUPPORT");
+
+        roleMapper.update(RoleUpdateRequest.builder().roleName("Support").active(true).build(), role);
+        assertThat(role.isActive()).isTrue();
     }
 }

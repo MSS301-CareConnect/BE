@@ -13,16 +13,19 @@ public class ReadOnlyCookieCsrfTokenRepository implements CsrfTokenRepository {
 
     private static final String CSRF_PARAMETER = "_csrf";
 
+    // Sinh CSRF token mới (chỉ dùng nội bộ, cookie do IdentityService phát).
     @Override
     public CsrfToken generateToken(HttpServletRequest request) {
         return new DefaultCsrfToken(CSRF_HEADER, CSRF_PARAMETER, UUID.randomUUID().toString());
     }
 
+    // Không ghi cookie CSRF (IdentityService là nơi phát cookie).
     @Override
     public void saveToken(CsrfToken token, HttpServletRequest request, HttpServletResponse response) {
 
     }
 
+    // Đọc CSRF token từ cookie XSRF-TOKEN.
     @Override
     public CsrfToken loadToken(HttpServletRequest request) {
         String tokenValue = CookieUtils.read(request, CookieUtils.CSRF);

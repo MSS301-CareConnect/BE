@@ -11,9 +11,11 @@ public final class PageRequests {
     private static final int MAX_PAGE_SIZE = 100;
     private static final String CREATED_AT = "createdAt";
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private PageRequests() {
     }
 
+    // Tạo PageRequest có sắp xếp sau khi kiểm page / size.
     public static PageRequest sorted(int page, int size, Sort sort) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
@@ -29,6 +31,7 @@ public final class PageRequests {
         return PageRequest.of(page, size);
     }
 
+    // Tạo PageRequest mới nhất trước sau khi kiểm page / size.
     public static PageRequest newestFirst(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);

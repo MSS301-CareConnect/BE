@@ -22,10 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Seed idempotent permission catalog + 4 role nền tảng với grants cố định. Không seed tài khoản
- * (ADMIN đầu tiên do BootstrapAdmin tạo theo cấu hình). Không chạy DDL.
- */
 @Component
 @Order(0)
 @RequiredArgsConstructor
@@ -38,6 +34,7 @@ public class DataInitializer implements ApplicationRunner {
     RolePermissionRepository rolePermissionRepository;
     RoleMapper roleMapper;
 
+    // Seed permission và role mặc định khi khởi động (chạy lại nhiều lần vẫn an toàn).
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -61,6 +58,7 @@ public class DataInitializer implements ApplicationRunner {
         }
     }
 
+    // Tạo các permission còn thiếu trong catalog, trả về map mã → permission.
     private Map<String, Permission> seedPermissions() {
         Map<String, Permission> catalog = new HashMap<>();
         for (Permission permission : permissionRepository.findAll()) {
@@ -79,6 +77,7 @@ public class DataInitializer implements ApplicationRunner {
         return catalog;
     }
 
+    // Danh sách permission mặc định của từng role hệ thống.
     private List<String> defaultPermissions(RoleCode roleCode) {
         return switch (roleCode) {
             case ADMIN -> List.of(Permissions.USER_READ, Permissions.USER_MANAGE, Permissions.MANAGER_CREATE, Permissions.ROLE_MANAGE);

@@ -12,6 +12,7 @@ import java.time.Clock;
 @EnableConfigurationProperties(CareCatalogProperties.class)
 public class CareCatalogConfig {
 
+    // Bean Clock hệ thống, cho phép thay khi test.
     @Bean
     public Clock clock() {
         return Clock.systemUTC();

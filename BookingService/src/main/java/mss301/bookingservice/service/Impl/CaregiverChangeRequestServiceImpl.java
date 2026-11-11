@@ -1,5 +1,7 @@
 package mss301.bookingservice.service.Impl;
 
+import org.springframework.data.domain.Sort;
+import mss301.bookingservice.util.BookingSpecifications;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -13,7 +15,6 @@ import mss301.bookingservice.dto.response.CaregiverChangeRequestResponse;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.entity.Booking;
-import mss301.bookingservice.entity.BookingDetail;
 import mss301.bookingservice.entity.BookingEvent;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.entity.CaregiverChangeRequest;
@@ -49,7 +50,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,11 +63,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequestService {
 
-    CaregiverChangeRequestRepository changeRequestRepository;
+    CaregiverChangeRequestRepository caregiverChangeRequestRepository;
     BookingRepository bookingRepository;
-    BookingOccurrenceRepository occurrenceRepository;
-    BookingEventRepository eventRepository;
-    CaregiverChangeRequestMapper mapper;
+    BookingOccurrenceRepository bookingOccurrenceRepository;
+    BookingEventRepository bookingEventRepository;
+    CaregiverChangeRequestMapper caregiverChangeRequestMapper;
     OccurrenceMapper occurrenceMapper;
     CaregiverPort caregiverPort;
     BookingNotificationService bookingNotificationService;
@@ -80,8 +80,9 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
     static final int MAX_REQUESTS_PER_BOOKING = 3;
     static final Duration MIN_NOTICE_DURATION = Duration.ofHours(12);
 
+    // Khách tạo yêu cầu đổi người cho các buổi còn lại của booking.
     @Override
-    public APIResponse<CaregiverChangeRequestResponse> createRequest(UUID actorId, UUID bookingId, CaregiverChangeCreateRequest request) {
+    public APIResponse<CaregiverChangeRequestResponse> create(UUID actorId, UUID bookingId, CaregiverChangeCreateRequest request) {
         // 2026-11-09: khách chỉ đổi caregiver cho cả booking (mọi buổi chưa diễn ra), bỏ đổi theo từng buổi / từ ngày.
         if (request.getScopeType() != CaregiverChangeScopeType.ALL_REMAINING) {
             throw new AppException(ErrorCode.CAREGIVER_CHANGE_SCOPE_INVALID);
@@ -97,12 +98,12 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
             throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
         }
 
-        long pendingCount = changeRequestRepository.countByBookingIdAndStatus(bookingId, CaregiverChangeRequestStatus.PENDING);
+        long pendingCount = caregiverChangeRequestRepository.countByBookingIdAndStatus(bookingId, CaregiverChangeRequestStatus.PENDING);
         if (pendingCount > 0) {
             throw new AppException(ErrorCode.CONCURRENT_UPDATE);
         }
 
-        long totalCount = changeRequestRepository.countByBookingId(bookingId);
+        long totalCount = caregiverChangeRequestRepository.countByBookingId(bookingId);
         if (totalCount >= MAX_REQUESTS_PER_BOOKING) {
             throw new AppException(ErrorCode.TOO_MANY_CHANGE_REQUESTS);
         }
@@ -129,7 +130,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                         .build());
             }
 
-            CaregiverChangeRequest entity = changeRequestRepository.save(changeRequest);
+            CaregiverChangeRequest entity = caregiverChangeRequestRepository.save(changeRequest);
 
             BookingEvent event = BookingEvent.builder()
                     .booking(booking)
@@ -138,7 +139,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                     .createdAt(clock.instant())
                     .reason(request.getReasonCode().name() + (request.getReasonDetail() != null ? ": " + request.getReasonDetail() : ""))
                     .build();
-            eventRepository.save(event);
+            bookingEventRepository.save(event);
 
             return entity;
         });
@@ -152,11 +153,12 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
         );
 
         log.info("Caregiver change request {} created for booking {} by customer {}", saved.getId(), bookingId, actorId);
-        return APIResponse.success("Gửi yêu cầu đổi người chăm sóc thành công", mapper.toResponse(saved));
+        return APIResponse.success("Gửi yêu cầu đổi người chăm sóc thành công", caregiverChangeRequestMapper.toResponse(saved));
     }
 
+    // Danh sách yêu cầu đổi người của booking trong phạm vi người gọi.
     @Override
-    public APIResponse<List<CaregiverChangeRequestResponse>> listRequestsByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId) {
+    public APIResponse<List<CaregiverChangeRequestResponse>> listByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
@@ -168,21 +170,23 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
 
-        List<CaregiverChangeRequest> requests = changeRequestRepository.findByBookingIdOrderByCreatedAtDesc(bookingId);
-        return APIResponse.success("Lấy danh sách yêu cầu đổi người thành công", mapper.toResponseList(requests));
+        List<CaregiverChangeRequest> requests = caregiverChangeRequestRepository.findByBookingIdOrderByCreatedAtDesc(bookingId);
+        return APIResponse.success("Lấy danh sách yêu cầu đổi người thành công", caregiverChangeRequestMapper.toResponseList(requests));
     }
 
+    // Danh sách yêu cầu đổi người của trung tâm, mới nhất trước.
     @Override
-    public APIResponse<PageResponse<CaregiverChangeRequestResponse>> listCenterRequests(UUID actorId, UUID centerId, CaregiverChangeRequestStatus status, int page, int size) {
-        Page<CaregiverChangeRequest> pageResult = changeRequestRepository.findByCenterIdAndStatus(
-                centerId, status, PageRequest.of(page, size)
-        );
-        return APIResponse.success("Lấy danh sách yêu cầu thành công", PageResponse.of(pageResult, mapper.toResponseList(pageResult.getContent())));
+    public APIResponse<PageResponse<CaregiverChangeRequestResponse>> list(UUID actorId, UUID centerId, CaregiverChangeRequestStatus status, int page, int size) {
+        Page<CaregiverChangeRequest> pageResult = caregiverChangeRequestRepository.findAll(
+                BookingSpecifications.changeRequestsOfCenter(centerId, status),
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        return APIResponse.success("Lấy danh sách yêu cầu thành công", PageResponse.of(pageResult, caregiverChangeRequestMapper.toResponseList(pageResult.getContent())));
     }
 
+    // Trung tâm duyệt yêu cầu và phân công caregiver mới cho các buổi.
     @Override
-    public APIResponse<CaregiverChangeRequestResponse> approveRequest(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeApproveRequest request) {
-        CaregiverChangeRequest changeRequest = changeRequestRepository.findById(requestId)
+    public APIResponse<CaregiverChangeRequestResponse> approve(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeApproveRequest request) {
+        CaregiverChangeRequest changeRequest = caregiverChangeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_FOUND));
 
         if (!Objects.equals(changeRequest.getCenterId(), centerId)) {
@@ -220,7 +224,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
             if (!BookingStatus.CAREGIVER_CHANGEABLE.contains(lockedBooking.getStatus())) {
                 throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
             }
-            CaregiverChangeRequest lockedRequest = changeRequestRepository.findById(requestId)
+            CaregiverChangeRequest lockedRequest = caregiverChangeRequestRepository.findById(requestId)
                     .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_FOUND));
             if (lockedRequest.getStatus() != CaregiverChangeRequestStatus.PENDING) {
                 throw new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_PENDING);
@@ -242,7 +246,7 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                 if (occurrence.getCaregiverUserId() != null) {
                     previousCaregiverUserIds.add(occurrence.getCaregiverUserId());
                 }
-                eventRepository.save(bookingEventMapper.toCaregiverChangedEvent(lockedBooking, occurrence.getId(),
+                bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(lockedBooking, occurrence.getId(),
                         occurrence.getCaregiverId(), newCaregiver.getCaregiverId(), actorId, reason, now));
                 occurrence.assignCaregiver(newCaregiver.getCaregiverId(), newCaregiver.getCaregiverUserId());
             }
@@ -262,9 +266,9 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                     .createdAt(now)
                     .reason(request.getNote())
                     .build();
-            eventRepository.save(requestApprovedEvent);
+            bookingEventRepository.save(requestApprovedEvent);
 
-            return mapper.toResponse(changeRequestRepository.save(lockedRequest));
+            return caregiverChangeRequestMapper.toResponse(caregiverChangeRequestRepository.save(lockedRequest));
         });
 
         int changedCount = targetIds.size();
@@ -293,9 +297,10 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
         return APIResponse.success("Phê duyệt đổi người chăm sóc thành công", approvedResponse);
     }
 
+    // Trung tâm từ chối yêu cầu đổi người kèm lý do.
     @Override
-    public APIResponse<CaregiverChangeRequestResponse> rejectRequest(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeRejectRequest request) {
-        CaregiverChangeRequest changeRequest = changeRequestRepository.findById(requestId)
+    public APIResponse<CaregiverChangeRequestResponse> reject(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeRejectRequest request) {
+        CaregiverChangeRequest changeRequest = caregiverChangeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_FOUND));
 
         if (!Objects.equals(changeRequest.getCenterId(), centerId)) {
@@ -321,9 +326,9 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
                     .createdAt(now)
                     .reason(request.getReason())
                     .build();
-            eventRepository.save(event);
+            bookingEventRepository.save(event);
 
-            return changeRequestRepository.save(changeRequest);
+            return caregiverChangeRequestRepository.save(changeRequest);
         });
 
         notificationService.notify(
@@ -335,12 +340,13 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
         );
 
         log.info("Caregiver change request {} rejected by manager {}", requestId, actorId);
-        return APIResponse.success("Đã từ chối yêu cầu đổi người chăm sóc", mapper.toResponse(updated));
+        return APIResponse.success("Đã từ chối yêu cầu đổi người chăm sóc", caregiverChangeRequestMapper.toResponse(updated));
     }
 
+    // Khách hủy yêu cầu đổi người đang chờ.
     @Override
-    public APIResponse<CaregiverChangeRequestResponse> cancelRequest(UUID actorId, UUID requestId) {
-        CaregiverChangeRequest changeRequest = changeRequestRepository.findById(requestId)
+    public APIResponse<CaregiverChangeRequestResponse> cancel(UUID actorId, UUID requestId) {
+        CaregiverChangeRequest changeRequest = caregiverChangeRequestRepository.findById(requestId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_CHANGE_REQUEST_NOT_FOUND));
 
         if (!Objects.equals(changeRequest.getCustomerUserId(), actorId)) {
@@ -352,16 +358,16 @@ public class CaregiverChangeRequestServiceImpl implements CaregiverChangeRequest
         }
 
         changeRequest.setStatus(CaregiverChangeRequestStatus.CANCELLED);
-        CaregiverChangeRequest saved = changeRequestRepository.save(changeRequest);
+        CaregiverChangeRequest saved = caregiverChangeRequestRepository.save(changeRequest);
 
         log.info("Caregiver change request {} cancelled by customer {}", requestId, actorId);
-        return APIResponse.success("Hủy yêu cầu đổi người chăm sóc thành công", mapper.toResponse(saved));
+        return APIResponse.success("Hủy yêu cầu đổi người chăm sóc thành công", caregiverChangeRequestMapper.toResponse(saved));
     }
 
     // Buổi chưa diễn ra còn đổi được (SCHEDULED / ACKNOWLEDGED, bắt đầu sau MIN_NOTICE_DURATION), bỏ buổi đã thuộc
     // caregiverIdToSkip. Có buổi sắp diễn ra nhưng đều sát giờ → CHANGE_REQUEST_TOO_LATE; không còn buổi nào → 5174.
     private List<BookingOccurrence> findChangeableOccurrences(UUID bookingId, UUID caregiverIdToSkip, Instant now) {
-        List<BookingOccurrence> upcoming = occurrenceRepository.findAllByBooking(bookingId).stream()
+        List<BookingOccurrence> upcoming = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId).stream()
                 .filter(occurrence -> OccurrenceStatus.WORKABLE.contains(occurrence.getStatus()))
                 .filter(occurrence -> occurrence.getStartAt().isAfter(now))
                 .filter(occurrence -> !Objects.equals(occurrence.getCaregiverId(), caregiverIdToSkip))

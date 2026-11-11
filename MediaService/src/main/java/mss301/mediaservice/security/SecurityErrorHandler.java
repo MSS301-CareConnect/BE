@@ -25,18 +25,21 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
     ObjectMapper objectMapper;
 
+    // Trả 401 dạng APIResponse khi request chưa xác thực.
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException, ServletException {
         write(response, ErrorCode.UNAUTHENTICATED);
     }
 
+    // Trả 403 dạng APIResponse khi thiếu quyền truy cập.
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException, ServletException {
         write(response, ErrorCode.UNAUTHORIZED);
     }
 
+    // Ghi APIResponse lỗi từ ErrorCode vào response.
     private void write(HttpServletResponse response, ErrorCode errorCode) throws IOException {
         response.setStatus(errorCode.getStatusCode().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

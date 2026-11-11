@@ -28,7 +28,7 @@ import mss301.providerservice.mapper.WorkShiftMapper;
 import mss301.providerservice.repository.CareCenterRepository;
 import mss301.providerservice.repository.CaregiverProfileRepository;
 import mss301.providerservice.repository.CaregiverScheduleRepository;
-import mss301.providerservice.repository.ShiftApprovedCount;
+import mss301.providerservice.repository.projection.ShiftApprovedCount;
 import mss301.providerservice.repository.ShiftRegistrationRepository;
 import mss301.providerservice.repository.WorkShiftRepository;
 import mss301.providerservice.security.ProviderAuthorization;
@@ -92,6 +92,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Manager tạo một ca làm việc cho trung tâm đang hoạt động.
     @Override
     @Transactional
     public APIResponse<WorkShiftResponse> create(UUID actorId, UUID centerId, WorkShiftRequest request) {
@@ -101,6 +102,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Tạo ca làm việc thành công", respond(savedShift, 0, 0));
     }
 
+    // Tạo cùng một ca cho nhiều ngày một lần.
     @Override
     @Transactional
     public APIResponse<List<WorkShiftResponse>> createBatch(UUID actorId, UUID centerId, WorkShiftBatchRequest request) {
@@ -131,6 +133,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Tạo " + created.size() + " ca làm việc thành công", created);
     }
 
+    // Danh sách ca theo trạng thái hiệu lực, ngày, loại ca, còn chỗ / có đăng ký chờ.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<WorkShiftResponse>> list(UUID actorId, UUID centerId, ShiftStatus status,
@@ -160,6 +163,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Lấy danh sách ca làm việc thành công", pageResponse);
     }
 
+    // Thống kê ca của một trung tâm theo trạng thái hiệu lực và số đăng ký.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WorkShiftStatisticsResponse> statistics(UUID actorId, UUID centerId, LocalDate fromDate,
@@ -199,7 +203,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         // "Sắp tới 7 ngày" không phụ thuộc khoảng ngày đang lọc.
         LocalDate today = LocalDate.ofInstant(now, ProviderTime.ZONE);
         Instant weekLater = now.plus(7, ChronoUnit.DAYS);
-        List<WorkShift> upcomingShifts = workShiftRepository.findActiveBetween(scopedCenterId, today, today.plusDays(7))
+        List<WorkShift> upcomingShifts = workShiftRepository.findByCenterIdAndShiftStatusNotAndWorkDateBetweenAndDeletedAtIsNull(scopedCenterId, ShiftStatus.CANCELLED, today, today.plusDays(7))
                 .stream()
                 .filter(shift -> {
                     Instant start = WorkShiftStates.start(shift);
@@ -220,6 +224,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Lấy thống kê ca làm việc thành công", statistics);
     }
 
+    // Chi tiết ca trong phạm vi được xem.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<WorkShiftResponse> get(UUID actorId, UUID id) {
@@ -228,6 +233,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Lấy ca làm việc thành công", respondWithCounts(shift));
     }
 
+    // Cập nhật ca; ca đã có người được duyệt thì không cho đổi ngày / giờ.
     @Override
     @Transactional
     public APIResponse<WorkShiftResponse> update(UUID actorId, UUID id, WorkShiftRequest request) {
@@ -268,6 +274,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
                 respond(savedShift, approved, countPending(id)));
     }
 
+    // Đổi trạng thái ca (mở / đóng / nháp) có kiểm điều kiện.
     @Override
     @Transactional
     public APIResponse<WorkShiftResponse> changeStatus(UUID actorId, UUID id, WorkShiftStatusRequest request) {
@@ -321,6 +328,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Hủy ca làm việc thành công", response);
     }
 
+    // Xóa ca chưa có đăng ký được duyệt, có kiểm version.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
@@ -338,23 +346,27 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return APIResponse.success("Hủy ca làm việc thành công");
     }
 
+    // Tìm ca chưa xóa, không có thì báo lỗi.
     @Override
     public WorkShift findActiveShift(UUID id) {
         return workShiftRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.WORK_SHIFT_NOT_FOUND));
     }
 
+    // Đếm số đăng ký đã duyệt của ca.
     @Override
     public long countApproved(UUID shiftId) {
         return shiftRegistrationRepository.countByWorkShiftIdAndRegistrationStatus(
                 shiftId, RegistrationStatus.APPROVED);
     }
 
+    // Đếm số đăng ký đang chờ của ca.
     private long countPending(UUID shiftId) {
         return shiftRegistrationRepository.countByWorkShiftIdAndRegistrationStatus(
                 shiftId, RegistrationStatus.PENDING);
     }
 
+    // Kiểm tra trung tâm đang hoạt động và người gọi là manager.
     private CareCenter requireManagedActiveCenter(UUID actorId, UUID centerId) {
         CareCenter center = careCenterRepository.findByIdAndDeletedAtIsNull(centerId)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
@@ -365,6 +377,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return center;
     }
 
+    // Kiểm tra dữ liệu và lưu một ca mới.
     private WorkShift createOne(UUID actorId, CareCenter center, WorkShiftRequest request) {
         Instant now = clock.instant();
         validateFields(request, null, now);
@@ -382,6 +395,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         return workShiftRepository.save(shift);
     }
 
+    // Map ca sang response kèm số đăng ký đã duyệt / đang chờ.
     private WorkShiftResponse respondWithCounts(WorkShift shift) {
         return respond(shift, countApproved(shift.getId()), countPending(shift.getId()));
     }
@@ -546,6 +560,7 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         }
     }
 
+    // Ca mở được khi chưa bắt đầu, chưa hết hạn đăng ký và còn chỗ.
     private boolean canOpen(Instant deadline, Instant start, int capacity, long approved, Instant now) {
         return start.isAfter(now) && (deadline == null || deadline.isAfter(now)) && approved < capacity;
     }
@@ -613,29 +628,34 @@ public class WorkShiftServiceImpl implements WorkShiftService {
         }
     }
 
+    // Các lịch làm việc đang SCHEDULED của ca.
     private List<CaregiverSchedule> scheduledOf(UUID shiftId) {
         return caregiverScheduleRepository.findByWorkShiftIdAndScheduleStatusAndDeletedAtIsNull(shiftId,
                 ScheduleStatus.SCHEDULED);
     }
 
+    // Kiểm tra ngày / giờ ca có thay đổi.
     private boolean hasScheduleFieldsChanged(WorkShift shift, WorkShiftRequest request) {
         return !shift.getWorkDate().equals(request.getWorkDate())
                 || !shift.getStartTime().equals(request.getStartTime())
                 || !shift.getEndTime().equals(request.getEndTime());
     }
 
+    // Báo xung đột nếu version gửi lên không khớp.
     private void checkVersion(WorkShift shift, Long version) {
         if (version == null || !version.equals(shift.getVersion())) {
             throw new AppException(ErrorCode.WORK_SHIFT_VERSION_CONFLICT);
         }
     }
 
+    // Kiểm tra page / size hợp lệ.
     private void validatePage(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
         }
     }
 
+    // Trim chuỗi, rỗng thì trả null.
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }

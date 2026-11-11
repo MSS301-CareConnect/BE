@@ -10,11 +10,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Bản sao snapshot hồ sơ người bệnh lúc đặt lịch (GET /internal/care-recipients/{id}/snapshot của CareRecipientService):
- * nhận qua Feign, lưu nguyên vào bookings.recipient_snapshot (jsonb), trả lại trong chi tiết booking / buổi chăm sóc.
- * Enum của CareRecipient giữ dạng String và bỏ qua field lạ để thay đổi bên đó không làm hỏng service này.
- */
 @Data
 @Builder
 @AllArgsConstructor

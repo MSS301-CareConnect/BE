@@ -1,5 +1,6 @@
 package mss301.providerservice;
 
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import mss301.providerservice.dto.request.RegistrationReviewRequest;
 import mss301.providerservice.dto.request.ShiftRegistrationRequest;
 import mss301.providerservice.dto.response.ShiftRegistrationResponse;
@@ -61,10 +62,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Luồng ca làm việc 2026-11-05: trạng thái hiệu lực, job vòng đời, validate tạo / sửa, hủy ca dây chuyền, kiểm trùng
- * khi đăng ký, thống kê, duyệt hàng loạt và tạo lặp lại. H2 + repository thật; Booking (busy-caregivers) giả lập.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class WorkShiftFlowIntegrationTests {
@@ -376,7 +373,7 @@ class WorkShiftFlowIntegrationTests {
 
     // ===== helpers =====
 
-    void expectCode(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+    void expectCode(MockHttpServletRequestBuilder request,
                     UUID managerId, String body, ErrorCode code) throws Exception {
         mockMvc.perform(request.with(user(managerId, "CENTER_MANAGER"))
                         .contentType(MediaType.APPLICATION_JSON)

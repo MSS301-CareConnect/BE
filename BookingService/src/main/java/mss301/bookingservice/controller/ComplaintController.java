@@ -30,6 +30,7 @@ import java.util.Set;
 public class ComplaintController {
     ComplaintService complaintService;
 
+    // API danh sách khiếu nại theo phạm vi người gọi.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER')")
     public APIResponse<PageResponse<ComplaintResponse>> list(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -39,6 +40,7 @@ public class ComplaintController {
         return complaintService.list(actorId, roles, scopeCenterId, status, level, centerId, page, size);
     }
 
+    // API xem chi tiết khiếu nại.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER')")
     public APIResponse<ComplaintResponse> get(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -46,12 +48,14 @@ public class ComplaintController {
         return complaintService.get(actorId, roles, centerId, id);
     }
 
+    // API khách tạo khiếu nại.
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public APIResponse<ComplaintResponse> create(@CurrentUserId UUID actorId, @Valid @RequestBody ComplaintRequest request) {
         return complaintService.create(actorId, request);
     }
 
+    // API chuyển khiếu nại lên admin.
     @PostMapping("/{id}/escalate")
     @PreAuthorize("hasAnyRole('CENTER_MANAGER','CUSTOMER')")
     public APIResponse<ComplaintResponse> escalate(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -68,6 +72,7 @@ public class ComplaintController {
         return complaintService.transition(actorId, roles, null, id, ComplaintAction.WITHDRAW, null);
     }
 
+    // API nhận xử lý khiếu nại.
     @PatchMapping("/{id}/accept")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<ComplaintResponse> accept(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -75,6 +80,7 @@ public class ComplaintController {
         return complaintService.transition(actorId, roles, centerId, id, ComplaintAction.ACCEPT, null);
     }
 
+    // API trung tâm giải quyết khiếu nại.
     @PatchMapping("/{id}/resolve")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<ComplaintResponse> resolve(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -82,6 +88,7 @@ public class ComplaintController {
         return complaintService.transition(actorId, roles, centerId, id, ComplaintAction.RESOLVE, request.getResolution());
     }
 
+    // API admin giải quyết khiếu nại đã chuyển lên (kèm hoàn tiền nếu có).
     @PatchMapping("/{id}/admin-resolve")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<ComplaintResponse> adminResolve(@CurrentUserId UUID actorId, @PathVariable UUID id,

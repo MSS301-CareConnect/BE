@@ -17,6 +17,7 @@ public class ComplaintAdminResolutionRequest {
     @NotBlank(message = "RESOLUTION_REQUIRED")
     @Size(max = 4000, message = "INVALID_REQUEST")
     String resolution;
+
     @DecimalMin(value = "0", message = "INVALID_REQUEST")
     @Digits(integer = 12, fraction = 0, message = "INVALID_REQUEST")
     BigDecimal refundAmount;

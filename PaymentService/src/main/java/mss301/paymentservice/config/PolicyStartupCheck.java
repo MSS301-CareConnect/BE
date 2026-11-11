@@ -15,10 +15,6 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.util.Optional;
 
-/**
- * D17: % cọc thật lấy từ chính sách GLOBAL trong DB. Lúc khởi động chỉ đọc và cảnh báo khi DB thiếu chính sách
- * hoặc lệch PAYMENT_DEPOSIT_PERCENT (thường do .env cũ còn 100) — không ghi DB, không chặn khởi động.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -28,6 +24,7 @@ public class PolicyStartupCheck implements ApplicationRunner {
     PaymentProperties paymentProperties;
     Clock clock;
 
+    // Kiểm tra lúc khởi động: thiếu chính sách GLOBAL hoặc % cọc lệch cấu hình thì ghi cảnh báo.
     @Override
     public void run(ApplicationArguments args) {
         try {

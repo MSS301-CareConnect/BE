@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 public class NotificationHeartbeatScheduler {
     NotificationService notificationService;
 
+    // Định kỳ gửi heartbeat để giữ kết nối SSE.
     @Scheduled(fixedDelayString = "${BOOKING_NOTIFICATION_HEARTBEAT:25s}")
     public void heartbeat() {
         notificationService.heartbeat();

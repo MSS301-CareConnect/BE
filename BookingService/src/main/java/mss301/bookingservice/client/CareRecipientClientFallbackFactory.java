@@ -11,14 +11,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Fallback khi CareRecipientService lỗi / timeout / circuit mở: cả hai lời gọi dùng để TẠO booking → không đoán,
- * ném lại lỗi nghiệp vụ (404) hoặc 503 — không bao giờ tạo booking thiếu kiểm quyền / thiếu snapshot.
- */
 @Component
 @Slf4j
 public class CareRecipientClientFallbackFactory implements FallbackFactory<CareRecipientClient> {
 
+    // Fallback khi gọi CareRecipientService lỗi: ném AppException tương ứng.
     @Override
     public CareRecipientClient create(Throwable cause) {
         return new CareRecipientClient() {
@@ -34,6 +31,7 @@ public class CareRecipientClientFallbackFactory implements FallbackFactory<CareR
         };
     }
 
+    // Giữ nguyên AppException, lỗi khác đổi thành dịch vụ không khả dụng.
     private static AppException toAppException(Throwable cause) {
         if (cause instanceof AppException appException) {
             return appException;
