@@ -15,6 +15,7 @@ import java.util.List;
 @Slf4j
 public class CareCatalogClientFallbackFactory implements FallbackFactory<CareCatalogClient> {
 
+    // Fallback khi gọi CareCatalogService lỗi: ném AppException tương ứng.
     @Override
     public CareCatalogClient create(Throwable cause) {
         return new CareCatalogClient() {

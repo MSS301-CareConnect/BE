@@ -16,12 +16,14 @@ import java.util.UUID;
 
 public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentResolver {
 
+    // Nhận tham số controller có @CurrentCenterId.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentCenterId.class)
                 && UUID.class.equals(parameter.getParameterType());
     }
 
+    // Lấy center_id từ JWT cho tham số @CurrentCenterId.
     @Override
     public UUID resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                 NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
@@ -29,6 +31,10 @@ public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentRes
         if (authentication == null
                 || !authentication.isAuthenticated()
                 || authentication instanceof AnonymousAuthenticationToken) {
+            // GET công khai (khách chưa đăng nhập) không có trung tâm; tham số bắt buộc vẫn báo chưa đăng nhập.
+            if (!parameter.getParameterAnnotation(CurrentCenterId.class).required()) {
+                return null;
+            }
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         if (authentication instanceof JwtAuthenticationToken jwtAuth) {

@@ -3,6 +3,7 @@ package mss301.paymentservice.repository;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import mss301.paymentservice.entity.Refund;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.util.LockHints;
 import org.springframework.data.domain.Pageable;
@@ -64,4 +65,14 @@ public interface RefundRepository extends JpaRepository<Refund, UUID>, JpaSpecif
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Refund r where r.id = :id")
     Optional<Refund> findForUpdate(@Param("id") UUID id);
+
+    // Ví — tiền đã hoàn của một khách theo kênh (cổng / ví) và lúc hoàn xong.
+    @Query("""
+            select coalesce(sum(r.amount), 0) from Refund r
+            where r.customerId = :customerId and r.status = :status and r.channel = :channel
+              and r.refundedAt >= :from and r.refundedAt <= :to
+            """)
+    BigDecimal sumRefundedByCustomer(@Param("customerId") UUID customerId, @Param("status") RefundStatus status,
+                                     @Param("channel") RefundChannel channel, @Param("from") Instant from,
+                                     @Param("to") Instant to);
 }

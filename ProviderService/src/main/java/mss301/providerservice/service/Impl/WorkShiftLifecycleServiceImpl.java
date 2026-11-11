@@ -27,6 +27,7 @@ public class WorkShiftLifecycleServiceImpl implements WorkShiftLifecycleService 
     ShiftRegistrationRepository shiftRegistrationRepository;
     Clock clock;
 
+    // Cập nhật trạng thái lưu của ca theo thời gian thực (đóng / hoàn thành).
     @Override
     @Transactional
     public void advance() {

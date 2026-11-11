@@ -72,12 +72,14 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     TokenTransport tokenTransport;
     AuthenticationMapper authenticationMapper;
 
+    // Trả CSRF token hiện tại cho web.
     @Override
     public APIResponse<CsrfResponse> getCsrf(CsrfToken csrfToken) {
         CsrfResponse csrfResponse = authenticationMapper.toCsrfResponse(csrfToken);
         return APIResponse.success("Lấy CSRF token thành công", csrfResponse);
     }
 
+    // Đăng nhập: kiểm rate limit, xác thực mật khẩu, tạo phiên và phát token.
     @Override
     public APIResponse<AuthenticationResponse> login(LoginRequest request, HttpServletRequest httpRequest,
                                                      HttpServletResponse httpResponse) {
@@ -103,6 +105,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 null, clientType, deviceId, userAgent, ip, httpResponse, LOGIN_SUCCESS);
     }
 
+    // Làm mới token: xoay vòng refresh token, phát access token mới; token đã dùng lại thì thu hồi phiên.
     @Override
     public APIResponse<AuthenticationResponse> refresh(RefreshRequest refreshRequest, HttpServletRequest httpRequest,
                                                        HttpServletResponse httpResponse) {
@@ -147,6 +150,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 nextRefreshToken, identityProperties.getAccessTtl().toSeconds(), httpResponse, REFRESH_SUCCESS);
     }
 
+    // Đăng xuất: thu hồi refresh token, thu hồi access token và xóa cookie.
     @Override
     public APIResponse<Void> logout(LogoutRequest logoutRequest, HttpServletRequest httpRequest,
                                     HttpServletResponse httpResponse) {
@@ -174,11 +178,13 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return APIResponse.success(message);
     }
 
+    // Thông tin người dùng đang đăng nhập.
     @Override
     public APIResponse<UserResponse> me(UUID actorId) {
         return userService.me(actorId);
     }
 
+    // Danh sách phiên đăng nhập, đánh dấu phiên hiện tại.
     @Override
     public APIResponse<List<SessionResponse>> listSessions(UUID actorId, HttpServletRequest httpRequest) {
         String currentSid = null;
@@ -216,6 +222,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return APIResponse.success("Lấy danh sách phiên đăng nhập thành công", result);
     }
 
+    // Thu hồi một phiên của chính người dùng.
     @Override
     public APIResponse<Void> revokeSession(UUID actorId, String sessionId) {
         Map<String, String> sessionData = sessionStore.getSession(sessionId);
@@ -240,8 +247,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return APIResponse.success("Xóa phiên đăng nhập thành công");
     }
 
-    // ===== Deprecated methods =====
-
+    // Endpoint đăng nhập mobile cũ: đánh dấu deprecated rồi gọi login.
     @Override
     @Deprecated
     public APIResponse<AuthenticationResponse> loginMobile(LoginRequest request, HttpServletResponse httpResponse) {
@@ -249,6 +255,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return login(request, null, null);
     }
 
+    // Endpoint làm mới mobile cũ: đánh dấu deprecated rồi gọi refresh.
     @Override
     @Deprecated
     public APIResponse<AuthenticationResponse> refreshMobile(RefreshRequest request, HttpServletResponse httpResponse) {
@@ -256,6 +263,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         return refresh(request, null, null);
     }
 
+    // Refresh token không hợp lệ; nếu là token đã bị thu hồi thì hủy mọi phiên của chủ token.
     private void rejectRefresh(String tokenHash) {
         UUID ownerId = tokenStore.findRevokedTokenOwner(tokenHash);
         if (ownerId != null) {
@@ -266,8 +274,6 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         throw new AppException(ErrorCode.UNAUTHENTICATED);
     }
 
-    // ===== Private helpers =====
-
     // /auth/mobile/* cũ: báo client chuyển sang endpoint hợp nhất kèm X-Client-Type: mobile (từ 2026-10-19).
     private void markDeprecated(HttpServletResponse httpResponse, String replacementPath) {
         if (httpResponse == null) {
@@ -277,6 +283,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 DEPRECATION_PREFIX + replacementPath + DEPRECATION_SUFFIX);
     }
 
+    // Tạo / cập nhật phiên, phát refresh token mới và access token gắn phiên.
     private APIResponse<AuthenticationResponse> issueSessionAndTokens(
             UserResponse user, long authzVersion, String existingSessionId,
             ClientType clientType, String deviceId, String userAgent, String ip,
@@ -309,6 +316,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
                 rawRefreshToken, identityProperties.getAccessTtl().toSeconds(), response, message);
     }
 
+    // Lấy IP client của request.
     private String extractIp(HttpServletRequest request) {
         return clientIpResolver.resolve(request);
     }
@@ -340,6 +348,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         throw new AppException(ErrorCode.UNAUTHENTICATED);
     }
 
+    // Thu hồi refresh token (nếu có) khi đăng xuất.
     private void revokeRefreshToken(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             return;
@@ -359,6 +368,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
     }
 
+    // Đưa access token vào danh sách thu hồi tới khi hết hạn.
     private void blacklistAccessToken(String rawAccessToken) {
         if (rawAccessToken == null) {
             return;
@@ -374,6 +384,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
     }
 
+    // Bỏ qua lỗi 401 khi đăng xuất, ném lại các lỗi khác.
     private void rethrowUnlessUnauthenticated(AppException exception) {
         if (exception.getErrorCode() != ErrorCode.UNAUTHENTICATED) {
             throw exception;

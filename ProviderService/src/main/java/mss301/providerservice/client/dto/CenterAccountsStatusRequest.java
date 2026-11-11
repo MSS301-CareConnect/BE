@@ -2,8 +2,6 @@ package mss301.providerservice.client.dto;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import java.util.UUID;
-import java.util.List;
 
 @Data
 @Builder
@@ -12,5 +10,6 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CenterAccountsStatusRequest {
     String status;
+
     String reason;
 }

@@ -17,23 +17,44 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CenterBookingPolicyResponse {
     UUID centerId;
+
     boolean customized;
+
     Integer shiftMinAdvanceMinutes;
+
     Integer recurringMinAdvanceMinutes;
+
     Integer customMinAdvanceMinutes;
+
     Integer confirmationTimeoutMinutes;
+
     Integer assignmentTimeoutMinutes;
+
     Integer initialPaymentTimeoutMinutes;
+
     Integer remainingPaymentDueBeforeMinutes;
+
     List<Integer> remainingPaymentReminderMinutes;
+
     BigDecimal depositPercent;
+
     Integer checkInEarlyMinutes;
+
     Integer checkInLateMinutes;
+
     Integer refundThresholdMinutes;
+
     BigDecimal refundPercentBeforeThreshold;
+
     BigDecimal refundPercentAfterThreshold;
+
+    Integer lateCancelNoRefundMinutes;
+
     BigDecimal overduePaymentForfeitPercent;
+
     Long version;
+
     Instant updatedAt;
+
     UUID updatedBy;
 }

@@ -27,6 +27,7 @@ public class CookieUtils {
 
     IdentityProperties identityProperties;
 
+    // Đọc giá trị cookie theo tên.
     public static String read(HttpServletRequest request, String name) {
         if (request.getCookies() == null) {
             return null;
@@ -51,6 +52,7 @@ public class CookieUtils {
         return csrfToken;
     }
 
+    // Xóa cookie access và refresh khi đăng xuất.
     public void clear(HttpServletResponse response) {
         set(response, ACCESS, "", Duration.ZERO, ROOT_PATH);
         set(response, REFRESH, "", Duration.ZERO, REFRESH_PATH);
@@ -58,6 +60,7 @@ public class CookieUtils {
         set(response, CSRF, "", Duration.ZERO, ROOT_PATH);
     }
 
+    // Ghi cookie HttpOnly với thời hạn và path cho trước.
     private void set(HttpServletResponse response, String name, String value, Duration maxAge, String path) {
         ResponseCookie cookie = ResponseCookie.from(name, value)
                 .httpOnly(true)

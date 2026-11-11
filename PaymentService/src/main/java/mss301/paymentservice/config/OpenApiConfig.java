@@ -20,6 +20,7 @@ public class OpenApiConfig {
         SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class, CurrentCenterId.class, CurrentRoles.class);
     }
 
+    // Cấu hình tài liệu OpenAPI của PaymentService.
     @Bean
     OpenAPI paymentOpenApi() {
         return new OpenAPI()

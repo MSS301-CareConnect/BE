@@ -13,12 +13,20 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class OccurrenceRescheduleResponse {
     UUID occurrenceId;
+
     UUID bookingId;
+
     Instant originalStartAt;
+
     Instant originalEndAt;
+
     Instant newStartAt;
+
     Instant newEndAt;
+
     Integer rescheduleCount;
+
     Boolean available;
+
     String message;
 }

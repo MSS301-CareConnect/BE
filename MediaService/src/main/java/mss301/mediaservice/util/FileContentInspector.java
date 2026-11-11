@@ -12,9 +12,11 @@ public final class FileContentInspector {
 
     private static final int SIGNATURE_LENGTH = 16;
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private FileContentInspector() {
     }
 
+    // Kiểm tra chữ ký nội dung file khớp với content type khai báo.
     public static void check(MultipartFile file, String contentType) {
         byte[] signature = new byte[SIGNATURE_LENGTH];
         int bytesRead;
@@ -28,6 +30,7 @@ public final class FileContentInspector {
         }
     }
 
+    // Lấy phần mở rộng file tương ứng content type.
     public static String extension(String contentType) {
         return switch (contentType) {
             case "image/jpeg" -> "jpg";
@@ -41,6 +44,7 @@ public final class FileContentInspector {
         };
     }
 
+    // So khớp các byte đầu file với chữ ký của content type.
     private static boolean matches(String contentType, byte[] data, int length) {
         return switch (contentType.toLowerCase(Locale.ROOT)) {
             case "image/jpeg" -> unsigned(data[0]) == 0xFF && unsigned(data[1]) == 0xD8
@@ -56,6 +60,7 @@ public final class FileContentInspector {
         };
     }
 
+    // Kiểm tra đoạn byte tại vị trí cho trước khớp chuỗi ASCII.
     private static boolean ascii(byte[] data, int offset, String expected) {
         if (data.length < offset + expected.length()) {
             return false;
@@ -68,6 +73,7 @@ public final class FileContentInspector {
         return true;
     }
 
+    // Đổi byte sang số không dấu.
     private static int unsigned(byte value) {
         return value & 0xFF;
     }

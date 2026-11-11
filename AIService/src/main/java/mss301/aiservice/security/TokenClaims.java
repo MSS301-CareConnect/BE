@@ -15,6 +15,7 @@ public final class TokenClaims {
 
     public static final String BEARER_PREFIX = "Bearer ";
 
+    // Lớp chỉ chứa hằng tên claim, không cho khởi tạo.
     private TokenClaims() {
     }
 }

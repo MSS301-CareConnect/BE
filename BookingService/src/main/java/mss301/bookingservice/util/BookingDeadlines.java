@@ -5,15 +5,13 @@ import mss301.bookingservice.enums.BookingDeadlineType;
 
 import java.time.Instant;
 
-/**
- * Hạn đang chạy của booking theo trạng thái hiện tại: trung tâm / caregiver xác nhận, phân công, khoản đầu, phần còn lại.
- * Trạng thái không có hạn (đang chăm sóc, đã đóng, đã trả đủ) → null.
- */
 public final class BookingDeadlines {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private BookingDeadlines() {
     }
 
+    // Loại hạn chót đang áp dụng theo trạng thái booking.
     public static BookingDeadlineType typeOf(Booking booking) {
         return switch (booking.getStatus()) {
             case PENDING_CENTER_CONFIRMATION -> BookingDeadlineType.CENTER_CONFIRMATION;
@@ -27,6 +25,7 @@ public final class BookingDeadlines {
         };
     }
 
+    // Thời điểm hạn chót hiện tại của booking.
     public static Instant dueAt(Booking booking) {
         BookingDeadlineType type = typeOf(booking);
         if (type == null) {

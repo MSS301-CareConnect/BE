@@ -70,8 +70,8 @@ DB **đang có**, đã chạy các migration của Người B, chạy đúng m�
 
 Không chạy lại bootstrap trên DB có dữ liệu. CR không cần đổi schema. Các số lỗi đề xuất trong plan bị trùng được
 cấp số mới, giữ nguyên key: RECIPIENT_INACTIVE=2701, CAREGIVER_INVALID_TRANSITION=4216,
-CENTER_INVALID_TRANSITION=4122, TASK_NOT_FOUND=5820, INVALID_VITALS=5821,
-TOO_MANY_CUSTOM_TASKS=5822, REPORT_PHOTO_NOT_FOUND=5823.
+CENTER_INVALID_TRANSITION=4122, TASK_NOT_FOUND=5962 (trước 5820, đổi 2026-11-11 vì trùng), INVALID_VITALS=5821,
+TOO_MANY_CUSTOM_TASKS=5822, REPORT_PHOTO_NOT_FOUND=5964 (trước 5823, đổi 2026-11-11 vì trùng).
 
 ## Kiểm chứng
 

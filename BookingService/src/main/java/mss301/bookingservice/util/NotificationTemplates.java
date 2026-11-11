@@ -3,9 +3,11 @@ package mss301.bookingservice.util;
 import mss301.bookingservice.enums.NotificationType;
 
 public final class NotificationTemplates {
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private NotificationTemplates() {
     }
 
+    // Tiêu đề thông báo theo loại.
     public static String title(NotificationType type) {
         return switch (type) {
             case BOOKING_CREATED -> "Có yêu cầu đặt lịch mới";
@@ -19,7 +21,7 @@ public final class NotificationTemplates {
             case SESSION_STARTED -> "Ca chăm sóc đã bắt đầu";
             case SESSION_ENDED -> "Ca chăm sóc đã kết thúc";
             case REPORT_SUBMITTED -> "Có báo cáo chăm sóc mới";
-            case OCCURRENCE_MISSED -> "Buổi chăm sóc bị bỏ lỡ";
+            case OCCURRENCE_MISSED -> "Người chăm sóc không đến buổi chăm sóc";
             case NO_SHOW_REPORTED -> "Có báo cáo khách vắng mặt";
             case BOOKING_COMPLETED -> "Lịch đã hoàn thành, mời bạn đánh giá";
             case PAYMENT_SUCCEEDED -> "Thanh toán thành công";
@@ -45,6 +47,12 @@ public final class NotificationTemplates {
             case CAREGIVER_CHANGE_REQUEST_DECIDED -> "Yêu cầu đổi người chăm sóc đã được xử lý";
             case EMERGENCY_REPLACEMENT_NOTIFIED -> "Thông báo thay đổi người chăm sóc khẩn cấp";
             case OCCURRENCE_RESCHEDULED_NOTIFICATION -> "Buổi chăm sóc đã được dời lịch";
+            case CHECK_IN_LATE -> "Đã tới giờ nhưng người chăm sóc chưa check-in";
+            case CAREGIVER_ABSENCE_UPDATED -> "Hồ sơ vắng ca vừa được cập nhật";
+            case WALLET_WITHDRAWAL_COMPLETED -> "Rút tiền thành công";
+            case WALLET_WITHDRAWAL_REJECTED -> "Yêu cầu rút tiền bị từ chối";
+            case SESSION_LOCATION_FLAGGED -> "Check-in cần xem lại vị trí";
+            case CUSTOMER_VISIT_REPORT -> "Khách hàng vừa phản ánh về một buổi chăm sóc";
         };
     }
 }

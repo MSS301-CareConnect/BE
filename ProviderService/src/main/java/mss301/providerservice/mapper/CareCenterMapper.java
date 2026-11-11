@@ -39,8 +39,6 @@ public interface CareCenterMapper {
 
     // Thẻ công khai (SRCH-02): giá từ Catalog (priceSummary có thể null), ảnh presigned do service lấy qua Media.
     @Mapping(target = "centerId", source = "careCenter.id")
-    @Mapping(target = "minPrice", source = "priceSummary.minPrice")
-    @Mapping(target = "serviceCount", source = "priceSummary.serviceCount")
     CenterCardResponse toCardResponse(CareCenter careCenter, CenterPriceSummaryClientResponse priceSummary,
                                       List<String> imageUrls);
 

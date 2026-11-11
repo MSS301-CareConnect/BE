@@ -7,12 +7,15 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.client.dto.IdentityUserResponse;
 import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.dto.request.BusyCaregiverRequest;
+import mss301.bookingservice.dto.request.CustomerVisitReportRequest;
 import mss301.bookingservice.dto.request.NoShowDecisionRequest;
 import mss301.bookingservice.dto.request.NoShowReportRequest;
+import mss301.bookingservice.dto.request.OccurrenceAcknowledgementRequest;
 import mss301.bookingservice.dto.request.TimeSlotRequest;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.BusyCaregiverResponse;
 import mss301.bookingservice.dto.response.CaregiverOccurrenceResponse;
+import mss301.bookingservice.dto.response.OccurrenceResponse;
 import mss301.bookingservice.dto.response.PageResponse;
 import mss301.bookingservice.entity.Booking;
 import mss301.bookingservice.entity.BookingDetail;
@@ -27,6 +30,7 @@ import mss301.bookingservice.entity.CareSession;
 import mss301.bookingservice.enums.BookingEventType;
 import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.CancelledBy;
+import mss301.bookingservice.enums.CaregiverAbsenceSource;
 import mss301.bookingservice.enums.MissedReason;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.RefundReason;
@@ -43,7 +47,9 @@ import mss301.bookingservice.repository.BookingRepository;
 import mss301.bookingservice.repository.CareSessionRepository;
 import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingOccurrenceService;
+import mss301.bookingservice.service.CaregiverAbsenceService;
 import mss301.bookingservice.service.CaregiverPort;
+import mss301.bookingservice.service.CaregiverScheduleGuard;
 import mss301.bookingservice.service.IdentityUserService;
 import mss301.bookingservice.util.PageRequests;
 import org.springframework.data.domain.Page;
@@ -57,12 +63,16 @@ import mss301.bookingservice.service.NotificationService;
 import java.util.Map;
 import mss301.bookingservice.service.BookingNotificationService;
 import mss301.bookingservice.enums.NotificationType;
+import mss301.bookingservice.enums.SessionCompletionReview;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -81,10 +91,15 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     // Caregiver chỉ thấy đủ SĐT khách khi buổi sắp diễn ra (OPS-01); trước đó chỉ cần biết có liên hệ được.
     static Duration PHONE_REVEAL_WINDOW = Duration.ofHours(24);
     static int PHONE_VISIBLE_DIGITS = 2;
+    static int CUSTOMER_REPORT_NOTE_MIN_LENGTH = 10;
     static int SCAN_BATCH_SIZE = 100;
     static Instant UNBOUNDED_START = Instant.parse("1970-01-01T00:00:00Z");
     static Instant UNBOUNDED_END = Instant.parse("9999-12-31T00:00:00Z");
     static String MISSED_BY_JOB_REASON = "Người chăm sóc không check-in đúng hạn";
+    static String REPLACEMENT_REJECTED_REASON = "Khách từ chối người thay thế khẩn cấp";
+    static String OCCURRENCE_REF = "BOOKING_OCCURRENCE";
+    static DateTimeFormatter VISIT_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
+    static DateTimeFormatter CLOCK_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     BookingOccurrenceRepository bookingOccurrenceRepository;
     BookingRepository bookingRepository;
@@ -101,11 +116,15 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
     BookingNotificationService bookingNotificationService;
     NotificationService notificationService;
     CaregiverPort caregiverPort;
+    CaregiverAbsenceService caregiverAbsenceService;
+    CaregiverScheduleGuard caregiverScheduleGuard;
 
+    // Các buổi được giao cho caregiver trong khoảng ngày, lọc theo trạng thái / booking.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CaregiverOccurrenceResponse>> list(UUID actorId, LocalDate from, LocalDate to,
-                                                                       OccurrenceStatus status, int page, int size) {
+                                                                       OccurrenceStatus status, UUID bookingId, int page,
+                                                                       int size) {
         PageRequest pageRequest = PageRequests.unsorted(page, size);
         if (from != null && to != null && to.isBefore(from)) {
             throw new AppException(ErrorCode.INVALID_DATE_FILTER);
@@ -116,12 +135,13 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         Instant rangeEnd = to == null ? UNBOUNDED_END : to.plusDays(1).atStartOfDay(zone).toInstant();
         Set<OccurrenceStatus> statuses = status == null ? EnumSet.allOf(OccurrenceStatus.class) : EnumSet.of(status);
         Page<BookingOccurrence> occurrences = bookingOccurrenceRepository.findCaregiverSchedule(actorId, rangeStart,
-                rangeEnd, statuses, BookingStatus.CAREGIVER_VISIBLE, pageRequest);
+                rangeEnd, bookingId, statuses, BookingStatus.CAREGIVER_VISIBLE, pageRequest);
         PageResponse<CaregiverOccurrenceResponse> occurrenceResponses = PageResponse.of(occurrences,
                 occurrenceMapper.toCaregiverResponseList(occurrences.getContent()));
         return APIResponse.success("Lấy lịch chăm sóc thành công", occurrenceResponses);
     }
 
+    // Tìm caregiver đã có buổi trùng các khung giờ (cho ProviderService).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<BusyCaregiverResponse> listBusyCaregivers(BusyCaregiverRequest request) {
@@ -173,7 +193,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
         }
         // Buổi gắn một dịch vụ (2026-11-05) chỉ hiện dịch vụ đó.
-        List<BookingDetail> services = bookingDetailRepository.findAllByBooking(booking.getId()).stream()
+        List<BookingDetail> services = bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(booking.getId()).stream()
                 .filter(detail -> occurrence.getCareServiceId() == null
                         || occurrence.getCareServiceId().equals(detail.getCareServiceId()))
                 .toList();
@@ -182,7 +202,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         String customerPhone = resolveCustomerPhone(customer, occurrence, fullAccess);
         String customerName = customer == null ? null : customer.getFullName();
         // Các buổi của cùng caregiver trong booking (manager / admin: theo caregiver của buổi đang xem).
-        List<BookingOccurrence> bookingVisits = bookingOccurrenceRepository.findAllByBooking(booking.getId()).stream()
+        List<BookingOccurrence> bookingVisits = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
                 .filter(visit -> Objects.equals(visit.getCaregiverUserId(), occurrence.getCaregiverUserId()))
                 .sorted(Comparator.comparing(BookingOccurrence::getStartAt))
                 .toList();
@@ -191,6 +211,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Lấy chi tiết buổi chăm sóc thành công", occurrenceResponse);
     }
 
+    // Caregiver xác nhận đã nhận buổi.
     @Override
     public APIResponse<CaregiverOccurrenceResponse> acknowledge(UUID actorId, UUID id) {
         BookingOccurrence occurrence = findAssignedOccurrence(actorId, id);
@@ -198,31 +219,44 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             // Khóa booking trước rồi mới tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
             Booking lockedBooking = bookingRepository.findForUpdate(occurrence.getBooking().getId())
                     .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
-            BookingOccurrence lockedOccurrence = bookingOccurrenceRepository.findForUpdate(id)
-                    .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
-            // Có thể vừa bị đổi caregiver trong lúc chờ khóa.
-            if (!actorId.equals(lockedOccurrence.getCaregiverUserId())) {
-                throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
-            }
             if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(lockedBooking.getStatus())) {
                 throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
             }
-            Instant now = clock.instant();
-            if (lockedOccurrence.getStatus() != OccurrenceStatus.SCHEDULED || !lockedOccurrence.getStartAt().isAfter(now)) {
-                throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
-            }
-            lockedOccurrence.setStatus(OccurrenceStatus.ACKNOWLEDGED);
-            lockedOccurrence.setAcknowledgedAt(now);
-            bookingEventRepository.save(bookingEventMapper.toStatusEvent(lockedOccurrence,
-                    BookingEventType.OCCURRENCE_ACKNOWLEDGED, OccurrenceStatus.SCHEDULED, OccurrenceStatus.ACKNOWLEDGED,
-                    actorId, null, now));
-            return lockedOccurrence;
+            return markAcknowledged(actorId, id, clock.instant());
         });
         log.info("Occurrence {} acknowledged by caregiver {}", id, actorId);
         CaregiverOccurrenceResponse occurrenceResponse = occurrenceMapper.toCaregiverResponse(acknowledgedOccurrence);
         return APIResponse.success("Đã xác nhận nhận ca", occurrenceResponse);
     }
 
+    // Caregiver xác nhận nhiều buổi cùng booking một lần.
+    @Override
+    public APIResponse<List<CaregiverOccurrenceResponse>> acknowledgeMany(UUID actorId,
+                                                                          OccurrenceAcknowledgementRequest request) {
+        Set<UUID> occurrenceIds = new LinkedHashSet<>(request.getOccurrenceIds());
+        UUID bookingId = findCommonBooking(actorId, occurrenceIds);
+        List<BookingOccurrence> acknowledgedOccurrences = transactionTemplate.execute(status -> {
+            // Cùng thứ tự khóa booking → buổi như nhận từng buổi; một buổi sai thì rollback cả lệnh.
+            Booking lockedBooking = bookingRepository.findForUpdate(bookingId)
+                    .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+            if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(lockedBooking.getStatus())) {
+                throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
+            }
+            Instant now = clock.instant();
+            List<BookingOccurrence> occurrences = new ArrayList<>();
+            for (UUID occurrenceId : occurrenceIds) {
+                occurrences.add(markAcknowledged(actorId, occurrenceId, now));
+            }
+            return occurrences;
+        });
+        log.info("Caregiver {} acknowledged {} occurrence(s) of booking {}", actorId, occurrenceIds.size(), bookingId);
+        List<CaregiverOccurrenceResponse> occurrenceResponses = acknowledgedOccurrences.stream()
+                .map(occurrenceMapper::toCaregiverResponse)
+                .toList();
+        return APIResponse.success("Đã nhận " + occurrenceResponses.size() + " buổi", occurrenceResponses);
+    }
+
+    // Caregiver báo khách vắng mặt khi tới nơi.
     @Override
     @Transactional
     public APIResponse<CaregiverOccurrenceResponse> reportNoShow(UUID actorId, UUID id, NoShowReportRequest request) {
@@ -258,6 +292,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return APIResponse.success("Đã báo khách vắng mặt, chờ trung tâm xác nhận", occurrenceResponse);
     }
 
+    // Trung tâm chấp nhận / bác báo vắng mặt của caregiver.
     @Override
     @Transactional
     public APIResponse<CaregiverOccurrenceResponse> decideNoShow(UUID actorId, UUID centerId, UUID id,
@@ -283,17 +318,20 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (Boolean.TRUE.equals(request.getApproved())) {
             // Khách chịu phí buổi theo chính sách snapshot — PaymentService tính ở hóa đơn phần còn lại (FINALIZE).
             changeStatus(lockedOccurrence, OccurrenceStatus.CUSTOMER_NO_SHOW, actorId, request.getNote(), now);
+            bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.NO_SHOW_REPORTED);
         } else {
-            markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.CENTER, actorId, request.getNote(), now);
+            // Bác báo cáo = caregiver mới là người vắng: hoàn tiền khách + ghi hồ sơ vắng ca (thông báo đi kèm ở đó).
+            markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.CENTER, actorId, request.getNote(), now,
+                    CaregiverAbsenceSource.NO_SHOW_REPORT_REJECTED);
         }
         bookingLifecycleService.finalizeIfDone(booking, actorId);
-        bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.NO_SHOW_REPORTED);
         log.info("Occurrence {} no-show report {} by manager {}", id,
                 Boolean.TRUE.equals(request.getApproved()) ? "approved" : "rejected", actorId);
         CaregiverOccurrenceResponse occurrenceResponse = occurrenceMapper.toCaregiverResponse(lockedOccurrence);
         return APIResponse.success("Đã xử lý báo cáo khách vắng mặt", occurrenceResponse);
     }
 
+    // Lấy id buổi đã qua giờ mà caregiver không check-in.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findMissedIds() {
@@ -301,6 +339,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, clock.instant(), PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
+    // Đánh dấu buổi bị bỏ lỡ do caregiver, ghi vắng mặt và xử lý hoàn tiền.
     @Override
     @Transactional
     public void markMissed(UUID id) {
@@ -324,12 +363,125 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (!stillMissed) {
             return;
         }
-        markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.SYSTEM, null, MISSED_BY_JOB_REASON, now);
+        markMissedByCaregiver(booking, lockedOccurrence, CancelledBy.SYSTEM, null, MISSED_BY_JOB_REASON, now,
+                CaregiverAbsenceSource.MISSED_CHECK_IN);
         bookingLifecycleService.finalizeIfDone(booking, null);
-        bookingNotificationService.notifyOccurrence(lockedOccurrence, NotificationType.OCCURRENCE_MISSED);
         log.warn("Occurrence {} marked MISSED — no check-in within the grace period", id);
     }
 
+    // Khách phản ánh buổi không được thực hiện trong cửa sổ cho phép.
+    @Override
+    @Transactional
+    public APIResponse<OccurrenceResponse> reportByCustomer(UUID actorId, UUID occurrenceId,
+                                                           CustomerVisitReportRequest request) {
+        // Buổi của khách khác → 404 (không lộ tồn tại).
+        BookingOccurrence snapshot = bookingOccurrenceRepository.findWithBooking(occurrenceId)
+                .filter(found -> actorId.equals(found.getBooking().getCustomerId()))
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        Booking booking = lockBooking(snapshot);
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(occurrenceId)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        if (occurrence.getCustomerReportedAt() != null) {
+            throw new AppException(ErrorCode.CUSTOMER_REPORT_ALREADY_SENT);
+        }
+        Instant now = clock.instant();
+        String note = request == null || request.getNote() == null ? "" : request.getNote().strip();
+        String visit = describeVisit(booking, occurrence);
+        String body;
+        if (OccurrenceStatus.WORKABLE.contains(occurrence.getStatus()) && !now.isBefore(occurrence.getStartAt())
+                && !careSessionRepository.existsByOccurrenceIdAndDeletedAtIsNull(occurrenceId)) {
+            // Tới giờ mà chưa ai check-in: chỉ báo trung tâm; quá hạn check-in thì job MISSED tự hoàn tiền.
+            body = "Khách báo chưa thấy người chăm sóc đến: " + visit;
+        } else if (occurrence.getStatus() == OccurrenceStatus.COMPLETED && occurrence.getActualEndAt() != null
+                && now.isBefore(occurrence.getActualEndAt().plus(bookingProperties.getSession().getCustomerReportWindow()))) {
+            if (note.length() < CUSTOMER_REPORT_NOTE_MIN_LENGTH) {
+                throw new AppException(ErrorCode.CUSTOMER_REPORT_NOTE_INVALID);
+            }
+            CareSession session = careSessionRepository.findByOccurrenceIdAndDeletedAtIsNull(occurrenceId)
+                    .orElseThrow(() -> new AppException(ErrorCode.CUSTOMER_REPORT_NOT_ALLOWED));
+            // Trung tâm đã kết luận ca này rồi thì không mở lại.
+            if (session.getCompletionReview() != null && session.getCompletionReview() != SessionCompletionReview.PENDING) {
+                throw new AppException(ErrorCode.CUSTOMER_REPORT_NOT_ALLOWED);
+            }
+            session.setCompletionReview(SessionCompletionReview.PENDING);
+            body = "Khách phản ánh buổi không được thực hiện đúng: " + visit;
+        } else {
+            throw new AppException(ErrorCode.CUSTOMER_REPORT_NOT_ALLOWED);
+        }
+        occurrence.setCustomerReportedAt(now);
+        occurrence.setCustomerReportNote(note.isEmpty() ? null : note);
+        bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CUSTOMER_VISIT_REPORT,
+                Map.of("body", body), "BOOKING_OCCURRENCE", occurrenceId);
+        log.info("Occurrence {} reported by customer {} ({})", occurrenceId, actorId, occurrence.getStatus());
+        OccurrenceResponse occurrenceResponse = occurrenceMapper.toResponse(occurrence);
+        return APIResponse.success("Đã gửi phản ánh tới trung tâm", occurrenceResponse);
+    }
+
+    // Đánh dấu buổi không được thực hiện (lỗi caregiver) theo phản ánh.
+    @Override
+    public void markNotDelivered(Booking booking, BookingOccurrence occurrence, UUID actorId, String note,
+                                 Instant now) {
+        markMissedByCaregiver(booking, occurrence, CancelledBy.CENTER, actorId, note, now,
+                CaregiverAbsenceSource.SESSION_NOT_DELIVERED);
+        log.warn("Occurrence {} marked CAREGIVER_MISSED — the center found the auto-closed session not delivered",
+                occurrence.getId());
+    }
+
+    // Lấy id buổi đã tới giờ mà caregiver chưa check-in.
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findLateCheckInIds() {
+        return bookingOccurrenceRepository.findLateCheckInIds(OccurrenceStatus.WORKABLE,
+                BookingStatus.CAREGIVER_RECIPIENT_ACCESS, clock.instant(), PageRequest.of(0, SCAN_BATCH_SIZE));
+    }
+
+    // Cảnh báo caregiver và trung tâm khi check-in trễ (một lần mỗi buổi).
+    @Override
+    @Transactional
+    public void warnLateCheckIn(UUID id) {
+        BookingOccurrence snapshot = bookingOccurrenceRepository.findWithBooking(id).orElse(null);
+        if (snapshot == null) {
+            return;
+        }
+        // Booking đang bị request khác giữ khóa (vd caregiver đang check-in) → bỏ qua, lượt quét sau xét lại.
+        Optional<Booking> foundBooking = bookingRepository.findForUpdateSkipLocked(snapshot.getBooking().getId());
+        if (foundBooking.isEmpty()) {
+            return;
+        }
+        Booking booking = foundBooking.get();
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(id).orElse(null);
+        if (occurrence == null) {
+            return;
+        }
+        Instant now = clock.instant();
+        Instant checkInDeadline = occurrence.getStartAt().plus(Duration.ofMinutes(booking.getCheckInLateMinutes()));
+        // Kiểm lại sau khi khóa: có thể vừa check-in / báo vắng / đổi người; quá hạn rồi thì để job MISSED xử lý.
+        boolean stillLate = BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())
+                && OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())
+                && occurrence.getCaregiverUserId() != null
+                && occurrence.getLateWarnedAt() == null
+                && occurrence.getNoShowReportedAt() == null
+                && !occurrence.getStartAt().isAfter(now)
+                && checkInDeadline.isAfter(now);
+        if (!stillLate) {
+            return;
+        }
+        occurrence.setLateWarnedAt(now);
+        String visit = describeVisit(booking, occurrence);
+        String deadline = CLOCK_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(checkInDeadline);
+        notificationService.notify(List.of(occurrence.getCaregiverUserId()), NotificationType.CHECK_IN_LATE,
+                Map.of("body", "Đã tới giờ " + visit + " mà bạn chưa check-in. Sau " + deadline
+                        + " buổi sẽ bị ghi nhận vắng ca"), OCCURRENCE_REF, id);
+        bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CHECK_IN_LATE,
+                Map.of("body", "Người chăm sóc chưa check-in " + visit + ". Hãy liên hệ hoặc bố trí người thay trước "
+                        + deadline), OCCURRENCE_REF, id);
+        notificationService.notify(List.of(booking.getCustomerId()), NotificationType.CHECK_IN_LATE,
+                Map.of("body", "Người chăm sóc chưa bắt đầu " + visit + ". Trung tâm đã được báo; nếu tới " + deadline
+                        + " vẫn chưa có người, buổi sẽ được hoàn 100 % tiền"), OCCURRENCE_REF, id);
+        log.warn("Occurrence {} has no check-in at its start time — caregiver, center and customer warned", id);
+    }
+
+    // Lấy id buổi có báo vắng mặt chưa được trung tâm kết luận.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findUndecidedNoShowIds() {
@@ -338,6 +490,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 PageRequest.of(0, SCAN_BATCH_SIZE));
     }
 
+    // Tự chấp nhận báo vắng mặt khi trung tâm không kết luận đúng hạn.
     @Override
     @Transactional
     public void autoAcceptNoShow(UUID id) {
@@ -367,6 +520,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         log.warn("Occurrence {} no-show report auto-accepted after the decision window", id);
     }
 
+    // Lấy id buổi sắp bắt đầu cần nhắc caregiver.
     @Override
     @Transactional(readOnly = true)
     public List<UUID> findShiftReminderIds() {
@@ -375,6 +529,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 BookingStatus.CAREGIVER_RECIPIENT_ACCESS, now, now.plusSeconds(7200), PageRequest.of(0, 100));
     }
 
+    // Nhắc caregiver trước giờ buổi (một lần mỗi buổi).
     @Override
     @Transactional
     public void remindShift(UUID id) {
@@ -393,6 +548,12 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         occurrence.setReminderSentAt(now);
         notificationService.notify(List.of(occurrence.getCaregiverUserId()), NotificationType.SHIFT_REMINDER,
                 Map.of(), "BOOKING_OCCURRENCE", id);
+        if (occurrence.getStatus() == OccurrenceStatus.SCHEDULED) {
+            // 2026-11-10: còn dưới 2 giờ mà caregiver chưa bấm nhận ca → trung tâm biết để gọi xác nhận / bố trí người khác.
+            bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.SHIFT_REMINDER,
+                    Map.of("body", "Người chăm sóc chưa xác nhận nhận ca " + describeVisit(booking, occurrence)
+                            + " — hãy liên hệ để chắc chắn có người đến"), OCCURRENCE_REF, id);
+        }
     }
 
     // Khóa booking trước rồi mới tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
@@ -401,15 +562,25 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
     }
 
-    // MISSED do caregiver → hoàn 100% cọc buổi qua outbox; khóa theo id buổi nên job và manager không hoàn hai lần.
+    // MISSED do caregiver → hoàn 100 % tiền đã trả của buổi qua outbox (khóa theo id buổi nên job và manager không hoàn
+    // hai lần) và ghi hồ sơ vắng ca để caregiver giải trình, trung tâm kết luận (2026-11-10).
     private void markMissedByCaregiver(Booking booking, BookingOccurrence occurrence, CancelledBy cancelledBy,
-                                       UUID changedBy, String reason, Instant now) {
+                                       UUID changedBy, String reason, Instant now, CaregiverAbsenceSource source) {
         changeStatus(occurrence, OccurrenceStatus.CAREGIVER_MISSED, changedBy, reason, now);
         occurrence.setMissedReason(MissedReason.CAREGIVER);
         bookingLifecycleService.requestRefund(booking, List.of(occurrence.getId()), RefundReason.CAREGIVER_MISSED,
                 cancelledBy, changedBy, occurrence.getId().toString());
+        caregiverAbsenceService.record(occurrence, source);
     }
 
+    // Mô tả ngắn buổi (số thứ tự + giờ bắt đầu) cho thông báo.
+    private String describeVisit(Booking booking, BookingOccurrence occurrence) {
+        return "buổi " + occurrence.getOccurrenceNo() + " ("
+                + VISIT_TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(occurrence.getStartAt())
+                + ") của lịch " + booking.getBookingCode();
+    }
+
+    // Đổi trạng thái buổi có kiểm chuyển hợp lệ và ghi sự kiện.
     private void changeStatus(BookingOccurrence occurrence, OccurrenceStatus toStatus, UUID changedBy, String reason,
                               Instant now) {
         OccurrenceStatus fromStatus = occurrence.getStatus();
@@ -426,6 +597,42 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return bookingOccurrenceRepository.findWithBooking(id)
                 .filter(found -> actorId.equals(found.getCaregiverUserId()))
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+    }
+
+    // Mọi buổi phải được giao cho caregiver này và thuộc cùng một booking; khác → 404 (không lộ tồn tại).
+    private UUID findCommonBooking(UUID actorId, Set<UUID> occurrenceIds) {
+        UUID bookingId = null;
+        for (UUID occurrenceId : occurrenceIds) {
+            UUID occurrenceBookingId = findAssignedOccurrence(actorId, occurrenceId).getBooking().getId();
+            if (bookingId != null && !bookingId.equals(occurrenceBookingId)) {
+                throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
+            }
+            bookingId = occurrenceBookingId;
+        }
+        return bookingId;
+    }
+
+    // Gọi khi đã khóa booking: khóa buổi, kiểm lại người được giao (có thể vừa bị đổi lúc chờ khóa) rồi SCHEDULED →
+    // ACKNOWLEDGED kèm event. 2026-11-11: quên bấm nhận trước giờ vẫn nhận được tới khi đóng cửa sổ check-in (giờ bắt
+    // đầu + check_in_late_minutes của booking, và trước giờ kết thúc); sau mốc đó buổi chờ job đánh MISSED.
+    private BookingOccurrence markAcknowledged(UUID actorId, UUID occurrenceId, Instant now) {
+        BookingOccurrence lockedOccurrence = bookingOccurrenceRepository.findForUpdate(occurrenceId)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        if (!actorId.equals(lockedOccurrence.getCaregiverUserId())) {
+            throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
+        }
+        Instant latestCheckIn = lockedOccurrence.getStartAt()
+                .plus(Duration.ofMinutes(lockedOccurrence.getBooking().getCheckInLateMinutes()));
+        if (lockedOccurrence.getStatus() != OccurrenceStatus.SCHEDULED || !now.isBefore(latestCheckIn)
+                || !now.isBefore(lockedOccurrence.getEndAt())) {
+            throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
+        }
+        lockedOccurrence.setStatus(OccurrenceStatus.ACKNOWLEDGED);
+        lockedOccurrence.setAcknowledgedAt(now);
+        bookingEventRepository.save(bookingEventMapper.toStatusEvent(lockedOccurrence,
+                BookingEventType.OCCURRENCE_ACKNOWLEDGED, OccurrenceStatus.SCHEDULED, OccurrenceStatus.ACKNOWLEDGED,
+                actorId, null, now));
+        return lockedOccurrence;
     }
 
     // ADMIN / SERVICE không giới hạn; manager cùng trung tâm (center_id trong token); khách chủ booking.
@@ -471,6 +678,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         return upcoming ? phoneNumber : maskPhone(phoneNumber);
     }
 
+    // Che bớt số điện thoại, chỉ giữ vài số đầu / cuối.
     private String maskPhone(String phoneNumber) {
         if (phoneNumber.length() <= PHONE_VISIBLE_DIGITS * 2) {
             return "*".repeat(phoneNumber.length());
@@ -480,14 +688,17 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 + phoneNumber.substring(phoneNumber.length() - PHONE_VISIBLE_DIGITS);
     }
 
+    // Id ca chăm sóc của buổi (nếu có).
     private UUID findSessionId(BookingOccurrence occurrence) {
         return careSessionRepository.findByOccurrenceIdAndDeletedAtIsNull(occurrence.getId())
                 .map(CareSession::getId)
                 .orElse(null);
     }
 
+    // Không @Transactional: hỏi Provider (đủ kỹ năng, có lịch làm việc, không nghỉ) qua mạng trước, rồi transaction ngắn khóa
+    // booking → buổi → lịch người mới và kiểm trùng giờ với booking khác (2026-11-10 — trước đó không kiểm, có thể giao một
+    // người hai nơi cùng lúc, và gọi Provider trong transaction).
     @Override
-    @Transactional
     public APIResponse<Void> emergencyReassign(UUID actorId, UUID centerId, UUID bookingId,
                                               EmergencyReassignmentRequest request) {
         Booking booking = bookingRepository.findByIdAndDeletedAtIsNull(bookingId)
@@ -495,63 +706,109 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (centerId != null && !centerId.equals(booking.getCenterId())) {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
         }
-        if (request.getOccurrenceIds() == null || request.getOccurrenceIds().isEmpty()) {
-            throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
-        }
-
-        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllById(request.getOccurrenceIds());
-        List<BookingOccurrence> targetOccurrences = occurrences.stream()
-                .filter(o -> bookingId.equals(o.getBooking().getId()) && o.getDeletedAt() == null)
-                .filter(o -> o.getStatus() == OccurrenceStatus.SCHEDULED || o.getStatus() == OccurrenceStatus.ACKNOWLEDGED)
+        Instant requestedAt = clock.instant();
+        Set<UUID> requestedIds = Set.copyOf(request.getOccurrenceIds());
+        List<BookingOccurrence> candidates = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(bookingId).stream()
+                .filter(occurrence -> requestedIds.contains(occurrence.getId()))
+                .filter(occurrence -> isReplaceable(occurrence, request.getNewCaregiverId(), requestedAt))
                 .toList();
-        if (targetOccurrences.isEmpty()) {
+        if (candidates.isEmpty()) {
             throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
         }
-
-        List<UUID> careServiceIds = targetOccurrences.stream()
+        List<UUID> careServiceIds = candidates.stream()
                 .map(BookingOccurrence::getCareServiceId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        AssignedCaregiver assigned = caregiverPort.resolveAssignable(booking.getCenterId(), request.getNewCaregiverId(), careServiceIds);
-
-        Instant now = clock.instant();
-        for (BookingOccurrence occurrence : targetOccurrences) {
-            occurrence.setCaregiverId(assigned.getCaregiverId());
-            occurrence.setCaregiverUserId(assigned.getCaregiverUserId());
-            occurrence.setIsEmergencyReplacement(true);
-            occurrence.setReplacementReason(request.getReason());
-            occurrence.setReplacementConsentStatus(ReplacementConsentStatus.PENDING_CUSTOMER);
-            occurrence.setStatus(OccurrenceStatus.SCHEDULED);
-            occurrence.setAcknowledgedAt(null);
-        }
-        bookingOccurrenceRepository.saveAll(targetOccurrences);
-
-        bookingEventRepository.save(bookingEventMapper.toStatusEvent(
-                targetOccurrences.get(0), BookingEventType.EMERGENCY_REPLACEMENT_ASSIGNED,
-                OccurrenceStatus.SCHEDULED, OccurrenceStatus.SCHEDULED,
-                actorId, request.getReason(), now));
-
-        notificationService.notify(
-                List.of(booking.getCustomerId()),
-                NotificationType.EMERGENCY_REPLACEMENT_NOTIFIED,
-                Map.of("body", "Trung tâm đã bố trí chuyên viên thay thế cho lịch " + booking.getBookingCode() + ": " + request.getReason()),
-                "BOOKING",
-                booking.getId());
-
+        AssignedCaregiver assigned = caregiverPort.resolveAssignable(booking.getCenterId(), request.getNewCaregiverId(),
+                careServiceIds.isEmpty() ? findBookingServiceIds(bookingId) : careServiceIds);
+        caregiverPort.checkAvailable(assigned.getCaregiverId(), occurrenceMapper.toSlotList(candidates));
+        String reason = request.getReason().strip();
+        List<UUID> previousCaregiverUserIds = new ArrayList<>();
+        Integer replacedCount = transactionTemplate.execute(status -> {
+            Booking lockedBooking = bookingRepository.findForUpdate(bookingId)
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+            if (!BookingStatus.CAREGIVER_CHANGEABLE.contains(lockedBooking.getStatus())) {
+                throw new AppException(ErrorCode.INVALID_BOOKING_TRANSITION);
+            }
+            Instant now = clock.instant();
+            List<BookingOccurrence> targets = new ArrayList<>();
+            for (BookingOccurrence candidate : candidates) {
+                bookingOccurrenceRepository.findForUpdate(candidate.getId())
+                        .filter(occurrence -> isReplaceable(occurrence, assigned.getCaregiverId(), now))
+                        .ifPresent(targets::add);
+            }
+            if (targets.isEmpty()) {
+                throw new AppException(ErrorCode.NO_REASSIGNABLE_OCCURRENCES);
+            }
+            caregiverScheduleGuard.lockCaregiver(assigned.getCaregiverId());
+            caregiverScheduleGuard.checkCaregiverFree(assigned.getCaregiverId(), occurrenceMapper.toSlotList(targets),
+                    bookingId);
+            for (BookingOccurrence occurrence : targets) {
+                if (occurrence.getCaregiverUserId() != null) {
+                    previousCaregiverUserIds.add(occurrence.getCaregiverUserId());
+                }
+                bookingEventRepository.save(bookingEventMapper.toCaregiverChangedEvent(lockedBooking, occurrence.getId(),
+                        occurrence.getCaregiverId(), assigned.getCaregiverId(), actorId, reason, now));
+                // Đổi người qua entity: buổi đã nhận ca quay về SCHEDULED, bỏ cờ chờ đổi người, xóa mốc nhắc / cảnh báo.
+                occurrence.assignCaregiver(assigned.getCaregiverId(), assigned.getCaregiverUserId());
+                occurrence.setIsEmergencyReplacement(true);
+                occurrence.setReplacementReason(reason);
+                occurrence.setReplacementConsentStatus(ReplacementConsentStatus.PENDING_CUSTOMER);
+            }
+            bookingEventRepository.save(bookingEventMapper.toStatusEvent(targets.getFirst(),
+                    BookingEventType.EMERGENCY_REPLACEMENT_ASSIGNED, targets.getFirst().getStatus(),
+                    targets.getFirst().getStatus(), actorId, reason, now));
+            notificationService.notify(List.of(lockedBooking.getCustomerId()),
+                    NotificationType.EMERGENCY_REPLACEMENT_NOTIFIED,
+                    Map.of("body", "Trung tâm đã bố trí người chăm sóc thay thế cho " + targets.size() + " buổi của lịch "
+                            + lockedBooking.getBookingCode() + ": " + reason
+                            + ". Bạn có thể đồng ý, dời buổi hoặc từ chối và được hoàn 100 %"),
+                    "BOOKING", bookingId);
+            notificationService.notify(List.of(assigned.getCaregiverUserId()), NotificationType.CAREGIVER_ASSIGNED,
+                    Map.of("body", "Bạn được bố trí thay thế " + targets.size() + " buổi của lịch "
+                            + lockedBooking.getBookingCode()), "BOOKING", bookingId);
+            List<UUID> previous = previousCaregiverUserIds.stream()
+                    .filter(userId -> !userId.equals(assigned.getCaregiverUserId()))
+                    .distinct()
+                    .toList();
+            notificationService.notify(previous, NotificationType.CAREGIVER_UNASSIGNED,
+                    Map.of("body", "Trung tâm đã bố trí người khác cho các buổi của lịch " + lockedBooking.getBookingCode()),
+                    "BOOKING", bookingId);
+            return targets.size();
+        });
+        log.info("Booking {}: {} occurrence(s) given to emergency replacement {} by {}", bookingId, replacedCount,
+                assigned.getCaregiverId(), actorId);
         return APIResponse.success("Bố trí chuyên viên thay thế khẩn cấp thành công", null);
     }
 
+    // Buổi thay được: chưa bắt đầu (đã lên lịch, chưa tới giờ), chưa thuộc chính người thay thế.
+    private boolean isReplaceable(BookingOccurrence occurrence, UUID newCaregiverId, Instant now) {
+        return OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())
+                && occurrence.getStartAt().isAfter(now)
+                && !Objects.equals(occurrence.getCaregiverId(), newCaregiverId);
+    }
+
+    // Danh sách id dịch vụ của booking.
+    private List<UUID> findBookingServiceIds(UUID bookingId) {
+        return bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(bookingId).stream()
+                .map(BookingDetail::getCareServiceId)
+                .toList();
+    }
+
+    // Khách đồng ý / từ chối người thay thế cho buổi.
     @Override
     @Transactional
     public APIResponse<Void> consentReplacement(UUID actorId, UUID occurrenceId,
                                                 ReplacementConsentRequest request) {
-        BookingOccurrence occurrence = bookingOccurrenceRepository.findWithBooking(occurrenceId)
+        // Buổi của khách khác → 404 (không lộ tồn tại).
+        BookingOccurrence snapshot = bookingOccurrenceRepository.findWithBooking(occurrenceId)
+                .filter(found -> actorId.equals(found.getBooking().getCustomerId()))
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
-        Booking booking = occurrence.getBooking();
-        if (!actorId.equals(booking.getCustomerId())) {
-            throw new AppException(ErrorCode.OCCURRENCE_NOT_FOUND);
-        }
+        // Khóa booking → buổi như mọi luồng hủy buổi / đổi caregiver: hai lần bấm không hủy + hoàn hai lần.
+        Booking booking = lockBooking(snapshot);
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(occurrenceId)
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
         if (occurrence.getReplacementConsentStatus() != ReplacementConsentStatus.PENDING_CUSTOMER) {
             throw new AppException(ErrorCode.REPLACEMENT_CONSENT_INVALID);
         }
@@ -567,9 +824,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                         actorId, "Khách hàng đồng ý chuyên viên thay thế", now));
             }
             case "RESCHEDULE" -> {
-                if (request.getNewStartAt() == null || request.getNewEndAt() == null) {
-                    throw new AppException(ErrorCode.INVALID_TIME_SLOT);
-                }
+                checkReplacementReschedule(occurrence, request.getNewStartAt(), request.getNewEndAt(), now);
                 if (occurrence.getOriginalStartAt() == null) {
                     occurrence.setOriginalStartAt(occurrence.getStartAt());
                     occurrence.setOriginalEndAt(occurrence.getEndAt());
@@ -578,27 +833,52 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 occurrence.setEndAt(request.getNewEndAt());
                 occurrence.setRescheduleCount(occurrence.getRescheduleCount() + 1);
                 occurrence.setReplacementConsentStatus(ReplacementConsentStatus.REJECTED_RESCHEDULE);
+                occurrence.setReminderSentAt(null);
+                occurrence.setLateWarnedAt(null);
                 bookingOccurrenceRepository.save(occurrence);
                 bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence,
                         BookingEventType.OCCURRENCE_RESCHEDULED, occurrence.getStatus(), occurrence.getStatus(),
                         actorId, "Khách hàng từ chối người thay thế & dời lịch buổi " + occurrence.getOccurrenceNo(), now));
             }
             case "REJECT_AND_CANCEL" -> {
-                occurrence.setStatus(OccurrenceStatus.CANCELLED);
                 occurrence.setReplacementConsentStatus(ReplacementConsentStatus.REJECTED_CANCEL);
-                bookingOccurrenceRepository.save(occurrence);
+                // Trung tâm đổi người sát giờ nên khách được hoàn 100 % (CENTER_CANCEL). Đi qua lifecycle để ghi bên hủy, giờ
+                // hủy, sự kiện và thông báo; khóa hoàn tiền theo id buổi — trước 2026-11-10 khóa là một chuỗi cố định nên
+                // chỉ lần từ chối đầu tiên trên toàn hệ thống được xếp hoàn tiền.
+                bookingLifecycleService.cancelOccurrences(booking, List.of(occurrence), CancelledBy.CENTER, actorId,
+                        REPLACEMENT_REJECTED_REASON);
                 bookingLifecycleService.requestRefund(booking, List.of(occurrence.getId()),
-                        RefundReason.CENTER_CANCEL, CancelledBy.CENTER, actorId,
-                        "Khách từ chối người thay thế khẩn cấp");
-                bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence,
-                        BookingEventType.OCCURRENCE_STATUS_CHANGED, OccurrenceStatus.SCHEDULED, OccurrenceStatus.CANCELLED,
-                        actorId, "Khách từ chối người thay thế khẩn cấp", now));
+                        RefundReason.CENTER_CANCEL, CancelledBy.CENTER, actorId, occurrence.getId().toString());
+                bookingLifecycleService.finalizeIfDone(booking, actorId);
             }
             default -> throw new AppException(ErrorCode.REPLACEMENT_CONSENT_INVALID);
         }
         return APIResponse.success("Xử lý phản hồi chuyên viên thay thế thành công", null);
     }
 
+    // Khách dời buổi thay vì nhận người thay thế khẩn cấp: không áp hạn báo trước 24h / giới hạn số lần của dời lịch
+    // thường, nhưng giờ mới phải ở tương lai, cùng thời lượng (giá buổi đã chốt) và caregiver hiện tại phải rảnh.
+    private void checkReplacementReschedule(BookingOccurrence occurrence, Instant newStartAt, Instant newEndAt,
+                                            Instant now) {
+        if (newStartAt == null || newEndAt == null || !newEndAt.isAfter(newStartAt) || !newStartAt.isAfter(now)) {
+            throw new AppException(ErrorCode.INVALID_TIME_SLOT);
+        }
+        Duration plannedDuration = Duration.between(occurrence.getStartAt(), occurrence.getEndAt());
+        if (!plannedDuration.equals(Duration.between(newStartAt, newEndAt))) {
+            throw new AppException(ErrorCode.INVALID_TIME_SLOT);
+        }
+        if (occurrence.getCaregiverId() == null) {
+            return;
+        }
+        boolean busy = bookingOccurrenceRepository.findCaregiverOverlaps(occurrence.getCaregiverId(), newStartAt,
+                        newEndAt, OccurrenceStatus.ACTIVE, BookingStatus.SCHEDULE_HOLDING).stream()
+                .anyMatch(other -> !other.getId().equals(occurrence.getId()));
+        if (busy) {
+            throw new AppException(ErrorCode.CAREGIVER_NOT_AVAILABLE);
+        }
+    }
+
+    // Kiểm tra buổi được dời lịch và khung giờ mới hợp lệ.
     private void validateReschedule(BookingOccurrence occurrence, Instant newStartAt, Instant newEndAt, Instant now) {
         if (occurrence.getStatus() != OccurrenceStatus.SCHEDULED && occurrence.getStatus() != OccurrenceStatus.ACKNOWLEDGED) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
@@ -609,7 +889,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         if (!occurrence.getStartAt().isAfter(now.plus(Duration.ofHours(24)))) {
             throw new AppException(ErrorCode.RESCHEDULE_LEAD_TIME_TOO_SHORT);
         }
-        int totalOccurrences = bookingOccurrenceRepository.findAllByBooking(occurrence.getBooking().getId()).size();
+        int totalOccurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(occurrence.getBooking().getId()).size();
         int limit = totalOccurrences >= 20 ? 4 : 2;
         if (occurrence.getRescheduleCount() != null && occurrence.getRescheduleCount() >= limit) {
             throw new AppException(ErrorCode.RESCHEDULE_LIMIT_REACHED);
@@ -624,6 +904,7 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         }
     }
 
+    // Xem trước dời lịch: caregiver có rảnh khung giờ mới không.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OccurrenceRescheduleResponse> reschedulePreview(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -646,20 +927,13 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
             busy = overlaps.stream().anyMatch(o -> !o.getId().equals(occurrence.getId()));
         }
 
-        OccurrenceRescheduleResponse res = OccurrenceRescheduleResponse.builder()
-                .occurrenceId(occurrence.getId())
-                .bookingId(booking.getId())
-                .originalStartAt(occurrence.getOriginalStartAt() != null ? occurrence.getOriginalStartAt() : occurrence.getStartAt())
-                .originalEndAt(occurrence.getOriginalEndAt() != null ? occurrence.getOriginalEndAt() : occurrence.getEndAt())
-                .newStartAt(request.getNewStartAt())
-                .newEndAt(request.getNewEndAt())
-                .rescheduleCount(occurrence.getRescheduleCount())
-                .available(!busy)
-                .message(!busy ? "Khung giờ mới khả dụng" : "Chuyên viên đã có lịch khác trong khung giờ này")
-                .build();
+        String message = !busy ? "Khung giờ mới khả dụng" : "Chuyên viên đã có lịch khác trong khung giờ này";
+        OccurrenceRescheduleResponse res = occurrenceMapper.toRescheduleResponse(occurrence, booking.getId(),
+                request.getNewStartAt(), request.getNewEndAt(), !busy, message);
         return APIResponse.success("Kiểm tra dời lịch thành công", res);
     }
 
+    // Dời lịch một buổi sang khung giờ mới và báo các bên.
     @Override
     @Transactional
     public APIResponse<OccurrenceRescheduleResponse> reschedule(UUID actorId, Set<RoleCode> roles, UUID centerId,
@@ -693,6 +967,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
         occurrence.setRescheduleCount(occurrence.getRescheduleCount() + 1);
         occurrence.setStatus(OccurrenceStatus.SCHEDULED);
         occurrence.setAcknowledgedAt(null);
+        occurrence.setReminderSentAt(null);
+        occurrence.setLateWarnedAt(null);
         bookingOccurrenceRepository.save(occurrence);
 
         String note = request.getReason() != null ? request.getReason() : "Dời lịch buổi " + occurrence.getOccurrenceNo();
@@ -707,17 +983,8 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 "BOOKING",
                 booking.getId());
 
-        OccurrenceRescheduleResponse res = OccurrenceRescheduleResponse.builder()
-                .occurrenceId(occurrence.getId())
-                .bookingId(booking.getId())
-                .originalStartAt(occurrence.getOriginalStartAt())
-                .originalEndAt(occurrence.getOriginalEndAt())
-                .newStartAt(occurrence.getStartAt())
-                .newEndAt(occurrence.getEndAt())
-                .rescheduleCount(occurrence.getRescheduleCount())
-                .available(true)
-                .message("Dời lịch thành công")
-                .build();
+        OccurrenceRescheduleResponse res = occurrenceMapper.toRescheduleResponse(occurrence, booking.getId(),
+                occurrence.getStartAt(), occurrence.getEndAt(), true, "Dời lịch thành công");
         return APIResponse.success("Dời lịch buổi chăm sóc thành công", res);
     }
 }

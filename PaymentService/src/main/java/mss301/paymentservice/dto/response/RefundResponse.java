@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.paymentservice.enums.CancelledBy;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundReason;
 import mss301.paymentservice.enums.RefundStatus;
 
@@ -45,6 +46,9 @@ public class RefundResponse {
     CancelledBy cancelledBy;
 
     RefundStatus status;
+
+    // WALLET: tiền hoàn vào ví khách (khách tự hủy); GATEWAY: hoàn qua cổng thanh toán.
+    RefundChannel channel;
 
     int attempts;
 

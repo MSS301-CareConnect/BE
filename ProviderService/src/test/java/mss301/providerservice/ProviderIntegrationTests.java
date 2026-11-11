@@ -1,5 +1,6 @@
 package mss301.providerservice;
 
+import java.util.Comparator;
 import mss301.providerservice.client.dto.SystemCancellationRequest;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -35,6 +36,10 @@ import mss301.providerservice.repository.CaregiverScheduleRepository;
 import mss301.providerservice.repository.CaregiverSkillRepository;
 import mss301.providerservice.repository.CaregiverTimeOffRepository;
 import mss301.providerservice.repository.CertificateRepository;
+import mss301.providerservice.repository.ProviderMediaRepository;
+import mss301.providerservice.entity.ProviderMedia;
+import mss301.providerservice.enums.MediaFileType;
+import mss301.providerservice.enums.MediaOwnerType;
 import mss301.providerservice.repository.ShiftRegistrationRepository;
 import mss301.providerservice.repository.WorkShiftRepository;
 import mss301.providerservice.util.ProviderTime;
@@ -99,10 +104,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Test tích hợp trên H2 + repository thật: kỹ năng caregiver (PRV-01) với Catalog / Identity giả trên JDK HttpServer
- * (token SERVICE thật qua ServiceTokenProvider + Feign), và sửa lỗi ca làm việc (PRV-03) không mock count.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ProviderIntegrationTests {
@@ -163,6 +164,9 @@ class ProviderIntegrationTests {
     CertificateRepository certificateRepository;
 
     @Autowired
+    ProviderMediaRepository providerMediaRepository;
+
+    @Autowired
     Resilience4JCircuitBreakerFactory circuitBreakerFactory;
 
     @AfterEach
@@ -220,6 +224,22 @@ class ProviderIntegrationTests {
                 .andExpect(jsonPath("$.result.careServiceIds[0]").value(PLATFORM.careServiceIdOf(hygiene).toString()))
                 .andExpect(jsonPath("$.result.careServiceIds[1]").value(PLATFORM.careServiceIdOf(medicine).toString()));
         assertThat(caregiverSkillRepository.findByIdCaregiverIdOrderByAssignedAtAsc(caregiver.getId())).hasSize(2);
+    }
+
+    @Test
+    void guestsBrowseCaregiverCardsButNotFullProfiles() throws Exception {
+        CareCenter center = saveCenter(UUID.randomUUID());
+        CaregiverProfile caregiver = saveCaregiver(center, UUID.randomUUID());
+
+        mockMvc.perform(get("/api/v1/caregivers").param("centerId", center.getId().toString()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/caregivers/search").param("centerId", center.getId().toString())
+                        .param("careServiceIds", UUID.randomUUID().toString()))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(401));
+        mockMvc.perform(get("/api/v1/caregivers/{id}/public", caregiver.getId()))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(401));
+        mockMvc.perform(get("/api/v1/caregivers/{id}", caregiver.getId()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -1106,6 +1126,49 @@ class ProviderIntegrationTests {
                 .andExpect(jsonPath("$.result.email").doesNotExist());
     }
 
+    // 2026-11-11: danh bạ trung tâm tìm không dấu ("binh an" khớp "Bình An") — FE phân trang và tìm trên server.
+    @Test
+    void publicCenterSearchIgnoresVietnameseDiacritics() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Trung tâm Bình An Đức " + tag, CenterStatus.ACTIVE);
+
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "binh an duc " + tag))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].centerId").value(center.getId().toString()));
+        mockMvc.perform(get("/api/v1/care-centers/public").param("keyword", "BÌNH AN").param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[?(@.centerId == '" + center.getId() + "')]").exists());
+    }
+
+    // 2026-11-11: danh bạ người chăm sóc toàn nền tảng cho ADMIN — lọc theo trung tâm / xác minh / tên, xếp theo tên.
+    @Test
+    void adminCaregiverDirectoryFiltersAcrossCentersAndIsAdminOnly() throws Exception {
+        String tag = UUID.randomUUID().toString();
+        CareCenter center = saveNamedCenter("Directory " + tag, CenterStatus.ACTIVE);
+        CaregiverProfile verified = saveCaregiver(center, UUID.randomUUID());
+        verified.setFullName("Trần Thị Bình " + tag);
+        caregiverProfileRepository.save(verified);
+        CaregiverProfile pending = saveCaregiver(center, UUID.randomUUID());
+        pending.setFullName("Lê Văn An " + tag);
+        pending.setVerificationStatus(VerificationStatus.PENDING);
+        caregiverProfileRepository.save(pending);
+
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("centerId", center.getId().toString())
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()))
+                .andExpect(jsonPath("$.result.items[0].centerName").value(center.getCenterName()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").param("verification", "PENDING").param("keyword", "le van an " + tag)
+                        .with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(pending.getId().toString()));
+        mockMvc.perform(get("/api/v1/caregivers/directory").with(user(center.getManagerUserId(), "CENTER_MANAGER")))
+                .andExpect(status().isForbidden());
+    }
+
     // CR-6: danh bạ trung tâm mở cho khách chưa đăng nhập, chỉ GET; token hỏng / hết hạn bị bỏ qua.
     @Test
     void publicCentersAreReadableAnonymouslyAndIgnoreStaleTokens() throws Exception {
@@ -1225,11 +1288,29 @@ class ProviderIntegrationTests {
         mockMvc.perform(patch(path + "/center-verification").with(user(UUID.randomUUID(), "CENTER_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
                 .andExpect(status().isNotFound());
+        // AI đối chiếu ảnh (bước 4) → trung tâm chỉ xác nhận chứng chỉ đã có ảnh.
         mockMvc.perform(patch(path + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("CENTER_VERIFIED"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CERTIFICATE_IMAGE_REQUIRED.getCode()));
+        providerMediaRepository.saveAndFlush(ProviderMedia.builder().ownerType(MediaOwnerType.CERTIFICATE)
+                .ownerId(certificate.getId()).mediaFileId(UUID.randomUUID()).mediaFileType(MediaFileType.IMAGE)
+                .createdBy(caregiver.getUserId()).build());
+        mockMvc.perform(patch(path + "/center-verification").with(user(managerId, "CENTER_MANAGER"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("CENTER_VERIFIED"))
+                .andExpect(jsonPath("$.result.aiCheckStatus").value("QUEUED"))
+                .andExpect(jsonPath("$.result.aiRiskLevel").doesNotExist());
+        // Chưa có kết quả AI LOW / MEDIUM → admin duyệt phải ghi lý do.
         mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true,\"version\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CERTIFICATE_RISK_REASON_REQUIRED.getCode()));
+        mockMvc.perform(get("/api/v1/certificates/pending-audit/statistics").with(user(UUID.randomUUID(), "ADMIN")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.checking").value(1));
+        mockMvc.perform(patch(path + "/verification").with(user(UUID.randomUUID(), "ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"approved\":true,\"reason\":\"Đã đối chiếu bản gốc\",\"version\":1}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.result.verificationStatus").value("ADMIN_VERIFIED"));
         Certificate expired = certificateRepository.saveAndFlush(Certificate.builder().caregiver(caregiver).certificateName("Hết hạn")
                 .issuedBy("Cơ sở").verificationStatus(CertificateVerificationStatus.PENDING)
@@ -1327,7 +1408,7 @@ class ProviderIntegrationTests {
     void archivedCenterCannotBeRestoredWhenItsEmailWasReused() throws Exception {
         CareCenter center = saveCenter(UUID.randomUUID());
         center.setCenterStatus(CenterStatus.ARCHIVED);
-        center.setDeletedAt(java.time.Instant.now());
+        center.setDeletedAt(Instant.now());
         center = careCenterRepository.saveAndFlush(center);
         CareCenter reuse = saveCenter(UUID.randomUUID());
         reuse.setEmail(center.getEmail());
@@ -1380,7 +1461,7 @@ class ProviderIntegrationTests {
                 .andExpect(status().isOk());
         List<ProviderOutbox> rows = providerOutboxRepository.findAll().stream()
                 .filter(item -> item.getCenterId().equals(center.getId()))
-                .sorted(java.util.Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
+                .sorted(Comparator.comparing(ProviderOutbox::getSequenceNo)).toList();
         ProviderOutbox suspend = rows.getFirst();
         ProviderOutbox resume = rows.getLast();
         assertThat(suspend.getStatus()).isEqualTo("FAILED");
@@ -1634,7 +1715,6 @@ class ProviderIntegrationTests {
     }
 
 
-    /** Identity (service-token) + Catalog (center-services) + Booking (busy-caregivers) giả qua "gateway" duy nhất. */
     static final class StubPlatform {
         final HttpServer server;
         final Map<UUID, String> offerings = new ConcurrentHashMap<>();

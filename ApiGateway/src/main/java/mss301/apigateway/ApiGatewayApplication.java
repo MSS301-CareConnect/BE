@@ -8,6 +8,7 @@ import java.util.TimeZone;
 @SpringBootApplication
 public class ApiGatewayApplication {
 
+    // Khởi động ứng dụng ApiGateway.
     public static void main(String[] args) {
         // Đồng bộ UTC với các service phía sau (log, thời điểm hết hạn token).
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

@@ -1,8 +1,5 @@
 package mss301.carerecipientservice.security;
 
-/**
- * Tên claim / giá trị trong JWT do IdentityService phát — bản sao contract (không import class của service khác).
- */
 public final class TokenClaims {
     public static final String TOKEN_TYPE = "token_type";
     public static final String ROLES = "roles";
@@ -21,6 +18,7 @@ public final class TokenClaims {
 
     public static final String CLIENT_ID = "client_id";
 
+    // Lớp chỉ chứa hằng tên claim, không cho khởi tạo.
     private TokenClaims() {
     }
 }

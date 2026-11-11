@@ -17,7 +17,9 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverHeldScheduleResponse {
     UUID caregiverId;
+
     List<UUID> heldScheduleIds;
+
     List<BusySlot> busySlots;
 
     // Trừ hao di chuyển / nghỉ giữa hai booking khác nhau (phút) — giao diện khóa thêm khoảng này quanh busySlots.
@@ -33,6 +35,7 @@ public class CaregiverHeldScheduleResponse {
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class BusySlot {
         Instant startAt;
+
         Instant endAt;
 
         UUID caregiverScheduleId;

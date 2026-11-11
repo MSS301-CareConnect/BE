@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +57,7 @@ public class RedisSessionStore implements SessionStore {
 
     StringRedisTemplate stringRedisTemplate;
 
+    // Gắn access token hiện hành (jti, authz_version) vào phiên.
     @Override
     public void bindAccessToken(String sessionId, long authzVersion, String jti, Instant expiresAt) {
         execute(() -> {
@@ -71,6 +71,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Tạo phiên đăng nhập trên Redis (thiết bị, user agent, IP, refresh hash).
     @Override
     public void createSession(String sessionId, UUID userId, String deviceId, String userAgent,
                               String ip, String tokenHash, Duration ttl) {
@@ -98,6 +99,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Đọc dữ liệu một phiên.
     @Override
     public Map<String, String> getSession(String sessionId) {
         return execute(() -> {
@@ -112,6 +114,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Cập nhật refresh hash và thời gian hoạt động của phiên.
     @Override
     public void updateSessionActivity(String sessionId, String newTokenHash, Duration ttl) {
         execute(() -> {
@@ -126,6 +129,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Danh sách id phiên của người dùng.
     @Override
     public Set<String> getUserSessionIds(UUID userId) {
         return execute(() -> {
@@ -135,6 +139,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Xóa một phiên của người dùng.
     @Override
     public void removeSession(UUID userId, String sessionId) {
         execute(() -> {
@@ -149,6 +154,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Xóa mọi phiên của người dùng.
     @Override
     public void removeAllUserSessions(UUID userId) {
         execute(() -> {
@@ -158,6 +164,7 @@ public class RedisSessionStore implements SessionStore {
         });
     }
 
+    // Chạy thao tác Redis, lỗi kết nối thì báo lỗi dịch vụ không khả dụng.
     private <T> T execute(Supplier<T> operation) {
         try {
             return operation.get();

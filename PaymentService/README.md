@@ -61,6 +61,15 @@ Mọi response (trừ IPN) là `APIResponse<T>` `{code, message, result}`. Trang
 | GET | `/api/v1/remaining-invoices?status&customerId&page&size` | CUSTOMER: của mình · ADMIN: tất cả (+ lọc `customerId`) | |
 | POST | `/api/v1/remaining-invoices/{id}/payments` | CUSTOMER (chủ) | Body `{provider}` — phiên VNPay cho payment REMAINING (hóa đơn PENDING / OVERDUE). Hóa đơn trước buổi đầu: chỉ trả trước `dueAt`, phiên hết hạn không quá `dueAt` |
 | PATCH | `/api/v1/remaining-invoices/{id}/waive` | ADMIN | Body `{reason}` bắt buộc (`WAIVE_REASON_REQUIRED`) |
+| GET | `/api/v1/wallets/me` | CUSTOMER, CAREGIVER (ví của mình) · CENTER_MANAGER (ví trung tâm trong token) · ADMIN (ví nền tảng) | `{id, ownerType, ownerId, availableBalance, heldBalance, withdrawable, updatedAt}`; chưa có biến động → `id: null`, số dư 0 |
+| GET | `/api/v1/wallets/me/transactions?from&to&type&page&size` | như trên | Sổ ví mới nhất trước: `type, amount, availableBefore/After, heldBefore/After, centerId, bookingId, occurrenceId, refundId, withdrawalId, note, createdAt` |
+| GET | `/api/v1/wallets/me/statistics?from&to&groupBy=DAY\|MONTH` | như trên | Dashboard: số dư, thu nhập / đã rút / số booking, `byType[]`, `series[]` (giờ VN, tối đa 400 mốc); thêm theo loại ví — khách: `totalPaid, refundedToWallet, refundedToGateway, netSpent`; caregiver: `forfeitIncome`; trung tâm: `serviceIncome, commissionDeducted, forfeitIncome, complaintDebits`; nền tảng: `commissionIncome, grossCollected, totalRefunded, refundedToWallet, liabilities[], pendingWithdrawalCount/Amount` |
+| GET | `/api/v1/wallets/me/center-balances` | CUSTOMER, CAREGIVER | 2026-11-10: số dư khả dụng theo trung tâm đã tạo ra khoản tiền (`centerId` null = tiền cũ không gắn trung tâm, admin xử lý) — chọn nơi gửi yêu cầu rút |
+| GET | `/api/v1/wallets/{walletId}` · `/{walletId}/transactions` | ADMIN | Xem ví / sổ của người yêu cầu rút |
+| GET | `/api/v1/wallet-withdrawals?scope=OWN|REVIEW&status&ownerType&page&size` · `/{id}` | chủ ví (`OWN`, của mình; ví khác → 404) · ADMIN (`OWN` = tất cả) · người xử lý (`REVIEW`) | 2026-11-10 `REVIEW`: CENTER_MANAGER → yêu cầu của khách / caregiver gắn trung tâm mình; ADMIN → ví trung tâm + yêu cầu cũ không gắn trung tâm; role khác → 403 `6055`. 2026-11-11: danh sách và chi tiết có `requesterName`, `requesterPhoneNumber` (Identity `/users/batch`, token SERVICE; Identity lỗi → null) |
+| GET | `/api/v1/wallet-withdrawals/statistics?scope&from&to&groupBy` | CENTER_MANAGER, ADMIN | Đang chờ (mọi thời điểm), gửi / đã chuyển / từ chối trong kỳ, thời gian xử lý TB, `byOwnerType[]`, `series[]`; `REVIEW` của manager thêm `custody*` = tiền khách / caregiver gắn trung tâm còn trong ví (trung tâm đang giữ hộ) |
+| POST | `/api/v1/wallet-withdrawals` | CUSTOMER, CAREGIVER, CENTER_MANAGER | Body `{amount, bankName, bankAccountNumber, accountHolderName, centerId?}`; số tiền ≤ khả dụng (409 `6041`) → tạm giữ (`WITHDRAWAL_HOLD`, gắn `centerId`), `PENDING`. Ví khách / caregiver: `centerId` = trung tâm giữ khoản tiền (vượt số dư tại đó → 409 `6054`); bỏ trống → tiền không gắn trung tâm nếu đủ, không thì trung tâm duy nhất, nhiều trung tâm → 400 `6053`. Ví trung tâm: admin xử lý |
+| POST | `/api/v1/wallet-withdrawals/{id}/transfers` · `/reject {reason}` | người xử lý: manager của trung tâm giữ tiền (khách / caregiver); ADMIN (ví trung tâm, yêu cầu cũ không gắn trung tâm) — người khác 403 `6055` | 2026-11-10: bỏ duyệt / xác nhận tay (`/approve`, `/complete` đã xóa). `transfers` = chuyển khoản giả lập: `PENDING\|APPROVED → COMPLETED` tự động, sinh `transferReference` `SIM…`, `WITHDRAWAL_PAID`; `reject` → `REJECTED` + `WITHDRAWAL_RELEASE`. Cả hai báo người rút qua outbox (`WITHDRAWAL_COMPLETED` / `WITHDRAWAL_REJECTED` → BookingService `/notifications`, `refType = WALLET_WITHDRAWAL`). Sai trạng thái 409 `6043` |
 
 ### Khoản thanh toán đầu (spec booking v1.0 §9.1, `../docs/2026-11-02-BOOKING_FLOW_REVIEW.md` §9)
 
@@ -97,7 +106,11 @@ payment REMAINING rồi DEPOSIT theo chỗ còn hoàn được.
 `platform_policies` (seed GLOBAL `00000000-0000-0000-0000-000000000001`: cọc 30, hoa hồng 10, phiên 15', hạn cọc 24h,
 cooling-off 60' / 24h, tiers 30/10/0, vắng 100, REMAINING 48h) · `payments` (+ `payment_type`, `refunded_amount`,
 `invoice_id`; unique `(booking_id, payment_type)`) · `payment_attempts` · `booking_financials` · `occurrence_financials` ·
-`refunds` · `remaining_invoices` · `payment_transactions` (append-only).
+`refunds` (+ `channel` GATEWAY / WALLET) · `remaining_invoices` · `payment_transactions` (append-only) · ví (2026-11-09):
+`wallets` (unique `(owner_type, owner_id)`, chỉ ví CENTER được âm) · `wallet_transactions` (append-only, unique
+`(wallet_id, reference_key)`) · `wallet_withdrawals`; `occurrence_financials.settled_at`. DB cũ: `schema/changes/2026-11-09-wallets.sql`. 2026-11-10:
+`payment_outbox.booking_id/payment_id` nullable + loại `WITHDRAWAL_*`, index hàng đợi trung tâm —
+`schema/changes/2026-11-10-withdrawals-by-center.sql`.
 
 ## An toàn thu tiền (Đợt 1b)
 

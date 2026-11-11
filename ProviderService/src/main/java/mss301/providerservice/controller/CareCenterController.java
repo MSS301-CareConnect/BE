@@ -46,12 +46,14 @@ public class CareCenterController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // API thống kê trung tâm và caregiver toàn hệ thống.
     @GetMapping("/statistics")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<ProviderStatisticsResponse> statistics() {
         return careCenterService.statistics();
     }
 
+    // API danh sách trung tâm có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<PageResponse<CenterResponse>> list(
@@ -76,18 +78,21 @@ public class CareCenterController {
         return careCenterService.listPublic(keyword, careServiceId, minPrice, maxPrice, page, size);
     }
 
+    // API thẻ thông tin công khai của trung tâm.
     @GetMapping("/public/{centerId}")
     @SecurityRequirements({})
     public APIResponse<CenterCardResponse> getPublic(@PathVariable UUID centerId) {
         return careCenterService.getPublic(centerId);
     }
 
+    // API xem chi tiết trung tâm.
     @GetMapping("/{centerId}")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<CenterResponse> get(@PathVariable UUID centerId) {
         return careCenterService.get(centerId);
     }
 
+    // API danh sách lịch làm việc của caregiver trong trung tâm.
     @GetMapping("/{centerId}/schedules")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<PageResponse<ScheduleResponse>> listSchedules(
@@ -119,6 +124,7 @@ public class CareCenterController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API tạo trung tâm.
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CenterResponse> create(@CurrentUserId UUID actorId,
@@ -137,12 +143,14 @@ public class CareCenterController {
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
+    // API manager cập nhật thông tin trung tâm của mình.
     @PutMapping("/me")
     @PreAuthorize("hasRole('CENTER_MANAGER')")
     public APIResponse<CenterResponse> updateMine(@CurrentUserId UUID actorId, @Valid @RequestBody CenterSelfUpdateRequest request) {
         return careCenterService.updateMine(actorId, request);
     }
 
+    // API admin cập nhật thông tin trung tâm.
     @PutMapping("/{centerId}")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CenterResponse> update(@CurrentUserId UUID actorId,
@@ -153,6 +161,7 @@ public class CareCenterController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API đổi trạng thái hoạt động của trung tâm.
     @PatchMapping("/{centerId}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CenterResponse> updateStatus(@CurrentUserId UUID actorId,
@@ -163,6 +172,7 @@ public class CareCenterController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API lưu trữ (xóa mềm) trung tâm.
     @DeleteMapping("/{centerId}")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,

@@ -26,10 +26,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Tạo ADMIN đầu tiên trên DB mới khi bật IDENTITY_BOOTSTRAP_ENABLED (chạy một lần rồi tắt).
- * Không tự nâng quyền email đã có; bỏ qua nếu đã có ADMIN hoạt động.
- */
 @Component
 @Order(10)
 @ConditionalOnProperty(name = "identity.bootstrap.enabled", havingValue = "true")
@@ -49,6 +45,7 @@ public class BootstrapAdmin implements ApplicationRunner {
     PasswordEncoder passwordEncoder;
     Environment environment;
 
+    // Tạo tài khoản ADMIN đầu tiên từ cấu hình khi hệ thống chưa có ADMIN nào đang hoạt động.
     @Override
     @Transactional
     public void run(ApplicationArguments args) {

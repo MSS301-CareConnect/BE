@@ -91,6 +91,13 @@ public class CenterBookingPolicyRequest {
     @DecimalMax(value = "100", message = "INVALID_BOOKING_POLICY")
     BigDecimal refundPercentAfterThreshold;
 
+    // 2026-11-10: khách hủy khi còn dưới mốc này thì không được hoàn (caregiver đã giữ ca); không vượt refundThresholdMinutes
+    // (kiểm ở service).
+    @NotNull(message = "BOOKING_POLICY_VALUE_REQUIRED")
+    @Min(value = 0, message = "INVALID_BOOKING_POLICY")
+    @Max(value = 1440, message = "INVALID_BOOKING_POLICY")
+    Integer lateCancelNoRefundMinutes;
+
     @NotNull(message = "BOOKING_POLICY_VALUE_REQUIRED")
     @DecimalMin(value = "0", message = "INVALID_BOOKING_POLICY")
     @DecimalMax(value = "100", message = "INVALID_BOOKING_POLICY")

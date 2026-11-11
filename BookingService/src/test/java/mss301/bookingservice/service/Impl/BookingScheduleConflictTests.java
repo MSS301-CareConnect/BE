@@ -1,5 +1,6 @@
 package mss301.bookingservice.service.Impl;
 
+import org.mockito.Mockito;
 import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 import mss301.bookingservice.entity.Booking;
@@ -105,7 +106,7 @@ class BookingScheduleConflictTests {
         // Khoảng truy vấn nới thêm 60 phút mỗi phía.
         ArgumentCaptor<Instant> rangeStart = ArgumentCaptor.forClass(Instant.class);
         ArgumentCaptor<Instant> rangeEnd = ArgumentCaptor.forClass(Instant.class);
-        verify(bookingOccurrenceRepository, org.mockito.Mockito.atLeastOnce()).findCaregiverOverlaps(eq(caregiverId),
+        verify(bookingOccurrenceRepository, Mockito.atLeastOnce()).findCaregiverOverlaps(eq(caregiverId),
                 rangeStart.capture(), rangeEnd.capture(), any(), any());
         assertThat(rangeStart.getValue()).isEqualTo(Instant.parse("2026-10-12T01:00:00Z"));
         assertThat(rangeEnd.getValue()).isEqualTo(Instant.parse("2026-10-12T04:00:00Z"));

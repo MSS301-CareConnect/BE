@@ -37,15 +37,11 @@ public interface PaymentAttemptRepository extends JpaRepository<PaymentAttempt, 
     Optional<PaymentAttempt> findForUpdateByCheckoutId(@Param("checkoutId") String checkoutId);
 
     // Phiên đã thu tiền theo thứ tự thu — phiên đầu là giao dịch gốc của payment (hoàn tiền thường đi qua nó).
-    @Query("select a from PaymentAttempt a where a.payment.id = :paymentId and a.status = :status order by a.completedAt asc")
-    List<PaymentAttempt> findAllCompletedByPayment(@Param("paymentId") UUID paymentId,
-                                                   @Param("status") PaymentStatus status);
+    List<PaymentAttempt> findByPaymentIdAndStatusOrderByCompletedAtAsc(UUID paymentId, PaymentStatus status);
 
     // Job hết hạn: phiên PENDING đã quá hạn (kèm thời gian chờ IPN đến trễ).
     @Query("select a.id from PaymentAttempt a where a.status = :status and a.expiresAt <= :before order by a.expiresAt")
     List<UUID> findStaleIds(@Param("status") PaymentStatus status, @Param("before") Instant before, Pageable pageable);
 
-    @Query("select a from PaymentAttempt a where a.payment.id = :paymentId and a.status = :status order by a.createdAt desc")
-    List<PaymentAttempt> findAllByPaymentAndStatus(@Param("paymentId") UUID paymentId,
-                                                   @Param("status") PaymentStatus status);
+    List<PaymentAttempt> findByPaymentIdAndStatusOrderByCreatedAtDesc(UUID paymentId, PaymentStatus status);
 }

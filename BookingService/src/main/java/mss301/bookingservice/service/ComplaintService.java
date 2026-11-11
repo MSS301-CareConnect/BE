@@ -13,10 +13,15 @@ import java.util.UUID;
 import java.util.Set;
 
 public interface ComplaintService {
+    // Danh sách khiếu nại.
     APIResponse<PageResponse<ComplaintResponse>> list(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
             ComplaintStatus status, ComplaintLevel level, UUID centerId, int page, int size);
+    // Chi tiết khiếu nại.
     APIResponse<ComplaintResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id);
+    // Tạo khiếu nại.
     APIResponse<ComplaintResponse> create(UUID actorId, ComplaintRequest request);
+    // Chuyển trạng thái khiếu nại (nhận, giải quyết, chuyển cấp…).
     APIResponse<ComplaintResponse> transition(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id, ComplaintAction action, String note);
+    // Admin giải quyết khiếu nại.
     APIResponse<ComplaintResponse> adminResolve(UUID actorId, UUID id, ComplaintAdminResolutionRequest request);
 }

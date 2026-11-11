@@ -7,11 +7,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Field riêng của {@code User} do server quản lý — dùng CÙNG {@link IgnoreServerManagedFields} khi tạo User từ request
- * để chống mass assignment: password hash (nhạy cảm, service tự gán), status, centerId (lấy theo actor), authzVersion,
- * role.
- */
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.METHOD)
 @Mapping(target = "password", ignore = true)

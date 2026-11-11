@@ -7,6 +7,7 @@ import mss301.providerservice.exception.ErrorCode;
 
 
 public class MediaClientErrorDecoder implements ErrorDecoder {
+    // Đổi mã lỗi HTTP từ MediaService sang ErrorCode (404 → không tìm thấy file).
     @Override
     public Exception decode(String methodKey, Response response) {
         if (response.status() == 404) {

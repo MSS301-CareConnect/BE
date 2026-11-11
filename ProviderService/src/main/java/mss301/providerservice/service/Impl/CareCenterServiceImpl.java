@@ -27,6 +27,7 @@ import mss301.providerservice.exception.ErrorCode;
 import mss301.providerservice.mapper.CareCenterMapper;
 import mss301.providerservice.repository.CareCenterRepository;
 import mss301.providerservice.util.CareCenterSpecifications;
+import mss301.providerservice.util.VietnameseText;
 import mss301.providerservice.service.CareCenterService;
 import mss301.providerservice.service.IdentityAccountService;
 import mss301.providerservice.service.ProviderMediaService;
@@ -46,7 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import mss301.providerservice.repository.StatisticsCountView;
+import mss301.providerservice.repository.projection.StatisticsCountView;
 import java.util.LinkedHashMap;
 import mss301.providerservice.service.ProviderOutboxService;
 import mss301.providerservice.client.BookingArchiveClient;
@@ -84,6 +85,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Tạo trung tâm chăm sóc thành công", response);
     }
 
+    // Danh sách trung tâm cho admin, mới nhất trước, có lọc và phân trang.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<CenterResponse>> list(CenterStatus status, String keyword,
@@ -103,6 +105,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Lấy danh sách trung tâm chăm sóc thành công", result);
     }
 
+    // Chi tiết trung tâm (admin xem cả trung tâm đã lưu trữ).
     @Override
     @Transactional(readOnly = true)
     public APIResponse<CenterResponse> get(UUID id) {
@@ -147,16 +150,17 @@ public class CareCenterServiceImpl implements CareCenterService {
                 : fetchPriceSummariesQuietly();
         String normalizedKeyword = normalizeNullable(keyword);
         String keywordPattern = normalizedKeyword == null
-                ? null : "%" + normalizedKeyword.toLowerCase(Locale.ROOT) + "%";
+                ? null : "%" + VietnameseText.fold(normalizedKeyword) + "%";
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "centerName"));
         Page<CareCenter> centerPage;
         if (!filterByCatalog) {
-            centerPage = careCenterRepository.searchPublic(CenterStatus.ACTIVE, keywordPattern, pageRequest);
+            centerPage = careCenterRepository.searchPublic(CenterStatus.ACTIVE, keywordPattern,
+                    VietnameseText.ACCENTED, VietnameseText.PLAIN, pageRequest);
         } else if (priceSummaries.isEmpty()) {
             centerPage = Page.empty(pageRequest);
         } else {
             centerPage = careCenterRepository.searchPublicByIds(CenterStatus.ACTIVE, priceSummaries.keySet(),
-                    keywordPattern, pageRequest);
+                    keywordPattern, VietnameseText.ACCENTED, VietnameseText.PLAIN, pageRequest);
         }
         List<UUID> centerIds = centerPage.stream()
                 .map(CareCenter::getId)
@@ -192,6 +196,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Cập nhật trung tâm chăm sóc thành công", response);
     }
 
+    // Đổi trạng thái trung tâm có kiểm version, lý do và cascade tài khoản / booking.
     @Override
     public APIResponse<CenterResponse> updateStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request) {
         CareCenter snapshot = findActiveCenter(id);
@@ -213,6 +218,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Cập nhật trạng thái trung tâm thành công", response);
     }
 
+    // Lưu trữ trung tâm khi không còn booking đang chạy.
     @Override
     public APIResponse<Void> delete(UUID actorId, UUID id, Long version) {
         checkNoActiveBookings(id);
@@ -223,6 +229,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Lưu trữ trung tâm thành công");
     }
 
+    // Khôi phục trung tâm đã lưu trữ.
     @Override
     public APIResponse<CenterResponse> restore(UUID actorId, UUID id, CenterRestoreRequest request) {
         CenterResponse response = transactionTemplate.execute(status -> restoreCenter(actorId, id, request));
@@ -232,6 +239,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success(message, response);
     }
 
+    // Manager cập nhật thông tin trung tâm của mình.
     @Override
     @Transactional
     public APIResponse<CenterResponse> updateMine(UUID actorId, CenterSelfUpdateRequest request) {
@@ -251,6 +259,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Cập nhật trung tâm thành công", response);
     }
 
+    // Thống kê số trung tâm và caregiver theo trạng thái.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<ProviderStatisticsResponse> statistics() {
@@ -261,12 +270,14 @@ public class CareCenterServiceImpl implements CareCenterService {
         return APIResponse.success("Lấy thống kê nhà cung cấp thành công", response);
     }
 
+    // Đổi các dòng thống kê thành map nhóm → số lượng.
     private Map<String, Long> toStatisticsCounts(List<StatisticsCountView> rows) {
         Map<String, Long> counts = new LinkedHashMap<>();
         rows.forEach(row -> counts.put(row.getCategory(), row.getCount()));
         return counts;
     }
 
+    // Khóa trung tâm, đổi trạng thái và xếp sự kiện cascade (khóa / mở tài khoản, hủy booking).
     private CenterResponse changeStatus(UUID actorId, UUID id, CenterStatusUpdateRequest request) {
         CareCenter center = careCenterRepository.findForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
@@ -325,6 +336,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         return careCenterMapper.toResponse(center);
     }
 
+    // Báo lỗi nếu trung tâm còn booking chưa kết thúc (hỏi BookingService).
     private void checkNoActiveBookings(UUID id) {
         // Trạng thái booking còn giữ chỗ (BookingService, spec booking v1.0 §11.1).
         for (String state : List.of("PENDING_CENTER_CONFIRMATION", "PENDING_CAREGIVER_ASSIGNMENT", "AWAITING_INITIAL_PAYMENT",
@@ -424,11 +436,13 @@ public class CareCenterServiceImpl implements CareCenterService {
         }
     }
 
+    // Tìm trung tâm chưa xóa, không có thì báo lỗi.
     private CareCenter findActiveCenter(UUID id) {
         return careCenterRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
     }
 
+    // Bắt buộc gửi version và version phải khớp (chống ghi đè).
     private void checkVersion(CareCenter careCenter, Long requestedVersion) {
         if (requestedVersion == null) {
             throw new AppException(ErrorCode.CENTER_VERSION_REQUIRED);
@@ -438,12 +452,14 @@ public class CareCenterServiceImpl implements CareCenterService {
         }
     }
 
+    // Kiểm tra page / size hợp lệ.
     private void validatePage(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);
         }
     }
 
+    // Bắt buộc lý do khi từ chối hoặc đình chỉ trung tâm.
     private void validateStatusReason(CenterStatusUpdateRequest request) {
         boolean reasonRequired = request.getStatus() == CenterStatus.REJECTED
                 || request.getStatus() == CenterStatus.SUSPENDED
@@ -453,6 +469,7 @@ public class CareCenterServiceImpl implements CareCenterService {
         }
     }
 
+    // Chuẩn hóa tên, email và các trường tùy chọn của trung tâm.
     private void normalizeFields(CareCenter careCenter, String normalizedEmail) {
         careCenter.setCenterName(careCenter.getCenterName().trim());
         careCenter.setEmail(normalizedEmail);
@@ -461,10 +478,12 @@ public class CareCenterServiceImpl implements CareCenterService {
         careCenter.setOperatingHours(normalizeNullable(careCenter.getOperatingHours()));
     }
 
+    // Chuẩn hóa email: bỏ khoảng trắng, chữ thường.
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 
+    // Trim chuỗi tùy chọn, rỗng thì trả null.
     private String normalizeNullable(String value) {
         if (value == null || value.isBlank()) {
             return null;

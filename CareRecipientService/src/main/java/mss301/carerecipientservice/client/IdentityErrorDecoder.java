@@ -6,10 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.carerecipientservice.exception.AppException;
 import mss301.carerecipientservice.exception.ErrorCode;
 
-/**
- * HTTP lỗi từ IdentityService → AppException của service này. Chỉ 404 là lỗi nghiệp vụ (user không tồn tại);
- * mọi trường hợp khác là lỗi tích hợp/hạ tầng → IDENTITY_UNAVAILABLE (503), không lộ chi tiết cho client.
- */
 @Slf4j
 public class IdentityErrorDecoder implements ErrorDecoder {
 
@@ -18,6 +14,7 @@ public class IdentityErrorDecoder implements ErrorDecoder {
     private static final int FORBIDDEN = 403;
     private static final int SERVER_ERROR = 500;
 
+    // Đổi mã lỗi HTTP từ IdentityService (404, 401/403…) sang ErrorCode.
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

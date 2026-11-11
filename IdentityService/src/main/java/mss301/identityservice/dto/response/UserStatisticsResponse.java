@@ -11,6 +11,8 @@ import java.util.Map;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class UserStatisticsResponse {
     Map<String, Long> usersByRole;
+
     Map<String, Long> usersByStatus;
+
     long newCustomers;
 }

@@ -26,6 +26,7 @@ public class RecipientAccessServiceImpl implements RecipientAccessService {
     RecipientManagerRepository recipientManagerRepository;
     CareRecipientRepository careRecipientRepository;
 
+    // Khóa hồ sơ và báo lỗi nếu hồ sơ ngừng hoạt động (không cho ghi).
     @Override
     @Transactional
     public void checkActiveForWrite(UUID recipientId) {
@@ -36,6 +37,7 @@ public class RecipientAccessServiceImpl implements RecipientAccessService {
         }
     }
 
+    // Kiểm tra người dùng quản lý hồ sơ với mức quyền tối thiểu, trả về membership.
     @Override
     @Transactional(readOnly = true)
     public RecipientManager checkAccess(UUID recipientId, UUID userId, RecipientAccessLevel requiredLevel) {
@@ -48,6 +50,7 @@ public class RecipientAccessServiceImpl implements RecipientAccessService {
         return membership;
     }
 
+    // Lấy mức quyền của người dùng trên hồ sơ (nếu có).
     @Override
     @Transactional(readOnly = true)
     public Optional<RecipientAccessLevel> findAccessLevel(UUID recipientId, UUID userId) {

@@ -1,5 +1,7 @@
 package mss301.providerservice.service;
 
+import mss301.providerservice.dto.request.CenterRestoreRequest;
+import java.time.Instant;
 import mss301.providerservice.dto.request.CenterUpdateRequest;
 import mss301.providerservice.client.dto.IdentityUserResponse;
 import mss301.providerservice.client.BookingArchiveClient;
@@ -195,7 +197,7 @@ class CareCenterServiceTests {
         entity.setEmail("center@test.vn");
         entity.setManagerUserId(managerId);
         entity.setCenterStatus(CenterStatus.ARCHIVED);
-        entity.setDeletedAt(java.time.Instant.now());
+        entity.setDeletedAt(Instant.now());
         when(careCenterRepository.findArchivedForUpdate(centerId)).thenReturn(Optional.of(entity));
         when(careCenterRepository.existsByEmailAndIdNotAndDeletedAtIsNull("center@test.vn", centerId)).thenReturn(false);
         when(careCenterRepository.existsByManagerUserIdAndIdNotAndDeletedAtIsNull(managerId, centerId)).thenReturn(false);
@@ -204,7 +206,7 @@ class CareCenterServiceTests {
                 invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
 
         careCenterService.restore(actorId, centerId,
-                mss301.providerservice.dto.request.CenterRestoreRequest.builder().reason(" Mở lại ").version(3L).build());
+                CenterRestoreRequest.builder().reason(" Mở lại ").version(3L).build());
 
         assertEquals(CenterStatus.INACTIVE, entity.getCenterStatus());
         assertEquals("Mở lại", entity.getStatusReason());

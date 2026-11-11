@@ -8,6 +8,7 @@ import mss301.carecatalogservice.dto.request.PricePlanBatchUpdateRequest;
 import mss301.carecatalogservice.dto.request.PricePlanDraftRequest;
 import mss301.carecatalogservice.dto.request.PricePlanRequest;
 import mss301.carecatalogservice.dto.response.APIResponse;
+import mss301.carecatalogservice.dto.response.PageResponse;
 import mss301.carecatalogservice.dto.response.PricePlanResponse;
 import mss301.carecatalogservice.entity.CenterOffering;
 import mss301.carecatalogservice.entity.PricePlan;
@@ -18,6 +19,9 @@ import mss301.carecatalogservice.mapper.PricePlanMapper;
 import mss301.carecatalogservice.repository.CenterOfferingRepository;
 import mss301.carecatalogservice.repository.PricePlanRepository;
 import mss301.carecatalogservice.service.PricePlanService;
+import mss301.carecatalogservice.util.PageRequests;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,11 +38,13 @@ import java.util.UUID;
 public class PricePlanServiceImpl implements PricePlanService {
 
     static int HOUR_DURATION_MINUTES = 60;
+    static Sort CREATED_ASC = Sort.by(Sort.Direction.ASC, "createdAt");
 
     PricePlanRepository pricePlanRepository;
     CenterOfferingRepository centerOfferingRepository;
     PricePlanMapper pricePlanMapper;
 
+    // Tạo gói giá cho dịch vụ trung tâm (mặc định đang hoạt động, giảm giá 0%).
     @Override
     @Transactional
     public APIResponse<PricePlanResponse> create(UUID centerId, PricePlanRequest request) {
@@ -55,6 +61,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         return APIResponse.success("Tạo bảng giá thành công", pricePlanResponse);
     }
 
+    // Cập nhật một gói giá.
     @Override
     @Transactional
     public APIResponse<PricePlanResponse> update(UUID centerId, UUID id, PricePlanRequest request) {
@@ -64,6 +71,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         return APIResponse.success("Cập nhật bảng giá thành công", pricePlanResponse);
     }
 
+    // Cập nhật nhiều gói giá trong một lần.
     @Override
     @Transactional
     public APIResponse<List<PricePlanResponse>> updateBatch(UUID centerId, PricePlanBatchUpdateRequest request) {
@@ -83,6 +91,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         return APIResponse.success("Cập nhật bảng giá thành công", pricePlanResponses);
     }
 
+    // Tạo các gói giá đi kèm khi tạo dịch vụ trung tâm.
     @Override
     public List<PricePlan> createForOffering(CenterOffering centerOffering, List<PricePlanDraftRequest> drafts) {
         List<PricePlan> pricePlans = drafts.stream()
@@ -98,6 +107,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         return pricePlanRepository.saveAll(pricePlans);
     }
 
+    // Danh sách gói giá chưa xóa của một dịch vụ trung tâm.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<List<PricePlanResponse>> listByCenterOffering(UUID centerOfferingId) {
@@ -108,6 +118,21 @@ public class PricePlanServiceImpl implements PricePlanService {
         return APIResponse.success("Lấy danh sách bảng giá thành công", pricePlans);
     }
 
+    // Danh sách gói giá của dịch vụ trung tâm có phân trang.
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<PricePlanResponse>> list(UUID centerOfferingId, int page, int size) {
+        Page<PricePlan> pricePlans = pricePlanRepository.findByCenterOfferingIdAndDeletedAtIsNull(centerOfferingId,
+                PageRequests.of(page, size, CREATED_ASC));
+        List<PricePlanResponse> pricePlanResponses = pricePlans.getContent()
+                .stream()
+                .map(pricePlanMapper::toResponse)
+                .toList();
+        PageResponse<PricePlanResponse> pageResponse = PageResponse.of(pricePlans, pricePlanResponses);
+        return APIResponse.success("Lấy danh sách bảng giá thành công", pageResponse);
+    }
+
+    // Chi tiết một gói giá.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PricePlanResponse> get(UUID id) {
@@ -115,6 +140,7 @@ public class PricePlanServiceImpl implements PricePlanService {
         return APIResponse.success("Lấy bảng giá thành công", pricePlanMapper.toResponse(pricePlan));
     }
 
+    // Xóa mềm gói giá sau khi kiểm tra quyền sở hữu.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID centerId, UUID id) {
@@ -155,17 +181,20 @@ public class PricePlanServiceImpl implements PricePlanService {
         }
     }
 
+    // Báo lỗi nếu dịch vụ của gói giá không thuộc trung tâm của người gọi.
     private void checkCenterOwnership(CenterOffering centerOffering, UUID centerId) {
         if (!centerOffering.getCenterId().equals(centerId)) {
             throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
         }
     }
 
+    // Tìm gói giá chưa xóa, không có thì báo lỗi.
     private PricePlan findActivePricePlan(UUID id) {
         return pricePlanRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.PRICE_PLAN_NOT_FOUND));
     }
 
+    // Tìm dịch vụ trung tâm chưa xóa, không có thì báo lỗi.
     private CenterOffering findActiveCenterOffering(UUID id) {
         return centerOfferingRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_SERVICE_NOT_FOUND));

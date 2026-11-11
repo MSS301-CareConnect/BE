@@ -19,12 +19,7 @@ public interface DepositForfeitureMapper {
     // Bên hưởng do service quyết định (theo caregiver của buổi) rồi truyền vào; caregiver lấy từ occurrence_financials.
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "bookingId", source = "occurrenceFinancial.bookingId")
-    @Mapping(target = "centerId", source = "occurrenceFinancial.centerId")
-    @Mapping(target = "occurrenceId", source = "occurrenceFinancial.occurrenceId")
     @Mapping(target = "occurrenceStartAt", source = "occurrenceFinancial.startAt")
-    @Mapping(target = "caregiverId", source = "occurrenceFinancial.caregiverId")
-    @Mapping(target = "caregiverUserId", source = "occurrenceFinancial.caregiverUserId")
     DepositForfeiture toForfeiture(OccurrenceFinancial occurrenceFinancial, UUID paymentId, BigDecimal amount,
                                    ForfeitureBeneficiary beneficiary, RefundReason reason, String rule,
                                    String idempotencyKey);

@@ -1,5 +1,7 @@
 package mss301.carecatalogservice;
 
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import com.jayway.jsonpath.JsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import mss301.carecatalogservice.entity.CatalogItem;
 import mss301.carecatalogservice.entity.CenterOffering;
@@ -29,14 +31,10 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * API CAT-02 trên H2: phân quyền (401 / 403), phạm vi đọc theo role, vô hiệu hóa an toàn, price-summary.
- * Token giả bằng {@code jwt()} của spring-security-test (roles → ROLE_*, claim center_id) — chữ ký / JWKS đã được test
- * ở IdentityService và ApiGateway.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class CatalogApiTests {
@@ -64,10 +62,23 @@ class CatalogApiTests {
     PricePlanRepository pricePlanRepository;
 
     @Test
-    void readEndpointsNeedAuthentication() throws Exception {
-        mockMvc.perform(get("/api/v1/catalog-items"))
-                .andExpect(status().isUnauthorized());
+    void guestsBrowseActiveCatalogButCannotWrite() throws Exception {
+        String keyword = "kw" + UUID.randomUUID().toString().substring(0, 8);
+        CatalogItem active = saveItem(keyword + " active", ServiceStatus.ACTIVE);
+        saveItem(keyword + " inactive", ServiceStatus.INACTIVE);
+
+        // Guests (no token) read like a customer: active items only, whatever status they ask for.
+        mockMvc.perform(get("/api/v1/catalog-items").param("keyword", keyword).param("status", "INACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(active.getId().toString()));
+        mockMvc.perform(get("/api/v1/catalog-items/" + active.getId()))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/center-services/center/" + UUID.randomUUID()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/price-plans/center-offering/" + UUID.randomUUID()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/catalog-items").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -111,7 +122,7 @@ class CatalogApiTests {
     @Test
     void createAndGetCatalogItemWithImageUrl() throws Exception {
         String body = "{\"name\":\"Chăm sóc đặc biệt\",\"category\":\"Chăm sóc\",\"status\":\"ACTIVE\",\"imageUrl\":\"https://example.com/photo.jpg\"}";
-        String response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/catalog-items")
+        String response = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/catalog-items")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body)
                         .with(user("ADMIN", null)))
@@ -120,7 +131,7 @@ class CatalogApiTests {
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"))
                 .andReturn().getResponse().getContentAsString();
 
-        String id = com.jayway.jsonpath.JsonPath.read(response, "$.result.id");
+        String id = JsonPath.read(response, "$.result.id");
         mockMvc.perform(get("/api/v1/catalog-items/" + id).with(user("CUSTOMER", null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.imageUrl").value("https://example.com/photo.jpg"));
@@ -160,6 +171,37 @@ class CatalogApiTests {
                         .with(user("CENTER_MANAGER", UUID.randomUUID())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.totalElements").value(1));
+    }
+
+    @Test
+    void managerSearchesOfferingsByNameAndPagesPricePlans() throws Exception {
+        UUID centerId = UUID.randomUUID();
+        CenterOffering bathing = saveOffering(centerId, saveItem("Tắm gội", ServiceStatus.ACTIVE), ServiceStatus.ACTIVE);
+        saveOffering(centerId, saveItem("Cho ăn", ServiceStatus.ACTIVE), ServiceStatus.INACTIVE);
+        savePlan(bathing, "Theo giờ", new BigDecimal("100000"), true);
+        savePlan(bathing, "Theo ngày", new BigDecimal("700000"), true);
+        savePlan(bathing, "Theo ca", new BigDecimal("400000"), false);
+
+        mockMvc.perform(get("/api/v1/center-services/center/" + centerId).param("keyword", "TẮM")
+                        .with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].id").value(bathing.getId().toString()));
+        // "%" trong từ khóa không được hiểu là ký tự đại diện.
+        mockMvc.perform(get("/api/v1/center-services/center/" + centerId).param("keyword", "%")
+                        .param("status", "INACTIVE").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(1));
+
+        mockMvc.perform(get("/api/v1/price-plans").param("centerOfferingId", bathing.getId().toString())
+                        .param("page", "1").param("size", "2").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.totalElements").value(3))
+                .andExpect(jsonPath("$.result.totalPages").value(2))
+                .andExpect(jsonPath("$.result.items.length()").value(1));
+        mockMvc.perform(get("/api/v1/price-plans").param("centerOfferingId", bathing.getId().toString())
+                        .param("size", "0").with(user("CENTER_MANAGER", centerId)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

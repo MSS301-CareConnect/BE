@@ -11,7 +11,10 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ComplaintStatisticsResponse {
     long open;
+
     long inProgress;
+
     long resolved;
+
     long escalated;
 }

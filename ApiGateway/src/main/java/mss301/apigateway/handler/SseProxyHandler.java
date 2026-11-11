@@ -24,12 +24,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Proxy cho Server-Sent Events (GET /api/v1/notifications/stream). Proxy chung của gateway có read timeout toàn cục
- * (10s) và có thể buffer → SSE bị cắt. Handler này chỉ giới hạn thời gian chờ HEADER phản hồi (= read timeout), sau đó
- * chép từng chunk và flush ngay, tối đa {@code maxStreamDuration} (client EventSource tự nối lại với Last-Event-ID).
- * Request đã qua SecurityConfig (JWT) và GatewayRequestHeaders.sanitize() như mọi route khác.
- */
 @Slf4j
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class SseProxyHandler implements HandlerFunction<ServerResponse> {
@@ -45,6 +39,7 @@ public class SseProxyHandler implements HandlerFunction<ServerResponse> {
     Duration headerTimeout;
     Duration maxStreamDuration;
 
+    // Khởi tạo proxy SSE với các mốc timeout kết nối, header và thời lượng luồng.
     public SseProxyHandler(String targetUrl, Duration connectTimeout, Duration headerTimeout, Duration maxStreamDuration) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
@@ -55,6 +50,7 @@ public class SseProxyHandler implements HandlerFunction<ServerResponse> {
         this.maxStreamDuration = maxStreamDuration;
     }
 
+    // Mở luồng SSE tới service đích và đẩy sự kiện về client không qua buffer.
     @Override
     public ServerResponse handle(ServerRequest request) throws IOException, InterruptedException {
         HttpRequest upstreamRequest = buildUpstreamRequest(request);
@@ -68,6 +64,7 @@ public class SseProxyHandler implements HandlerFunction<ServerResponse> {
                 });
     }
 
+    // Dựng request SSE gửi lên service đích kèm header xác thực.
     private HttpRequest buildUpstreamRequest(ServerRequest request) {
         String query = request.uri().getRawQuery();
         URI target = URI.create(targetUrl + request.uri().getRawPath() + (query == null ? "" : "?" + query));
@@ -85,6 +82,7 @@ public class SseProxyHandler implements HandlerFunction<ServerResponse> {
         return builder.build();
     }
 
+    // Chép header response từ service đích sang response trả client.
     private void copyResponseHeaders(HttpResponse<InputStream> upstreamResponse, HttpServletResponse servletResponse) {
         upstreamResponse.headers().map().forEach((name, values) -> {
             if (SKIPPED_RESPONSE_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
@@ -99,6 +97,7 @@ public class SseProxyHandler implements HandlerFunction<ServerResponse> {
         servletResponse.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
     }
 
+    // Chép từng phần dữ liệu SSE từ service đích sang client và flush ngay.
     private void streamBody(InputStream upstreamBody, HttpServletResponse servletResponse) throws IOException {
         Instant deadline = Instant.now().plus(maxStreamDuration);
         byte[] buffer = new byte[BUFFER_SIZE];

@@ -308,7 +308,7 @@ Checklist chính tại `PLAN.md`. Các yêu cầu dưới đây giữ nguyên l�
     - `status` CHECK (`DRAFT`, `SUBMITTED`), `submitted_at`;
     - BaseEntity, `version`.
   - `care_report_media`: `report_id` FK, `media_file_id` uuid, `display_order`, `created_at`; PK `(report_id, media_file_id)`.
-- **Lỗi:** `REPORT_NOT_FOUND (5806, 404)`, `REPORT_ALREADY_SUBMITTED (5807, 409)`, `REPORT_SESSION_NOT_ENDED (5809, 409)`, `TOO_MANY_REPORT_PHOTOS (5810, 400)`, `MEDIA_SERVICE_UNAVAILABLE (5811, 503)`, `REPORT_EXISTS (5816, 409)`.
+- **Lỗi:** `REPORT_NOT_FOUND (5963, 404 — trước 5806, đổi 2026-11-11 vì trùng)`, `REPORT_ALREADY_SUBMITTED (5807, 409)`, `REPORT_SESSION_NOT_ENDED (5809, 409)`, `TOO_MANY_REPORT_PHOTOS (5810, 400)`, `MEDIA_SERVICE_UNAVAILABLE (5811, 503)`, `REPORT_EXISTS (5816, 409)`.
 - **AC:**
   - Given session ENDED, When submit, Then SUBMITTED và khách nhận thông báo.
   - Given SUBMITTED, When PUT, Then 409.

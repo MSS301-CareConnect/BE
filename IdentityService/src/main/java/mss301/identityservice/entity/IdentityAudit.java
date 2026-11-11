@@ -42,6 +42,7 @@ public class IdentityAudit {
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 
+    // Gán thời điểm ghi audit.
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();

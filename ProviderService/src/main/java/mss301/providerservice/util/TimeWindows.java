@@ -5,12 +5,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Phép toán thuần trên danh sách {@link TimeWindow} cho lịch rảnh caregiver (PRV-02): gộp ca liền kề/chồng nhau,
- * trừ ngày nghỉ, cắt theo khoảng tra cứu, kiểm một khung có nằm trọn trong lịch rảnh hay không.
- */
 public final class TimeWindows {
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private TimeWindows() {
     }
 
@@ -35,6 +32,7 @@ public final class TimeWindows {
         return merged;
     }
 
+    // Trừ các khoảng bị loại (ngày nghỉ) khỏi danh sách khoảng.
     public static List<TimeWindow> subtract(List<TimeWindow> windows, List<TimeWindow> removals) {
         List<TimeWindow> remaining = new ArrayList<>(windows);
         for (TimeWindow removal : removals) {
@@ -56,6 +54,7 @@ public final class TimeWindows {
         return remaining;
     }
 
+    // Cắt các khoảng về trong [from, to].
     public static List<TimeWindow> clip(List<TimeWindow> windows, Instant from, Instant to) {
         List<TimeWindow> clipped = new ArrayList<>();
         for (TimeWindow window : windows) {
@@ -78,6 +77,7 @@ public final class TimeWindows {
         return false;
     }
 
+    // Khung giờ có giao với khoảng nào trong danh sách.
     public static boolean overlapsAny(List<TimeWindow> windows, TimeWindow slot) {
         for (TimeWindow window : windows) {
             if (window.overlaps(slot)) {

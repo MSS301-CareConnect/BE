@@ -33,10 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-/**
- * Gateway: xác thực JWT sớm + CORS tập trung. Không CSRF ở gateway — IdentityService / CareRecipientService tự kiểm
- * CSRF (cookie XSRF-TOKEN + header X-XSRF-TOKEN được chuyển nguyên). Không session.
- */
 @Configuration
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -53,8 +49,15 @@ public class SecurityConfig {
             toMatcher(null, Stream.concat(
                     Stream.of(GatewayPaths.IDENTITY_TOKEN_FLOW_ENDPOINTS),
                     Stream.of(GatewayPaths.DOCUMENTATION_ENDPOINTS)).toArray(String[]::new)),
-            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_ENDPOINTS));
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.PUBLIC_GET_AI_ENDPOINTS));
+    // Public nhưng vẫn có thể mang cookie đăng nhập: gateway không xác thực, AIService tự đọc token để phân biệt khách
+    // và người dùng đã đăng nhập (token hỏng → AIService trả 401, FE refresh rồi gửi lại).
+    RequestMatcher optionalAuthEndpoints = new OrRequestMatcher(
+            toMatcher(HttpMethod.POST, GatewayPaths.PUBLIC_POST_ENDPOINTS),
+            toMatcher(HttpMethod.GET, GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS));
 
+    // Cấu hình bảo mật gateway: route public, xác thực JWT, xử lý lỗi 401/403.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -62,6 +65,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(publicEndpoints).permitAll()
+                        .requestMatchers(optionalAuthEndpoints).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)
@@ -87,6 +91,7 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình CORS tập trung cho FE gọi qua gateway.
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
@@ -118,6 +123,7 @@ public class SecurityConfig {
         return bearerToken == null ? cookieToken : bearerToken;
     }
 
+    // Đọc access token từ cookie khi request không có header Authorization.
     private static String readAccessCookie(HttpServletRequest request) {
         if (request.getCookies() == null) {
             return null;

@@ -12,6 +12,8 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ResponsivenessStatisticsResponse {
     long answeredCount;
+
     Long avgResponseMinutes;
+
     long expiredCount;
 }

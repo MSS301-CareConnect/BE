@@ -6,6 +6,8 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.client.ProviderServiceClient;
 import mss301.bookingservice.client.dto.AvailabilityCheckResponse;
+import mss301.bookingservice.client.dto.ProviderCaregiverCardPageResponse;
+import mss301.bookingservice.client.dto.ProviderCaregiverCardResponse;
 import mss301.bookingservice.client.dto.ProviderCaregiverResponse;
 import mss301.bookingservice.client.dto.ProviderScheduleResponse;
 import mss301.bookingservice.client.dto.RemoteApiResponse;
@@ -17,8 +19,11 @@ import mss301.bookingservice.mapper.OccurrenceMapper;
 import mss301.bookingservice.service.CaregiverPort;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -28,10 +33,14 @@ import java.util.UUID;
 public class CaregiverPortImpl implements CaregiverPort {
 
     static int MAX_SLOTS_PER_CHECK = 60;
+    // Trang lớn nhất Provider cho phép ở /caregivers/search.
+    static int MAX_SEARCH_RESULTS = 50;
+    static String SLOT_SEPARATOR = "/";
 
     ProviderServiceClient providerServiceClient;
     OccurrenceMapper occurrenceMapper;
 
+    // Kiểm caregiver thuộc trung tâm, đang hoạt động và có đủ kỹ năng dịch vụ.
     @Override
     public AssignedCaregiver resolveAssignable(UUID centerId, UUID caregiverId, Collection<UUID> careServiceIds) {
         RemoteApiResponse<ProviderCaregiverResponse> response;
@@ -64,6 +73,7 @@ public class CaregiverPortImpl implements CaregiverPort {
                 .build();
     }
 
+    // Kiểm caregiver rảnh mọi khung giờ (hỏi ProviderService theo lô).
     @Override
     public void checkAvailable(UUID caregiverId, List<OccurrenceSlot> slots) {
         // Provider nhận tối đa 60 khoảng / lần — booking dài hơn thì hỏi nhiều lần.
@@ -78,6 +88,7 @@ public class CaregiverPortImpl implements CaregiverPort {
         }
     }
 
+    // Lấy ca làm việc caregiver đã nhận để đặt booking theo ca.
     @Override
     public ProviderScheduleResponse findBookableSchedule(UUID centerId, UUID caregiverId, UUID scheduleId) {
         RemoteApiResponse<ProviderScheduleResponse> response;
@@ -102,6 +113,52 @@ public class CaregiverPortImpl implements CaregiverPort {
         return schedule;
     }
 
+    // Tìm caregiver của trung tâm có kỹ năng và rảnh mọi khung giờ.
+    @Override
+    public List<ProviderCaregiverCardResponse> findFreeCaregivers(UUID centerId, Collection<UUID> careServiceIds,
+                                                                  List<OccurrenceSlot> slots) {
+        // Provider nhận tối đa 60 khung / lần → booking dài hơn: giao các tập ứng viên của từng phần.
+        Map<UUID, ProviderCaregiverCardResponse> candidates = null;
+        for (int from = 0; from < slots.size(); from += MAX_SLOTS_PER_CHECK) {
+            List<String> chunk = slots.subList(from, Math.min(from + MAX_SLOTS_PER_CHECK, slots.size())).stream()
+                    .map(slot -> slot.getStartAt() + SLOT_SEPARATOR + slot.getEndAt())
+                    .toList();
+            Map<UUID, ProviderCaregiverCardResponse> found = new LinkedHashMap<>();
+            for (ProviderCaregiverCardResponse card : requestCandidates(centerId, careServiceIds, chunk)) {
+                found.put(card.getCaregiverId(), card);
+            }
+            if (candidates == null) {
+                candidates = found;
+            } else {
+                candidates.keySet().retainAll(found.keySet());
+            }
+            if (candidates.isEmpty()) {
+                break;
+            }
+        }
+        return candidates == null ? List.of() : new ArrayList<>(candidates.values());
+    }
+
+    // Gọi ProviderService tìm caregiver phù hợp cho một lô khung giờ.
+    private List<ProviderCaregiverCardResponse> requestCandidates(UUID centerId, Collection<UUID> careServiceIds,
+                                                                  List<String> slots) {
+        RemoteApiResponse<ProviderCaregiverCardPageResponse> response;
+        try {
+            response = providerServiceClient.searchCaregivers(centerId, List.copyOf(careServiceIds), slots,
+                    MAX_SEARCH_RESULTS);
+        } catch (AppException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("Provider caregiver search failed for center {} ({})", centerId, e.getClass().getSimpleName());
+            throw new AppException(ErrorCode.PROVIDER_UNAVAILABLE);
+        }
+        if (response == null || response.getResult() == null) {
+            throw new AppException(ErrorCode.PROVIDER_UNAVAILABLE);
+        }
+        return response.getResult().getItems() == null ? List.of() : response.getResult().getItems();
+    }
+
+    // Gọi ProviderService kiểm tra caregiver rảnh các khung giờ.
     private AvailabilityCheckResponse requestAvailability(UUID caregiverId, List<OccurrenceSlot> slots) {
         RemoteApiResponse<AvailabilityCheckResponse> response;
         try {

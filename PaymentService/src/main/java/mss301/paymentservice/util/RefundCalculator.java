@@ -11,26 +11,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Bộ tính tiền hoàn theo spec booking v1.0 §10.2 (Q5, M4) trên center booking policy đã snapshot lúc thanh toán khoản
- * đầu. Hàm thuần — dùng chung cho preview (refund-quotes) và lệnh hoàn thật (refunds) để hai nơi luôn ra cùng một số.
- * paid_i = cọc_i + đã thu thêm_i − đã hoàn_i; % hoàn tính trên paid_i, phần không hoàn là phí (tiền khách mất).
- */
 public final class RefundCalculator {
 
     public static final String NOT_PAID = "NOT_PAID";
     public static final String NOT_CANCELLABLE = "NOT_CANCELLABLE";
     public static final String BEFORE_THRESHOLD = "BEFORE_THRESHOLD";
     public static final String AFTER_THRESHOLD = "AFTER_THRESHOLD";
+    // Hủy sát giờ (còn dưới LATE_CANCEL_WINDOW): không hoàn — tách khỏi AFTER_THRESHOLD để màn hình không ghi "giữ một phần".
+    public static final String LATE_NO_REFUND = "LATE_NO_REFUND";
     public static final String FULL_REFUND_CENTER = "FULL_REFUND_CENTER";
     public static final String FULL_REFUND_MISSED = "FULL_REFUND_MISSED";
     public static final String FULL_REFUND_SYSTEM = "FULL_REFUND_SYSTEM";
     public static final String PAYMENT_OVERDUE = "PAYMENT_OVERDUE";
     static final BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
+    // Spec v3 §10.2 (duyệt 2026-11-05): còn dưới mốc này tới giờ buổi thì caregiver đã giữ ca, khách không được hoàn. Từ
+    // 2026-11-10 mỗi trung tâm đặt mốc riêng (lateCancelNoRefundMinutes); snapshot cũ chưa có thì dùng 120 phút.
+    static final int DEFAULT_LATE_CANCEL_MINUTES = 120;
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private RefundCalculator() {
     }
 
+    // Tính phí hủy và tiền hoàn cho từng buổi.
     public static List<Line> calculate(Context context, List<OccurrenceInput> occurrences) {
         List<Line> lines = new ArrayList<>();
         for (OccurrenceInput occurrence : occurrences) {
@@ -51,6 +53,7 @@ public final class RefundCalculator {
         return lines;
     }
 
+    // Tính phí hủy và tiền hoàn của một buổi theo chính sách và thời điểm hủy.
     private static Line calculateOne(Context context, OccurrenceInput occurrence) {
         BigDecimal price = occurrence.priceAmount() == null ? BigDecimal.ZERO : occurrence.priceAmount();
         if (!context.paid() || context.policy() == null) {
@@ -85,34 +88,45 @@ public final class RefundCalculator {
             return fullRefund(occurrence, price, paid, FULL_REFUND_SYSTEM);
         }
         boolean beforeThreshold = leadSeconds >= Duration.ofMinutes(policy.getRefundThresholdMinutes()).getSeconds();
-        boolean lateForfeit = leadSeconds < Duration.ofHours(2).getSeconds();
+        int lateCancelMinutes = policy.getLateCancelNoRefundMinutes() == null
+                ? DEFAULT_LATE_CANCEL_MINUTES
+                : policy.getLateCancelNoRefundMinutes();
+        if (!beforeThreshold && leadSeconds < Duration.ofMinutes(lateCancelMinutes).getSeconds()) {
+            return new Line(occurrence.occurrenceId(), price, paid, paid, BigDecimal.ZERO, LATE_NO_REFUND);
+        }
         BigDecimal percent = beforeThreshold
                 ? policy.getRefundPercentBeforeThreshold()
-                : (lateForfeit ? BigDecimal.ZERO : policy.getRefundPercentAfterThreshold());
+                : policy.getRefundPercentAfterThreshold();
         BigDecimal refund = VndMoney.percentOf(percent.min(ONE_HUNDRED), paid).min(paid);
         return new Line(occurrence.occurrenceId(), price, paid, paid.subtract(refund), refund,
                 beforeThreshold ? BEFORE_THRESHOLD : AFTER_THRESHOLD);
     }
 
+    // Số tiền đã trả của buổi (không âm).
     private static BigDecimal paidOf(OccurrenceInput occurrence) {
         return VndMoney.nonNegative(occurrence.paidAmount() == null ? BigDecimal.ZERO : occurrence.paidAmount());
     }
 
+    // Kết quả hoàn toàn bộ số đã trả.
     private static Line fullRefund(OccurrenceInput occurrence, BigDecimal price, BigDecimal paid, String rule) {
         return new Line(occurrence.occurrenceId(), price, paid, BigDecimal.ZERO, paid, rule);
     }
 
+    // Kết quả buổi không hủy được: giữ toàn bộ số đã trả.
     private static Line notCancellable(OccurrenceInput occurrence, BigDecimal price, BigDecimal paid) {
         return new Line(occurrence.occurrenceId(), price, paid, paid, BigDecimal.ZERO, NOT_CANCELLABLE);
     }
 
+    // Ngữ cảnh tính hoàn: đã trả chưa, chính sách, lý do, thời điểm hủy.
     public record Context(boolean paid, PolicySnapshot policy, RefundReason reason, Instant cancelledAt) {
     }
 
+    // Dữ liệu một buổi đầu vào để tính hoàn.
     public record OccurrenceInput(UUID occurrenceId, Instant startAt, OccurrenceStatus status, boolean hasSession,
                                   BigDecimal priceAmount, BigDecimal paidAmount) {
     }
 
+    // Kết quả tính hoàn của một buổi.
     public record Line(UUID occurrenceId, BigDecimal priceAmount, BigDecimal paidAmount, BigDecimal feeAmount,
                        BigDecimal refundAmount, String rule) {
     }

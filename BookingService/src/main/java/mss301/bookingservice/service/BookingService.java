@@ -34,13 +34,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Booking — một API cho mọi role. Controller chỉ kiểm role bằng @PreAuthorize; phạm vi dữ liệu chọn ở đây theo role:
- * ADMIN mọi booking, CENTER_MANAGER booking cùng center_id trong token, CUSTOMER booking của mình. Ngoài phạm vi → 404.
- * Buổi chăm sóc (lịch caregiver, chi tiết buổi) ở BookingOccurrenceService.
- */
 public interface BookingService {
 
+    // Danh sách booking theo phạm vi người gọi.
     APIResponse<PageResponse<BookingSummaryResponse>> list(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                            BookingSearchRequest request);
 
@@ -52,8 +48,10 @@ public interface BookingService {
     APIResponse<PageResponse<BookingHistoryResponse>> listHistory(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                                   UUID id, int page, int size);
 
+    // Chi tiết booking.
     APIResponse<BookingDetailResponse> get(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID id);
 
+    // Danh sách buổi của booking.
     APIResponse<PageResponse<OccurrenceResponse>> listOccurrences(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId,
                                                                   UUID id, OccurrenceStatus status, int page, int size);
 
@@ -78,12 +76,16 @@ public interface BookingService {
     // BK-04 (SERVICE): khóa trung tâm → hủy + hoàn 100%; khóa caregiver → đánh dấu buổi cần đổi người. Idempotent.
     APIResponse<SystemCancellationResponse> cancelBySystem(SystemCancellationRequest request);
 
+    // Trung tâm nhận booking.
     APIResponse<BookingDetailResponse> accept(UUID actorId, UUID centerId, UUID id, AcceptRequest request);
 
+    // Trung tâm từ chối booking.
     APIResponse<BookingDetailResponse> reject(UUID actorId, UUID centerId, UUID id, ReasonRequest request);
 
+    // Phân công / đổi caregiver cho booking.
     APIResponse<BookingDetailResponse> updateCaregiver(UUID actorId, UUID centerId, UUID id, CaregiverAssignRequest request);
 
+    // Đổi caregiver cho một buổi.
     APIResponse<OccurrenceResponse> updateOccurrenceCaregiver(UUID actorId, UUID centerId, UUID id, UUID occurrenceId,
                                                               CaregiverAssignRequest request);
 
@@ -107,11 +109,13 @@ public interface BookingService {
     // SERVICE (CareRecipientService): caregiver có được xem hồ sơ người bệnh không — tính theo từng buổi.
     APIResponse<CaregiverAccessResponse> checkCaregiverAccess(UUID caregiverUserId, UUID recipientId);
 
+    // Số booking chưa kết thúc của người bệnh.
     APIResponse<RecipientActivityResponse> getRecipientActivity(UUID recipientId);
 
     // Spec §3: lịch caregiver đã bị booking giữ trong khoảng ngày (mặc định 31 ngày từ hôm nay).
     APIResponse<CaregiverHeldScheduleResponse> listHeldSchedules(UUID caregiverId, LocalDate from, LocalDate to);
 
+    // Ghi nhận đã trả cọc.
     APIResponse<BookingDetailResponse> markDepositPaid(UUID id, DepositPaidRequest request);
 
     // SERVICE (PaymentService): khách đã trả xong phần còn lại (spec §9.1).
@@ -122,15 +126,30 @@ public interface BookingService {
 
     // ─── SCHEDULER ───────────────────────────────────────────────────────────
 
+    // Lấy id booking quá hạn xử lý.
     List<UUID> findExpirableIds();
 
+    // Booking chờ cọc đã qua hạn + grace — job riêng chu kỳ ngắn để nhả slot giữ chỗ sớm (2026-11-09).
+    List<UUID> findExpiredHoldIds();
+
+    // Q-B2 (2026-11-09): booking đã cọc còn buổi chưa có người khi sát giờ (unassigned-cancel-lead) → hủy buổi đó, hoàn 100 %.
+    List<UUID> findUnassignedDueIds();
+
+    // Hủy booking quá hạn mà chưa phân công được caregiver.
+    void cancelUnassigned(UUID id);
+
+    // Chuyển booking sang hết hạn.
     void expire(UUID id);
 
+    // Lấy id booking cần nhắc trả phần còn lại.
     List<UUID> findRemainingReminderIds();
 
+    // Nhắc trả phần còn lại.
     void remindRemainingPayment(UUID id);
 
+    // Lấy id booking cần nhắc trung tâm.
     List<UUID> findCenterReminderIds();
 
+    // Nhắc trung tâm xử lý booking.
     void remindCenterAction(UUID id);
 }

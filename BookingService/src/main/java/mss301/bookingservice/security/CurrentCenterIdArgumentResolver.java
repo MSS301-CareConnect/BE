@@ -15,12 +15,14 @@ import java.util.UUID;
 
 public class CurrentCenterIdArgumentResolver implements HandlerMethodArgumentResolver {
 
+    // Nhận tham số UUID có @CurrentCenterId.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentCenterId.class)
                 && UUID.class.equals(parameter.getParameterType());
     }
 
+    // Lấy center_id từ JWT cho tham số @CurrentCenterId.
     @Override
     public UUID resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                 NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {

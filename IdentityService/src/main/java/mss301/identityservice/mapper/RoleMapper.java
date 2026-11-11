@@ -1,5 +1,8 @@
 package mss301.identityservice.mapper;
 
+import org.mapstruct.NullValuePropertyMappingStrategy;
+import org.mapstruct.MappingTarget;
+import mss301.identityservice.dto.request.RoleUpdateRequest;
 import mss301.identityservice.dto.request.RoleRequest;
 import mss301.identityservice.dto.response.PermissionResponse;
 import mss301.identityservice.dto.response.RoleResponse;
@@ -30,4 +33,12 @@ public interface RoleMapper {
     @Mapping(target = "id", expression = "java(new RolePermissionId(role.getId(), permission.getId()))")
     @Mapping(target = "grantedAt", ignore = true)
     RolePermission toRolePermission(Role role, Permission permission);
+
+    // PUT /roles/{id}: tên được trim; active null = giữ nguyên (contract RoleUpdateRequest); mã role không đổi.
+    @IgnoreServerManagedFields
+    @Mapping(target = "roleCode", ignore = true)
+    @Mapping(target = "rolePermissions", ignore = true)
+    @Mapping(target = "roleName", expression = "java(request.getRoleName().trim())")
+    @Mapping(target = "active", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    void update(RoleUpdateRequest request, @MappingTarget Role role);
 }

@@ -60,6 +60,7 @@ public class ProviderMedia {
     @Column(name = "created_at", nullable = false, updatable = false)
     OffsetDateTime createdAt;
 
+    // Gán thứ tự hiển thị mặc định là 0 trước khi lưu.
     @PrePersist
     void prePersist() {
         if (displayOrder == null) {

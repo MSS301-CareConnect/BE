@@ -26,10 +26,6 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Resource Server: tự xác minh JWT (không tin header X-User-* của gateway). CORS tắt — trình duyệt đi qua gateway
- * (gateway xử lý CORS và bỏ header Origin khi chuyển tiếp).
- */
 @Configuration
 @EnableMethodSecurity
 @RequiredArgsConstructor
@@ -50,11 +46,19 @@ public class SecurityConfig {
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-centers/public"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/care-centers/public/{centerId}"));
 
+    // Danh sách và hồ sơ công khai người chăm sóc cho khách chưa đăng nhập (2026-11-09): cho phép ẩn danh nhưng VẪN đọc
+    // token nếu có. Đồng bộ với GatewayPaths.OPTIONAL_AUTH_GET_ENDPOINTS.
+    static RequestMatcher OPTIONAL_AUTH_GET_ENDPOINTS = new OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers/search"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/caregivers/{caregiverId}/public"));
+
     JwtDecoder jwtDecoder;
     JwtAuthorityConverter jwtAuthorityConverter;
     SecurityErrorHandler securityErrorHandler;
     DefaultBearerTokenResolver headerTokenResolver = new DefaultBearerTokenResolver();
 
+    // Cấu hình bảo mật: stateless, CSRF cho request dùng cookie, xác thực JWT, endpoint public.
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -75,6 +79,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_GET_ENDPOINTS).permitAll()
+                        .requestMatchers(OPTIONAL_AUTH_GET_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(securityErrorHandler)
@@ -100,6 +105,7 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // Cấu hình cách đọc CSRF token từ header của request.
     private CsrfTokenRequestAttributeHandler csrfTokenRequestHandler() {
         CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
         // FE gửi nguyên giá trị token (lấy từ /auth/csrf của Identity) trong header X-XSRF-TOKEN.
@@ -115,6 +121,7 @@ public class SecurityConfig {
         return CookieUtils.read(request, CookieUtils.ACCESS) != null;
     }
 
+    // Lấy access token từ header hoặc cookie, bỏ qua các path public.
     private String resolveToken(HttpServletRequest request) {
         String path = request.getRequestURI();
         for (String publicPrefix : PUBLIC_PREFIXES) {

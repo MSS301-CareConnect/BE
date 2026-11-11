@@ -69,6 +69,10 @@ public class OccurrenceFinancial extends BaseEntity {
     @Column(name = "caregiver_user_id")
     UUID caregiverUserId;
 
+    // Ví: lúc buổi hoàn tất được cộng cho trung tâm / nền tảng (WalletSettlementService) — mỗi buổi một lần.
+    @Column(name = "settled_at")
+    Instant settledAt;
+
     @Version
     @Column(nullable = false)
     Long version;

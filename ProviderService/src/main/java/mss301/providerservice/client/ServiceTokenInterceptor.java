@@ -10,17 +10,13 @@ import mss301.providerservice.security.TokenClaims;
 import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 
-/**
- * Gắn token SERVICE của ProviderService (không phải token người dùng) vào lời gọi Feign. Chỉ khai báo trong
- * {@code *ClientConfig} của client cần quyền service (vd {@link CareCatalogClientConfig}); client chạy dưới quyền người
- * dùng vẫn dùng {@link FeignAuthForwardingInterceptor}.
- */
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ServiceTokenInterceptor implements RequestInterceptor {
 
     ServiceTokenProvider serviceTokenProvider;
 
+    // Gắn token SERVICE và request id vào header của request Feign.
     @Override
     public void apply(RequestTemplate template) {
         template.removeHeader(HttpHeaders.AUTHORIZATION);

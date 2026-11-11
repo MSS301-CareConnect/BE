@@ -19,12 +19,14 @@ import java.util.UUID;
 public class RemainingInvoiceOverdueScheduler {
     RemainingInvoiceService remainingInvoiceService;
 
+    // Định kỳ đánh dấu hóa đơn phần còn lại quá hạn.
     @Scheduled(fixedDelayString = "${payment.invoice.overdue-scan-interval:10m}",
             initialDelayString = "${payment.invoice.overdue-scan-interval:10m}")
     public void markOverdueInvoices() {
         List<UUID> invoiceIds = remainingInvoiceService.findOverdueCandidateIds();
         for (UUID invoiceId : invoiceIds) {
             try {
+                remainingInvoiceService.refreshCaregivers(invoiceId);
                 remainingInvoiceService.markOverdue(invoiceId);
             } catch (RuntimeException e) {
                 log.error("Overdue marking crashed for invoice {} ({})", invoiceId, e.getClass().getSimpleName(), e);

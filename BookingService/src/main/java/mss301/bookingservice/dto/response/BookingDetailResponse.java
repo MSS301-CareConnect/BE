@@ -126,4 +126,7 @@ public class BookingDetailResponse {
 
     // Bên chưa làm kịp khi EXPIRED.
     BookingExpiredReason expiredReason;
+
+    // Giờ máy chủ lúc dựng response — FE bù lệch đồng hồ máy khách khi đếm ngược giữ chỗ 5 phút (2026-11-09).
+    Instant serverTime;
 }

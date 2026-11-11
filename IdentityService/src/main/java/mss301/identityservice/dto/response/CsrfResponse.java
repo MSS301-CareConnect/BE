@@ -11,5 +11,6 @@ import lombok.experimental.FieldDefaults;
 public class CsrfResponse {
     // Giá trị gửi lại trong header headerName (X-XSRF-TOKEN) ở mọi request ghi của web.
     String token;
+
     String headerName;
 }

@@ -15,6 +15,7 @@ public class SessionNoteRequest {
     @NotBlank(message = "INVALID_REQUEST")
     @Size(max = 2000, message = "INVALID_REQUEST")
     String content;
+
     @Valid
     SessionVitals vitals;
 }

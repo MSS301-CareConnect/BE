@@ -39,6 +39,7 @@ public class RefundController {
 
     RefundService refundService;
 
+    // API danh sách hoàn tiền có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAnyRole('SERVICE','ADMIN','CUSTOMER')")
     public APIResponse<PageResponse<RefundResponse>> list(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -49,6 +50,7 @@ public class RefundController {
         return refundService.list(actorId, roles, bookingId, status, page, size);
     }
 
+    // API cho BookingService tạo lệnh hoàn tiền (có idempotency key).
     @PostMapping
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<RefundCreateResponse> create(@RequestHeader(value = IDEMPOTENCY_KEY, required = false) String idempotencyKey,
@@ -56,6 +58,7 @@ public class RefundController {
         return refundService.create(idempotencyKey, request);
     }
 
+    // API tạo lệnh hoàn tiền theo kết quả xử lý khiếu nại.
     @PostMapping("/complaints")
     @PreAuthorize("hasRole('SERVICE')")
     public APIResponse<RefundCreateResponse> createComplaintRefund(
@@ -64,6 +67,7 @@ public class RefundController {
         return refundService.createComplaintRefund(idempotencyKey, request);
     }
 
+    // API admin thử lại lệnh hoàn tiền thất bại.
     @PostMapping("/{refundId}/retry")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<RefundResponse> retry(@CurrentUserId UUID actorId, @PathVariable UUID refundId) {

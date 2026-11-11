@@ -15,12 +15,14 @@ import java.util.UUID;
 
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
 
+    // Nhận tham số controller có @CurrentUserId.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentUserId.class)
                 && UUID.class.equals(parameter.getParameterType());
     }
 
+    // Lấy userId (sub) của người gọi từ Authentication.
     @Override
     public UUID resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
                                 NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {

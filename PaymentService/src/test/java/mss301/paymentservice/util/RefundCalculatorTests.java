@@ -23,13 +23,18 @@ class RefundCalculatorTests {
     void customerCancelRefundsHundredFromTheThresholdAndSeventyBelow() {
         Instant cancelledAt = PAID_AT.plus(Duration.ofHours(3));
 
-        // Spec §10.2: còn ≥ 24h → 100 %; < 24h → 70 % của số đã trả cho buổi (M4).
+        // Spec §10.2 + v3: còn ≥ 24h → 100 %; từ 2h tới < 24h → 70 % của số đã trả cho buổi (M4); dưới 2h → không hoàn.
         assertLine(customerCancel(cancelledAt, cancelledAt.plus(Duration.ofHours(72))), "BEFORE_THRESHOLD", "0", "300000");
         assertLine(customerCancel(cancelledAt, cancelledAt.plus(Duration.ofHours(24))), "BEFORE_THRESHOLD", "0", "300000");
         assertLine(customerCancel(cancelledAt, cancelledAt.plus(Duration.ofHours(24)).minusSeconds(1)), "AFTER_THRESHOLD",
                 "90000", "210000");
-        assertLine(customerCancel(cancelledAt, cancelledAt), "AFTER_THRESHOLD", "90000", "210000");
-        assertLine(customerCancel(cancelledAt, cancelledAt.minusSeconds(1)), "NOT_CANCELLABLE", "0", "0");
+        assertLine(customerCancel(cancelledAt, cancelledAt.plus(Duration.ofHours(2))), "AFTER_THRESHOLD", "90000",
+                "210000");
+        assertLine(customerCancel(cancelledAt, cancelledAt.plus(Duration.ofHours(2)).minusSeconds(1)), "LATE_NO_REFUND",
+                "300000", "0");
+        assertLine(customerCancel(cancelledAt, cancelledAt), "LATE_NO_REFUND", "300000", "0");
+        // Buổi đã qua giờ bắt đầu: không hủy được, khách vẫn trả đủ buổi.
+        assertLine(customerCancel(cancelledAt, cancelledAt.minusSeconds(1)), "NOT_CANCELLABLE", "300000", "0");
     }
 
     @Test
@@ -59,6 +64,26 @@ class RefundCalculatorTests {
         assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofHours(30)),
                 OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "AFTER_THRESHOLD", "150000", "150000");
 
+        // Mốc của trung tâm ngắn hơn 2 giờ: còn trước mốc thì vẫn theo % trước mốc, không rơi vào "sát giờ".
+        policy.setRefundThresholdMinutes(60);
+        assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofMinutes(90)),
+                OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "BEFORE_THRESHOLD", "30000", "270000");
+        assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofMinutes(30)),
+                OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "LATE_NO_REFUND", "300000", "0");
+
+        // Trung tâm đặt mốc "không hoàn" riêng (30 phút): còn 45 phút vẫn được 50 %, còn 20 phút thì không.
+        policy.setRefundThresholdMinutes(2880);
+        policy.setLateCancelNoRefundMinutes(30);
+        assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofMinutes(45)),
+                OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "AFTER_THRESHOLD", "150000", "150000");
+        assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofMinutes(20)),
+                OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "LATE_NO_REFUND", "300000", "0");
+        // 0 = không có khoảng "không hoàn".
+        policy.setLateCancelNoRefundMinutes(0);
+        assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofMinutes(5)),
+                OccurrenceStatus.SCHEDULED, false, PAID))).getFirst(), "AFTER_THRESHOLD", "150000", "150000");
+        policy.setLateCancelNoRefundMinutes(null);
+
         // Snapshot cũ chưa có mốc hoàn → không đoán phí, hoàn đủ.
         policy.setRefundThresholdMinutes(null);
         assertLine(RefundCalculator.calculate(context, List.of(input(cancelledAt.plus(Duration.ofHours(1)),
@@ -72,9 +97,9 @@ class RefundCalculatorTests {
         RefundCalculator.Context context = context(RefundReason.CUSTOMER_CANCEL, cancelledAt);
 
         assertLine(RefundCalculator.calculate(context, List.of(input(start, OccurrenceStatus.SCHEDULED, true, PAID)))
-                .getFirst(), "NOT_CANCELLABLE", "0", "0");
+                .getFirst(), "NOT_CANCELLABLE", "300000", "0");
         assertLine(RefundCalculator.calculate(context, List.of(input(start, OccurrenceStatus.COMPLETED, false, PAID)))
-                .getFirst(), "NOT_CANCELLABLE", "0", "0");
+                .getFirst(), "NOT_CANCELLABLE", "300000", "0");
         // status null = lệnh hoàn thật (Booking đã hủy buổi) → không chặn.
         assertLine(RefundCalculator.calculate(context, List.of(input(start, null, false, PAID))).getFirst(),
                 "BEFORE_THRESHOLD", "0", "300000");

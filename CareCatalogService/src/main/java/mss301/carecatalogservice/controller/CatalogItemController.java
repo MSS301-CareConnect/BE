@@ -33,15 +33,17 @@ import java.util.UUID;
 public class CatalogItemController {
     CatalogItemService catalogItemService;
 
+    // API danh sách dịch vụ chuẩn có lọc và phân trang.
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<PageResponse<CatalogItemResponse>> list(@CurrentRoles Set<RoleCode> roles,
                                                                @ParameterObject CatalogItemSearchRequest request) {
         return catalogItemService.list(roles, request);
     }
 
+    // API xem chi tiết một dịch vụ chuẩn.
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("permitAll()")
     public APIResponse<CatalogItemResponse> get(@CurrentRoles Set<RoleCode> roles, @PathVariable UUID id) {
         return catalogItemService.get(roles, id);
     }
@@ -53,12 +55,14 @@ public class CatalogItemController {
         return catalogItemService.redirectToImage(mediaFileId);
     }
 
+    // API admin tạo dịch vụ chuẩn.
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CatalogItemResponse> create(@Valid @RequestBody CatalogItemRequest request) {
         return catalogItemService.create(request);
     }
 
+    // API admin upload ảnh minh họa dịch vụ chuẩn.
     @PostMapping(value = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CatalogImageResponse> uploadImage(@CurrentUserId UUID actorId,
@@ -66,6 +70,7 @@ public class CatalogItemController {
         return catalogItemService.uploadImage(actorId, file);
     }
 
+    // API admin cập nhật dịch vụ chuẩn.
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CatalogItemResponse> update(@PathVariable UUID id,
@@ -73,6 +78,7 @@ public class CatalogItemController {
         return catalogItemService.update(id, request);
     }
 
+    // API admin đổi trạng thái dịch vụ chuẩn.
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<CatalogItemResponse> updateStatus(@PathVariable UUID id,
@@ -80,6 +86,7 @@ public class CatalogItemController {
         return catalogItemService.updateStatus(id, request);
     }
 
+    // API admin xóa dịch vụ chuẩn.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<Void> delete(@PathVariable UUID id) {

@@ -10,17 +10,21 @@ import mss301.paymentservice.entity.PaymentAttempt;
 import mss301.paymentservice.entity.Refund;
 import mss301.paymentservice.enums.PaymentProvider;
 import mss301.paymentservice.enums.PaymentStatus;
+import mss301.paymentservice.enums.RefundChannel;
 import mss301.paymentservice.enums.RefundMode;
 import mss301.paymentservice.enums.RefundStatus;
 import mss301.paymentservice.enums.TransactionEventType;
 import mss301.paymentservice.gateway.RefundCommand;
 import mss301.paymentservice.gateway.RefundResult;
 import mss301.paymentservice.gateway.VnPayRefundGateway;
+import mss301.paymentservice.repository.BookingFinancialRepository;
 import mss301.paymentservice.repository.PaymentAttemptRepository;
 import mss301.paymentservice.repository.PaymentRepository;
 import mss301.paymentservice.repository.RefundRepository;
+import mss301.paymentservice.service.PaymentOutboxService;
 import mss301.paymentservice.service.PaymentTransactionService;
 import mss301.paymentservice.service.RefundDispatchService;
+import mss301.paymentservice.service.WalletService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -32,17 +36,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Dispatcher hoàn tiền (PAY-10). Mỗi refund: transaction ngắn "nhận việc" (SKIP LOCKED + thuê dòng), gọi cổng NGOÀI
- * transaction, rồi transaction ngắn ghi kết quả. SIMULATED (mặc định) đánh REFUNDED ngay mà vẫn đi đủ state machine,
- * nhật ký và cộng payment.refundedAmount; VNPAY gọi adapter; STRIPE → FAILED (D16 không hoàn qua Stripe).
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @Slf4j
 public class RefundDispatchServiceImpl implements RefundDispatchService {
     static String SIMULATED_CODE = "SIMULATED";
+    static String WALLET_CODE = "WALLET";
     static String SYSTEM_ACTOR = "system";
     static int MAX_ERROR_LENGTH = 500;
     static int MAX_BACKOFF_SHIFT = 20;
@@ -50,18 +50,23 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
     RefundRepository refundRepository;
     PaymentRepository paymentRepository;
     PaymentAttemptRepository paymentAttemptRepository;
+    BookingFinancialRepository bookingFinancialRepository;
+    PaymentOutboxService paymentOutboxService;
     VnPayRefundGateway vnPayRefundGateway;
     PaymentTransactionService paymentTransactionService;
+    WalletService walletService;
     PaymentProperties paymentProperties;
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Lấy id các lệnh hoàn tiền đang chờ và tới hạn gửi.
     @Override
     public List<UUID> findDueIds() {
         return refundRepository.findDueIds(RefundStatus.REFUND_PENDING, clock.instant(),
                 PageRequest.of(0, paymentProperties.getRefund().getBatchSize()));
     }
 
+    // Gửi một lệnh hoàn tiền: nhận lệnh, gọi cổng ngoài transaction, ghi kết quả.
     @Override
     public void process(UUID refundId) {
         Claim claim = transactionTemplate.execute(status -> claim(refundId));
@@ -89,10 +94,14 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
             return null;
         }
         refund.setNextAttemptAt(now.plus(paymentProperties.getRefund().getClaimLease()));
+        if (refund.getChannel() == RefundChannel.WALLET) {
+            // Ví: không gọi cổng — cộng ví khách trong transaction ghi kết quả.
+            return new Claim(null, null, true);
+        }
         Payment payment = paymentRepository.findById(refund.getPaymentId()).orElse(null);
         PaymentAttempt paidAttempt = findPaidAttempt(refund, payment);
         if (payment == null || paidAttempt == null) {
-            return new Claim(null, null);
+            return new Claim(null, null, false);
         }
         // Hoàn một phiên trả trễ / trùng: toàn phần nếu bằng đúng số tiền phiên đó; hoàn thường: so với payment.
         boolean fullRefund = refund.getAttemptId() != null
@@ -104,7 +113,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         RefundCommand command = new RefundCommand(refund.getId(), requestId, paidAttempt.getReference(),
                 paidAttempt.getProviderTransactionId(), paidAttempt.getCreatedAt(), refund.getAmount(), fullRefund,
                 createdBy, "Hoan tien booking " + refund.getBookingId());
-        return new Claim(command, paidAttempt.getProvider());
+        return new Claim(command, paidAttempt.getProvider(), false);
     }
 
     // Hoàn thường đi qua giao dịch gốc (phiên thu tiền đầu tiên); hoàn phiên trả trễ / trùng đi qua đúng phiên đó.
@@ -115,12 +124,16 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         if (refund.getAttemptId() != null) {
             return paymentAttemptRepository.findById(refund.getAttemptId()).orElse(null);
         }
-        return paymentAttemptRepository.findAllCompletedByPayment(payment.getId(), PaymentStatus.SUCCESS).stream()
+        return paymentAttemptRepository.findByPaymentIdAndStatusOrderByCompletedAtAsc(payment.getId(), PaymentStatus.SUCCESS).stream()
                 .findFirst()
                 .orElse(null);
     }
 
+    // Thực hiện hoàn tiền: hoàn vào ví thì thành công ngay, còn lại gọi cổng thanh toán.
     private RefundResult execute(Claim claim) {
+        if (claim.wallet()) {
+            return RefundResult.succeeded(WALLET_CODE, null);
+        }
         if (claim.command() == null) {
             return RefundResult.rejected(null, null, "Payment has no successful attempt");
         }
@@ -134,7 +147,12 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         return vnPayRefundGateway.refund(claim.command());
     }
 
+    // Ghi kết quả hoàn tiền: hoàn xong, thử lại sau hoặc thất bại.
     private void recordResult(UUID refundId, Claim claim, RefundResult result) {
+        // Khóa booking_financials trước (thứ tự khóa chung) để các dòng hoàn cùng booking ghi kết quả lần lượt — dòng cuối
+        // của một lệnh mới thấy cả nhóm đã xong và xếp đúng một thông báo.
+        refundRepository.findById(refundId)
+                .ifPresent(snapshot -> bookingFinancialRepository.findForUpdate(snapshot.getBookingId()));
         Refund refund = refundRepository.findForUpdate(refundId).orElse(null);
         if (refund == null || refund.getStatus() != RefundStatus.REFUND_PENDING) {
             return;
@@ -155,6 +173,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         }
     }
 
+    // Đánh dấu lệnh hoàn tiền đã hoàn và cập nhật tài chính liên quan.
     private void markRefunded(Refund refund, Instant now) {
         if (refund.getAttemptId() != null) {
             // Tiền của phiên trả trễ / trùng không nằm trong payment.amount → không cộng refundedAmount.
@@ -169,9 +188,13 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
             return;
         }
         payment.setRefundedAmount(refunded);
+        if (refund.getChannel() == RefundChannel.WALLET) {
+            walletService.creditRefund(refund);
+        }
         completeRefund(refund, now);
     }
 
+    // Cập nhật trạng thái đã hoàn và số tiền đã hoàn của khoản thanh toán.
     private void completeRefund(Refund refund, Instant now) {
         refund.setStatus(RefundStatus.REFUNDED);
         refund.setRefundedAt(now);
@@ -179,6 +202,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         paymentTransactionService.record(refund.getBookingId(), refund.getPaymentId(), refund.getId(), null,
                 TransactionEventType.REFUND_SUCCEEDED, refund.getAmount(), null,
                 "code=" + refund.getProviderResponseCode(), null);
+        paymentOutboxService.enqueueRefundCompleted(refund);
         log.info("Refund {} of {} on payment {} completed", refund.getId(), refund.getAmount(), refund.getPaymentId());
     }
 
@@ -200,6 +224,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
                 result.message());
     }
 
+    // Đánh dấu lệnh hoàn tiền thất bại kèm lỗi.
     private void markFailed(Refund refund, String message) {
         refund.setStatus(RefundStatus.FAILED);
         refund.setLastError(truncate(message));
@@ -209,6 +234,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
                 message);
     }
 
+    // Cắt ngắn thông báo lỗi trước khi lưu.
     private String truncate(String message) {
         if (message == null) {
             return null;
@@ -216,6 +242,7 @@ public class RefundDispatchServiceImpl implements RefundDispatchService {
         return message.length() > MAX_ERROR_LENGTH ? message.substring(0, MAX_ERROR_LENGTH) : message;
     }
 
-    private record Claim(RefundCommand command, PaymentProvider provider) {
+    // Lệnh hoàn tiền đã nhận để gửi: lệnh, cổng, có hoàn vào ví không.
+    private record Claim(RefundCommand command, PaymentProvider provider, boolean wallet) {
     }
 }

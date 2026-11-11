@@ -1,9 +1,5 @@
 package mss301.apigateway.config;
 
-/**
- * Đường dẫn public của gateway — một nguồn duy nhất cho route (RouteConfig) và bảo mật (SecurityConfig).
- * Mọi service tự khai báo prefix /api/v1 nên gateway chuyển tiếp nguyên path, không cắt prefix.
- */
 public final class GatewayPaths {
     public static final String API_PREFIX = "/api/v1";
 
@@ -23,7 +19,11 @@ public final class GatewayPaths {
             // Center booking policy (spec booking v1.0 §8).
             "/api/v1/center-booking-policies/**",
             // H-08: admin xử lý outbox FAILED.
-            "/api/v1/booking-outbox/**"
+            "/api/v1/booking-outbox/**",
+            // Spec v3: manager duyệt / từ chối yêu cầu đổi caregiver của khách; 2026-11-09: caregiver xin hủy buổi.
+            "/api/v1/caregiver-change-requests/**", "/api/v1/caregiver-withdrawals/**",
+            // 2026-11-10: hồ sơ caregiver vắng ca (giải trình, kết luận).
+            "/api/v1/caregiver-absences/**"
     };
 
     // SSE thông báo: route riêng không read timeout, không buffer (SseProxyHandler), xếp TRƯỚC route booking chung.
@@ -32,7 +32,9 @@ public final class GatewayPaths {
     public static final String[] PAYMENT_ROUTES = {
             "/api/v1/payments/**", "/api/v1/payment-policies/**", "/api/v1/refunds/**", "/api/v1/refund-quotes/**",
             "/api/v1/remaining-invoices/**", "/api/v1/settlements/**", "/api/v1/revenue/**",
-            "/api/v1/deposit-forfeitures/**"
+            "/api/v1/deposit-forfeitures/**",
+            // 2026-11-09: ví + yêu cầu rút tiền.
+            "/api/v1/wallets/**", "/api/v1/wallet-withdrawals/**"
     };
 
     public static final String[] PROVIDER_ROUTES = {
@@ -47,6 +49,11 @@ public final class GatewayPaths {
 
     public static final String[] MEDIA_ROUTES = {
             "/api/v1/media/**"
+    };
+
+    // AIService (chat + đọc ảnh chứng chỉ): route riêng có read timeout dài (LongRequestProxyHandler, gateway.ai-read-timeout).
+    public static final String[] AI_ROUTES = {
+            "/api/v1/ai/**"
     };
 
     // Luồng tự xử lý token của IdentityService (đăng nhập/refresh/đăng xuất/đăng ký/quên mật khẩu) — gateway không đọc
@@ -68,6 +75,25 @@ public final class GatewayPaths {
             "/api/v1/catalog-items/images/{mediaFileId}", "/api/v1/care-services/images/{mediaFileId}"
     };
 
+    // Duyệt dịch vụ / người chăm sóc cho khách chưa đăng nhập (2026-11-09): CHỈ GET, gateway không bắt đăng nhập nhưng
+    // vẫn kiểm và chuyển token nếu có để admin / manager giữ góc nhìn đầy đủ (service đọc role từ token khi có).
+    public static final String[] OPTIONAL_AUTH_GET_ENDPOINTS = {
+            "/api/v1/caregivers", "/api/v1/caregivers/search", "/api/v1/caregivers/{caregiverId}/public",
+            "/api/v1/catalog-items", "/api/v1/catalog-items/{id}",
+            "/api/v1/center-services/center/{centerId}", "/api/v1/center-services/{id}",
+            "/api/v1/price-plans/center-offering/{centerOfferingId}", "/api/v1/price-plans/center-service/{centerOfferingId}"
+    };
+
+    // Chat AI cho khách chưa đăng nhập (3 lượt/ngày, không ảnh): AIService tự đọc cookie nếu có để nhận người dùng.
+    public static final String[] PUBLIC_POST_ENDPOINTS = {
+            "/api/v1/ai/chat"
+    };
+
+    // Hạn mức chat AI còn lại của khách / giới hạn ảnh — đọc trước khi gửi câu hỏi đầu tiên.
+    public static final String[] PUBLIC_GET_AI_ENDPOINTS = {
+            "/api/v1/ai/chat/quota"
+    };
+
     // Swagger tổng hợp + health của chính gateway.
     public static final String IDENTITY_API_DOCS = "/api-docs/identity";
     public static final String CARE_RECIPIENT_API_DOCS = "/api-docs/care-recipient";
@@ -76,10 +102,12 @@ public final class GatewayPaths {
     public static final String CARE_CATALOG_API_DOCS = "/api-docs/care-catalog";
     public static final String MEDIA_API_DOCS = "/api-docs/media";
     public static final String PAYMENT_API_DOCS = "/api-docs/payment";
+    public static final String AI_API_DOCS = "/api-docs/ai";
     public static final String[] DOCUMENTATION_ENDPOINTS = {
             "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health/**"
     };
 
+    // Lớp chỉ chứa hằng đường dẫn, không cho khởi tạo.
     private GatewayPaths() {
     }
 }

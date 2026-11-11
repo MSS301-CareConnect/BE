@@ -19,7 +19,7 @@ import mss301.bookingservice.enums.NotificationType;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 import mss301.bookingservice.mapper.NotificationMapper;
-import mss301.bookingservice.repository.NotificationLinkView;
+import mss301.bookingservice.repository.projection.NotificationLinkView;
 import mss301.bookingservice.repository.NotificationRepository;
 import mss301.bookingservice.service.NotificationService;
 import mss301.bookingservice.util.NotificationTemplates;
@@ -63,6 +63,7 @@ public class NotificationServiceImpl implements NotificationService {
     Clock clock;
     ConcurrentHashMap<UUID, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
 
+    // Danh sách thông báo của người dùng, lọc chưa đọc / loại.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<NotificationResponse>> list(UUID userId, boolean unreadOnly, NotificationType type, int page, int size) {
@@ -85,6 +86,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Lấy thông báo thành công", response);
     }
 
+    // Số thông báo chưa đọc.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<UnreadCountResponse> unreadCount(UUID userId) {
@@ -93,6 +95,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Lấy số thông báo chưa đọc thành công", response);
     }
 
+    // Đánh dấu một thông báo đã đọc.
     @Override
     @Transactional
     public APIResponse<Void> read(UUID userId, UUID id) {
@@ -103,6 +106,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã đọc thông báo");
     }
 
+    // Đánh dấu tất cả thông báo đã đọc.
     @Override
     @Transactional
     public APIResponse<Void> readAll(UUID userId) {
@@ -110,6 +114,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã đọc tất cả thông báo");
     }
 
+    // Đánh dấu một thông báo chưa đọc.
     @Override
     @Transactional
     public APIResponse<Void> unread(UUID userId, UUID id) {
@@ -117,6 +122,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã đánh dấu chưa đọc");
     }
 
+    // Đổi trạng thái đọc của nhiều thông báo.
     @Override
     @Transactional
     public APIResponse<NotificationsUpdatedResponse> updateReadState(UUID userId, NotificationReadStateRequest request) {
@@ -128,6 +134,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success(message, notificationMapper.toUpdatedResponse((long) updated));
     }
 
+    // Xóa mềm một thông báo.
     @Override
     @Transactional
     public APIResponse<Void> delete(UUID userId, UUID id) {
@@ -135,6 +142,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã xóa thông báo");
     }
 
+    // Xóa mềm nhiều thông báo.
     @Override
     @Transactional
     public APIResponse<NotificationsDeletedResponse> deleteMany(UUID userId, NotificationDeletionRequest request) {
@@ -142,6 +150,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã xóa thông báo", notificationMapper.toDeletedResponse((long) deleted));
     }
 
+    // Xóa mềm các thông báo đã đọc.
     @Override
     @Transactional
     public APIResponse<NotificationsDeletedResponse> deleteRead(UUID userId) {
@@ -149,6 +158,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Đã xóa thông báo đã đọc", notificationMapper.toDeletedResponse((long) deleted));
     }
 
+    // Tạo thông báo theo yêu cầu của service khác.
     @Override
     public APIResponse<NotificationsCreatedResponse> create(NotificationRequest request) {
         if (request == null || !validator.validate(request).isEmpty()) {
@@ -163,6 +173,7 @@ public class NotificationServiceImpl implements NotificationService {
         return APIResponse.success("Gửi thông báo thành công", response);
     }
 
+    // Tạo thông báo cho danh sách người dùng và đẩy SSE sau commit.
     @Override
     public void notify(List<UUID> userIds, NotificationType type, Map<String, Object> params, String refType, UUID refId) {
         if (userIds == null || userIds.isEmpty()) {
@@ -184,6 +195,7 @@ public class NotificationServiceImpl implements NotificationService {
         });
     }
 
+    // Mở kết nối SSE cho người dùng (30 phút).
     @Override
     public SseEmitter stream(UUID userId) {
         SseEmitter emitter = new SseEmitter(1_800_000L);
@@ -199,16 +211,19 @@ public class NotificationServiceImpl implements NotificationService {
         return emitter;
     }
 
+    // Gửi heartbeat tới mọi kết nối SSE.
     @Override
     public void heartbeat() {
         emitters.keySet().forEach(userId -> emit(userId, "heartbeat", clock.instant().toString()));
     }
 
+    // Đẩy cập nhật ca chăm sóc qua SSE sau commit.
     @Override
     public void publishSessionUpdate(UUID userId, Object payload) {
         afterCommit(() -> emit(userId, "session-update", payload));
     }
 
+    // Lưu thông báo trong transaction riêng kèm liên kết booking / buổi.
     private List<NotificationResponse> persist(NotificationRequest request) {
         // Callback afterCommit vẫn có resource cũ; transaction mới bảo đảm INSERT được commit thật.
         TransactionTemplate write = new TransactionTemplate(transactionTemplate.getTransactionManager());
@@ -256,6 +271,7 @@ public class NotificationServiceImpl implements NotificationService {
         return responses;
     }
 
+    // Tra liên kết điều hướng cho các thông báo theo loại tham chiếu.
     private void findLinks(Map<String, Set<UUID>> refIds, String refType,
                            Function<Collection<UUID>, List<NotificationLinkView>> query,
                            Map<UUID, NotificationLinkView> links) {
@@ -264,6 +280,7 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+    // Chạy hành động sau commit (không có transaction thì chạy ngay).
     private void afterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             action.run();
@@ -277,6 +294,7 @@ public class NotificationServiceImpl implements NotificationService {
         });
     }
 
+    // Gửi sự kiện SSE tới mọi kết nối của người dùng, bỏ kết nối lỗi.
     private void emit(UUID userId, String event, Object payload) {
         List<SseEmitter> current = emitters.get(userId);
         if (current == null) {

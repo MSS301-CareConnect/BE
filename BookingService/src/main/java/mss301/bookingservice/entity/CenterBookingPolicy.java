@@ -9,10 +9,6 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/**
- * Center booking policy (spec §8): mỗi trung tâm tối đa một dòng; chưa có dòng thì dùng mặc định
- * booking.policy-defaults. Mốc thời gian lưu theo phút, tỷ lệ theo phần trăm. Booking đọc policy lúc xử lý.
- */
 @Entity
 @Table(name = "center_booking_policies")
 @Getter
@@ -75,6 +71,10 @@ public class CenterBookingPolicy extends BaseEntity {
 
     @Column(name = "refund_percent_after_threshold", nullable = false, precision = 5, scale = 2)
     BigDecimal refundPercentAfterThreshold;
+
+    // 2026-11-10: còn dưới mốc này tới giờ buổi thì khách hủy không được hoàn (≤ refundThresholdMinutes).
+    @Column(name = "late_cancel_no_refund_minutes", nullable = false)
+    Integer lateCancelNoRefundMinutes;
 
     // Quá hạn trả phần còn lại → booking EXPIRED, khách mất tỷ lệ này của tiền cọc (M3).
     @Column(name = "overdue_payment_forfeit_percent", nullable = false, precision = 5, scale = 2)

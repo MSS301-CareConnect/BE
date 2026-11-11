@@ -11,8 +11,10 @@ import java.util.UUID;
 
 // Center booking policy (spec §8): manager sửa trung tâm mình, admin sửa mọi trung tâm; khách xem để biết cọc / mốc hủy.
 public interface CenterBookingPolicyService {
+    // Chính sách booking của trung tâm.
     APIResponse<CenterBookingPolicyResponse> get(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId);
 
+    // Cập nhật chính sách booking của trung tâm.
     APIResponse<CenterBookingPolicyResponse> update(UUID actorId, Set<RoleCode> roles, UUID scopeCenterId, UUID centerId,
                                                     CenterBookingPolicyRequest request);
 

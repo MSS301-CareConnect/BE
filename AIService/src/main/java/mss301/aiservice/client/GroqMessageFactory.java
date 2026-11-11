@@ -14,6 +14,7 @@ import java.util.Locale;
 
 @Component
 public class GroqMessageFactory {
+    // Dựng danh sách message gửi Groq: system prompt, lịch sử hội thoại và câu hỏi hiện tại.
     public List<GroqMessageRequest> buildMessages(List<ChatMessage> history, String prompt, List<ChatMediaUpload> uploadedImages) {
         List<GroqMessageRequest> messages = new ArrayList<>();
 
@@ -23,6 +24,7 @@ public class GroqMessageFactory {
         return messages;
     }
 
+    // Thêm các tin nhắn cũ của hội thoại vào danh sách message.
     private void addHistory(List<GroqMessageRequest> messages, List<ChatMessage> history) {
         if (history == null) {
             return;
@@ -37,6 +39,7 @@ public class GroqMessageFactory {
         }
     }
 
+    // Thêm câu hỏi hiện tại, kèm ảnh nếu người dùng gửi ảnh.
     private void addCurrentMessage(List<GroqMessageRequest> messages, String prompt, List<ChatMediaUpload> uploadedImages) {
         if (uploadedImages == null || uploadedImages.isEmpty()) {
             messages.add(GroqMessageRequest.text("user", prompt));

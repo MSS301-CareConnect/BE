@@ -78,6 +78,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     BookingNotificationService bookingNotificationService;
     BookingProperties bookingProperties;
 
+    // Ghi dòng lịch sử đầu tiên khi tạo booking.
     @Override
     public void recordCreated(Booking booking, UUID customerId) {
         bookingStatusHistoryRepository.save(bookingStatusHistoryMapper.toHistory(booking, null, booking.getStatus(),
@@ -91,12 +92,13 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.BOOKING_CREATED, "BOOKING", booking.getId());
     }
 
+    // Đổi trạng thái booking theo hành động, cập nhật buổi, ghi lịch sử, hoàn tiền và thông báo.
     @Override
     public void apply(Booking booking, BookingAction action, UUID changedBy, String reason) {
         BookingStatus fromStatus = booking.getStatus();
         BookingStatus toStatus = action.apply(fromStatus);
         Instant now = clock.instant();
-        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId());
         booking.setStatus(toStatus);
         String historyReason = reason;
         switch (action) {
@@ -186,6 +188,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         log.info("Booking {} {} -> {} ({})", booking.getId(), fromStatus, toStatus, action);
     }
 
+    // Nhắc khách trả phần còn lại theo mốc nhắc của chính sách.
     @Override
     public boolean remindRemainingPayment(Booking booking) {
         Instant now = clock.instant();
@@ -205,6 +208,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         return true;
     }
 
+    // Nhắc trung tâm khi booking sắp tới hạn xử lý.
     @Override
     public boolean remindCenterAction(Booking booking) {
         Instant now = clock.instant();
@@ -223,12 +227,13 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         return true;
     }
 
+    // Hoàn tất booking khi mọi buổi đã kết thúc.
     @Override
     public boolean finalizeIfDone(Booking booking, UUID changedBy) {
         if (!FINALIZABLE_STATUSES.contains(booking.getStatus())) {
             return false;
         }
-        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId());
         boolean unfinished = occurrences.stream()
                 .anyMatch(occurrence -> OccurrenceStatus.ACTIVE.contains(occurrence.getStatus()));
         if (unfinished) {
@@ -244,6 +249,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         return true;
     }
 
+    // Hủy các buổi chưa kết thúc của booking.
     @Override
     public void cancelOccurrences(Booking booking, List<BookingOccurrence> occurrences, CancelledBy cancelledBy,
                                   UUID changedBy, String reason) {
@@ -269,12 +275,13 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         }
     }
 
+    // Xếp lệnh hoàn tiền cho các buổi bị hủy qua outbox.
     @Override
     public void requestRefund(Booking booking, List<UUID> occurrenceIds, RefundReason reason, CancelledBy cancelledBy,
                               UUID requestedBy, String keySuffix) {
         Instant now = clock.instant();
         // Mốc tính % hoàn: buổi chưa diễn ra gần nhất còn lại (PaymentService dùng cho bảng mốc 24h / 72h).
-        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findAllByBooking(booking.getId());
+        List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId());
         Instant firstUpcomingStartAt = occurrences.stream()
                 .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus())
                         || occurrenceIds.contains(occurrence.getId()))
@@ -303,6 +310,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         return cutoff.isBefore(dueAt) ? cutoff : dueAt;
     }
 
+    // Chính sách booking hiệu lực của trung tâm.
     private CenterBookingPolicy findPolicy(Booking booking) {
         return centerBookingPolicyService.findEffective(booking.getCenterId());
     }
@@ -312,6 +320,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         return CenterReminders.passed(bookingProperties.getSchedule().getCenterReminderMinutes(), dueAt, now);
     }
 
+    // Mốc nhắc trả phần còn lại vừa qua (nếu có).
     private Integer findPassedReminder(Booking booking, Instant now) {
         Integer[] reminders = findPolicy(booking).getRemainingPaymentReminderMinutes();
         if (reminders == null) {
@@ -325,6 +334,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 .orElse(null);
     }
 
+    // Chuyển các buổi đang giữ chỗ sang đã lên lịch.
     private void scheduleReservedOccurrences(List<BookingOccurrence> occurrences, UUID changedBy, Instant now) {
         for (BookingOccurrence occurrence : occurrences) {
             if (occurrence.getStatus() == OccurrenceStatus.RESERVED) {
@@ -358,6 +368,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         booking.setCaregiverUserId(null);
     }
 
+    // Đổi trạng thái một buổi có kiểm chuyển trạng thái hợp lệ và ghi sự kiện.
     private void changeOccurrenceStatus(BookingOccurrence occurrence, OccurrenceStatus toStatus, UUID changedBy,
                                         String reason, Instant now) {
         OccurrenceStatus fromStatus = occurrence.getStatus();
@@ -369,6 +380,7 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
                 BookingEventType.OCCURRENCE_STATUS_CHANGED, fromStatus, toStatus, changedBy, reason, now));
     }
 
+    // Bên hủy tương ứng với hành động (khách, trung tâm, hệ thống).
     private CancelledBy resolveCancelledBy(BookingAction action) {
         return switch (action) {
             case CANCEL_BY_CENTER -> CancelledBy.CENTER;

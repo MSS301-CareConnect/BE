@@ -20,9 +20,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Service phía sau không chạy (cổng đóng) / JWKS không lấy được → 503 đúng envelope, không 500, không giả 401.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class ApiGatewayUpstreamDownTests {
@@ -39,6 +36,7 @@ class ApiGatewayUpstreamDownTests {
         registry.add("gateway.care-catalog-url", () -> CLOSED_URL);
         registry.add("gateway.media-url", () -> CLOSED_URL);
         registry.add("gateway.payment-url", () -> CLOSED_URL);
+        registry.add("gateway.ai-url", () -> CLOSED_URL);
         registry.add("gateway.allowed-origins", () -> "https://web.test");
         registry.add("gateway.jwt.issuer", () -> TestUpstreams.ISSUER);
         registry.add("gateway.jwt.jwks-uri", () -> CLOSED_URL + "/.well-known/jwks.json");

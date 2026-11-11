@@ -19,6 +19,7 @@ public class TokenTransportImpl implements TokenTransport {
 
     CookieUtils cookieUtils;
 
+    // Xác định client là web (có request cookie) hay mobile.
     @Override
     public ClientType resolveClientType(HttpServletRequest request) {
         if (request == null) {
@@ -31,6 +32,7 @@ public class TokenTransportImpl implements TokenTransport {
         return ClientType.MOBILE;
     }
 
+    // Giao token: web thì set cookie + trả CSRF token, mobile thì trả token trong body.
     @Override
     public APIResponse<AuthenticationResponse> deliverTokens(ClientType clientType, UserResponse user,
                                                              String accessToken, String refreshToken,
@@ -57,6 +59,7 @@ public class TokenTransportImpl implements TokenTransport {
         }
     }
 
+    // Lấy refresh token từ cookie (web) hoặc body (mobile).
     @Override
     public String extractRefreshToken(ClientType clientType, String bodyRefreshToken, HttpServletRequest request) {
         if (clientType == ClientType.WEB) {
@@ -75,6 +78,7 @@ public class TokenTransportImpl implements TokenTransport {
         return null;
     }
 
+    // Lấy access token từ header Authorization hoặc cookie.
     @Override
     public String resolveAccessToken(HttpServletRequest request) {
         if (request == null) {
@@ -91,6 +95,7 @@ public class TokenTransportImpl implements TokenTransport {
         return null;
     }
 
+    // Xóa cookie token khi đăng xuất trên web.
     @Override
     public void clearTokens(ClientType clientType, HttpServletResponse response) {
         if (clientType == ClientType.WEB && response != null) {

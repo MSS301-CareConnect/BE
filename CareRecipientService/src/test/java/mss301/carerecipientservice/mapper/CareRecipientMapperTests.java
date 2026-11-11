@@ -27,10 +27,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Unit test cho các mapping không hiển nhiên: nhiều nguồn trùng tên, profile null, PATCH bỏ qua null, PUT ghi đè null,
- * trường server quản lý, danh sách con tạo cùng hồ sơ. Dùng thẳng code MapStruct sinh ra (không cần Spring).
- */
 class CareRecipientMapperTests {
 
     private final MedicationMapper medicationMapper = new MedicationMapperImpl();

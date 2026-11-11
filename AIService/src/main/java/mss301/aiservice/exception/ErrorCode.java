@@ -66,6 +66,23 @@ public enum ErrorCode {
 
     INVALID_CONVERSATION_VERSION(8203, "Phiên bản cuộc trò chuyện không hợp lệ", HttpStatus.CONFLICT),
 
+    CONVERSATION_TITLE_REQUIRED(8204, "Please enter a conversation name", HttpStatus.BAD_REQUEST),
+
+    CONVERSATION_TITLE_TOO_LONG(8205, "Conversation name must be at most 120 characters", HttpStatus.BAD_REQUEST),
+
+    // CERTIFICATE CHECK: 8600-8699 (chỉ ProviderService gọi)
+
+    CERTIFICATE_HOLDER_NAME_REQUIRED(8600, "Certificate holder name is required", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_NAME_REQUIRED(8601, "Certificate name is required", HttpStatus.BAD_REQUEST),
+
+    CERTIFICATE_IMAGE_URL_REQUIRED(8602, "Each certificate file needs a download URL", HttpStatus.BAD_REQUEST),
+
+    TOO_MANY_CERTIFICATE_IMAGES(8603, "A certificate check accepts at most 10 files", HttpStatus.BAD_REQUEST),
+
+    VISION_SERVICE_UNAVAILABLE(8604, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+
+
     // GROQ: 8300-8399
 
     GROQ_UNAVAILABLE(8300, "Không thể kết nối Groq, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),
@@ -86,15 +103,15 @@ public enum ErrorCode {
 
     GUEST_CONVERSATION_NOT_ALLOWED(8111, "Khách chưa đăng nhập không thể tiếp tục cuộc trò chuyện đã lưu", HttpStatus.UNAUTHORIZED),
 
-    CERTIFICATE_IMAGE_REQUIRED(8600, "Chứng chỉ phải có ít nhất một ảnh", HttpStatus.BAD_REQUEST),
+    // Certificate verification (OCR + QR, CertificateVerificationController): 8610-8619 — 8600-8609 là của certificate-checks.
+    CERTIFICATE_IMAGE_REQUIRED(8610, "Chứng chỉ phải có ít nhất một ảnh", HttpStatus.BAD_REQUEST),
 
-    CERTIFICATE_IMAGE_LIMIT_EXCEEDED(8601, "Chứng chỉ chỉ được kiểm tra tối đa hai ảnh", HttpStatus.BAD_REQUEST),
+    CERTIFICATE_IMAGE_LIMIT_EXCEEDED(8611, "Chứng chỉ chỉ được kiểm tra tối đa hai ảnh", HttpStatus.BAD_REQUEST),
 
-    CERTIFICATE_IMAGE_INVALID(8602, "Không thể đọc ảnh chứng chỉ", HttpStatus.BAD_REQUEST),
+    CERTIFICATE_IMAGE_INVALID(8612, "Không thể đọc ảnh chứng chỉ", HttpStatus.BAD_REQUEST),
 
-    VISION_SERVICE_UNAVAILABLE(8603, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+    STROKE_MODEL_UNAVAILABLE(8613, "Stroke screening service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
 
-    STROKE_MODEL_UNAVAILABLE(8601, "Stroke screening service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
     int code;
     String message;
     HttpStatusCode statusCode;

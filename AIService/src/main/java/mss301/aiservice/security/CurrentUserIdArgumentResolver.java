@@ -14,12 +14,14 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 import java.util.UUID;
 
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
+    // Nhận tham số UUID có @CurrentUserId.
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.hasParameterAnnotation(CurrentUserId.class) &&
                 UUID.class.equals(parameter.getParameterType());
     }
 
+    // Lấy userId từ Authentication; khách chưa đăng nhập thì trả null hoặc báo lỗi tùy annotation.
     @Override
     public UUID resolveArgument(MethodParameter parameter, ModelAndViewContainer modelAndViewContainer,
                                 NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {

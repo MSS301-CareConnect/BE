@@ -20,6 +20,7 @@ public class CaregiverRatingRequest {
     @DecimalMax(value = "5", message = "INVALID_REQUEST")
     @Digits(integer = 1, fraction = 2, message = "INVALID_REQUEST")
     BigDecimal ratingAverage;
+
     @NotNull(message = "INVALID_REQUEST")
     @Min(value = 0, message = "INVALID_REQUEST")
     Integer ratingCount;

@@ -13,9 +13,14 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RoleResponse {
     UUID id;
+
     String roleCode;
+
     String roleName;
+
     String description;
+
     boolean active;
+
     Set<String> permissions;
 }

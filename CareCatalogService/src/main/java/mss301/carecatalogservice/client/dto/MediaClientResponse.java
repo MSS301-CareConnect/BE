@@ -18,7 +18,10 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class MediaClientResponse {
     UUID mediaFileId;
+
     String originalFileName;
+
     String contentType;
+
     Long fileSize;
 }

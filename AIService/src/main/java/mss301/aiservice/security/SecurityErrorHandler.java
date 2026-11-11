@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDeniedHandler, AuthenticationFailureHandler {
     ObjectMapper objectMapper;
 
+    // Trả 401 (hoặc 503 khi không xác minh được token) dạng APIResponse.
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception) throws IOException {
         ErrorCode errorCode = exception instanceof AuthenticationServiceException
@@ -36,12 +37,14 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, errorCode);
     }
 
+    // Trả lỗi xác thực khi token không hợp lệ.
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
         commence(request, response, exception);
     }
 
+    // Trả 403 dạng APIResponse; sai CSRF thì trả mã lỗi CSRF riêng.
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException exception) throws IOException {
         ErrorCode errorCode = exception instanceof CsrfException
@@ -51,6 +54,7 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         writeError(response, errorCode);
     }
 
+    // Ghi APIResponse lỗi từ ErrorCode vào response.
     private void writeError(HttpServletResponse response, ErrorCode errorCode) throws IOException {
         APIResponse<Void> body = APIResponse.<Void>builder()
                         .code(errorCode.getCode())

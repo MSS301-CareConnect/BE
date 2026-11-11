@@ -17,17 +17,17 @@ public enum ErrorCode {
     TOO_MANY_RECIPIENTS(5941, "At most 500 recipients are allowed", HttpStatus.BAD_REQUEST),
     OUTBOX_NOT_FOUND(5960, "Outbox job does not exist", HttpStatus.NOT_FOUND),
     OUTBOX_NOT_FAILED(5961, "Only FAILED outbox jobs can be requeued / skipped", HttpStatus.CONFLICT),
-    TASK_NOT_FOUND(5820, "Task does not exist", HttpStatus.NOT_FOUND),
+    TASK_NOT_FOUND(5962, "Task does not exist", HttpStatus.NOT_FOUND),
     TASK_SKIP_REASON_REQUIRED(5804, "A reason is required to skip the task", HttpStatus.BAD_REQUEST),
     INVALID_VITALS(5821, "Invalid vital signs", HttpStatus.BAD_REQUEST),
     TOO_MANY_CUSTOM_TASKS(5822, "At most 20 tasks can be added", HttpStatus.BAD_REQUEST),
-    REPORT_NOT_FOUND(5806, "Report does not exist", HttpStatus.NOT_FOUND),
+    REPORT_NOT_FOUND(5963, "Report does not exist", HttpStatus.NOT_FOUND),
     REPORT_ALREADY_SUBMITTED(5807, "A submitted report cannot be edited", HttpStatus.CONFLICT),
     REPORT_SESSION_NOT_ENDED(5809, "The care session has not ended", HttpStatus.CONFLICT),
     TOO_MANY_REPORT_PHOTOS(5810, "A report can have at most 5 photos", HttpStatus.BAD_REQUEST),
     MEDIA_SERVICE_UNAVAILABLE(5811, "File service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE),
     REPORT_EXISTS(5816, "The care session already has a report", HttpStatus.CONFLICT),
-    REPORT_PHOTO_NOT_FOUND(5823, "The photo does not belong to the report", HttpStatus.NOT_FOUND),
+    REPORT_PHOTO_NOT_FOUND(5964, "The photo does not belong to the report", HttpStatus.NOT_FOUND),
     REVIEW_NOT_ALLOWED(5900, "Not eligible to review yet", HttpStatus.CONFLICT),
     REVIEW_ALREADY_EXISTS(5901, "You have already reviewed the caregiver for this booking", HttpStatus.CONFLICT),
     RATING_OUT_OF_RANGE(5902, "Rating must be between 1 and 5", HttpStatus.BAD_REQUEST),
@@ -82,8 +82,10 @@ public enum ErrorCode {
     CAREGIVER_CHANGE_REQUEST_NOT_FOUND(5170, "Caregiver change request does not exist", HttpStatus.NOT_FOUND),
     CAREGIVER_CHANGE_REQUEST_NOT_PENDING(5171, "The caregiver change request is no longer pending", HttpStatus.CONFLICT),
     TOO_MANY_CHANGE_REQUESTS(5172, "A booking can have at most 3 caregiver change requests", HttpStatus.CONFLICT),
-    CHANGE_REQUEST_TOO_LATE(5173, "Caregiver change requests must be submitted at least 12 hours before the earliest requested occurrence", HttpStatus.CONFLICT),
+    CHANGE_REQUEST_TOO_LATE(5173, "Only visits starting at least 12 hours from now can get a new caregiver", HttpStatus.CONFLICT),
     NO_REASSIGNABLE_OCCURRENCES(5174, "There are no eligible upcoming care occurrences to reassign", HttpStatus.CONFLICT),
+    // 2026-11-09: khách chỉ đổi caregiver cho cả booking.
+    CAREGIVER_CHANGE_SCOPE_INVALID(5175, "A caregiver change applies to every remaining visit of the booking", HttpStatus.BAD_REQUEST),
 
     // LỊCH / BUỔI CHĂM SÓC
     BOOKING_TYPE_REQUIRED(5200, "Booking type is required (SHIFT, RECURRING, CUSTOM)", HttpStatus.BAD_REQUEST),
@@ -140,6 +142,22 @@ public enum ErrorCode {
     RESCHEDULE_LIMIT_REACHED(5251, "Maximum number of reschedules reached for this care occurrence", HttpStatus.CONFLICT),
     REPLACEMENT_CONSENT_INVALID(5252, "No emergency replacement pending customer consent on this care occurrence", HttpStatus.CONFLICT),
 
+    // 2026-11-09: caregiver xin hủy buổi được giao (trung tâm phân người khác).
+    WITHDRAWAL_TOO_LATE(5260, "A visit can only be cancelled at least 24 hours before it starts", HttpStatus.CONFLICT),
+    WITHDRAWAL_ALREADY_REQUESTED(5261, "You have already asked to cancel this visit", HttpStatus.CONFLICT),
+    WITHDRAWAL_NOT_ALLOWED(5262, "This visit can no longer be cancelled", HttpStatus.CONFLICT),
+    WITHDRAWAL_REASON_DETAIL_REQUIRED(5263, "Please describe the reason", HttpStatus.BAD_REQUEST),
+    WITHDRAWAL_REASON_REQUIRED(5264, "Choose a reason for cancelling", HttpStatus.BAD_REQUEST),
+    // 2026-11-10: ngày có nhiều buổi thì caregiver xin hủy cả ngày, không hủy lẻ một buổi.
+    WITHDRAWAL_WHOLE_DAY_REQUIRED(5265, "This day has several visits, so cancel the whole day instead of one visit", HttpStatus.CONFLICT),
+
+    // 2026-11-10: hồ sơ caregiver vắng ca (giải trình + kết luận của trung tâm).
+    CAREGIVER_ABSENCE_NOT_FOUND(5270, "Absence record does not exist", HttpStatus.NOT_FOUND),
+    CAREGIVER_ABSENCE_ALREADY_CONCLUDED(5271, "The center has already concluded this absence", HttpStatus.CONFLICT),
+    ABSENCE_EXPLANATION_REQUIRED(5272, "Describe what happened (10–1000 characters)", HttpStatus.BAD_REQUEST),
+    ABSENCE_DECISION_REQUIRED(5273, "Choose whether the absence is excused or confirmed", HttpStatus.BAD_REQUEST),
+    ABSENCE_CONCLUSION_NOTE_REQUIRED(5274, "A note is required when excusing an absence", HttpStatus.BAD_REQUEST),
+
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),
     CAREGIVER_ID_REQUIRED(5401, "Caregiver is required", HttpStatus.BAD_REQUEST),
@@ -173,6 +191,13 @@ public enum ErrorCode {
     SESSION_ALREADY_EXISTS(5801, "This care occurrence has already been checked in", HttpStatus.CONFLICT),
     SESSION_NOT_IN_PROGRESS(5802, "The care session has ended", HttpStatus.CONFLICT),
     INVALID_COORDINATES(5803, "Invalid coordinates", HttpStatus.BAD_REQUEST),
+    SESSION_ANOTHER_IN_PROGRESS(5806, "Check out of your running care session before starting another one", HttpStatus.CONFLICT),
+    SESSION_REVIEW_DECISION_REQUIRED(5818, "Choose whether the visit was delivered", HttpStatus.BAD_REQUEST),
+    SESSION_REVIEW_NOTE_INVALID(5819, "Explain in 10–1000 characters why the visit was not delivered", HttpStatus.BAD_REQUEST),
+    SESSION_REVIEW_NOT_PENDING(5820, "This care session is not waiting for the center's confirmation", HttpStatus.CONFLICT),
+    CUSTOMER_REPORT_NOT_ALLOWED(5823, "This visit cannot be reported now", HttpStatus.CONFLICT),
+    CUSTOMER_REPORT_ALREADY_SENT(5824, "You have already reported this visit", HttpStatus.CONFLICT),
+    CUSTOMER_REPORT_NOTE_INVALID(5825, "Describe what happened in 10–1000 characters", HttpStatus.BAD_REQUEST),
     TASKS_PENDING(5805, "Some tasks are not completed or have no skip reason", HttpStatus.CONFLICT),
     NO_SHOW_NOTE_REQUIRED(5812, "Describe the customer no-show situation (10–1000 characters)", HttpStatus.BAD_REQUEST),
     NO_SHOW_NOT_REPORTED(5813, "The care occurrence has no customer no-show report", HttpStatus.CONFLICT),

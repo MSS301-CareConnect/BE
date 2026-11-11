@@ -12,14 +12,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Fallback khi BookingService lỗi / timeout / circuit mở: kiểm phân công dùng để CẤP QUYỀN đọc hồ sơ người bệnh →
- * fail-closed, ném 503 (không trả "không được phép" để caregiver biết là lỗi tạm thời, không phải bị gỡ phân công).
- */
 @Component
 @Slf4j
 public class BookingClientFallbackFactory implements FallbackFactory<BookingClient> {
 
+    // Fallback khi gọi BookingService lỗi: ném AppException tương ứng.
     @Override
     public BookingClient create(Throwable cause) {
         return new BookingClient() {

@@ -340,16 +340,17 @@ class PaymentApiTests extends PaymentIntegrationTest {
         JsonNode quote = quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", cancelledAt,
                 starts.get(3), occurrences);
 
-        // Spec §10.2 / Q5: còn ≥ 24h hoàn 100 %, < 24h hoàn 70 % số đã trả cho buổi; bỏ cooling-off và bậc 72h.
+        // Spec §10.2 / Q5 + v3: còn ≥ 24h hoàn 100 %, từ 2h tới < 24h hoàn 70 % số đã trả cho buổi, dưới 2h không hoàn;
+        // buổi đã bắt đầu không hủy được (khách trả đủ buổi).
         JsonNode items = quote.get("items");
         assertItem(items.get(0), "BEFORE_THRESHOLD", "300000", "0", "300000");
         assertItem(items.get(1), "BEFORE_THRESHOLD", "300000", "0", "300000");
         assertItem(items.get(2), "AFTER_THRESHOLD", "300000", "90000", "210000");
-        assertItem(items.get(3), "AFTER_THRESHOLD", "300000", "90000", "210000");
-        assertItem(items.get(4), "NOT_CANCELLABLE", "300000", "0", "0");
+        assertItem(items.get(3), "LATE_NO_REFUND", "300000", "300000", "0");
+        assertItem(items.get(4), "NOT_CANCELLABLE", "300000", "300000", "0");
         assertThat(quote.get("totalPaid").decimalValue()).isEqualByComparingTo("1500000");
-        assertThat(quote.get("totalFee").decimalValue()).isEqualByComparingTo("180000");
-        assertThat(quote.get("totalRefund").decimalValue()).isEqualByComparingTo("1020000");
+        assertThat(quote.get("totalFee").decimalValue()).isEqualByComparingTo("690000");
+        assertThat(quote.get("totalRefund").decimalValue()).isEqualByComparingTo("810000");
         assertThat(quote.get("policyId").asString()).isEqualTo(GLOBAL_POLICY_ID.toString());
         // Preview không ghi DB.
         assertThat(refundRepository.findAllByBookingIdOrderByCreatedAtAsc(booking.bookingId())).isEmpty();
@@ -364,12 +365,25 @@ class PaymentApiTests extends PaymentIntegrationTest {
         SERVER.setPolicyValue(booking.bookingId(), "refundPercentBeforeThreshold", 90);
         SERVER.setPolicyValue(booking.bookingId(), "refundPercentAfterThreshold", 50);
         payDeposit(booking);
+        BookingSetup custom = bookingWithStarts(UUID.randomUUID(), UUID.randomUUID(), PRICE,
+                List.of(BASE.plus(Duration.ofMinutes(90))));
+        SERVER.setPolicyValue(custom.bookingId(), "lateCancelNoRefundMinutes", 60);
+        payDeposit(custom);
+        assertThat(bookingFinancialRepository.findById(custom.bookingId()).orElseThrow().getPolicySnapshot()
+                .getLateCancelNoRefundMinutes()).isEqualTo(60);
+        // Còn 90 phút, mốc riêng 60 phút → vẫn hoàn 70 % (luật cũ 2 giờ sẽ ra 0 %).
+        assertItem(quote(custom.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE, null,
+                List.of(quoteOccurrence(custom.occurrenceIds().get(0), BASE.plus(Duration.ofMinutes(90)), false)))
+                .get("items").get(0), "AFTER_THRESHOLD", "300000", "90000", "210000");
         List<Map<String, Object>> occurrence = List.of(quoteOccurrence(booking.occurrenceIds().get(0), start, false));
 
         assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE, start, occurrence)
                 .get("items").get(0), "AFTER_THRESHOLD", "300000", "150000", "150000");
         assertThat(bookingFinancialRepository.findById(booking.bookingId()).orElseThrow().getPolicySnapshot()
                 .getRefundThresholdMinutes()).isEqualTo(2880);
+        // Booking chưa gửi mốc "không hoàn" (bản cũ) → snapshot để trống, tính như 120 phút.
+        assertThat(bookingFinancialRepository.findById(booking.bookingId()).orElseThrow().getPolicySnapshot()
+                .getLateCancelNoRefundMinutes()).isNull();
         // Đổi policy sau khi đã trả không ảnh hưởng booking này.
         SERVER.setPolicyValue(booking.bookingId(), "refundThresholdMinutes", 60);
         assertItem(quote(booking.bookingId(), "CONFIRMED", "CUSTOMER_CANCEL", BASE, start, occurrence)
@@ -460,8 +474,9 @@ class PaymentApiTests extends PaymentIntegrationTest {
     void simulatedDispatcherRefundsAndPaymentStaysSuccess() throws Exception {
         BookingSetup booking = bookingWithPrices(UUID.randomUUID(), UUID.randomUUID(), PRICE, PRICE);
         payDeposit(booking);
-        createRefund("REFUND:CAREGIVER_MISSED:" + booking.occurrenceIds().get(0), booking.bookingId(),
-                List.of(booking.occurrenceIds().get(0)), "CAREGIVER_MISSED", BASE);
+        // 2026-11-10: caregiver vắng / trung tâm hủy hoàn vào ví (WalletApiTests); cổng còn các lý do hệ thống như EXPIRED.
+        createRefund("REFUND:EXPIRED:" + booking.occurrenceIds().get(0), booking.bookingId(),
+                List.of(booking.occurrenceIds().get(0)), "EXPIRED", BASE);
 
         dispatchDueRefunds();
 
@@ -472,7 +487,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(payment.getRefundedAmount()).isEqualByComparingTo("300000");
         assertThat(occurrenceFinancialRepository.findById(booking.occurrenceIds().get(0)).orElseThrow().getFinalStatus())
-                .hasToString("MISSED");
+                .hasToString("CANCELLED");
 
         // Hợp đồng Booking (findRefundableAmount): lọc status=SUCCESS, đọc refundedAmount thật.
         mockMvc.perform(get("/api/v1/payments").header("Authorization", service())
@@ -502,7 +517,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
         List<UUID> occurrences = booking.occurrenceIds();
 
         // Thành công (00): hoàn một phần → vnp_TransactionType 03, chữ ký đúng chuỗi nối "|".
-        createRefund("REFUND:A", booking.bookingId(), List.of(occurrences.get(0)), "CENTER_CANCEL", BASE);
+        createRefund("REFUND:A", booking.bookingId(), List.of(occurrences.get(0)), "EXPIRED", BASE);
         dispatchDueRefunds();
         Refund succeeded = refundRepository.findAllByIdempotencyKey("REFUND:A").getFirst();
         assertThat(succeeded.getStatus()).isEqualTo(RefundStatus.REFUNDED);
@@ -520,7 +535,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
 
         // Timeout → giữ REFUND_PENDING, attempts++, hẹn lại sau (backoff).
         SERVER.setVnPayResponse("00", 200, 2_500);
-        createRefund("REFUND:B", booking.bookingId(), List.of(occurrences.get(1)), "CENTER_CANCEL", BASE);
+        createRefund("REFUND:B", booking.bookingId(), List.of(occurrences.get(1)), "EXPIRED", BASE);
         dispatchDueRefunds();
         Refund timedOut = refundRepository.findAllByIdempotencyKey("REFUND:B").getFirst();
         assertThat(timedOut.getStatus()).isEqualTo(RefundStatus.REFUND_PENDING);
@@ -530,7 +545,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
 
         // Lỗi nghiệp vụ (mã khác 00/94) → FAILED ngay; admin thử lại → REFUND_PENDING.
         SERVER.setVnPayResponse("91", 200, 0);
-        createRefund("REFUND:C", booking.bookingId(), List.of(occurrences.get(2)), "CENTER_CANCEL", BASE);
+        createRefund("REFUND:C", booking.bookingId(), List.of(occurrences.get(2)), "EXPIRED", BASE);
         dispatchDueRefunds();
         Refund rejected = refundRepository.findAllByIdempotencyKey("REFUND:C").getFirst();
         assertThat(rejected.getStatus()).isEqualTo(RefundStatus.FAILED);
@@ -781,7 +796,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
         List<Map<String, Object>> occurrences = new ArrayList<>();
         for (int i = 0; i < occurrenceIds.size(); i++) {
             Map<String, Object> occurrence = PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
-                    cancelledAt.plus(Duration.ofHours(1 + i)), "SCHEDULED", PRICE);
+                    cancelledAt.plus(Duration.ofHours(3 + i)), "SCHEDULED", PRICE);
             if (i < 2) {
                 occurrence.put("caregiverId", caregiverA.toString());
                 occurrence.put("caregiverUserId", caregiverUserA.toString());
@@ -794,7 +809,7 @@ class PaymentApiTests extends PaymentIntegrationTest {
         assertThat(occurrenceFinancialRepository.findById(occurrenceIds.get(0)).orElseThrow().getCaregiverUserId())
                 .isEqualTo(caregiverUserA);
 
-        // Khách hủy < 24h: hoàn 70 %, giữ 30 % (90.000) mỗi buổi. Buổi 2 vừa được đổi sang caregiver B (Booking gửi kèm).
+        // Khách hủy khi còn từ 2h tới < 24h: hoàn 70 %, giữ 30 % (90.000) mỗi buổi. Buổi 2 vừa được đổi sang caregiver B (Booking gửi kèm).
         Map<String, Object> body = new LinkedHashMap<>(objectMapper.readValue(refundBody(bookingId, occurrenceIds,
                 "CUSTOMER_CANCEL", cancelledAt, "REFUND:CF"), Map.class));
         body.put("caregivers", List.of(

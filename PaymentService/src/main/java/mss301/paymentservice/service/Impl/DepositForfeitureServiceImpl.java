@@ -1,5 +1,7 @@
 package mss301.paymentservice.service.Impl;
 
+import org.springframework.data.domain.Sort;
+import mss301.paymentservice.util.PaymentSpecifications;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -18,6 +20,7 @@ import mss301.paymentservice.exception.ErrorCode;
 import mss301.paymentservice.mapper.DepositForfeitureMapper;
 import mss301.paymentservice.repository.DepositForfeitureRepository;
 import mss301.paymentservice.service.DepositForfeitureService;
+import mss301.paymentservice.service.WalletService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -39,6 +42,7 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
 
     DepositForfeitureRepository depositForfeitureRepository;
     DepositForfeitureMapper depositForfeitureMapper;
+    WalletService walletService;
 
     // MANDATORY: commit / rollback cùng lệnh hoàn tiền tạo ra phần bị giữ. Buổi đã có caregiver → caregiver hưởng toàn bộ.
     @Override
@@ -53,12 +57,15 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
         ForfeitureBeneficiary beneficiary = occurrenceFinancial.getCaregiverUserId() == null
                 ? ForfeitureBeneficiary.CENTER
                 : ForfeitureBeneficiary.CAREGIVER;
-        depositForfeitureRepository.save(depositForfeitureMapper.toForfeiture(occurrenceFinancial, paymentId, amount,
-                beneficiary, reason, rule, idempotencyKey));
+        DepositForfeiture forfeiture = depositForfeitureRepository.save(depositForfeitureMapper.toForfeiture(
+                occurrenceFinancial, paymentId, amount, beneficiary, reason, rule, idempotencyKey));
+        // Ví (I1): phần bị giữ vào ví caregiver được giao, buổi chưa phân công thì vào ví trung tâm — cùng transaction.
+        walletService.creditForfeiture(forfeiture);
         log.info("Occurrence {} of booking {}: {} kept from the customer goes to {}", occurrenceFinancial.getOccurrenceId(),
                 occurrenceFinancial.getBookingId(), amount, beneficiary);
     }
 
+    // Danh sách tiền cọc bị giữ trong khoảng thời gian, lọc theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<DepositForfeitureResponse>> list(UUID actorId, Set<RoleCode> roles,
@@ -66,14 +73,18 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
                                                                      Instant to, int page, int size) {
         checkRange(from, to);
         Scope scope = resolveScope(actorId, roles, claimCenterId, centerId);
-        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE));
-        Page<DepositForfeiture> forfeitures = depositForfeitureRepository.findPage(scope.centerId(),
-                scope.caregiverUserId(), scope.beneficiary(), from, to, pageRequest);
+        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<DepositForfeiture> forfeitures = depositForfeitureRepository.findAll(
+                PaymentSpecifications.forfeitures(scope.centerId(), scope.caregiverUserId(), scope.beneficiary(),
+                        from, to),
+                pageRequest);
         PageResponse<DepositForfeitureResponse> pageResponse = PageResponse.of(forfeitures,
                 depositForfeitureMapper.toResponseList(forfeitures.getContent()));
         return APIResponse.success("Lấy danh sách tiền cọc bị giữ thành công", pageResponse);
     }
 
+    // Tổng tiền cọc bị giữ trong khoảng thời gian theo phạm vi người gọi.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<DepositForfeitureSummaryResponse> getSummary(UUID actorId, Set<RoleCode> roles,
@@ -106,12 +117,14 @@ public class DepositForfeitureServiceImpl implements DepositForfeitureService {
         return new Scope(null, actorId, ForfeitureBeneficiary.CAREGIVER);
     }
 
+    // Báo lỗi nếu thời điểm bắt đầu sau thời điểm kết thúc.
     private void checkRange(Instant from, Instant to) {
         if (from.isAfter(to)) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
     }
 
+    // Phạm vi dữ liệu người gọi được xem: trung tâm, caregiver, bên hưởng.
     private record Scope(UUID centerId, UUID caregiverUserId, ForfeitureBeneficiary beneficiary) {
     }
 }

@@ -9,11 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Sinh các buổi chăm sóc theo loại booking (spec §4) theo múi giờ booking.schedule.timezone, trả về thời điểm UTC đã
- * sắp theo giờ bắt đầu. Thuần tính toán (không DB, không mạng) — vi phạm quy tắc lịch → AppException với ErrorCode 52xx.
- * Thời gian đặt trước tối thiểu phụ thuộc center policy nên service kiểm sau khi sinh.
- */
 public interface OccurrenceGenerator {
     // Field của request phải khớp loại booking (SHIFT cần caregiverId + caregiverScheduleId, …) — gọi trước khi tra Provider.
     void checkShape(BookingScheduleRequest request);

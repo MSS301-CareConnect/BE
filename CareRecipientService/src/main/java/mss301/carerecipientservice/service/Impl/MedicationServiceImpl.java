@@ -34,6 +34,7 @@ public class MedicationServiceImpl implements MedicationService {
     RecipientAccessService recipientAccessService;
     MedicationMapper medicationMapper;
 
+    // Thêm thuốc cho người bệnh (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<MedicationResponse> create(UUID actorId, UUID recipientId, MedicationRequest request) {
@@ -47,17 +48,19 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Thêm thuốc thành công", medicationResponse);
     }
 
+    // Danh sách thuốc (quyền VIEWER), có thể lọc thuốc đang dùng.
     @Transactional(readOnly = true)
     @Override
     public APIResponse<List<MedicationResponse>> list(UUID actorId, UUID recipientId, Boolean active) {
         recipientAccessService.checkAccess(recipientId, actorId, RecipientAccessLevel.VIEWER);
         List<Medication> medications = active == null
-                ? medicationRepository.findAllByRecipient(recipientId)
-                : medicationRepository.findAllByRecipientAndActive(recipientId, active);
+                ? medicationRepository.findByRecipientIdAndDeletedAtIsNullOrderByActiveDescStartDateDescCreatedAtAsc(recipientId)
+                : medicationRepository.findByRecipientIdAndActiveAndDeletedAtIsNullOrderByStartDateDescCreatedAtAsc(recipientId, active);
         List<MedicationResponse> medicationResponses = medicationMapper.toResponseList(medications);
         return APIResponse.success("Lấy danh sách thuốc thành công", medicationResponses);
     }
 
+    // Chi tiết một thuốc (quyền VIEWER).
     @Transactional(readOnly = true)
     @Override
     public APIResponse<MedicationResponse> get(UUID actorId, UUID recipientId, UUID id) {
@@ -67,6 +70,7 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Lấy thông tin thuốc thành công", medicationResponse);
     }
 
+    // Cập nhật thuốc (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<MedicationResponse> update(UUID actorId, UUID recipientId, UUID id, MedicationRequest request) {
@@ -80,6 +84,7 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Cập nhật thuốc thành công", medicationResponse);
     }
 
+    // Xóa mềm thuốc (quyền EDITOR, hồ sơ đang hoạt động).
     @Transactional
     @Override
     public APIResponse<Void> delete(UUID actorId, UUID recipientId, UUID id) {
@@ -92,6 +97,7 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Xóa thuốc thành công");
     }
 
+    // Bật / tắt thuốc đang dùng (quyền EDITOR).
     @Transactional
     @Override
     public APIResponse<MedicationResponse> updateActive(UUID actorId, UUID recipientId, UUID id, boolean active) {
@@ -105,11 +111,13 @@ public class MedicationServiceImpl implements MedicationService {
         return APIResponse.success("Cập nhật trạng thái thuốc thành công", medicationResponse);
     }
 
+    // Tìm thuốc thuộc hồ sơ, không có thì báo lỗi.
     private Medication findMedication(UUID recipientId, UUID id) {
-        return medicationRepository.findByIdAndRecipient(id, recipientId)
+        return medicationRepository.findByIdAndRecipientIdAndDeletedAtIsNull(id, recipientId)
                 .orElseThrow(() -> new AppException(ErrorCode.MEDICATION_NOT_FOUND));
     }
 
+    // Báo lỗi nếu ngày kết thúc thuốc trước ngày bắt đầu.
     private void checkDates(MedicationRequest request) {
         if (request.getEndDate() != null && request.getEndDate().isBefore(request.getStartDate())) {
             throw new AppException(ErrorCode.INVALID_MEDICATION_DATES);

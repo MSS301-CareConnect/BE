@@ -58,6 +58,7 @@ public class CareReportServiceImpl implements CareReportService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Chi tiết báo cáo chăm sóc kèm URL ảnh trong phạm vi người gọi.
     @Override
     public APIResponse<CareReportResponse> get(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID id) {
         CareReportResponse response = transactionTemplate.execute(status -> {
@@ -71,6 +72,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Lấy báo cáo chăm sóc thành công", response);
     }
 
+    // Danh sách báo cáo chăm sóc theo phạm vi người gọi.
     @Override
     public APIResponse<PageResponse<CareReportResponse>> list(UUID actorId, Set<RoleCode> roles, UUID centerId,
                                                               UUID bookingId, int page, int size) {
@@ -112,6 +114,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Lấy danh sách báo cáo thành công", response);
     }
 
+    // Caregiver tạo báo cáo cho ca đã kết thúc (mỗi ca một báo cáo).
     @Override
     public APIResponse<CareReportResponse> create(UUID actorId, CareReportRequest request) {
         CareReportResponse response;
@@ -133,6 +136,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Tạo báo cáo nháp thành công", response);
     }
 
+    // Sửa báo cáo nháp của chính caregiver.
     @Override
     public APIResponse<CareReportResponse> update(UUID actorId, UUID id, CareReportRequest request) {
         CareReportResponse response = transactionTemplate.execute(status -> {
@@ -149,6 +153,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Cập nhật báo cáo nháp thành công", response);
     }
 
+    // Gửi báo cáo nháp và báo khách có báo cáo mới.
     @Override
     public APIResponse<CareReportResponse> submit(UUID actorId, UUID id) {
         CareReportResponse response = transactionTemplate.execute(status -> {
@@ -167,6 +172,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Gửi báo cáo chăm sóc thành công", response);
     }
 
+    // Upload ảnh lên MediaService và gắn vào báo cáo nháp (tối đa 5 ảnh).
     @Override
     public APIResponse<CareReportResponse> addPhotos(UUID actorId, UUID id, List<MultipartFile> files) {
         if (files == null || files.isEmpty() || files.size() > 5) {
@@ -210,6 +216,7 @@ public class CareReportServiceImpl implements CareReportService {
         return APIResponse.success("Thêm ảnh báo cáo thành công", response);
     }
 
+    // Gỡ ảnh khỏi báo cáo nháp và xóa trên MediaService.
     @Override
     public APIResponse<Void> deletePhoto(UUID actorId, UUID id, UUID mediaFileId) {
         transactionTemplate.executeWithoutResult(status -> {
@@ -231,11 +238,13 @@ public class CareReportServiceImpl implements CareReportService {
                 && AftercareScope.canReadSession(actorId, roles, centerId, report.getSession());
     }
 
+    // Tìm báo cáo chưa xóa, không có thì báo lỗi.
     private CareReport findReport(UUID id) {
         return careReportRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.REPORT_NOT_FOUND));
     }
 
+    // Khóa báo cáo nháp của chính caregiver, đã gửi thì báo lỗi.
     private CareReport lockDraft(UUID actorId, UUID id) {
         CareReport report = careReportRepository.findForUpdate(id)
                 .filter(found -> actorId.equals(found.getCaregiverUserId()))
@@ -246,12 +255,14 @@ public class CareReportServiceImpl implements CareReportService {
         return report;
     }
 
+    // Map báo cáo sang response, ảnh chưa có URL tải.
     private CareReportResponse toResponseWithoutUrls(CareReport report) {
         List<ReportPhotoResponse> photos = careReportMediaRepository.findByIdReportIdOrderByDisplayOrder(report.getId())
                 .stream().map(photo -> careReportMapper.toPhotoResponse(photo, null)).toList();
         return careReportMapper.toResponse(report, photos);
     }
 
+    // Điền URL tải có thời hạn cho từng ảnh.
     private void fillPhotoUrls(CareReportResponse response) {
         for (ReportPhotoResponse photo : response.getPhotos()) {
             APIResponse<DownloadUrlClientResponse> result = mediaClient.createDownloadUrl(photo.getMediaFileId());
@@ -263,6 +274,7 @@ public class CareReportServiceImpl implements CareReportService {
         }
     }
 
+    // Xóa file trên MediaService, lỗi chỉ ghi log.
     private void deleteMediaQuietly(UUID id) {
         try {
             mediaClient.delete(id);

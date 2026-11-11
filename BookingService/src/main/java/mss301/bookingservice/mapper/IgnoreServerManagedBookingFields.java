@@ -42,5 +42,7 @@ import java.lang.annotation.Target;
 @Mapping(target = "depositAmount", ignore = true)
 @Mapping(target = "centerReminderMinutes", ignore = true)
 @Mapping(target = "expiredReason", ignore = true)
+@Mapping(target = "autoAssignAttemptedAt", ignore = true)
+@Mapping(target = "unassignedNotifiedAt", ignore = true)
 public @interface IgnoreServerManagedBookingFields {
 }

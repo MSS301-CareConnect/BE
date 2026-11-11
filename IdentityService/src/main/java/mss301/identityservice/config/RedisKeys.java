@@ -1,9 +1,5 @@
 package mss301.identityservice.config;
 
-/**
- * Nguồn duy nhất cho key / field Redis của IdentityService. Prefix theo service để không đụng dữ liệu
- * của service hoặc dự án khác dùng chung Redis.
- */
 public final class RedisKeys {
     public static final String PREFIX = "careconnect:identity:";
 
@@ -35,6 +31,7 @@ public final class RedisKeys {
     public static final String FIELD_ACCESS_JTI = "accessJti";
     public static final String FIELD_ACCESS_EXPIRES_AT = "accessExpiresAt";
 
+    // Lớp chỉ chứa hằng key Redis, không cho khởi tạo.
     private RedisKeys() {
     }
 }

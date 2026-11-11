@@ -1,6 +1,5 @@
 package mss301.providerservice.client;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import mss301.providerservice.client.dto.RemoteApiResponse;
 import mss301.providerservice.client.dto.BookingCountResponse;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -10,6 +9,7 @@ import java.util.UUID;
 
 @FeignClient(name = "booking", contextId = "bookingArchiveClient", url = "${provider.booking.url}", configuration = BookingArchiveClientConfig.class)
 public interface BookingArchiveClient {
+    // Gọi BookingService đếm booking của trung tâm theo trạng thái (kiểm tra trước khi lưu trữ).
     @GetMapping("/api/v1/bookings")
     RemoteApiResponse<BookingCountResponse> list(@RequestParam("centerId") UUID centerId, @RequestParam("status") String status,
                                                 @RequestParam("page") int page, @RequestParam("size") int size);

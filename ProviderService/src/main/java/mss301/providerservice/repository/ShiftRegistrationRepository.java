@@ -1,5 +1,8 @@
 package mss301.providerservice.repository;
 
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import mss301.providerservice.repository.projection.ShiftApprovedCount;
 import jakarta.persistence.LockModeType;
 import mss301.providerservice.entity.ShiftRegistration;
 import mss301.providerservice.enums.RegistrationStatus;
@@ -22,7 +25,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface ShiftRegistrationRepository extends JpaRepository<ShiftRegistration, UUID> {
+public interface ShiftRegistrationRepository extends JpaRepository<ShiftRegistration, UUID>,
+        JpaSpecificationExecutor<ShiftRegistration> {
     // Chỉ đăng ký còn hiệu lực (PENDING/APPROVED) chặn đăng ký lại — đã CANCELLED/REJECTED thì được đăng ký lại.
     boolean existsByWorkShiftIdAndCaregiverIdAndRegistrationStatusIn(UUID workShiftId, UUID caregiverId,
                                                                      Collection<RegistrationStatus> registrationStatuses);
@@ -30,8 +34,6 @@ public interface ShiftRegistrationRepository extends JpaRepository<ShiftRegistra
     long countByWorkShiftIdAndRegistrationStatus(UUID workShiftId, RegistrationStatus registrationStatus);
 
     Optional<ShiftRegistration> findByIdAndDeletedAtIsNull(UUID id);
-
-    Page<ShiftRegistration> findByWorkShiftIdAndDeletedAtIsNull(UUID workShiftId, Pageable pageable);
 
     Page<ShiftRegistration> findByCaregiverIdAndDeletedAtIsNull(UUID caregiverId, Pageable pageable);
 
@@ -49,29 +51,6 @@ public interface ShiftRegistrationRepository extends JpaRepository<ShiftRegistra
     @Query("select r from ShiftRegistration r where r.id = :id and r.deletedAt is null")
     Optional<ShiftRegistration> findByIdForUpdate(@Param("id") UUID id);
 
-    // Danh sách có lọc trạng thái (null = mọi trạng thái); fetch ca + caregiver để map tóm tắt ca không N+1.
-    @EntityGraph(attributePaths = {"workShift", "caregiver"})
-    @Query("""
-            select r from ShiftRegistration r
-            where r.deletedAt is null
-              and r.workShift.id = :shiftId
-              and (:status is null or r.registrationStatus = :status)
-            """)
-    Page<ShiftRegistration> findByShift(@Param("shiftId") UUID shiftId,
-                                        @Param("status") RegistrationStatus status,
-                                        Pageable pageable);
-
-    @EntityGraph(attributePaths = {"workShift", "caregiver"})
-    @Query("""
-            select r from ShiftRegistration r
-            where r.deletedAt is null
-              and r.caregiver.id = :caregiverId
-              and (:status is null or r.registrationStatus = :status)
-            """)
-    Page<ShiftRegistration> findByCaregiver(@Param("caregiverId") UUID caregiverId,
-                                            @Param("status") RegistrationStatus status,
-                                            Pageable pageable);
-
     List<ShiftRegistration> findByWorkShiftIdAndRegistrationStatusInAndDeletedAtIsNull(
             UUID workShiftId, Collection<RegistrationStatus> registrationStatuses);
 
@@ -87,4 +66,8 @@ public interface ShiftRegistrationRepository extends JpaRepository<ShiftRegistra
             """)
     int rejectPendingOfStartedShifts(@Param("today") LocalDate today, @Param("nowTime") LocalTime nowTime,
                                      @Param("now") Instant now, @Param("reason") String reason);
+
+    // Danh sách có lọc trạng thái (null = mọi trạng thái); fetch ca + caregiver để map tóm tắt ca không N+1.
+    @EntityGraph(attributePaths = {"workShift", "caregiver"})
+    Page<ShiftRegistration> findAll(Specification<ShiftRegistration> specification, Pageable pageable);
 }

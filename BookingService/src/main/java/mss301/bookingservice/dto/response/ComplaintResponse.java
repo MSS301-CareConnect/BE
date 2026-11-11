@@ -18,25 +18,46 @@ import mss301.bookingservice.enums.ComplaintCategory;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ComplaintResponse {
     UUID id;
+
     String complaintCode;
+
     UUID bookingId;
+
     UUID occurrenceId;
+
     UUID customerId;
+
     UUID centerId;
+
     UUID caregiverId;
+
     ComplaintTargetType targetType;
+
     ComplaintCategory category;
+
     String title;
+
     String content;
+
     ComplaintStatus status;
+
     ComplaintLevel level;
+
     String resolution;
+
     UUID resolvedBy;
+
     Instant resolvedAt;
+
     Instant escalatedAt;
+
     String escalateReason;
+
     BigDecimal refundAmount;
+
     Long version;
+
     Instant createdAt;
+
     List<ComplaintEventResponse> events;
 }

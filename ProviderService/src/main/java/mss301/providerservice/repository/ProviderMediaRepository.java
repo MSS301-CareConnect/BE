@@ -17,6 +17,9 @@ import java.util.UUID;
 public interface ProviderMediaRepository extends JpaRepository<ProviderMedia, UUID> {
     List<ProviderMedia> findAllByOwnerTypeAndOwnerIdOrderByDisplayOrderAsc(MediaOwnerType ownerType, UUID ownerId);
 
+    // Center Manager chỉ xác nhận chứng chỉ đã có ít nhất một ảnh / file (AI cần ảnh để đối chiếu).
+    boolean existsByOwnerTypeAndOwnerId(MediaOwnerType ownerType, UUID ownerId);
+
     // Ảnh công khai của nhiều chủ sở hữu (thẻ trung tâm / caregiver) — một query cho cả trang.
     List<ProviderMedia> findByOwnerTypeAndOwnerIdInAndMediaFileTypeOrderByDisplayOrderAsc(
             MediaOwnerType ownerType, Collection<UUID> ownerIds, MediaFileType mediaFileType);

@@ -24,6 +24,7 @@ import java.util.UUID;
 public class StatisticsController {
     StatisticsService statisticsService;
 
+    // API thống kê vận hành của trung tâm.
     @GetMapping("/centers")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<OperationalStatisticsResponse> centers(@CurrentRoles Set<RoleCode> roles,
@@ -32,6 +33,7 @@ public class StatisticsController {
         return statisticsService.centers(roles, scopeCenterId, centerId, from, to);
     }
 
+    // API thống kê vận hành toàn hệ thống.
     @GetMapping("/system")
     @PreAuthorize("hasRole('ADMIN')")
     public APIResponse<OperationalStatisticsResponse> system(@RequestParam(required = false) LocalDate from,

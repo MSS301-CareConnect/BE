@@ -12,15 +12,11 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Fallback khi IdentityService lỗi / timeout / circuit đang mở.
- * - list (batch, chỉ để hiển thị profile người thân): trả danh sách rỗng → API vẫn chạy, chỉ thiếu profile.
- * - get / getByEmail (dùng để XÁC MINH trước khi ghi): không đoán — ném lại lỗi nghiệp vụ (404) hoặc 503.
- */
 @Component
 @Slf4j
 public class IdentityClientFallbackFactory implements FallbackFactory<IdentityClient> {
 
+    // Fallback khi gọi IdentityService lỗi: ném AppException tương ứng.
     @Override
     public IdentityClient create(Throwable cause) {
         return new IdentityClient() {
@@ -45,6 +41,7 @@ public class IdentityClientFallbackFactory implements FallbackFactory<IdentityCl
         };
     }
 
+    // Giữ nguyên AppException, lỗi khác đổi thành lỗi IdentityService không khả dụng.
     private static AppException toAppException(Throwable cause) {
         if (cause instanceof AppException appException) {
             return appException;

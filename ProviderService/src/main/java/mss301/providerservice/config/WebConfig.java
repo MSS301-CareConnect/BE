@@ -10,6 +10,7 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    // Đăng ký resolver cho tham số @CurrentUserId.
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
         resolvers.add(new CurrentUserIdArgumentResolver());

@@ -11,7 +11,10 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class OccurrenceStatisticsResponse {
     long completed;
+
     long cancelled;
+
     long missed;
+
     long customerNoShow;
 }

@@ -9,6 +9,7 @@ import lombok.experimental.FieldDefaults;
 public class AppException extends RuntimeException {
     ErrorCode errorCode;
 
+    // Tạo exception nghiệp vụ mang ErrorCode và message tương ứng.
     public AppException(ErrorCode errorCode) {
         super(errorCode == null ? null : errorCode.getMessage());
         this.errorCode = errorCode;

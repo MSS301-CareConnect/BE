@@ -11,11 +11,14 @@ import java.util.Map;
 import java.util.UUID;
 
 public interface ProviderMediaService {
+    // Upload file cho trung tâm / caregiver / chứng chỉ.
     APIResponse<List<ProviderMediaResponse>> upload(UUID actorId, MediaOwnerType ownerType, UUID ownerId,
                                                     List<MultipartFile> files);
 
+    // Danh sách file của chủ sở hữu.
     APIResponse<List<ProviderMediaResponse>> list(UUID actorId, MediaOwnerType ownerType, UUID ownerId);
 
+    // Xóa một file.
     APIResponse<Void> delete(UUID actorId, MediaOwnerType ownerType, UUID ownerId, UUID mediaFileId);
 
     /**

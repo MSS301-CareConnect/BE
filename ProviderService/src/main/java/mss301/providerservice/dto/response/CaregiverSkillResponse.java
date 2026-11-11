@@ -13,7 +13,10 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverSkillResponse {
     UUID centerServiceId;
+
     UUID careServiceId;
+
     String serviceName;
+
     Instant assignedAt;
 }

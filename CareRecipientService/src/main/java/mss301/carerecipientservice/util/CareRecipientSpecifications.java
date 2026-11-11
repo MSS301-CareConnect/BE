@@ -12,13 +12,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-/**
- * Filter động cho danh sách hồ sơ (JPA Specification — tránh tham số nullable trong JPQL). Tên field theo entity.
- */
 public final class CareRecipientSpecifications {
 
     private static final char LIKE_ESCAPE = '\\';
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private CareRecipientSpecifications() {
     }
 

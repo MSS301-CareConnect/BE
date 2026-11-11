@@ -12,6 +12,7 @@ import java.util.TimeZone;
 @EnableFeignClients
 @EnableConfigurationProperties(PaymentProperties.class)
 public class PaymentServiceApplication {
+    // Khởi động PaymentService với múi giờ mặc định UTC.
     public static void main(String[] args) {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         SpringApplication.run(PaymentServiceApplication.class, args);

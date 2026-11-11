@@ -14,5 +14,7 @@ public enum BookingEventType {
     CAREGIVER_CHANGE_APPROVED,
     CAREGIVER_CHANGE_REJECTED,
     EMERGENCY_REPLACEMENT_ASSIGNED,
-    OCCURRENCE_RESCHEDULED
+    OCCURRENCE_RESCHEDULED,
+    // 2026-11-09: caregiver xin hủy buổi được giao — buổi chờ trung tâm phân người khác.
+    CAREGIVER_WITHDRAWN
 }

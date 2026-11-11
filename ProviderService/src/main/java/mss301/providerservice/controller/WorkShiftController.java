@@ -41,6 +41,7 @@ public class WorkShiftController {
 
     // ─── GET OPERATIONS ───────────────────────────────────────────────────────
 
+    // API danh sách ca làm việc có lọc và phân trang.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<PageResponse<WorkShiftResponse>> list(
@@ -59,6 +60,7 @@ public class WorkShiftController {
                 page, size);
     }
 
+    // API thống kê ca làm việc của trung tâm.
     @GetMapping("/statistics")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<WorkShiftStatisticsResponse> statistics(
@@ -70,12 +72,14 @@ public class WorkShiftController {
         return workShiftService.statistics(actorId, centerId, fromDate, toDate, shiftType);
     }
 
+    // API xem chi tiết ca làm việc.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CAREGIVER')")
     public APIResponse<WorkShiftResponse> get(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return workShiftService.get(actorId, id);
     }
 
+    // API danh sách đăng ký ca của caregiver đang đăng nhập.
     @GetMapping("/registrations/me")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<PageResponse<ShiftRegistrationResponse>> listMyRegistrations(
@@ -86,6 +90,7 @@ public class WorkShiftController {
         return shiftRegistrationService.listMine(actorId, status, page, size);
     }
 
+    // API danh sách đăng ký của một ca.
     @GetMapping("/{id}/registrations")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<PageResponse<ShiftRegistrationResponse>> listRegistrations(
@@ -99,6 +104,7 @@ public class WorkShiftController {
 
     // ─── POST OPERATIONS ──────────────────────────────────────────────────────
 
+    // API manager tạo ca làm việc.
     @PostMapping("/centers/{centerId}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<WorkShiftResponse> create(@CurrentUserId UUID actorId,
@@ -125,6 +131,7 @@ public class WorkShiftController {
         return workShiftService.cancel(actorId, id, request);
     }
 
+    // API caregiver đăng ký nhận ca.
     @PostMapping("/{shiftId}/registrations")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<ShiftRegistrationResponse> register(
@@ -136,6 +143,7 @@ public class WorkShiftController {
 
     // ─── PUT OPERATIONS ───────────────────────────────────────────────────────
 
+    // API cập nhật ca làm việc.
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<WorkShiftResponse> update(@CurrentUserId UUID actorId,
@@ -146,6 +154,7 @@ public class WorkShiftController {
 
     // ─── PATCH OPERATIONS ─────────────────────────────────────────────────────
 
+    // API manager duyệt / từ chối một đăng ký ca.
     @PatchMapping("/registrations/{id}/review")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<ShiftRegistrationResponse> reviewRegistration(
@@ -164,6 +173,7 @@ public class WorkShiftController {
         return workShiftService.changeStatus(actorId, id, request);
     }
 
+    // API manager duyệt / từ chối nhiều đăng ký ca một lần.
     @PatchMapping("/{id}/registrations/review")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<List<ShiftRegistrationResponse>> bulkReviewRegistrations(
@@ -175,6 +185,7 @@ public class WorkShiftController {
 
     // ─── DELETE OPERATIONS ────────────────────────────────────────────────────
 
+    // API hủy / xóa ca làm việc.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
     public APIResponse<Void> delete(@CurrentUserId UUID actorId,
@@ -183,6 +194,7 @@ public class WorkShiftController {
         return workShiftService.delete(actorId, id, version);
     }
 
+    // API caregiver hủy đăng ký ca.
     @DeleteMapping("/registrations/{id}")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<Void> cancelRegistration(

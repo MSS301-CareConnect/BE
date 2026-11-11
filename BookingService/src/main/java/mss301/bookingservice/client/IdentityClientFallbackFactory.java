@@ -9,14 +9,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Fallback khi IdentityService lỗi / timeout / circuit đang mở: batch chỉ để hiển thị thông tin khách → trả rỗng,
- * danh sách / chi tiết booking vẫn trả về (thiếu tên, SĐT khách).
- */
 @Component
 @Slf4j
 public class IdentityClientFallbackFactory implements FallbackFactory<IdentityClient> {
 
+    // Fallback khi gọi IdentityService lỗi: ném AppException tương ứng.
     @Override
     public IdentityClient create(Throwable cause) {
         return new IdentityClient() {

@@ -15,19 +15,16 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-/**
- * API của PaymentService chỉ dành cho service khác ({@code hasRole('SERVICE')}) — gọi bằng token SERVICE của Booking
- * (ServiceTokenInterceptor), khác PaymentClient (token người dùng). Lệnh ghi (refund, hóa đơn) chỉ gọi từ
- * BookingOutboxService (ngoài transaction, có retry; Payment khử trùng theo Idempotency-Key); preview qua PaymentPort.
- */
 @FeignClient(name = "payment", contextId = "paymentServiceClient", url = "${booking.payment.url}",
         configuration = PaymentServiceClientConfig.class)
 public interface PaymentServiceClient {
 
+    // Gọi PaymentService lấy danh sách thanh toán của booking.
     @GetMapping("/api/v1/payments")
     RemoteApiResponse<PaymentPageResponse> listPayments(@RequestParam("bookingId") UUID bookingId,
             @RequestParam("status") String status, @RequestParam("page") int page, @RequestParam("size") int size);
 
+    // Gọi PaymentService tạo lệnh hoàn tiền theo khiếu nại.
     @PostMapping("/api/v1/refunds/complaints")
     void createComplaintRefund(@RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody ComplaintRefundRequest request);
 
@@ -42,6 +39,7 @@ public interface PaymentServiceClient {
     void createRefund(@RequestHeader(IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
                       @RequestBody RefundCreateRequest request);
 
+    // Gọi PaymentService tạo hóa đơn phần còn lại.
     @PostMapping("/api/v1/remaining-invoices")
     void createRemainingInvoice(@RequestHeader(IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
                                 @RequestBody RemainingInvoiceRequest request);

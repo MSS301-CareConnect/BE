@@ -11,6 +11,8 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TopCaregiverResponse {
     UUID caregiverId;
+
     long completedSessions;
+
     Double avgRating;
 }

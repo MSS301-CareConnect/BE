@@ -12,23 +12,22 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Chữ ký HMAC-SHA512 của VNPay (bản 2.1.0). Thanh toán / IPN: ký chuỗi query đã sắp theo tên tham số; API merchant (refund):
- * ký chuỗi các giá trị nối bằng {@code |} theo thứ tự đặc tả ({@link #hmacSha512}).
- */
 public final class VnPaySigner {
     static final String SECURE_HASH = "vnp_SecureHash";
     static final String SECURE_HASH_TYPE = "vnp_SecureHashType";
     static final String HMAC_ALGORITHM = "HmacSHA512";
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private VnPaySigner() {
     }
 
+    // Tạo query string VNPay kèm chữ ký HMAC-SHA512.
     public static String signedQuery(Map<String, String> input, String secret) {
         String query = canonical(input);
         return query + "&" + SECURE_HASH + "=" + hmacSha512(secret, query);
     }
 
+    // Kiểm tra chữ ký HMAC-SHA512 của tham số VNPay.
     public static boolean verify(Map<String, String> input, String secret) {
         String received = input.get(SECURE_HASH);
         if (received == null) {
@@ -42,6 +41,7 @@ public final class VnPaySigner {
         return MessageDigest.isEqual(expected, actual);
     }
 
+    // Tính HMAC-SHA512 của dữ liệu.
     public static String hmacSha512(String secret, String data) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
@@ -52,6 +52,7 @@ public final class VnPaySigner {
         }
     }
 
+    // Sắp xếp và nối tham số VNPay theo chuẩn để ký.
     static String canonical(Map<String, String> input) {
         return input.entrySet().stream()
                 .filter(entry -> entry.getValue() != null && !entry.getValue().isBlank())

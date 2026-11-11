@@ -1,5 +1,7 @@
 package mss301.bookingservice.repository;
 
+import mss301.bookingservice.repository.projection.OccurrenceStatsView;
+import mss301.bookingservice.repository.projection.CaregiverLoadView;
 import jakarta.persistence.LockModeType;
 import mss301.bookingservice.entity.BookingOccurrence;
 import mss301.bookingservice.enums.BookingStatus;
@@ -34,21 +36,11 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                               @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                               @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
-    @Query("select o from BookingOccurrence o where o.booking.id = :bookingId and o.deletedAt is null order by o.occurrenceNo")
-    List<BookingOccurrence> findAllByBooking(@Param("bookingId") UUID bookingId);
+    List<BookingOccurrence> findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(UUID bookingId);
 
     // BK-06: buổi của booking theo trang (lọc trạng thái).
-    @Query(value = """
-            select o from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            order by o.occurrenceNo
-            """, countQuery = """
-            select count(o) from BookingOccurrence o
-            where o.booking.id = :bookingId and o.deletedAt is null and o.status in :statuses
-            """)
-    Page<BookingOccurrence> findPageByBooking(@Param("bookingId") UUID bookingId,
-                                              @Param("statuses") Collection<OccurrenceStatus> statuses,
-                                              Pageable pageable);
+    Page<BookingOccurrence> findByBookingIdAndDeletedAtIsNullAndStatusInOrderByOccurrenceNoAsc(
+            UUID bookingId, Collection<OccurrenceStatus> statuses, Pageable pageable);
 
     // BK-06: tổng số buổi / đã hoàn thành / buổi kế tiếp của mỗi booking trong trang danh sách — một truy vấn.
     @Query("""
@@ -81,6 +73,58 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from BookingOccurrence o where o.id = :id and o.deletedAt is null")
     Optional<BookingOccurrence> findForUpdate(@Param("id") UUID id);
+
+    // Tự phân công (2026-11-09): tổng phút các buổi đang giữ lịch của mỗi ứng viên trong [rangeStart, rangeEnd).
+    @Query("""
+            select o.caregiverId as caregiverId, sum(o.durationMinutes) as bookedMinutes
+            from BookingOccurrence o join o.booking b
+            where o.caregiverId in :caregiverIds
+              and o.deletedAt is null
+              and b.deletedAt is null
+              and o.status in :occurrenceStatuses
+              and b.status in :bookingStatuses
+              and o.startAt < :rangeEnd
+              and o.endAt > :rangeStart
+            group by o.caregiverId
+            """)
+    List<CaregiverLoadView> sumCaregiverLoads(@Param("caregiverIds") Collection<UUID> caregiverIds,
+                                              @Param("rangeStart") Instant rangeStart,
+                                              @Param("rangeEnd") Instant rangeEnd,
+                                              @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
+                                              @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
+
+    // Booking đã cọc có buổi chưa có người (PENDING_ASSIGNMENT) hoặc chờ thay người (needsReassignment) bắt đầu sau
+    // startsAfter, chưa thử tự phân công từ retryBefore — scheduler tự phân công (2026-11-09).
+    @Query("""
+            select distinct b.id from BookingOccurrence o join o.booking b
+            where o.deletedAt is null
+              and b.deletedAt is null
+              and b.status in :bookingStatuses
+              and (o.status = :pendingStatus or (o.needsReassignment = true and o.status in :notStarted))
+              and o.startAt > :startsAfter
+              and (b.autoAssignAttemptedAt is null or b.autoAssignAttemptedAt < :retryBefore)
+            """)
+    List<UUID> findAutoAssignBookingIds(@Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                        @Param("pendingStatus") OccurrenceStatus pendingStatus,
+                                        @Param("notStarted") Collection<OccurrenceStatus> notStarted,
+                                        @Param("startsAfter") Instant startsAfter,
+                                        @Param("retryBefore") Instant retryBefore,
+                                        Pageable pageable);
+
+    // Booking đã cọc có buổi vẫn chưa có người khi còn ≤ unassigned-cancel-lead tới giờ bắt đầu → hệ thống hủy + hoàn (Q-B2).
+    @Query("""
+            select distinct b.id from BookingOccurrence o join o.booking b
+            where o.deletedAt is null
+              and b.deletedAt is null
+              and b.status in :bookingStatuses
+              and (o.status = :pendingStatus or (o.needsReassignment = true and o.status in :notStarted))
+              and o.startAt <= :startsBefore
+            """)
+    List<UUID> findUnassignedDueBookingIds(@Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                           @Param("pendingStatus") OccurrenceStatus pendingStatus,
+                                           @Param("notStarted") Collection<OccurrenceStatus> notStarted,
+                                           @Param("startsBefore") Instant startsBefore,
+                                           Pageable pageable);
 
     // Buổi còn hoạt động của caregiver giao với khoảng [rangeStart, rangeEnd) — service lọc giao chính xác từng slot.
     @Query("""
@@ -150,6 +194,26 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                              @Param("now") Instant now,
                              Pageable pageable);
 
+    // 2026-11-10: buổi đã tới giờ, còn trong hạn check-in trễ, có caregiver nhưng chưa check-in / chưa báo vắng và chưa
+    // cảnh báo → báo sớm cho caregiver, trung tâm, khách trước khi job MISSED chạy.
+    @Query("""
+            select o.id from BookingOccurrence o join o.booking b
+            where o.deletedAt is null
+              and b.deletedAt is null
+              and o.status in :occurrenceStatuses
+              and b.status in :bookingStatuses
+              and o.caregiverUserId is not null
+              and o.lateWarnedAt is null
+              and o.noShowReportedAt is null
+              and o.startAt <= :now
+              and o.startAt + (b.checkInLateMinutes) minute > :now
+            order by o.startAt
+            """)
+    List<UUID> findLateCheckInIds(@Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
+                                  @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                  @Param("now") Instant now,
+                                  Pageable pageable);
+
     // BK-04: buổi tương lai còn hoạt động của caregiver bị khóa, chưa đánh dấu cần đổi người.
     @Query("""
             select o from BookingOccurrence o join fetch o.booking b
@@ -181,7 +245,8 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                                       @Param("endedBefore") Instant endedBefore,
                                       Pageable pageable);
 
-    // Lịch của caregiver (theo user_id Identity = sub JWT) bắt đầu trong [from, to), theo trang (BK-06).
+    // Lịch của caregiver (theo user_id Identity = sub JWT) bắt đầu trong [from, to), theo trang (BK-06). bookingId null = mọi
+    // booking; có giá trị = các buổi của caregiver trong một booking (trang chi tiết booking của caregiver, 2026-11-09).
     @Query(value = """
             select o from BookingOccurrence o join fetch o.booking b
             where o.caregiverUserId = :caregiverUserId
@@ -191,6 +256,7 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
               and b.status in :bookingStatuses
               and o.startAt >= :from
               and o.startAt < :to
+              and (:bookingId is null or b.id = :bookingId)
             order by o.startAt, o.id
             """, countQuery = """
             select count(o) from BookingOccurrence o join o.booking b
@@ -201,10 +267,12 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
               and b.status in :bookingStatuses
               and o.startAt >= :from
               and o.startAt < :to
+              and (:bookingId is null or b.id = :bookingId)
             """)
     Page<BookingOccurrence> findCaregiverSchedule(@Param("caregiverUserId") UUID caregiverUserId,
                                                   @Param("from") Instant from,
                                                   @Param("to") Instant to,
+                                                  @Param("bookingId") UUID bookingId,
                                                   @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                                                   @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
                                                   Pageable pageable);

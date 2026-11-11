@@ -23,9 +23,11 @@ import java.util.UUID;
         fallbackFactory = MediaClientFallbackFactory.class)
 public interface MediaClient {
 
+    // Gọi MediaService tạo URL tải ảnh có thời hạn.
     @GetMapping("/api/v1/media/{mediaFileId}/download-url")
     RemoteApiResponse<DownloadUrlClientResponse> createDownloadUrl(@PathVariable("mediaFileId") UUID mediaFileId);
 
+    // Gọi MediaService upload ảnh minh họa dịch vụ.
     @PostMapping(value = "/api/v1/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     RemoteApiResponse<MediaClientResponse> upload(
             @RequestPart("file") MultipartFile file,

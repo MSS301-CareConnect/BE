@@ -1,5 +1,6 @@
 package mss301.bookingservice.mapper;
 
+import mss301.bookingservice.dto.response.OccurrenceRescheduleResponse;
 import mss301.bookingservice.enums.UnitType;
 import mss301.bookingservice.client.dto.CareCatalogQuoteRequest;
 import mss301.bookingservice.client.dto.IdentityUserResponse;
@@ -34,11 +35,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Mapping không hiển nhiên (AGENTS.md §3.8): nhiều nguồn trùng tên (recipientId, caregiverId, id/status), giá trị dẫn
- * xuất (serviceAddress, endDate của ONE_TIME, thứ trong tuần), field server quản lý không bị chép từ request. Dùng thẳng
- * *MapperImpl, không cần Spring.
- */
 class BookingMapperTests {
 
     OccurrenceMapper occurrenceMapper = new OccurrenceMapperImpl();
@@ -213,12 +209,12 @@ class BookingMapperTests {
                 .roles(Set.of("CUSTOMER"))
                 .build();
 
-        BookingDetailResponse detail = bookingMapper.toDetailResponse(booking, List.of(), List.of(), customer);
+        BookingDetailResponse detail = bookingMapper.toDetailResponse(booking, List.of(), List.of(), customer, null);
         assertThat(detail.getId()).isEqualTo(booking.getId());
         assertThat(detail.getStatus()).isEqualTo(BookingStatus.PENDING_CENTER_CONFIRMATION);
         assertThat(detail.getCustomer().getFullName()).isEqualTo("Khách Hàng");
         assertThat(detail.getDaysOfWeek()).containsExactly(1, 3, 5);
-        assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null).getCustomer()).isNull();
+        assertThat(bookingMapper.toDetailResponse(booking, List.of(), List.of(), null, null).getCustomer()).isNull();
 
         List<BookingSummaryResponse> withCustomer = bookingMapper.toSummaryResponseList(List.of(booking),
                 Map.of(booking.getCustomerId(), customer), Map.of(), Map.of());
@@ -261,5 +257,36 @@ class BookingMapperTests {
             List<String> fieldNames = Arrays.stream(type.getDeclaredFields()).map(Field::getName).toList();
             assertThat(fieldNames).doesNotContain("idempotencyKey", "idempotencyHash", "acceptedBy", "rejectedBy");
         }
+    }
+
+    @Test
+    void rescheduleResponseFallsBackToCurrentTimesBeforeFirstReschedule() {
+        OccurrenceMapper occurrenceMapper = new OccurrenceMapperImpl();
+        Instant start = Instant.parse("2026-11-20T01:00:00Z");
+        Instant end = Instant.parse("2026-11-20T03:00:00Z");
+        Instant newStart = Instant.parse("2026-11-21T01:00:00Z");
+        Instant newEnd = Instant.parse("2026-11-21T03:00:00Z");
+        UUID bookingId = UUID.randomUUID();
+        BookingOccurrence occurrence = BookingOccurrence.builder().startAt(start).endAt(end).rescheduleCount(0).build();
+
+        OccurrenceRescheduleResponse preview = occurrenceMapper.toRescheduleResponse(occurrence, bookingId, newStart,
+                newEnd, false, "busy");
+        assertThat(preview.getOriginalStartAt()).isEqualTo(start);
+        assertThat(preview.getOriginalEndAt()).isEqualTo(end);
+        assertThat(preview.getBookingId()).isEqualTo(bookingId);
+        assertThat(preview.getNewStartAt()).isEqualTo(newStart);
+        assertThat(preview.getAvailable()).isFalse();
+        assertThat(preview.getMessage()).isEqualTo("busy");
+
+        occurrence.setOriginalStartAt(start);
+        occurrence.setOriginalEndAt(end);
+        occurrence.setStartAt(newStart);
+        occurrence.setEndAt(newEnd);
+        occurrence.setRescheduleCount(1);
+        OccurrenceRescheduleResponse done = occurrenceMapper.toRescheduleResponse(occurrence, bookingId,
+                occurrence.getStartAt(), occurrence.getEndAt(), true, "ok");
+        assertThat(done.getOriginalStartAt()).isEqualTo(start);
+        assertThat(done.getNewStartAt()).isEqualTo(newStart);
+        assertThat(done.getRescheduleCount()).isEqualTo(1);
     }
 }

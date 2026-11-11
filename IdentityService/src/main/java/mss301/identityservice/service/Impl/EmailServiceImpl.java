@@ -31,6 +31,7 @@ public class EmailServiceImpl implements EmailService {
     IdentityProperties identityProperties;
     RestClient brevoRestClient;
 
+    // Gửi email OTP qua Brevo HTTP API; chưa cấu hình hoặc lỗi thì báo lỗi gửi email.
     @Override
     public void sendOtp(String email, String otpCode) {
         IdentityProperties.Brevo brevo = identityProperties.getBrevo();
@@ -63,6 +64,7 @@ public class EmailServiceImpl implements EmailService {
         }
     }
 
+    // Kiểm tra chuỗi rỗng hoặc null.
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
@@ -75,6 +77,7 @@ public class EmailServiceImpl implements EmailService {
         return "***" + apiKey.substring(apiKey.length() - API_KEY_VISIBLE_SUFFIX) + " (len=" + apiKey.length() + ")";
     }
 
+    // Cắt ngắn nội dung response trước khi ghi log.
     private String truncate(String value) {
         if (value.length() <= MAX_LOGGED_RESPONSE_LENGTH) {
             return value;

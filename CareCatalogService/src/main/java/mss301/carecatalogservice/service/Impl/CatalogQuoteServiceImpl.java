@@ -3,7 +3,6 @@ package mss301.carecatalogservice.service.Impl;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import lombok.extern.slf4j.Slf4j;
 import mss301.carecatalogservice.dto.request.ServiceQuoteRequest;
 import mss301.carecatalogservice.dto.response.ServiceQuoteResponse;
 import mss301.carecatalogservice.entity.CatalogItem;
@@ -25,14 +24,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Báo giá xác định (CAT-01, D12): mỗi dịch vụ phải chỉ rõ pricePlanId, Catalog không tự chọn gói. Gói giá phải active,
- * thuộc đúng dịch vụ trung tâm; dịch vụ trung tâm và danh mục chuẩn phải ACTIVE. Cùng input → cùng kết quả.
- */
 @Service
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-@Slf4j
 public class CatalogQuoteServiceImpl implements CatalogQuoteService {
 
     CatalogItemRepository catalogItemRepository;
@@ -40,6 +34,7 @@ public class CatalogQuoteServiceImpl implements CatalogQuoteService {
     PricePlanRepository pricePlanRepository;
     CenterOfferingMapper centerOfferingMapper;
 
+    // Tính báo giá từng dịch vụ theo dịch vụ trung tâm và gói giá đang hoạt động.
     @Override
     @Transactional(readOnly = true)
     public List<ServiceQuoteResponse> quote(ServiceQuoteRequest request) {
@@ -54,6 +49,7 @@ public class CatalogQuoteServiceImpl implements CatalogQuoteService {
         return quotes;
     }
 
+    // Tìm dịch vụ chuẩn đang hoạt động, không có thì báo lỗi.
     private CatalogItem findActiveCatalogItem(UUID careServiceId) {
         CatalogItem catalogItem = catalogItemRepository.findByIdAndDeletedAtIsNull(careServiceId)
                 .orElseThrow(() -> new AppException(ErrorCode.CARE_SERVICE_NOT_FOUND));
@@ -78,6 +74,7 @@ public class CatalogQuoteServiceImpl implements CatalogQuoteService {
         return centerOffering;
     }
 
+    // Tìm gói giá đang hoạt động thuộc dịch vụ trung tâm, không có thì báo lỗi.
     private PricePlan findActivePricePlan(UUID pricePlanId, CenterOffering centerOffering) {
         // Request đã @NotNull; kiểm lại để lời gọi trong code (không qua @Valid) cũng không rơi về gói mặc định.
         if (pricePlanId == null) {

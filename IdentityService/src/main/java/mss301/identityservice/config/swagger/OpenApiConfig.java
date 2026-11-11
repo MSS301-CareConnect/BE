@@ -42,6 +42,7 @@ public class OpenApiConfig {
         SpringDocUtils.getConfig().addRequestWrapperToIgnore(CsrfToken.class);
     }
 
+    // Cấu hình tài liệu OpenAPI của IdentityService.
     @Bean
     public OpenAPI identityOpenApi(IdentityProperties identityProperties) {
         Components components = new Components()
@@ -71,6 +72,7 @@ public class OpenApiConfig {
         return openApi;
     }
 
+    // Thêm các response lỗi chung và yêu cầu CSRF vào endpoint trong Swagger.
     @Bean
     public OpenApiCustomizer globalResponses() {
         return openApi -> openApi.getPaths().values().forEach(path -> path.readOperations().forEach(operation -> {
@@ -96,6 +98,7 @@ public class OpenApiConfig {
         });
     }
 
+    // Thêm yêu cầu header CSRF cho một endpoint trong Swagger.
     private void addCsrfRequirement(Operation operation) {
         SecurityRequirement requirement = new SecurityRequirement().addList(CSRF_SCHEME);
         // security null = kế thừa bearer toàn cục → giữ bearer; danh sách rỗng = endpoint public → chỉ csrf.

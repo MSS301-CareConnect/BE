@@ -11,10 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * OPS-06: đánh dấu MISSED buổi không ai check-in sau giờ bắt đầu + booking.session.missed-grace (tự hoàn tiền khách),
- * và nhắc manager báo vắng chưa quyết định. Mỗi buổi một transaction; lỗi một buổi không dừng lô.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -23,6 +19,7 @@ public class OccurrenceMissedScheduler {
 
     BookingOccurrenceService bookingOccurrenceService;
 
+    // Định kỳ đánh dấu buổi bị bỏ lỡ (caregiver không check-in).
     @Scheduled(fixedDelayString = "${booking.session.missed-scan-interval:5m}",
             initialDelayString = "${booking.session.missed-scan-interval:5m}")
     public void markMissedOccurrences() {
@@ -36,6 +33,22 @@ public class OccurrenceMissedScheduler {
         }
     }
 
+    // Định kỳ cảnh báo caregiver check-in trễ.
+    @Scheduled(fixedDelayString = "${booking.session.late-warning-scan-interval:1m}",
+            initialDelayString = "${booking.session.late-warning-scan-interval:1m}")
+    public void warnLateCheckIns() {
+        List<UUID> occurrenceIds = bookingOccurrenceService.findLateCheckInIds();
+        for (UUID occurrenceId : occurrenceIds) {
+            try {
+                bookingOccurrenceService.warnLateCheckIn(occurrenceId);
+            } catch (RuntimeException e) {
+                log.error("Failed to warn about the late check-in of occurrence {} ({})", occurrenceId,
+                        e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
+    // Định kỳ nhắc trung tâm kết luận báo vắng mặt.
     @Scheduled(fixedDelayString = "${booking.session.missed-scan-interval:5m}",
             initialDelayString = "${booking.session.missed-scan-interval:5m}")
     public void remindUndecidedNoShows() {

@@ -10,6 +10,7 @@ import java.util.TimeZone;
 @EnableFeignClients
 public class CareCatalogServiceApplication {
 
+    // Khởi động ứng dụng CareCatalogService.
     public static void main(String[] args) {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         SpringApplication.run(CareCatalogServiceApplication.class, args);

@@ -25,17 +25,20 @@ public class VnPayGateway implements PaymentGateway {
 
     PaymentProperties paymentProperties;
 
+    // Nhà cung cấp của cổng này (VNPay).
     @Override
     public PaymentProvider provider() {
         return PaymentProvider.VNPAY;
     }
 
+    // VNPay được bật và đã cấu hình mã merchant + secret.
     @Override
     public boolean isEnabled() {
         PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
         return vnpay.isEnabled() && isPresent(vnpay.getTmnCode()) && isPresent(vnpay.getHashSecret());
     }
 
+    // Tạo URL thanh toán VNPay có chữ ký cho khoản thanh toán.
     @Override
     public CheckoutResult createCheckout(CheckoutCommand command) {
         PaymentProperties.Vnpay vnpay = paymentProperties.getVnpay();
@@ -57,10 +60,12 @@ public class VnPayGateway implements PaymentGateway {
         return new CheckoutResult(command.reference(), checkoutUrl);
     }
 
+    // Kiểm tra chữ ký HMAC của dữ liệu VNPay gửi về.
     public boolean isValidSignature(Map<String, String> params) {
         return isEnabled() && VnPaySigner.verify(params, paymentProperties.getVnpay().getHashSecret());
     }
 
+    // Kiểm tra chuỗi có giá trị.
     private boolean isPresent(String value) {
         return value != null && !value.isBlank();
     }

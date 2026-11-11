@@ -13,6 +13,7 @@ import java.util.UUID;
 
 @Component
 public class MediaClientFallbackFactory implements FallbackFactory<MediaClient> {
+    // Fallback khi gọi MediaService lỗi: ném AppException tương ứng.
     @Override
     public MediaClient create(Throwable cause) {
         return new MediaClient() {
@@ -40,6 +41,7 @@ public class MediaClientFallbackFactory implements FallbackFactory<MediaClient> 
         };
     }
 
+    // Lấy AppException trong chuỗi nguyên nhân, không có thì báo MediaService không khả dụng.
     private RuntimeException resolveFailure(Throwable cause) {
         Throwable current = cause;
         while (current != null) {

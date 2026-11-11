@@ -22,10 +22,11 @@ import org.hibernate.annotations.UuidGenerator;
 import java.time.Instant;
 import java.util.UUID;
 
-// Lệnh gửi sang BookingService, ghi cùng transaction với biến động tiền rồi gửi sau commit (Đợt 1b, rule #24).
+// Lệnh gửi sang BookingService, ghi cùng transaction với biến động tiền rồi gửi sau commit (Đợt 1b, rule #24). Một payment
+// có thể có nhiều lệnh hoàn → khóa trùng gồm cả payment_reference ("refund=<id>" cho REFUND_COMPLETED, 2026-11-10).
 @Entity
 @Table(name = "payment_outbox", uniqueConstraints = @UniqueConstraint(name = "uk_payment_outbox_event_payment",
-        columnNames = {"event_type", "payment_id"}))
+        columnNames = {"event_type", "payment_id", "payment_reference"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -42,10 +43,11 @@ public class PaymentOutbox extends BaseEntity {
     @Column(name = "event_type", nullable = false, length = 30)
     OutboxEventType eventType;
 
-    @Column(name = "booking_id", nullable = false)
+    // NULL với WITHDRAWAL_* (thông báo kết quả rút tiền).
+    @Column(name = "booking_id")
     UUID bookingId;
 
-    @Column(name = "payment_id", nullable = false)
+    @Column(name = "payment_id")
     UUID paymentId;
 
     @Column(name = "payment_reference", nullable = false, length = 100)

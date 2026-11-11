@@ -9,10 +9,6 @@ import org.hibernate.annotations.UuidGenerator;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Nhật ký sự kiện ở mức buổi (nhận ca, đổi trạng thái buổi, đổi caregiver) — chỉ ghi thêm, không kế thừa BaseEntity.
- * Chuyển trạng thái cấp booking vẫn ở booking_status_history. changed_by NULL = hệ thống.
- */
 @Entity
 @Table(name = "booking_events")
 @Getter

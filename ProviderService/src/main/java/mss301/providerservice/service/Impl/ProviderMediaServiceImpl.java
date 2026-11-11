@@ -62,6 +62,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Upload các file lên MediaService rồi gắn vào trung tâm / caregiver / chứng chỉ; lỗi thì dọn file đã upload.
     @Override
     public APIResponse<List<ProviderMediaResponse>> upload(UUID actorId, MediaOwnerType ownerType, UUID ownerId, List<MultipartFile> files) {
         requireMediaMutationAccess(actorId, ownerType, ownerId);
@@ -82,6 +83,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
             }
             responses = transactionTemplate.execute(status -> {
                 requireMediaMutationAccess(actorId, ownerType, ownerId);
+                restartCertificateReview(ownerType, ownerId);
                 List<ProviderMediaResponse> items = new ArrayList<>();
                 int nextOrder = displayOrder;
                 for (MediaClientResponse uploaded : uploadedFiles) {
@@ -100,6 +102,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return APIResponse.success("Tải file lên thành công", responses);
     }
 
+    // Danh sách file của chủ sở hữu; khách chỉ xem file công khai.
     @Override
     public APIResponse<List<ProviderMediaResponse>> list(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
         if (providerAuthorization.hasRole(RoleCode.CUSTOMER)) {
@@ -121,6 +124,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return APIResponse.success("Lấy danh sách file thành công", responses);
     }
 
+    // Gỡ file khỏi chủ sở hữu và xóa trên MediaService.
     @Override
     public APIResponse<Void> delete(UUID actorId, MediaOwnerType ownerType, UUID ownerId, UUID mediaFileId) {
         requireMediaMutationAccess(actorId, ownerType, ownerId);
@@ -130,10 +134,27 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
                 .orElseThrow(() -> new AppException(ErrorCode.MEDIA_NOT_FOUND));
 
         mediaClient.delete(mediaFileId);
-        providerMediaRepository.delete(providerMedia);
+        transactionTemplate.executeWithoutResult(status -> {
+            restartCertificateReview(ownerType, ownerId);
+            providerMediaRepository.delete(providerMedia);
+        });
         return APIResponse.success("Xóa file thành công");
     }
 
+    // Ảnh chứng chỉ đổi → kết quả xác nhận / kiểm tra AI cũ không còn giá trị: chứng chỉ quay về chờ trung tâm.
+    private void restartCertificateReview(MediaOwnerType ownerType, UUID ownerId) {
+        if (ownerType != MediaOwnerType.CERTIFICATE) {
+            return;
+        }
+        certificateRepository.findForUpdate(ownerId).ifPresent(certificate -> {
+            if (certificate.hasReviewProgress()) {
+                certificate.restartReview();
+                certificateRepository.save(certificate);
+            }
+        });
+    }
+
+    // Lấy URL ảnh của nhiều chủ sở hữu, giới hạn số ảnh mỗi chủ.
     @Override
     public Map<UUID, List<String>> findImageUrls(MediaOwnerType ownerType, Collection<UUID> ownerIds,
                                                  int limitPerOwner) {
@@ -156,6 +177,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return imageUrls;
     }
 
+    // Lấy URL tải file, lỗi thì trả null.
     private String findDownloadUrlQuietly(UUID mediaFileId) {
         try {
             return getDownloadUrl(mediaFileId).getDownloadUrl();
@@ -166,6 +188,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    // Kiểm tra chủ sở hữu được công khai cho khách xem.
     private void checkPublicMedia(MediaOwnerType ownerType, UUID ownerId) {
         switch (ownerType) {
             case CARE_CENTER -> careCenterRepository.findByIdAndDeletedAtIsNull(ownerId)
@@ -186,6 +209,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    // Báo lỗi nếu caregiver không công khai (đã xóa, ngừng hoạt động, chưa xác minh).
     private void checkPublicCaregiver(CaregiverProfile caregiver) {
         if (caregiver.getDeletedAt() != null || caregiver.getCaregiverStatus() != CaregiverStatus.ACTIVE
                 || caregiver.getVerificationStatus() != VerificationStatus.VERIFIED
@@ -194,6 +218,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    // Kiểm tra quyền xem file theo loại chủ sở hữu.
     private void requireOwnerAccess(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
         switch (ownerType) {
             case CARE_CENTER -> requireCenterAccess(actorId, ownerId);
@@ -202,24 +227,28 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    // Kiểm tra quyền trên trung tâm.
     private void requireCenterAccess(UUID actorId, UUID centerId) {
         CareCenter center = careCenterRepository.findByIdAndDeletedAtIsNull(centerId)
                 .orElseThrow(() -> new AppException(ErrorCode.CENTER_NOT_FOUND));
         providerAuthorization.requireCenterManagement(center, actorId);
     }
 
+    // Kiểm tra quyền trên caregiver.
     private void requireCaregiverAccess(UUID actorId, UUID caregiverId) {
         CaregiverProfile caregiver = caregiverProfileRepository.findWithCenterById(caregiverId)
                 .orElseThrow(() -> new AppException(ErrorCode.CAREGIVER_NOT_FOUND));
         providerAuthorization.requireCaregiverSelfOrCenterManagement(caregiver, actorId);
     }
 
+    // Kiểm tra quyền trên chứng chỉ.
     private void requireCertificateAccess(UUID actorId, UUID certificateId) {
         Certificate certificate = certificateRepository.findWithCaregiverById(certificateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CERTIFICATE_NOT_FOUND));
         providerAuthorization.requireCaregiverSelfOrCenterManagement(certificate.getCaregiver(), actorId);
     }
 
+    // Kiểm tra danh sách file upload không rỗng và không quá số lượng.
     private List<MultipartFile> validateFiles(List<MultipartFile> files) {
         if (files == null) {
             throw new AppException(ErrorCode.MEDIA_REQUIRED);
@@ -239,6 +268,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return validFiles;
     }
 
+    // Mục đích upload gửi MediaService theo loại chủ sở hữu.
     private String resolvePurpose(MediaOwnerType ownerType) {
         return switch (ownerType) {
             case CARE_CENTER -> "CARE_CENTER_LOGO";
@@ -247,6 +277,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         };
     }
 
+    // Lấy kết quả upload từ MediaService, thiếu thì báo lỗi.
     private MediaClientResponse requireMediaResult(APIResponse<MediaClientResponse> response) {
         if (response == null || response.getResult() == null) {
             throw new AppException(ErrorCode.MEDIA_SERVICE_UNAVAILABLE);
@@ -254,6 +285,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return response.getResult();
     }
 
+    // Gọi MediaService lấy URL tải file, thiếu thì báo lỗi.
     private DownloadUrlClientResponse getDownloadUrl(UUID mediaFileId) {
         APIResponse<DownloadUrlClientResponse> response = mediaClient.createDownloadUrl(mediaFileId);
         if (response == null || response.getResult() == null) {
@@ -262,6 +294,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         return response.getResult();
     }
 
+    // Xóa các file vừa upload khi lưu thất bại, lỗi chỉ ghi log.
     private void deleteUploadedFilesQuietly(List<UUID> uploadedMediaIds) {
         for (UUID mediaFileId : uploadedMediaIds) {
             try {
@@ -273,6 +306,7 @@ public class ProviderMediaServiceImpl implements ProviderMediaService {
         }
     }
 
+    // Kiểm tra quyền thêm / xóa file theo loại chủ sở hữu.
     private void requireMediaMutationAccess(UUID actorId, MediaOwnerType ownerType, UUID ownerId) {
         if (ownerType == MediaOwnerType.CERTIFICATE) {
             Certificate certificate = certificateRepository.findWithCaregiverById(ownerId)

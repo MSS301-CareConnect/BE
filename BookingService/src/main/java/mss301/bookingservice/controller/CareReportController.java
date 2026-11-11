@@ -29,6 +29,7 @@ import java.util.UUID;
 public class CareReportController {
     CareReportService careReportService;
 
+    // API xem báo cáo chăm sóc.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<CareReportResponse> get(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -36,6 +37,7 @@ public class CareReportController {
         return careReportService.get(actorId, roles, centerId, id);
     }
 
+    // API danh sách báo cáo chăm sóc.
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER','CUSTOMER','CAREGIVER')")
     public APIResponse<PageResponse<CareReportResponse>> list(@CurrentUserId UUID actorId, @CurrentRoles Set<RoleCode> roles,
@@ -44,12 +46,14 @@ public class CareReportController {
         return careReportService.list(actorId, roles, centerId, bookingId, page, size);
     }
 
+    // API caregiver tạo báo cáo chăm sóc.
     @PostMapping
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CareReportResponse> create(@CurrentUserId UUID actorId, @Valid @RequestBody CareReportRequest request) {
         return careReportService.create(actorId, request);
     }
 
+    // API thêm ảnh vào báo cáo.
     @PostMapping(value = "/{id}/photos", consumes = "multipart/form-data")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CareReportResponse> addPhotos(@CurrentUserId UUID actorId, @PathVariable UUID id,
@@ -57,12 +61,14 @@ public class CareReportController {
         return careReportService.addPhotos(actorId, id, files);
     }
 
+    // API gửi báo cáo (sau đó không sửa được).
     @PostMapping("/{id}/submit")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CareReportResponse> submit(@CurrentUserId UUID actorId, @PathVariable UUID id) {
         return careReportService.submit(actorId, id);
     }
 
+    // API sửa báo cáo chưa gửi.
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<CareReportResponse> update(@CurrentUserId UUID actorId, @PathVariable UUID id,
@@ -70,6 +76,7 @@ public class CareReportController {
         return careReportService.update(actorId, id, request);
     }
 
+    // API xóa ảnh khỏi báo cáo.
     @DeleteMapping("/{id}/photos/{mediaFileId}")
     @PreAuthorize("hasRole('CAREGIVER')")
     public APIResponse<Void> deletePhoto(@CurrentUserId UUID actorId, @PathVariable UUID id, @PathVariable UUID mediaFileId) {

@@ -24,6 +24,7 @@ public class CurrentIdentityServiceImpl implements CurrentIdentityService {
     UserRepository userRepository;
     UserMapper userMapper;
 
+    // Lấy người dùng còn hoạt động và kiểm authz_version khớp token.
     @Override
     @Transactional(readOnly = true)
     public UserResponse getActiveUser(UUID userId, long authzVersion) {
@@ -37,6 +38,7 @@ public class CurrentIdentityServiceImpl implements CurrentIdentityService {
         return userMapper.toResponse(user);
     }
 
+    // Lấy người dùng còn hoạt động kèm authz_version hiện tại.
     @Override
     @Transactional(readOnly = true)
     public AuthenticatedUser getActiveAuthenticatedUser(UUID userId) {

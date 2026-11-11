@@ -15,14 +15,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.util.UUID;
 
-/**
- * Xác minh access token do IdentityService ký (offline, public key từ JWKS — được cache): RS256 + iss + aud chứa
- * careconnect-api + exp/iat + jti + sub UUID + token_type=access. Refresh token (không có careconnect-api, type khác)
- * luôn bị từ chối.
- */
 @Configuration
 public class JwtConfig {
 
+    // Cấu hình bộ giải mã JWT qua JWKS và các validator issuer, audience, claim.
     @Bean
     public JwtDecoder jwtDecoder(CareCatalogProperties careCatalogProperties) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(careCatalogProperties.getJwt().getJwksUri())
@@ -36,6 +32,7 @@ public class JwtConfig {
         return decoder;
     }
 
+    // Kiểm tra JWT là access token có đủ claim bắt buộc.
     private static boolean hasRequiredClaims(Jwt jwt) {
         boolean valid = jwt.getAudience() != null
                 && jwt.getAudience().contains(TokenClaims.API_AUDIENCE)
@@ -46,6 +43,7 @@ public class JwtConfig {
         return valid && isUuid(jwt.getSubject());
     }
 
+    // Kiểm tra chuỗi có phải UUID hợp lệ.
     private static boolean isUuid(String value) {
         try {
             UUID.fromString(value);

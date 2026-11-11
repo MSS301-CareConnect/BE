@@ -14,6 +14,7 @@ import java.util.UUID;
 @Slf4j
 public class IdentityClientFallbackFactory implements FallbackFactory<IdentityClient> {
 
+    // Fallback khi gọi IdentityService lỗi: ném AppException tương ứng.
     @Override
     public IdentityClient create(Throwable cause) {
         return new IdentityClient() {

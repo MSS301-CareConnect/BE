@@ -16,7 +16,6 @@ public interface BookingStatusHistoryMapper {
 
     // Bảng audit không kế thừa BaseEntity, chỉ có method tạo này → ignore id tại chỗ.
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "booking", source = "booking")
     BookingStatusHistory toHistory(Booking booking, BookingStatus fromStatus, BookingStatus toStatus, UUID changedBy,
                                    String reason, Instant changedAt);
 

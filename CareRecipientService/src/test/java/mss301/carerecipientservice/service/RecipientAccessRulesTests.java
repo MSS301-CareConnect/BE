@@ -34,9 +34,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit test (Mockito, không Spring) cho luật phân quyền OWNER/EDITOR/VIEWER và bảo vệ quản lý chính / OWNER cuối.
- */
 class RecipientAccessRulesTests {
 
     UUID recipientId = UUID.randomUUID();
@@ -101,7 +98,7 @@ class RecipientAccessRulesTests {
     void lastOwnerCannotBeDowngradedEvenIfNotPrimary() {
         member(ownerId, RecipientAccessLevel.OWNER, false);
         RecipientManager otherOwner = member(UUID.randomUUID(), RecipientAccessLevel.OWNER, false);
-        when(recipientManagerRepository.countByRecipientAndAccessLevel(recipientId, RecipientAccessLevel.OWNER)).thenReturn(1L);
+        when(recipientManagerRepository.countByRecipientIdAndAccessLevel(recipientId, RecipientAccessLevel.OWNER)).thenReturn(1L);
         ManagerUpdateRequest downgrade = ManagerUpdateRequest.builder().accessLevel(RecipientAccessLevel.VIEWER).build();
         assertErrorCode(() -> recipientManagerService.update(ownerId, recipientId, otherOwner.getId(), downgrade),
                 ErrorCode.LAST_OWNER);
@@ -128,7 +125,7 @@ class RecipientAccessRulesTests {
                 ErrorCode.PRIMARY_MUST_BE_OWNER);
 
         RecipientManager secondOwner = member(UUID.randomUUID(), RecipientAccessLevel.OWNER, false);
-        when(recipientManagerRepository.findPrimary(recipientId)).thenReturn(Optional.of(currentPrimary));
+        when(recipientManagerRepository.findByRecipientIdAndPrimaryTrue(recipientId)).thenReturn(Optional.of(currentPrimary));
         recipientManagerService.assignPrimary(ownerId, recipientId, secondOwner.getId());
         assertThat(currentPrimary.isPrimary()).isFalse();
         assertThat(secondOwner.isPrimary()).isTrue();
@@ -154,7 +151,7 @@ class RecipientAccessRulesTests {
                 .primary(primary)
                 .build();
         when(recipientManagerRepository.findMembership(recipientId, userId)).thenReturn(Optional.of(manager));
-        when(recipientManagerRepository.findByIdAndRecipient(manager.getId(), recipientId)).thenReturn(Optional.of(manager));
+        when(recipientManagerRepository.findByIdAndRecipientId(manager.getId(), recipientId)).thenReturn(Optional.of(manager));
         return manager;
     }
 

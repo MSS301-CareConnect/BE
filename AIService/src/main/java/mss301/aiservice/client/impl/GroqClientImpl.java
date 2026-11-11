@@ -32,16 +32,23 @@ public class GroqClientImpl implements GroqClient {
     RestClient groqRestClient;
     AIProperties aiProperties;
 
+    // Gọi Groq sinh câu trả lời với model và temperature mặc định.
     @Override
     public GroqResult generateAnswer(List<GroqMessageRequest> messages) {
-        if (messages == null || messages.isEmpty()) {
+        return generateAnswer(messages, aiProperties.getGroq().getModel(), aiProperties.getGroq().getTemperature());
+    }
+
+    // Gọi Groq sinh câu trả lời với model và temperature chỉ định.
+    @Override
+    public GroqResult generateAnswer(List<GroqMessageRequest> messages, String model, double temperature) {
+        if (messages == null || messages.isEmpty() || model == null || model.isBlank()) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
         }
 
         GroqChatRequest request = GroqChatRequest.builder()
-                        .model(aiProperties.getGroq().getModel())
+                        .model(model)
                         .messages(messages)
-                        .temperature(aiProperties.getGroq().getTemperature())
+                        .temperature(temperature)
                         .maxCompletionTokens(aiProperties.getGroq().getMaxCompletionTokens())
                         .stream(false)
                         .build();
@@ -70,6 +77,7 @@ public class GroqClientImpl implements GroqClient {
         }
     }
 
+    // Lấy nội dung trả lời và số token từ response Groq; response rỗng thì báo lỗi.
     private GroqResult extractResult(GroqChatResponse response) {
         if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
             throw new AppException(ErrorCode.GROQ_INVALID_RESPONSE);
@@ -98,6 +106,7 @@ public class GroqClientImpl implements GroqClient {
                 .build();
     }
 
+    // Đổi lỗi HTTP của Groq sang ErrorCode: 429 / 5xx là tạm thời không khả dụng, còn lại là bị từ chối.
     private void handleGroqHttpError(RestClientResponseException exception) {
         HttpStatusCode statusCode = exception.getStatusCode();
         log.warn("Groq returned HTTP status {}", statusCode.value());

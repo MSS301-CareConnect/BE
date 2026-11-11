@@ -17,6 +17,7 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RecipientActivityResponse {
     UUID recipientId;
+
     // Booking PENDING / AWAITING_DEPOSIT / CONFIRMED / IN_PROGRESS của người bệnh.
     long unfinishedBookings;
 }

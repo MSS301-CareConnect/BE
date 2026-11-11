@@ -16,6 +16,7 @@ import java.util.Set;
 @Component
 public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    // Chuyển JWT thành Authentication với quyền từ claim roles và permissions.
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new HashSet<>();
@@ -28,6 +29,7 @@ public class JwtAuthorityConverter implements Converter<Jwt, AbstractAuthenticat
         return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
     }
 
+    // Đọc một claim dạng danh sách chuỗi từ JWT.
     private List<String> readClaim(Jwt jwt, String claim) {
         List<String> values = jwt.getClaimAsStringList(claim);
         return values == null ? List.of() : values;

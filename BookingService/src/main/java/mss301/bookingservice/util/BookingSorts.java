@@ -8,10 +8,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * BK-06: sort danh sách booking dạng "field,asc|desc" — chỉ field trong whitelist (không cho sort theo cột tùy ý như
- * customerId, tránh dò dữ liệu / truy vấn không có index). Field khác → 400 INVALID_SORT.
- */
 public final class BookingSorts {
 
     private static final Map<String, String> SORTABLE_FIELDS = Map.of(
@@ -22,6 +18,7 @@ public final class BookingSorts {
     private static final String FIELD_SEPARATOR = ",";
     private static final String DEFAULT_SORT = "createdAt,desc";
 
+    // Lớp tiện ích tĩnh, không cho khởi tạo.
     private BookingSorts() {
     }
 
@@ -42,6 +39,7 @@ public final class BookingSorts {
         return DEADLINE_FIELD.equals(parts[0].strip()) ? Optional.of(parseDirection(parts)) : Optional.empty();
     }
 
+    // Tách tham số sort "trường,hướng", trống thì dùng mặc định.
     private static String[] split(String sort) {
         String value = sort == null || sort.isBlank() ? DEFAULT_SORT : sort.strip();
         String[] parts = value.split(FIELD_SEPARATOR, -1);
@@ -52,6 +50,7 @@ public final class BookingSorts {
         return parts;
     }
 
+    // Đọc hướng sắp xếp, mặc định tăng dần.
     private static Sort.Direction parseDirection(String[] parts) {
         if (parts.length < 2) {
             return Sort.Direction.ASC;

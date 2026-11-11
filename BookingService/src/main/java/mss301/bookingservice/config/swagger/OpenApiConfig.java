@@ -39,6 +39,7 @@ public class OpenApiConfig {
         SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentUserId.class, CurrentCenterId.class, CurrentRoles.class);
     }
 
+    // Cấu hình tài liệu OpenAPI của BookingService.
     @Bean
     public OpenAPI bookingOpenApi(BookingProperties bookingProperties) {
         Components components = new Components()
@@ -68,6 +69,7 @@ public class OpenApiConfig {
         return openApi;
     }
 
+    // Thêm các response lỗi chung vào mọi endpoint trong Swagger.
     @Bean
     public OpenApiCustomizer globalResponses() {
         return openApi -> openApi.getPaths().values().forEach(path -> path.readOperations().forEach(operation -> {
@@ -89,6 +91,7 @@ public class OpenApiConfig {
         });
     }
 
+    // Thêm yêu cầu bearer + CSRF cho một endpoint trong Swagger.
     private void addCsrfRequirement(Operation operation) {
         SecurityRequirement requirement = new SecurityRequirement()
                 .addList(BEARER_SCHEME)

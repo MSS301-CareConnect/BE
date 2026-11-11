@@ -52,4 +52,15 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             """)
     BigDecimal sumRefunded(@Param("status") PaymentStatus status, @Param("from") Instant from, @Param("to") Instant to,
                            @Param("centerId") UUID centerId);
+
+    // Ví — thống kê chi tiêu của một khách (theo paid_at).
+    @Query("""
+            select coalesce(sum(p.amount), 0) from Payment p
+            where p.customerId = :customerId and p.status = :status and p.paidAt >= :from and p.paidAt <= :to
+            """)
+    BigDecimal sumPaidByCustomer(@Param("customerId") UUID customerId, @Param("status") PaymentStatus status,
+                                 @Param("from") Instant from, @Param("to") Instant to);
+
+    List<Payment> findByCustomerIdAndStatusAndPaidAtBetweenOrderByPaidAtAsc(UUID customerId, PaymentStatus status,
+                                                                         Instant from, Instant to);
 }

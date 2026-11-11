@@ -25,6 +25,7 @@ import java.util.UUID;
 public class PaymentPolicyController {
     PaymentPolicyService paymentPolicyService;
 
+    // API xem chính sách thanh toán hiệu lực của trung tâm tại một thời điểm.
     @GetMapping("/effective")
     @PreAuthorize("isAuthenticated()")
     public APIResponse<PaymentPolicyResponse> getEffective(@RequestParam(required = false) UUID centerId,

@@ -14,4 +14,7 @@ import java.util.UUID;
 public interface GuestDailyUsageRepository extends JpaRepository<GuestDailyUsage, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<GuestDailyUsage> findByVisitorHashAndUsageDateAndDeletedAtIsNull(String visitorHash, LocalDate usageDate);
+
+    // Đọc không khóa — chỉ để hiển thị số lượt còn lại (GET /ai/chat/quota), không dùng khi trừ lượt.
+    Optional<GuestDailyUsage> readByVisitorHashAndUsageDateAndDeletedAtIsNull(String visitorHash, LocalDate usageDate);
 }

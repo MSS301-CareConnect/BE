@@ -14,14 +14,22 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class PricePlanResponse {
     UUID id;
+
     UUID centerOfferingId;
+
     String planName;
+
     PricingUnit pricingUnit;
+
     Integer durationMinutes;
+
     BigDecimal basePrice;
+
     // Giá gốc = basePrice; khách trả finalPrice = basePrice × (100 − discountPercent) / 100, làm tròn đến đồng.
     Integer discountPercent;
+
     BigDecimal finalPrice;
+
     Boolean isActive;
 
     Long version;

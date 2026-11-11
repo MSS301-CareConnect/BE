@@ -41,6 +41,13 @@ public class GatewayProperties {
     @NotBlank
     String paymentUrl;
 
+    @NotBlank
+    String aiUrl;
+
+    // Read timeout riêng của route AIService: Groq trả lời / đọc ảnh chậm hơn read timeout chung của gateway.
+    @NotNull
+    Duration aiReadTimeout = Duration.ofSeconds(90);
+
     // Thời gian tối đa một kết nối SSE được giữ qua gateway; hết hạn thì đóng, EventSource tự nối lại.
     @NotNull
     Duration sseMaxDuration = Duration.ofMinutes(30);

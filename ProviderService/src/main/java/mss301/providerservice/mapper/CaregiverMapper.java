@@ -1,5 +1,7 @@
 package mss301.providerservice.mapper;
 
+import org.mapstruct.BeanMapping;
+import mss301.providerservice.dto.request.CaregiverRatingRequest;
 import mss301.providerservice.client.dto.CenterServiceClientResponse;
 import mss301.providerservice.dto.request.CaregiverCreateRequest;
 import mss301.providerservice.dto.request.CaregiverUpdateRequest;
@@ -129,6 +131,7 @@ public interface CaregiverMapper {
                 .toList();
     }
 
+    // Lấy danh sách id dịch vụ trung tâm từ kỹ năng của caregiver.
     @Named("toCenterServiceIds")
     default List<UUID> toCenterServiceIds(List<CaregiverSkill> skills) {
         if (skills == null) {
@@ -138,4 +141,10 @@ public interface CaregiverMapper {
                 .map(skill -> skill.getId().getCenterServiceId())
                 .toList();
     }
+
+    // BookingService đẩy điểm tổng hợp sau mỗi đánh giá: chỉ ghi hai trường rating, không chạm hồ sơ.
+    @BeanMapping(ignoreByDefault = true)
+    @Mapping(target = "ratingAverage")
+    @Mapping(target = "ratingCount")
+    void updateRating(CaregiverRatingRequest request, @MappingTarget CaregiverProfile caregiver);
 }

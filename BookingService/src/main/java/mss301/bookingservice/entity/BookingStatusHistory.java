@@ -9,9 +9,6 @@ import org.hibernate.annotations.UuidGenerator;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Audit chuyển trạng thái booking (chỉ ghi). changed_by NULL = hệ thống (scheduler) hoặc service nội bộ (Payment).
- */
 @Entity
 @Table(name = "booking_status_history")
 @Getter

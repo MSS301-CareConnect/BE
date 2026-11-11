@@ -16,9 +16,11 @@ public interface CenterCascadeClient {
     @PatchMapping("/api/v1/users/centers/{centerId}/status")
     void updateAccounts(@PathVariable("centerId") UUID centerId, @RequestBody CenterAccountsStatusRequest request);
 
+    // Gọi BookingService hủy booking khi trung tâm / caregiver ngừng hoạt động.
     @PostMapping("/api/v1/bookings/system-cancellations")
     void cancelBookings(@RequestBody SystemCancellationRequest request);
 
+    // Gọi BookingService gửi thông báo cho manager.
     @PostMapping("/api/v1/notifications")
     void notifyManager(@RequestBody ServiceNotificationRequest request);
 }

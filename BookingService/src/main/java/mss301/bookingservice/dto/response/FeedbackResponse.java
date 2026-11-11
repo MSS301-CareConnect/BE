@@ -13,14 +13,24 @@ import mss301.bookingservice.enums.FeedbackVisibility;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class FeedbackResponse {
     UUID id;
+
     UUID bookingId;
+
     UUID caregiverId;
+
     UUID centerId;
+
     String customerDisplayName;
+
     Integer rating;
+
     String comment;
+
     String reply;
+
     Instant repliedAt;
+
     FeedbackVisibility visibility;
+
     Instant createdAt;
 }

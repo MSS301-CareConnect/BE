@@ -14,7 +14,12 @@ import org.springframework.context.annotation.Primary;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @TestConfiguration
 public class TestIdentityState {
@@ -63,10 +68,6 @@ public class TestIdentityState {
 
         public synchronized boolean consumeRefresh(String jti, UUID id) {
             return id.equals(refresh.remove(jti));
-        }
-
-        public synchronized void blacklist(String jti, Duration ttl) {
-            blacklist.put(jti, Instant.now().plus(ttl));
         }
 
         public synchronized boolean isBlacklisted(String jti) {
@@ -168,16 +169,6 @@ public class TestIdentityState {
         @Override
         public synchronized boolean revokeRefreshToken(String tokenHash, UUID userId) {
             return refreshTokens.remove(tokenHash) != null;
-        }
-
-        @Override
-        public synchronized void recordRevokedToken(String tokenHash, UUID userId, Duration ttl) {
-            revokedTokens.put(tokenHash, userId);
-        }
-
-        @Override
-        public synchronized boolean isTokenRevoked(String tokenHash) {
-            return revokedTokens.containsKey(tokenHash);
         }
 
         @Override

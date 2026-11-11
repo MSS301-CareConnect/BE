@@ -15,15 +15,21 @@ import java.util.UUID;
 
 public interface CaregiverChangeRequestService {
 
-    APIResponse<CaregiverChangeRequestResponse> createRequest(UUID actorId, UUID bookingId, CaregiverChangeCreateRequest request);
+    // Khách tạo yêu cầu đổi người chăm sóc.
+    APIResponse<CaregiverChangeRequestResponse> create(UUID actorId, UUID bookingId, CaregiverChangeCreateRequest request);
 
-    APIResponse<List<CaregiverChangeRequestResponse>> listRequestsByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId);
+    // Danh sách yêu cầu đổi người của booking.
+    APIResponse<List<CaregiverChangeRequestResponse>> listByBooking(UUID actorId, Set<RoleCode> roles, UUID centerId, UUID bookingId);
 
-    APIResponse<PageResponse<CaregiverChangeRequestResponse>> listCenterRequests(UUID actorId, UUID centerId, CaregiverChangeRequestStatus status, int page, int size);
+    // Danh sách yêu cầu đổi người của trung tâm.
+    APIResponse<PageResponse<CaregiverChangeRequestResponse>> list(UUID actorId, UUID centerId, CaregiverChangeRequestStatus status, int page, int size);
 
-    APIResponse<CaregiverChangeRequestResponse> approveRequest(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeApproveRequest request);
+    // Trung tâm duyệt yêu cầu đổi người.
+    APIResponse<CaregiverChangeRequestResponse> approve(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeApproveRequest request);
 
-    APIResponse<CaregiverChangeRequestResponse> rejectRequest(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeRejectRequest request);
+    // Trung tâm từ chối yêu cầu đổi người.
+    APIResponse<CaregiverChangeRequestResponse> reject(UUID actorId, UUID centerId, UUID requestId, CaregiverChangeRejectRequest request);
 
-    APIResponse<CaregiverChangeRequestResponse> cancelRequest(UUID actorId, UUID requestId);
+    // Khách hủy yêu cầu đổi người.
+    APIResponse<CaregiverChangeRequestResponse> cancel(UUID actorId, UUID requestId);
 }

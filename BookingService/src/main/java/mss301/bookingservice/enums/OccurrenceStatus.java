@@ -34,9 +34,12 @@ public enum OccurrenceStatus {
     // Buổi đã lên lịch chính thức, caregiver làm việc được (nhận ca, check-in, báo vắng, MISSED).
     public static final Set<OccurrenceStatus> WORKABLE = EnumSet.of(SCHEDULED, ACKNOWLEDGED);
 
+    // Kiểm tra buổi được chuyển sang trạng thái đích không.
     public boolean canTransitionTo(OccurrenceStatus targetStatus) {
         return switch (this) {
-            case PENDING_ASSIGNMENT -> targetStatus == RESERVED || targetStatus == CANCELLED || targetStatus == EXPIRED;
+            // SCHEDULED: booking đã cọc khi chưa có người (2026-11-09) — gán người là lên lịch chính thức luôn.
+            case PENDING_ASSIGNMENT -> targetStatus == RESERVED || targetStatus == SCHEDULED || targetStatus == CANCELLED
+                    || targetStatus == EXPIRED;
             // PENDING_ASSIGNMENT: caregiver khách chọn không nhận đơn → trung tâm phân người khác (CR-3).
             case RESERVED -> targetStatus == SCHEDULED || targetStatus == CANCELLED || targetStatus == EXPIRED
                     || targetStatus == PENDING_ASSIGNMENT;
@@ -46,7 +49,9 @@ public enum OccurrenceStatus {
             case ACKNOWLEDGED -> targetStatus == SCHEDULED || targetStatus == IN_PROGRESS || targetStatus == CANCELLED
                     || targetStatus == CAREGIVER_MISSED || targetStatus == CUSTOMER_NO_SHOW || targetStatus == EXPIRED;
             case IN_PROGRESS -> targetStatus == COMPLETED;
-            case COMPLETED, CANCELLED, EXPIRED, CUSTOMER_NO_SHOW, CAREGIVER_MISSED -> false;
+            // 2026-11-11: ca tự đóng mà trung tâm kết luận không thực hiện → coi như caregiver vắng (hoàn tiền khách).
+            case COMPLETED -> targetStatus == CAREGIVER_MISSED;
+            case CANCELLED, EXPIRED, CUSTOMER_NO_SHOW, CAREGIVER_MISSED -> false;
         };
     }
 }

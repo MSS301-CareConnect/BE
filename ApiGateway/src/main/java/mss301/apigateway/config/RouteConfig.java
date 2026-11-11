@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.apigateway.filter.GatewayRequestHeaders;
 import mss301.apigateway.filter.RequestIdFilter;
+import mss301.apigateway.handler.LongRequestProxyHandler;
 import mss301.apigateway.handler.SseProxyHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -22,10 +23,6 @@ import static org.springframework.cloud.gateway.server.mvc.handler.HandlerFuncti
 import static org.springframework.cloud.gateway.server.mvc.predicate.GatewayRequestPredicates.path;
 import static org.springframework.web.servlet.function.RequestPredicates.GET;
 
-/**
- * Định tuyến /api/v1/** → service phía sau, giữ nguyên path vì mỗi service tự khai báo /api/v1. Gateway là cổng duy
- * nhất cho FE và cho Feign giữa các service. Cookie Identity đặt Path=/ nên không cần rewrite cookie path.
- */
 @Configuration
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -35,11 +32,13 @@ public class RouteConfig {
 
     GatewayProperties gatewayProperties;
 
+    // Định tuyến các API /api/v1 của IdentityService.
     @Bean
     public RouterFunction<ServerResponse> identityRoutes() {
         return forward("identity", GatewayPaths.IDENTITY_ROUTES, gatewayProperties.getIdentityUrl());
     }
 
+    // Định tuyến các API hồ sơ người được chăm sóc sang CareRecipientService.
     @Bean
     public RouterFunction<ServerResponse> careRecipientRoutes() {
         return forward("care-recipient", GatewayPaths.CARE_RECIPIENT_ROUTES, gatewayProperties.getCareRecipientUrl());
@@ -58,24 +57,39 @@ public class RouteConfig {
         return notificationStream.and(forward("booking", GatewayPaths.BOOKING_ROUTES, gatewayProperties.getBookingUrl()));
     }
 
+    // Định tuyến các API thanh toán, ví, hoàn tiền sang PaymentService.
     @Bean
     public RouterFunction<ServerResponse> paymentRoutes() {
         return forward("payment", GatewayPaths.PAYMENT_ROUTES, gatewayProperties.getPaymentUrl());
     }
 
+    // Định tuyến các API trung tâm, caregiver, ca làm việc sang ProviderService.
     @Bean
     public RouterFunction<ServerResponse> providerRoutes() {
         return forward("provider", GatewayPaths.PROVIDER_ROUTES, gatewayProperties.getProviderUrl());
     }
 
+    // Định tuyến các API danh mục dịch vụ và bảng giá sang CareCatalogService.
     @Bean
     public RouterFunction<ServerResponse> careCatalogRoutes() {
         return forward("care-catalog", GatewayPaths.CARE_CATALOG_ROUTES, gatewayProperties.getCareCatalogUrl());
     }
 
+    // Định tuyến các API upload / tải file sang MediaService.
     @Bean
     public RouterFunction<ServerResponse> mediaRoutes() {
         return forward("media", GatewayPaths.MEDIA_ROUTES, gatewayProperties.getMediaUrl());
+    }
+
+    // AIService: proxy riêng với read timeout dài (gateway.ai-read-timeout) thay cho read timeout chung 10s.
+    @Bean
+    public RouterFunction<ServerResponse> aiRoutes(@Value("${spring.http.clients.connect-timeout:2s}") Duration connectTimeout) {
+        LongRequestProxyHandler aiProxyHandler = new LongRequestProxyHandler(gatewayProperties.getAiUrl(), connectTimeout,
+                gatewayProperties.getAiReadTimeout());
+        return route("ai")
+                .route(path(GatewayPaths.AI_ROUTES), aiProxyHandler)
+                .before(GatewayRequestHeaders.sanitize())
+                .build();
     }
 
     // Swagger tổng hợp: swagger-ui của gateway đọc OpenAPI của từng service qua các route này.
@@ -89,9 +103,11 @@ public class RouteConfig {
                 .and(docs("care-catalog-api-docs", GatewayPaths.CARE_CATALOG_API_DOCS,
                         gatewayProperties.getCareCatalogUrl()))
                 .and(docs("media-api-docs", GatewayPaths.MEDIA_API_DOCS, gatewayProperties.getMediaUrl()))
-                .and(docs("payment-api-docs", GatewayPaths.PAYMENT_API_DOCS, gatewayProperties.getPaymentUrl()));
+                .and(docs("payment-api-docs", GatewayPaths.PAYMENT_API_DOCS, gatewayProperties.getPaymentUrl()))
+                .and(docs("ai-api-docs", GatewayPaths.AI_API_DOCS, gatewayProperties.getAiUrl()));
     }
 
+    // Tạo route chuyển tiếp nguyên request tới service đích cho danh sách path.
     private RouterFunction<ServerResponse> forward(String routeId, String[] paths, String targetUrl) {
         return route(routeId)
                 .route(path(paths), http())
@@ -102,6 +118,7 @@ public class RouteConfig {
                 .build();
     }
 
+    // Tạo route chuyển tiếp trang tài liệu OpenAPI của một service.
     private RouterFunction<ServerResponse> docs(String routeId, String docsPath, String targetUrl) {
         return route(routeId)
                 .route(path(docsPath), http())

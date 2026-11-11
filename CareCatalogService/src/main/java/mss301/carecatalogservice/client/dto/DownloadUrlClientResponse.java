@@ -19,6 +19,8 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DownloadUrlClientResponse {
     UUID mediaFileId;
+
     String downloadUrl;
+
     Instant expiresAt;
 }

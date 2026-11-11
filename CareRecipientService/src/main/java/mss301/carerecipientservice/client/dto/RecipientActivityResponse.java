@@ -19,5 +19,6 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RecipientActivityResponse {
     UUID recipientId;
+
     long unfinishedBookings;
 }

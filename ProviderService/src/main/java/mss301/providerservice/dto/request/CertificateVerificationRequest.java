@@ -13,8 +13,10 @@ import lombok.experimental.FieldDefaults;
 public class CertificateVerificationRequest {
     @NotNull(message = "INVALID_REQUEST")
     Boolean approved;
+
     @Size(max = 500, message = "VERIFICATION_REASON_REQUIRED")
     String reason;
+
     @NotNull(message = "CERTIFICATE_VERSION_CONFLICT")
     Long version;
 }

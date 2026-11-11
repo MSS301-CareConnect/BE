@@ -11,15 +11,18 @@ import java.util.UUID;
 
 @Component
 public class CurrentRequestIdentity {
+    // Lấy userId của người gọi từ JWT hiện tại.
     public UUID userId() {
         return UUID.fromString(authentication().getName());
     }
 
+    // Kiểm tra người gọi có role cho trước.
     public boolean hasRole(String role) {
         return authentication().getAuthorities().stream()
                 .anyMatch(authority -> (TokenClaims.ROLE_AUTHORITY_PREFIX + role).equals(authority.getAuthority()));
     }
 
+    // Lấy clientId của service gọi (token SERVICE).
     public String clientId() {
         Authentication authentication = authentication();
         if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
@@ -31,6 +34,7 @@ public class CurrentRequestIdentity {
         throw new AppException(ErrorCode.UNAUTHENTICATED);
     }
 
+    // Lấy Authentication hiện tại từ SecurityContext.
     private Authentication authentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

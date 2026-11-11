@@ -8,7 +8,6 @@ import mss301.bookingservice.config.BookingProperties;
 import mss301.bookingservice.dto.request.BookingScheduleRequest;
 import mss301.bookingservice.dto.request.TimeSlotRequest;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
-import mss301.bookingservice.enums.BookingType;
 import mss301.bookingservice.enums.RecurrenceFrequency;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
@@ -44,6 +43,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
     BookingProperties bookingProperties;
     Clock clock;
 
+    // Kiểm tra request có đúng các trường theo loại booking.
     @Override
     public void checkShape(BookingScheduleRequest request) {
         boolean hasRecurrence = request.getFrequency() != null || request.getStartDate() != null
@@ -81,6 +81,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         }
     }
 
+    // Sinh các buổi chăm sóc theo loại booking (theo giờ / định kỳ / tùy chọn).
     @Override
     public List<OccurrenceSlot> generate(BookingScheduleRequest request) {
         checkShape(request);
@@ -93,6 +94,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         return slots;
     }
 
+    // Sinh các buổi của booking theo ca từ ca làm việc đã nhận.
     @Override
     public List<OccurrenceSlot> generateShift(BookingScheduleRequest request,
                                               Map<UUID, ProviderScheduleResponse> schedules) {
@@ -113,6 +115,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         return slots;
     }
 
+    // Lấy id các ca làm việc được chọn trong request.
     @Override
     public Set<UUID> collectScheduleIds(BookingScheduleRequest request) {
         Set<UUID> scheduleIds = new LinkedHashSet<>();
@@ -163,6 +166,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         return slots;
     }
 
+    // Lấy ca làm việc theo id, không có thì báo lỗi.
     private ProviderScheduleResponse findSchedule(Map<UUID, ProviderScheduleResponse> schedules, UUID scheduleId) {
         ProviderScheduleResponse schedule = scheduleId == null ? null : schedules.get(scheduleId);
         if (schedule == null) {
@@ -177,6 +181,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         return ZonedDateTime.of(schedule.getWorkDate(), schedule.getStartTime(), zone).toInstant();
     }
 
+    // Thời điểm kết thúc ca làm việc (giờ Việt Nam).
     private Instant toShiftEnd(ProviderScheduleResponse schedule) {
         ZoneId zone = bookingProperties.getSchedule().getTimezone();
         return ZonedDateTime.of(schedule.getWorkDate(), schedule.getEndTime(), zone).toInstant();
@@ -188,6 +193,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
                 .anyMatch(slot -> slot.getCaregiverScheduleId() != null);
     }
 
+    // Kiểm tra đủ trường lặp lịch cho booking định kỳ.
     private void checkRecurrenceRequired(BookingScheduleRequest request) {
         if (request.getFrequency() == null) {
             throw new AppException(ErrorCode.RECURRENCE_FREQUENCY_REQUIRED);
@@ -206,6 +212,7 @@ public class OccurrenceGeneratorImpl implements OccurrenceGenerator {
         }
     }
 
+    // Sinh các buổi định kỳ (hằng ngày / hằng tuần) trong khoảng ngày.
     private List<OccurrenceSlot> generateRecurring(BookingScheduleRequest request) {
         BookingProperties.Schedule schedule = bookingProperties.getSchedule();
         ZoneId zone = schedule.getTimezone();

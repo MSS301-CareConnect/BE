@@ -10,10 +10,6 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.util.UUID;
 
-/**
- * Một việc trong checklist của ca: sinh tự động lúc check-in từ dịch vụ của booking và thuốc trong snapshot người bệnh
- * (OPS-02); caregiver đánh dấu DONE / SKIPPED (OPS-03). Check-out yêu cầu không còn việc PENDING (OPS-04).
- */
 @Entity
 @Table(name = "care_tasks")
 @AttributeOverride(name = "id", column = @Column(name = "task_id"))

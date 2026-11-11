@@ -13,19 +13,18 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * CR-4: sổ cọc bị giữ. Ghi luôn trong transaction của lệnh hoàn tiền tạo ra nó; đọc theo phạm vi role — CAREGIVER phần
- * mình hưởng, CENTER_MANAGER trung tâm trong token, ADMIN mọi trung tâm (hoặc một trung tâm).
- */
 public interface DepositForfeitureService {
 
+    // Ghi nhận khoản tiền cọc bị giữ của một buổi.
     void record(OccurrenceFinancial occurrenceFinancial, UUID paymentId, BigDecimal amount, RefundReason reason,
                 String rule, String idempotencyKey);
 
+    // Danh sách tiền cọc bị giữ theo phạm vi người gọi.
     APIResponse<PageResponse<DepositForfeitureResponse>> list(UUID actorId, Set<RoleCode> roles, UUID claimCenterId,
                                                               UUID centerId, Instant from, Instant to, int page,
                                                               int size);
 
+    // Tổng hợp tiền cọc bị giữ theo phạm vi người gọi.
     APIResponse<DepositForfeitureSummaryResponse> getSummary(UUID actorId, Set<RoleCode> roles, UUID claimCenterId,
                                                              UUID centerId, Instant from, Instant to);
 }

@@ -7,11 +7,13 @@ import mss301.providerservice.exception.ErrorCode;
 import org.springframework.context.annotation.Bean;
 
 public class CenterCascadeClientConfig {
+    // Gắn token SERVICE cho lời gọi cascade sang BookingService.
     @Bean
     public RequestInterceptor centerCascadeAuth(ServiceTokenProvider serviceTokenProvider) {
         return new ServiceTokenInterceptor(serviceTokenProvider);
     }
 
+    // Dịch lỗi HTTP của lời gọi cascade, phân biệt lỗi tạm thời và lỗi hẳn.
     @Bean
     public ErrorDecoder centerCascadeErrorDecoder() {
         return (method, response) -> {

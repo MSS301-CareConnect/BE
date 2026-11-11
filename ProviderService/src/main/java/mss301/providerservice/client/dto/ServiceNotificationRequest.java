@@ -12,9 +12,14 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ServiceNotificationRequest {
     List<UUID> recipientUserIds;
+
     String type;
+
     String title;
+
     String body;
+
     String refType;
+
     UUID refId;
 }

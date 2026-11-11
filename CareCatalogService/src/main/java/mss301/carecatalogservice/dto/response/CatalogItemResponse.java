@@ -13,10 +13,15 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CatalogItemResponse {
     UUID id;
+
     String name;
+
     String description;
+
     String category;
+
     ServiceStatus status;
+
     String imageUrl;
 
     Long version;

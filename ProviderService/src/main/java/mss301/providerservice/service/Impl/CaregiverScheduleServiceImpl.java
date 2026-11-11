@@ -61,6 +61,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
     TransactionTemplate transactionTemplate;
     Clock clock;
 
+    // Lịch làm việc của caregiver đang đăng nhập có phân trang.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<ScheduleResponse>> listMine(UUID actorId, int page, int size) {
@@ -73,6 +74,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         return APIResponse.success("Lấy lịch làm việc của tôi thành công", pageResponse);
     }
 
+    // Lịch làm việc của caregiver trong trung tâm, lọc theo caregiver / trạng thái / ngày.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<PageResponse<ScheduleResponse>> listByCenter(UUID actorId, UUID centerId, UUID caregiverId,
@@ -93,6 +95,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         return APIResponse.success("Lấy lịch người chăm sóc của trung tâm thành công", pageResponse);
     }
 
+    // Chi tiết một lịch làm việc.
     @Override
     @Transactional(readOnly = true)
     public APIResponse<ScheduleResponse> get(UUID id) {
@@ -166,6 +169,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         return caregiverScheduleMapper.toResponse(savedSchedule);
     }
 
+    // Tìm lịch làm việc mà người gọi được hủy, kèm lý do bắt buộc.
     private CaregiverSchedule findCancellableSchedule(UUID actorId, UUID id, ScheduleStatusRequest request) {
         CaregiverSchedule schedule = caregiverScheduleRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SCHEDULE_NOT_FOUND));
@@ -179,6 +183,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         return schedule;
     }
 
+    // Mở lại ca cho đăng ký khi ca chưa bắt đầu và còn chỗ.
     private void reopenShiftWhenPossible(WorkShift shift) {
         Instant now = clock.instant();
         boolean shiftInFuture = ProviderTime.toInstant(shift.getWorkDate(), shift.getStartTime()).isAfter(now);
@@ -189,6 +194,7 @@ public class CaregiverScheduleServiceImpl implements CaregiverScheduleService {
         }
     }
 
+    // Kiểm tra page / size hợp lệ.
     private void validatePage(int page, int size) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new AppException(ErrorCode.INVALID_PAGE);

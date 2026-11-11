@@ -7,10 +7,6 @@ import lombok.experimental.FieldDefaults;
 import mss301.identityservice.config.IdentityProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * IP của người gọi cho rate limit (login, service-token). Chỉ tin X-Forwarded-For khi request tới từ proxy tin cậy
- * (gateway) và lấy địa chỉ CUỐI do proxy đó gắn — client không tự giả được IP để né / đổ lỗi cho IP khác.
- */
 @Component
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
@@ -20,6 +16,7 @@ public class ClientIpResolver {
 
     IdentityProperties identityProperties;
 
+    // Lấy IP client của request (dùng cho rate limit và phiên đăng nhập).
     public String resolve(HttpServletRequest request) {
         if (request == null) {
             return UNKNOWN;

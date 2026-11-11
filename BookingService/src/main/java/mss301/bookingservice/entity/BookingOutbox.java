@@ -11,10 +11,6 @@ import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Transactional outbox: việc phải gửi sang service khác (hóa đơn REMAINING, hoàn tiền…) ghi CÙNG transaction với thay
- * đổi nghiệp vụ, gửi sau commit và retry khi bên nhận lỗi — không mất việc, không rollback nghiệp vụ vì bên kia sập.
- */
 @Entity
 @Table(name = "booking_outbox")
 @AttributeOverride(name = "id", column = @Column(name = "outbox_id"))

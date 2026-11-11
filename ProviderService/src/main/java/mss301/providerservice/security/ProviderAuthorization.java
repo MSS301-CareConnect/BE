@@ -16,6 +16,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProviderAuthorization {
 
+    // Lấy userId của người gọi từ SecurityContext.
     public UUID currentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -24,6 +25,7 @@ public class ProviderAuthorization {
         return UUID.fromString(authentication.getName());
     }
 
+    // Kiểm tra người gọi là ADMIN.
     public boolean isAdmin() {
         return hasRole(RoleCode.ADMIN);
     }
@@ -36,12 +38,14 @@ public class ProviderAuthorization {
                 .anyMatch(grantedAuthority -> authority.equals(grantedAuthority.getAuthority()));
     }
 
+    // Chỉ ADMIN hoặc manager của trung tâm mới được thao tác.
     public void requireCenterManagement(CareCenter center, UUID actorId) {
         if (!isAdmin() && !actorId.equals(center.getManagerUserId())) {
             throw new AppException(ErrorCode.CENTER_ACCESS_DENIED);
         }
     }
 
+    // Cho phép chính caregiver, ADMIN hoặc manager trung tâm của caregiver.
     public void requireCaregiverSelfOrCenterManagement(CaregiverProfile caregiver, UUID actorId) {
         if (actorId.equals(caregiver.getUserId()) || isAdmin()) {
             return;
@@ -49,6 +53,7 @@ public class ProviderAuthorization {
         requireCenterManagement(caregiver.getCenter(), actorId);
     }
 
+    // Chỉ chính caregiver mới được thao tác.
     public void requireCaregiverSelf(CaregiverProfile caregiver, UUID actorId) {
         if (!actorId.equals(caregiver.getUserId())) {
             throw new AppException(ErrorCode.CAREGIVER_ACCESS_DENIED);

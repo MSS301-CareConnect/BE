@@ -15,5 +15,6 @@ import java.util.List;
 public class PaymentPageResponse {
     @JsonAlias("content")
     List<PaymentSummaryResponse> items;
+
     int totalPages;
 }

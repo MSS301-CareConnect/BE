@@ -28,6 +28,7 @@ public class CenterBookingPolicyController {
 
     CenterBookingPolicyService centerBookingPolicyService;
 
+    // API xem chính sách booking của trung tâm.
     @GetMapping("/{centerId}")
     @PreAuthorize("hasAnyRole('CUSTOMER', 'CENTER_MANAGER', 'ADMIN')")
     public APIResponse<CenterBookingPolicyResponse> get(@CurrentRoles Set<RoleCode> roles,
@@ -36,6 +37,7 @@ public class CenterBookingPolicyController {
         return centerBookingPolicyService.get(roles, scopeCenterId, centerId);
     }
 
+    // API cập nhật chính sách booking của trung tâm.
     @PutMapping("/{centerId}")
     @PreAuthorize("hasAnyRole('CENTER_MANAGER', 'ADMIN')")
     public APIResponse<CenterBookingPolicyResponse> update(@CurrentUserId UUID actorId,

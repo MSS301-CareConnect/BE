@@ -6,10 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.exception.AppException;
 import mss301.bookingservice.exception.ErrorCode;
 
-/**
- * HTTP lỗi từ ProviderService → AppException của service này. 404 là lỗi nghiệp vụ (trung tâm / caregiver không tồn
- * tại — phân biệt theo method gọi); còn lại → PROVIDER_UNAVAILABLE (503).
- */
 @Slf4j
 public class ProviderErrorDecoder implements ErrorDecoder {
 
@@ -18,6 +14,7 @@ public class ProviderErrorDecoder implements ErrorDecoder {
     private static final int FORBIDDEN = 403;
     private static final String CENTER_METHOD = "#getCenter(";
 
+    // Đổi mã lỗi HTTP từ ProviderService sang ErrorCode.
     @Override
     public Exception decode(String methodKey, Response response) {
         int status = response.status();

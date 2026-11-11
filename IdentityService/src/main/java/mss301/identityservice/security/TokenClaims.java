@@ -1,8 +1,5 @@
 package mss301.identityservice.security;
 
-/**
- * Tên claim JWT do IdentityService phát — contract với mọi service khác (Resource Server đọc các claim này).
- */
 public final class TokenClaims {
     public static final String TOKEN_TYPE = "token_type";
     public static final String AUTHZ_VERSION = "authz_version";
@@ -28,6 +25,7 @@ public final class TokenClaims {
     public static final String DEVICE_ID_HEADER = "X-Device-Id";
     public static final String DEPRECATION_HEADER = "Deprecation";
 
+    // Lớp chỉ chứa hằng tên claim, không cho khởi tạo.
     private TokenClaims() {
     }
 }

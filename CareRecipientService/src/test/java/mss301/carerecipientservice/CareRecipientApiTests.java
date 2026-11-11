@@ -47,10 +47,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Test tích hợp qua MockMvc: JWT thật (ký RS256, JWKS từ TestIdentityServer), Feign thật tới IdentityService giả.
- * Mặc định H2; -Dcare-recipient.testing.postgres=true chạy trên PostgreSQL thật (schema/care_recipient.sql + validate).
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class CareRecipientApiTests {

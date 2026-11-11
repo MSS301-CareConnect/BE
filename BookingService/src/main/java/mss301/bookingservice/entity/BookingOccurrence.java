@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.MissedReason;
+import mss301.bookingservice.enums.BookingStatus;
 import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.enums.ReplacementConsentStatus;
 
@@ -13,10 +14,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Một buổi chăm sóc (thay vai trò care session): giờ theo lịch lưu UTC, caregiver mặc định theo booking nhưng đổi
- * riêng được. Hủy buổi = CANCELLED (không xóa mềm; deleted_at chỉ do kế thừa BaseEntity).
- */
 @Entity
 @Table(name = "booking_occurrences")
 @Getter
@@ -152,23 +149,38 @@ public class BookingOccurrence extends BaseEntity {
     @Column(name = "reminder_sent_at")
     Instant reminderSentAt;
 
+    // 2026-11-10: đã cảnh báo "tới giờ mà chưa check-in" cho buổi này (một lần); xóa khi đổi người / dời lịch.
+    @Column(name = "late_warned_at")
+    Instant lateWarnedAt;
+
+    // 2026-11-11: khách báo nhanh về buổi (chưa thấy người đến / không thực hiện đúng) — một lần mỗi buổi.
+    @Column(name = "customer_reported_at")
+    Instant customerReportedAt;
+
+    @Column(name = "customer_report_note", columnDefinition = "text")
+    String customerReportNote;
+
     @Version
     @Column(name = "version", nullable = false)
     Long version;
 
     // Hai id caregiver luôn đổi cùng nhau. Người mới chưa nhận ca → buổi đã ACKNOWLEDGED quay về SCHEDULED (OPS-01);
-    // buổi chưa có caregiver được giữ lịch (PENDING_ASSIGNMENT → RESERVED, spec §11.2).
+    // buổi chưa có caregiver được giữ lịch (PENDING_ASSIGNMENT → RESERVED, spec §11.2). 2026-11-09: khách cọc trước khi có
+    // người → buổi của booking đã cọc được lên lịch chính thức ngay khi gán (PENDING_ASSIGNMENT → SCHEDULED).
     public void assignCaregiver(UUID newCaregiverId, UUID newCaregiverUserId) {
         if (!Objects.equals(caregiverId, newCaregiverId) && status == OccurrenceStatus.ACKNOWLEDGED) {
             status = OccurrenceStatus.SCHEDULED;
             acknowledgedAt = null;
         }
         if (status == OccurrenceStatus.PENDING_ASSIGNMENT) {
-            status = OccurrenceStatus.RESERVED;
+            status = BookingStatus.DEPOSIT_PAID.contains(booking.getStatus())
+                    ? OccurrenceStatus.SCHEDULED
+                    : OccurrenceStatus.RESERVED;
         }
         if (!Objects.equals(caregiverId, newCaregiverId)) {
             needsReassignment = false;
             reminderSentAt = null;
+            lateWarnedAt = null;
             // Lịch Provider gắn với caregiver cũ (SHIFT) — người mới không giữ lịch đó.
             caregiverScheduleId = null;
         }

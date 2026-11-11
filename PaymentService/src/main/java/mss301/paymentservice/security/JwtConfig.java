@@ -32,6 +32,7 @@ public class JwtConfig {
         return decoder;
     }
 
+    // Kiểm tra JWT là access token có audience chung và đủ claim bắt buộc.
     private boolean hasValidClaims(Jwt jwt) {
         boolean validShape = jwt.getAudience() != null
                 && jwt.getAudience().contains(TokenClaims.API_AUDIENCE)

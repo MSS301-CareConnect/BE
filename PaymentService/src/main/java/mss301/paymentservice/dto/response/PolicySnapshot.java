@@ -11,12 +11,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Bản chụp chính sách lúc tạo phiên cọc (PAY-03), lưu nguyên vào booking_financials.policy_snapshot (jsonb).
- * Mọi phép tính hoàn tiền / hóa đơn về sau dùng bản chụp này — đổi chính sách không ảnh hưởng booking đã cọc.
- * depositPercent = % khoản đầu thật đã thu; mốc / % hoàn và % giữ cọc khi quá hạn chụp từ center booking policy của
- * BookingService (spec v1 §8, §10.2). coolingOff* / refundTiers chỉ còn để đọc snapshot cũ.
- */
 @Data
 @Builder
 @AllArgsConstructor
@@ -48,6 +42,9 @@ public class PolicySnapshot {
     BigDecimal refundPercentBeforeThreshold;
 
     BigDecimal refundPercentAfterThreshold;
+
+    // 2026-11-10: null ở snapshot cũ → RefundCalculator dùng 120 phút (luật đã áp từ 2026-11-05).
+    Integer lateCancelNoRefundMinutes;
 
     BigDecimal overduePaymentForfeitPercent;
 }

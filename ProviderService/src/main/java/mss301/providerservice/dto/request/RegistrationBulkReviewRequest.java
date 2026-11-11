@@ -11,7 +11,6 @@ import mss301.providerservice.enums.RegistrationStatus;
 import java.util.List;
 import java.util.UUID;
 
-/** Duyệt / từ chối nhiều đăng ký của cùng một ca trong một transaction (tất cả hoặc không). */
 @Data
 @Builder
 @NoArgsConstructor

@@ -20,14 +20,24 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class OutboxEventResponse {
     UUID id;
+
     OutboxEventType eventType;
+
     UUID aggregateId;
+
     String idempotencyKey;
+
     OutboxStatus status;
+
     Integer attempts;
+
     Instant nextAttemptAt;
+
     String lastError;
+
     Instant sentAt;
+
     Instant createdAt;
+
     Instant updatedAt;
 }

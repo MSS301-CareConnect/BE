@@ -13,7 +13,10 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CatalogImageResponse {
     UUID mediaFileId;
+
     String imageUrl;
+
     String contentType;
+
     Long fileSize;
 }

@@ -25,10 +25,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * CR-4: sổ ghi phần tiền khách bị giữ khi hủy sát giờ / quá hạn trả phần còn lại, theo từng buổi — append-only như
- * payment_transactions. Buổi đã có caregiver thì caregiver hưởng toàn bộ, chưa có thì trung tâm.
- */
 @Entity
 @Immutable
 @Table(name = "deposit_forfeitures")

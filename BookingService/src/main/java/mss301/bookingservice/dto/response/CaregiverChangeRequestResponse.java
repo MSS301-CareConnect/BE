@@ -18,19 +18,34 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverChangeRequestResponse {
     UUID id;
+
     UUID bookingId;
+
     UUID customerUserId;
+
     UUID centerId;
+
     CaregiverChangeScopeType scopeType;
+
     LocalDate fromDate;
+
     CaregiverChangeReasonCode reasonCode;
+
     String reasonDetail;
+
     UUID preferredCaregiverId;
+
     CaregiverChangeRequestStatus status;
+
     UUID reviewedBy;
+
     Instant reviewedAt;
+
     String rejectionReason;
+
     Instant createdAt;
+
     Instant updatedAt;
+
     List<UUID> occurrenceIds;
 }

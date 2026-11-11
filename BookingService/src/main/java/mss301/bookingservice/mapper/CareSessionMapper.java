@@ -19,7 +19,6 @@ import org.mapstruct.NullValuePropertyMappingStrategy;
 
 import java.time.Instant;
 import java.util.UUID;
-import mss301.bookingservice.dto.request.CareTaskCreateRequest;
 import mss301.bookingservice.dto.request.SessionNoteRequest;
 import mss301.bookingservice.dto.response.SessionNoteResponse;
 import mss301.bookingservice.dto.response.SessionUpdateResponse;
@@ -47,6 +46,15 @@ public interface CareSessionMapper {
     @Mapping(target = "overdueRemindedAt", ignore = true)
     @Mapping(target = "autoClosed", ignore = true)
     @Mapping(target = "version", ignore = true)
+    // Chấm công / cờ vị trí do service tính sau khi tạo; kết luận của trung tâm chỉ có ở ca tự đóng.
+    @Mapping(target = "lateMinutes", ignore = true)
+    @Mapping(target = "earlyLeaveMinutes", ignore = true)
+    @Mapping(target = "checkInDistanceMeters", ignore = true)
+    @Mapping(target = "locationFlag", ignore = true)
+    @Mapping(target = "completionReview", ignore = true)
+    @Mapping(target = "reviewedBy", ignore = true)
+    @Mapping(target = "reviewedAt", ignore = true)
+    @Mapping(target = "reviewNote", ignore = true)
     CareSession toCareSession(CareSessionStartRequest request, BookingOccurrence occurrence, CareSessionStatus status,
                               Instant checkInAt);
 
@@ -85,6 +93,12 @@ public interface CareSessionMapper {
     @Mapping(target = "caregiverId", source = "session.caregiverId")
     @Mapping(target = "status", source = "session.status")
     @Mapping(target = "tasks", source = "tasks")
+    @Mapping(target = "bookingCode", source = "session.booking.bookingCode")
+    @Mapping(target = "recipientName", source = "session.booking.recipientSnapshot.fullName")
+    @Mapping(target = "occurrenceNo", source = "session.occurrence.occurrenceNo")
+    @Mapping(target = "startAt", source = "session.occurrence.startAt")
+    @Mapping(target = "endAt", source = "session.occurrence.endAt")
+    @Mapping(target = "customerReportNote", source = "session.occurrence.customerReportNote")
     CareSessionResponse toResponse(CareSession session, List<CareTask> tasks);
 
     CareTaskResponse toTaskResponse(CareTask task);

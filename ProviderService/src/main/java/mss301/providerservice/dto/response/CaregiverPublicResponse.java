@@ -16,15 +16,26 @@ import java.util.UUID;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CaregiverPublicResponse {
     UUID caregiverId;
+
     UUID centerId;
+
     String centerName;
+
     String fullName;
+
     Gender gender;
+
     Integer experienceYears;
+
     String bio;
+
     BigDecimal ratingAverage;
+
     Integer ratingCount;
+
     String avatarUrl;
+
     List<CaregiverPublicServiceResponse> services;
+
     List<PublicCertificateResponse> certificates;
 }

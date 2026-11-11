@@ -19,6 +19,7 @@ import java.util.UUID;
 public class PaymentOutboxScheduler {
     PaymentOutboxService paymentOutboxService;
 
+    // Định kỳ gửi các thông điệp outbox tới hạn.
     @Scheduled(fixedDelayString = "${payment.outbox.scan-interval:30s}",
             initialDelayString = "${payment.outbox.scan-interval:30s}")
     public void dispatchDueMessages() {
