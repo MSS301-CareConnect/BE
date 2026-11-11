@@ -102,6 +102,11 @@ ai:
   media:
     url: ${AI_MEDIA_URL}
 
+  stroke-model:
+    url: ${AI_STROKE_MODEL_URL:http://localhost:8090}
+    connect-timeout: ${AI_STROKE_MODEL_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_STROKE_MODEL_READ_TIMEOUT:15s}
+
   service-client:
     client-id: ${AI_SERVICE_CLIENT_ID:}
     client-secret: ${AI_SERVICE_CLIENT_SECRET:}

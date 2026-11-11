@@ -1,0 +1,29 @@
+{
+  "model_name": "CareConnect Stroke Screening Model",
+  "model_version": "1.0.0",
+  "algorithm": "Logistic Regression",
+  "imbalance_handling": "SMOTE",
+  "decision_threshold": 0.5,
+  "dataset": "CDC BRFSS 2021",
+  "target_column": "stroke_history",
+  "target_meaning": "Tiền sử đột quỵ do người tham gia tự khai báo",
+  "feature_count": 9,
+  "feature_names": [
+    "hypertension",
+    "high_cholesterol",
+    "myocardial_infarction_history",
+    "angina_or_chd_history",
+    "diabetes",
+    "sex",
+    "age_group",
+    "bmi_category",
+    "current_smoker"
+  ],
+  "training_rows": 333088,
+  "test_rows": 83272,
+  "random_state": 42,
+  "created_at_utc": "2026-11-11T13:29:58.681134+00:00",
+  "sklearn_version": "1.6.1",
+  "imblearn_version": "0.14.2",
+  "usage_warning": "Mô hình chỉ hỗ trợ sàng lọc nguy cơ và phục vụ nghiên cứu. Không dùng để chẩn đoán hoặc thay thế nhân viên y tế."
+}

@@ -92,7 +92,9 @@ public enum ErrorCode {
 
     CERTIFICATE_IMAGE_INVALID(8602, "Không thể đọc ảnh chứng chỉ", HttpStatus.BAD_REQUEST),
 
-    VISION_SERVICE_UNAVAILABLE(8603, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE);
+    VISION_SERVICE_UNAVAILABLE(8603, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+
+    STROKE_MODEL_UNAVAILABLE(8601, "Stroke screening service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
     int code;
     String message;
     HttpStatusCode statusCode;
