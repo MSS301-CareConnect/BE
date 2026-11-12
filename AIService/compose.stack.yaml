@@ -29,17 +29,33 @@ services:
       # Service token và MediaService đều đi qua gateway (gateway là cổng duy nhất cho Feign giữa các service).
       AI_IDENTITY_URL: http://api-gateway:8080
       AI_MEDIA_URL: http://api-gateway:8080
+      AI_STROKE_MODEL_URL: http://stroke-model-service:8090
     ports:
       - "127.0.0.1:${AI_SERVER_PORT:-8088}:8088"
     depends_on:
       ai-postgres:
         condition: service_healthy
+      # Chỉ cần đã khởi động: model lỗi thì AIService trả 503 (8613) cho sàng lọc, chat / chứng chỉ vẫn chạy.
+      stroke-model-service:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8088/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 90s
+
+  # Mô hình sàng lọc đột quỵ (FastAPI, ../StrokeModelService). Chỉ AIService gọi qua mạng Docker
+  # (http://stroke-model-service:8090) nên không mở port ra máy; FE luôn đi qua gateway.
+  stroke-model-service:
+    build: ../StrokeModelService
+    image: careconnect/stroke-model-service:dev
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 volumes:
   ai_postgres:

@@ -114,6 +114,11 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
                 throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
             }
         }
+        // Mở phiên thanh toán đã ghi cọc phân bổ cho từng buổi, nhưng tiền chỉ vào khi phiên thành công: phiên bỏ dở /
+        // hết hạn thì chưa có đồng nào để quyết toán (cùng quy tắc isDepositPaid của RefundServiceImpl).
+        if (financial.getStatus() == BookingFinancialStatus.AWAITING_DEPOSIT) {
+            throw new AppException(ErrorCode.BOOKING_NOT_PAID);
+        }
         Map<UUID, BookingSettlementResponse.Occurrence> lines = new HashMap<>();
         BigDecimal paid = BigDecimal.ZERO;
         BigDecimal refunded = BigDecimal.ZERO;

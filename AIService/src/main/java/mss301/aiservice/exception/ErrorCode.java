@@ -80,6 +80,9 @@ public enum ErrorCode {
 
     TOO_MANY_CERTIFICATE_IMAGES(8603, "A certificate check accepts at most 10 files", HttpStatus.BAD_REQUEST),
 
+    VISION_SERVICE_UNAVAILABLE(8604, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE),
+
+
     // GROQ: 8300-8399
 
     GROQ_UNAVAILABLE(8300, "Không thể kết nối Groq, vui lòng thử lại sau", HttpStatus.SERVICE_UNAVAILABLE),
@@ -107,7 +110,8 @@ public enum ErrorCode {
 
     CERTIFICATE_IMAGE_INVALID(8612, "Không thể đọc ảnh chứng chỉ", HttpStatus.BAD_REQUEST),
 
-    VISION_SERVICE_UNAVAILABLE(8613, "Dịch vụ đọc nội dung chứng chỉ hiện không khả dụng", HttpStatus.SERVICE_UNAVAILABLE);
+    STROKE_MODEL_UNAVAILABLE(8613, "Stroke screening service is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+
     int code;
     String message;
     HttpStatusCode statusCode;

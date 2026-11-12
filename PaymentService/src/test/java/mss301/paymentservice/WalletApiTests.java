@@ -579,6 +579,37 @@ class WalletApiTests extends PaymentIntegrationTest {
         withdraw(manager(centerId), "100000", "0123456789").andExpect(status().isForbidden());
     }
 
+    // 2026-11-12: mở phiên VNPay đã ghi cọc phân bổ cho từng buổi; khách bỏ dở / trả lỗi thì quyết toán không được báo
+    // "khách đã trả" — chỉ có số liệu sau khi cọc thu thành công, và "đã trả" đúng bằng tiền thu được.
+    @Test
+    void settlementCountsOnlyTheDepositActuallyReceived() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        BookingSetup booking = bookingWithPrices(customerId, centerId, 1000000, 1000000);
+
+        JsonNode abandoned = checkout(booking);
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", booking.bookingId())
+                        .header("Authorization", manager(centerId)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(6056));
+        ipn(abandoned, "24").andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", booking.bookingId())
+                        .header("Authorization", admin()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(6056));
+
+        JsonNode paid = payDeposit(booking);
+        BigDecimal deposit = paid.get("amount").decimalValue();
+        assertThat(deposit.signum()).isPositive();
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", booking.bookingId())
+                        .header("Authorization", manager(centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.paidAmount").value(deposit.intValueExact()))
+                .andExpect(jsonPath("$.result.refundedAmount").value(0))
+                .andExpect(jsonPath("$.result.centerNetAmount").value(0))
+                .andExpect(jsonPath("$.result.pendingCount").value(2));
+    }
+
     // ===== helpers =====
 
     private CancelSetup paidBooking(UUID customerId, UUID centerId, UUID caregiverUserId, Instant firstStart)

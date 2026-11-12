@@ -41,6 +41,9 @@ public class AIProperties {
     Media media = new Media();
 
     @Valid
+    StrokeModel strokeModel = new StrokeModel();
+
+    @Valid
     ServiceClient serviceClient = new ServiceClient();
 
     @Valid
@@ -157,6 +160,20 @@ public class AIProperties {
 
         @NotBlank
         String url;
+    }
+
+    @Data
+    @FieldDefaults(level = AccessLevel.PRIVATE)
+    public static class StrokeModel {
+
+        @NotBlank
+        String url;
+
+        @NotNull
+        Duration connectTimeout = Duration.ofSeconds(3);
+
+        @NotNull
+        Duration readTimeout = Duration.ofSeconds(15);
     }
 
     @Data
