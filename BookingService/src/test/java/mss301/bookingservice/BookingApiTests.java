@@ -883,10 +883,11 @@ class BookingApiTests {
         MvcResult history = mockMvc.perform(get("/api/v1/bookings/" + bookingId + "/history")
                         .header("Authorization", customerBearer(scenario)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.items[0].eventType").value("BOOKING_STATUS_CHANGED"))
-                .andExpect(jsonPath("$.result.items[0].toStatus").value("AWAITING_INITIAL_PAYMENT"))
                 .andReturn();
         JsonNode items = readResult(history).get("items");
+        JsonNode oldest = items.get(items.size() - 1);
+        assertThat(oldest.get("eventType").asString()).isEqualTo("BOOKING_STATUS_CHANGED");
+        assertThat(oldest.get("toStatus").asString()).isEqualTo("AWAITING_INITIAL_PAYMENT");
         JsonNode caregiverChanged = null;
         for (JsonNode item : items) {
             if ("CAREGIVER_CHANGED".equals(item.get("eventType").asString())) {

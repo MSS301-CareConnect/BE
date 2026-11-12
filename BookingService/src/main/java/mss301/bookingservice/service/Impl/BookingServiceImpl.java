@@ -350,7 +350,8 @@ public class BookingServiceImpl implements BookingService {
         List<BookingHistoryResponse> histories = new ArrayList<>(bookingStatusHistoryMapper.toHistoryResponseList(
                 bookingStatusHistoryRepository.findByBookingIdOrderByChangedAtAscIdAsc(booking.getId())));
         histories.addAll(bookingEventMapper.toHistoryResponseList(bookingEventRepository.findByBookingIdOrderByCreatedAtAscIdAsc(booking.getId())));
-        histories.sort(Comparator.comparing(BookingHistoryResponse::getChangedAt));
+        // Mới nhất trước: trang đầu luôn là các mốc gần đây nhất (2026-11-12).
+        histories.sort(Comparator.comparing(BookingHistoryResponse::getChangedAt).reversed());
         int fromIndex = (int) Math.min(pageRequest.getOffset(), histories.size());
         int toIndex = Math.min(fromIndex + size, histories.size());
         Page<BookingHistoryResponse> historyPage = new PageImpl<>(histories.subList(fromIndex, toIndex), pageRequest,
