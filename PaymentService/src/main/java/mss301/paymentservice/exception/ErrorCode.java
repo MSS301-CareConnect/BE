@@ -64,7 +64,8 @@ public enum ErrorCode {
     WITHDRAWAL_CENTER_REQUIRED(6053, "Please choose which center's balance to withdraw", HttpStatus.BAD_REQUEST),
     INSUFFICIENT_CENTER_BALANCE(6054, "The amount exceeds your balance at this center", HttpStatus.CONFLICT),
     WITHDRAWAL_NOT_REVIEWER(6055, "This withdrawal request is handled by another center or by the platform",
-            HttpStatus.FORBIDDEN);
+            HttpStatus.FORBIDDEN),
+    BOOKING_NOT_PAID(6056, "The booking has not been paid yet", HttpStatus.NOT_FOUND);
 
     private final int code;
     private final String message;

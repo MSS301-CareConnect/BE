@@ -35,6 +35,11 @@ buổi 1 caregiver vắng → khách nhận lại 1.000.000, trung tâm 1.800.00
   `centerNetAmount` (= tiền buổi + cọc giữ − trừ khiếu nại), `commissionAmount` (đã trừ hoa hồng trả lại khi hoàn khiếu
   nại), `commissionPercent`, `settledCount`, `pendingCount`, `occurrences[]` (giá, đã trả, đã hoàn, cọc giữ, trung tâm
   nhận, hoa hồng, `finalStatus`, `settledAt`). Gateway đã route `/api/v1/wallets/**`.
+- Sửa 2026-11-12: khách mở phiên VNPay rồi bỏ (phiên hết hạn, booking hủy / hết hạn) thì `booking_financials` vẫn ở
+  `AWAITING_DEPOSIT` nhưng `occurrence_financials.deposit_amount` đã có cọc phân bổ → quyết toán từng báo
+  "khách đã trả" số tiền chưa từng thu. Nay booking chưa thu cọc trả 404 `BOOKING_NOT_PAID` 6056 (FE hiện "chưa thanh
+  toán"); đã thu cọc thì `paidAmount` = cọc thu được + phần còn lại đã trả. Test
+  `WalletApiTests.settlementCountsOnlyTheDepositActuallyReceived`.
 
 ## 4. Web FE
 

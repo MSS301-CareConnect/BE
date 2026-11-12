@@ -96,4 +96,7 @@
   nền tảng → sổ CENTER / PLATFORM chỉ là doanh thu, **không rút** (`WalletServiceImpl.WITHDRAWABLE_OWNERS` = khách,
   caregiver; `POST /wallet-withdrawals` chỉ CUSTOMER / CAREGIVER). Quyết toán một booking:
   `GET /wallets/bookings/{bookingId}/settlement` (ADMIN, CENTER_MANAGER của trung tâm) từ `occurrence_financials` + sổ ví.
+  `occurrence_financials.deposit_amount` là cọc **phân bổ** (ghi ngay khi mở phiên), chỉ là tiền thật khi
+  `booking_financials.status ≠ AWAITING_DEPOSIT`: booking chưa thu cọc (phiên bỏ dở / lỗi / hết hạn) → 404
+  `BOOKING_NOT_PAID` 6056, không trả số liệu (2026-11-12; cùng quy tắc `isDepositPaid` của hoàn tiền).
 
