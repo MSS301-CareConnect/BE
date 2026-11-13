@@ -106,4 +106,13 @@ public interface BookingOccurrenceService {
     APIResponse<OccurrenceRescheduleResponse> reschedule(
             UUID actorId, Set<RoleCode> roles, UUID centerId, UUID occurrenceId,
             OccurrenceRescheduleRequest request);
+
+    // 2026-11-13: booking CONFIRMED / IN_PROGRESS có buổi CAREGIVER_MISSED và không còn buổi đang chạy — chờ chốt sau khi
+    // khoản hoàn buổi vắng (hẹn giờ) được gửi.
+    List<UUID> findBookingsToFinalizeAfterMissedRefund();
+
+    void finalizeAfterMissedRefund(UUID bookingId);
+
+    // 2026-11-13: CENTER_MANAGER — buổi đã trả của trung tâm còn cần người chăm sóc, sớm nhất trước (theo trang).
+    APIResponse<PageResponse<CaregiverOccurrenceResponse>> listUnassigned(UUID centerId, int page, int size);
 }

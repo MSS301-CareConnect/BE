@@ -33,6 +33,20 @@ public class OccurrenceMissedScheduler {
         }
     }
 
+    // 2026-11-13: chốt booking đã chờ vì khoản hoàn buổi vắng (gửi lúc xong các buổi trong ngày).
+    @Scheduled(fixedDelayString = "${booking.session.missed-scan-interval:5m}",
+            initialDelayString = "${booking.session.missed-scan-interval:5m}")
+    public void finalizeAfterMissedRefunds() {
+        for (UUID bookingId : bookingOccurrenceService.findBookingsToFinalizeAfterMissedRefund()) {
+            try {
+                bookingOccurrenceService.finalizeAfterMissedRefund(bookingId);
+            } catch (RuntimeException e) {
+                log.error("Failed to finalize booking {} after a missed-visit refund ({})", bookingId,
+                        e.getClass().getSimpleName(), e);
+            }
+        }
+    }
+
     // Định kỳ cảnh báo caregiver check-in trễ.
     @Scheduled(fixedDelayString = "${booking.session.late-warning-scan-interval:1m}",
             initialDelayString = "${booking.session.late-warning-scan-interval:1m}")

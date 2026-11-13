@@ -47,6 +47,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -59,6 +63,9 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
     static String AUTO_ASSIGN_REASON = "Hệ thống tự phân công";
     // Khoảng quanh lịch dùng để tính "ít việc" của ứng viên.
     static Duration LOAD_WINDOW = Duration.ofDays(7);
+    // Gán theo độ phủ: số ứng viên ít việc nhất (mỗi nhóm dịch vụ) được hỏi lịch từng buổi.
+    static int COVERAGE_CANDIDATES = 20;
+    static DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     BookingRepository bookingRepository;
     BookingOccurrenceRepository bookingOccurrenceRepository;
@@ -150,7 +157,7 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
         Instant now = clock.instant();
         List<BookingOccurrence> targets = findTargets(bookingId, now);
         if (targets.isEmpty()) {
-            recordAttempt(bookingId, false);
+            recordAttempt(bookingId, List.of());
             return;
         }
         List<UUID> allServiceIds = bookingDetailRepository.findByBookingIdOrderByCreatedAtAscCareServiceIdAsc(bookingId).stream()
@@ -166,20 +173,23 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
                     toSlots(targets), excluded);
             assignInTransaction(bookingId, collectIds(targets), wholeBooking).ifPresent(assignments::add);
             if (assignments.isEmpty()) {
-                assignments.addAll(assignEachOccurrence(booking, targets, allServiceIds, excluded));
+                assignments.addAll(assignByCoverage(booking, targets, allServiceIds, excluded));
             }
         } catch (AppException e) {
             // Provider / Identity lỗi: không kết luận "không có người", lượt sau thử lại.
             log.warn("Auto-assign of booking {} postponed ({})", bookingId, e.getErrorCode());
-            recordAttempt(bookingId, false);
+            recordAttempt(bookingId, null);
             return;
         }
         notifyAssigned(booking, assignments);
-        boolean stillMissing = !findTargets(bookingId, clock.instant()).isEmpty();
+        if (!assignments.isEmpty()) {
+            warnIfSplit(booking);
+        }
+        List<BookingOccurrence> stillMissing = findTargets(bookingId, clock.instant());
         recordAttempt(bookingId, stillMissing);
         log.info("Auto-assign booking {}: {} caregiver(s) for {} occurrence(s), still missing: {}", bookingId,
                 assignments.size(), assignments.stream().mapToInt(assignment -> assignment.occurrences().size()).sum(),
-                stillMissing);
+                stillMissing.size());
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────────
@@ -208,25 +218,92 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
         return excluded;
     }
 
-    // Không ai nhận được cả booking: gán từng buổi, ưu tiên người đã nhận buổi khác của booking (ít đổi người nhất).
-    private List<Assignment> assignEachOccurrence(Booking booking, List<BookingOccurrence> targets,
-                                                  List<UUID> allServiceIds, Set<UUID> excluded) {
+    // 2026-11-13: không ai nhận được cả booking → gán theo độ phủ: người nhận được nhiều buổi còn thiếu nhất trước (hòa:
+    // ít việc hơn, đánh giá cao hơn), lặp tới khi hết buổi hoặc không ai nhận thêm — ít người trên một lịch nhất. Mỗi ứng
+    // viên hỏi Provider một lần cho cả lô buổi (lịch làm việc / ngày nghỉ), trùng booking khác kiểm tại Booking.
+    private List<Assignment> assignByCoverage(Booking booking, List<BookingOccurrence> targets, List<UUID> allServiceIds,
+                                              Set<UUID> excluded) {
+        Map<List<UUID>, List<BookingOccurrence>> groups = targets.stream()
+                .collect(Collectors.groupingBy(occurrence -> occurrence.getCareServiceId() == null
+                        ? allServiceIds : List.of(occurrence.getCareServiceId()), LinkedHashMap::new, Collectors.toList()));
+        Map<UUID, ProviderCaregiverCardResponse> cards = new LinkedHashMap<>();
+        Map<UUID, Set<UUID>> coverage = new LinkedHashMap<>();
+        Map<UUID, Long> loads = new HashMap<>();
+        for (Map.Entry<List<UUID>, List<BookingOccurrence>> group : groups.entrySet()) {
+            List<OccurrenceSlot> slots = toSlots(group.getValue());
+            List<ProviderCaregiverCardResponse> qualified = caregiverPort.findQualifiedCaregivers(booking.getCenterId(),
+                            group.getKey()).stream()
+                    .filter(card -> booking.getCenterId().equals(card.getCenterId()))
+                    .filter(card -> !excluded.contains(card.getCaregiverId()))
+                    .toList();
+            if (qualified.isEmpty()) {
+                continue;
+            }
+            Map<UUID, Long> groupLoads = findLoads(qualified, slots);
+            loads.putAll(groupLoads);
+            List<ProviderCaregiverCardResponse> shortlist = qualified.stream()
+                    .sorted(Comparator.comparingLong(card -> groupLoads.getOrDefault(card.getCaregiverId(), 0L)))
+                    .limit(COVERAGE_CANDIDATES)
+                    .toList();
+            for (ProviderCaregiverCardResponse card : shortlist) {
+                Set<Instant> blocked = new HashSet<>(caregiverPort.findUnavailableStarts(card.getCaregiverId(), slots));
+                blocked.addAll(caregiverScheduleGuard.findBusyStarts(card.getCaregiverId(), slots, booking.getId()));
+                for (BookingOccurrence occurrence : group.getValue()) {
+                    if (!blocked.contains(occurrence.getStartAt())) {
+                        cards.putIfAbsent(card.getCaregiverId(), card);
+                        coverage.computeIfAbsent(card.getCaregiverId(), id -> new LinkedHashSet<>()).add(occurrence.getId());
+                    }
+                }
+            }
+        }
+        Map<UUID, BookingOccurrence> byId = targets.stream()
+                .collect(Collectors.toMap(BookingOccurrence::getId, occurrence -> occurrence));
+        Set<UUID> remaining = new LinkedHashSet<>(byId.keySet());
         List<Assignment> assignments = new ArrayList<>();
-        Set<UUID> chosenCaregiverIds = new LinkedHashSet<>();
-        for (BookingOccurrence occurrence : targets) {
-            List<UUID> serviceIds = occurrence.getCareServiceId() == null
-                    ? allServiceIds
-                    : List.of(occurrence.getCareServiceId());
-            List<AssignedCaregiver> candidates = new ArrayList<>(rankCandidates(booking.getCenterId(), serviceIds,
-                    toSlots(List.of(occurrence)), excluded));
-            candidates.sort(Comparator.comparing(candidate -> !chosenCaregiverIds.contains(candidate.getCaregiverId())));
-            Optional<Assignment> assignment = assignInTransaction(booking.getId(), List.of(occurrence.getId()), candidates);
-            assignment.ifPresent(found -> {
-                chosenCaregiverIds.add(found.caregiver().getCaregiverId());
-                assignments.add(found);
+        while (!remaining.isEmpty() && !coverage.isEmpty()) {
+            UUID best = coverage.keySet().stream()
+                    .max(Comparator.<UUID>comparingLong(id -> coverage.get(id).stream().filter(remaining::contains).count())
+                            .thenComparing(id -> loads.getOrDefault(id, 0L), Comparator.reverseOrder())
+                            .thenComparing(id -> cards.get(id).getRatingAverage() == null
+                                    ? BigDecimal.ZERO : cards.get(id).getRatingAverage()))
+                    .orElseThrow();
+            List<UUID> covered = coverage.remove(best).stream().filter(remaining::contains).toList();
+            if (covered.isEmpty()) {
+                break;
+            }
+            // Dịch vụ của các buổi người này nhận (buổi không gắn dịch vụ = mọi dịch vụ của booking).
+            Set<UUID> serviceIds = covered.stream()
+                    .flatMap(id -> byId.get(id).getCareServiceId() == null
+                            ? allServiceIds.stream() : Stream.of(byId.get(id).getCareServiceId()))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            AssignedCaregiver caregiver;
+            try {
+                caregiver = caregiverPort.resolveAssignable(booking.getCenterId(), best, serviceIds);
+            } catch (AppException e) {
+                log.info("Auto-assign skips caregiver {} ({})", best, e.getErrorCode());
+                continue;
+            }
+            assignInTransaction(booking.getId(), covered, List.of(caregiver)).ifPresent(assignment -> {
+                assignments.add(assignment);
+                remaining.removeAll(assignment.occurrences());
             });
         }
         return assignments;
+    }
+
+    // Lịch bị chia cho quá nhiều người (các buổi chưa bắt đầu) → báo trung tâm cân nhắc gom lại.
+    private void warnIfSplit(Booking booking) {
+        long caregivers = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
+                .filter(occurrence -> OccurrenceStatus.NOT_STARTED.contains(occurrence.getStatus()))
+                .map(BookingOccurrence::getCaregiverId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
+        if (caregivers > bookingProperties.getSchedule().getSplitCaregiverWarning()) {
+            bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CENTER_ACTION_DUE,
+                    Map.of("body", "Lịch " + booking.getBookingCode() + " đang được chia cho " + caregivers
+                            + " người chăm sóc — cân nhắc mở thêm ca để gom về ít người hơn"), "BOOKING", booking.getId());
+        }
     }
 
     // Transaction ngắn, thứ tự khóa booking → caregiver: kiểm lại buổi vẫn cần người, thử ứng viên theo thứ tự, gán.
@@ -325,21 +402,40 @@ public class CaregiverAssignmentServiceImpl implements CaregiverAssignmentServic
                 "BOOKING", booking.getId());
     }
 
-    // Ghi mốc thử; còn buổi thiếu người và đã quá unassigned-notify-every từ lần báo trước → báo trung tâm phân tay.
-    private void recordAttempt(UUID bookingId, boolean stillMissing) {
+    // Ghi mốc thử. missing null = lượt thử hỏng (Provider lỗi) — chỉ ghi mốc. Còn buổi thiếu người: báo trung tâm lần đầu,
+    // rồi mỗi khi buổi thiếu sớm nhất qua một mốc unassigned-remind-before (2026-11-13); đủ người thì xóa mốc đã báo để
+    // lần thiếu sau báo ngay.
+    private void recordAttempt(UUID bookingId, List<BookingOccurrence> missing) {
         transactionTemplate.executeWithoutResult(status -> bookingRepository.findForUpdateSkipLocked(bookingId)
                 .ifPresent(booking -> {
                     Instant now = clock.instant();
                     booking.setAutoAssignAttemptedAt(now);
-                    Instant notifiedAt = booking.getUnassignedNotifiedAt();
-                    boolean notifyDue = notifiedAt == null
-                            || !notifiedAt.plus(bookingProperties.getSchedule().getUnassignedNotifyEvery()).isAfter(now);
-                    if (stillMissing && notifyDue) {
-                        booking.setUnassignedNotifiedAt(now);
-                        bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CENTER_ACTION_DUE,
-                                Map.of("body", "Chưa tìm được người chăm sóc cho lịch " + booking.getBookingCode()
-                                        + " — vui lòng phân công"), "BOOKING", booking.getId());
+                    if (missing == null) {
+                        return;
                     }
+                    if (missing.isEmpty()) {
+                        booking.setUnassignedNotifiedAt(null);
+                        return;
+                    }
+                    BookingProperties.Schedule schedule = bookingProperties.getSchedule();
+                    Instant earliest = missing.stream().map(BookingOccurrence::getStartAt)
+                            .min(Comparator.naturalOrder()).orElseThrow();
+                    Instant notifiedAt = booking.getUnassignedNotifiedAt();
+                    boolean due = notifiedAt == null || schedule.getUnassignedRemindBefore().stream()
+                            .map(earliest::minus)
+                            .anyMatch(milestone -> milestone.isAfter(notifiedAt) && !milestone.isAfter(now));
+                    if (!due) {
+                        return;
+                    }
+                    booking.setUnassignedNotifiedAt(now);
+                    DateTimeFormatter format = TIME_FORMAT.withZone(schedule.getTimezone());
+                    bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CENTER_ACTION_DUE,
+                            Map.of("body", "Chưa tìm được người chăm sóc cho " + missing.size() + " buổi của lịch "
+                                    + booking.getBookingCode() + ", sớm nhất " + format.format(earliest)
+                                    + ". Buổi nào chưa có người lúc "
+                                    + format.format(earliest.minus(schedule.getUnassignedCancelLead()))
+                                    + " sẽ bị hủy và hoàn tiền — mở ca làm việc cho khung giờ này hoặc phân công"),
+                            "BOOKING", booking.getId());
                 }));
     }
 

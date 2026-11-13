@@ -44,6 +44,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -70,15 +71,24 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
     // Xếp việc gửi sang service khác (bỏ qua nếu trùng key) và gửi ngay sau commit.
     @Override
     public void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload) {
+        enqueue(eventType, aggregateId, idempotencyKey, payload, clock.instant());
+    }
+
+    // Xếp việc gửi từ notBefore; tới giờ rồi thì gửi ngay sau commit như enqueue thường.
+    @Override
+    public void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload,
+                        Instant notBefore) {
         if (bookingOutboxRepository.existsByIdempotencyKeyAndDeletedAtIsNull(idempotencyKey)) {
             log.info("Outbox {} already queued, skipping", idempotencyKey);
             return;
         }
+        Instant now = clock.instant();
+        Instant nextAttemptAt = notBefore.isAfter(now) ? notBefore : now;
         BookingOutbox outbox = bookingOutboxRepository.save(bookingOutboxMapper.toOutbox(eventType, aggregateId,
-                idempotencyKey, objectMapper.writeValueAsString(payload), OutboxStatus.PENDING, 0, clock.instant()));
-        log.info("Outbox {} queued for {} ({})", outbox.getId(), aggregateId, eventType);
+                idempotencyKey, objectMapper.writeValueAsString(payload), OutboxStatus.PENDING, 0, nextAttemptAt));
+        log.info("Outbox {} queued for {} ({}) from {}", outbox.getId(), aggregateId, eventType, nextAttemptAt);
         // Gửi ngay khi transaction nghiệp vụ đã commit (rule #24); rollback thì dòng outbox cũng không tồn tại.
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        if (!nextAttemptAt.isAfter(now) && TransactionSynchronizationManager.isSynchronizationActive()) {
             UUID outboxId = outbox.getId();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -118,6 +128,34 @@ public class BookingOutboxServiceImpl implements BookingOutboxService {
             return;
         }
         newTransaction.executeWithoutResult(status -> recordSuccess(id));
+    }
+
+    // Giờ gửi của việc còn chờ theo key.
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findPendingAt(String idempotencyKey) {
+        return bookingOutboxRepository.findByIdempotencyKeyAndDeletedAtIsNull(idempotencyKey)
+                .filter(outbox -> outbox.getStatus() == OutboxStatus.PENDING)
+                .map(BookingOutbox::getNextAttemptAt);
+    }
+
+    // Gọi trong transaction nghiệp vụ. Còn trong khoảng "thuê" của lượt nhận thì coi như đang gửi: lượt nhận dời
+    // next_attempt_at về now + lease nên một dòng chỉ còn hủy được khi giờ gửi xa hơn mốc đó.
+    @Override
+    public boolean cancelScheduled(String idempotencyKey, String note) {
+        Instant now = clock.instant();
+        BookingOutbox outbox = bookingOutboxRepository.findByIdempotencyKeyAndDeletedAtIsNull(idempotencyKey)
+                .flatMap(found -> bookingOutboxRepository.findForUpdate(found.getId()))
+                .orElse(null);
+        if (outbox == null || outbox.getStatus() != OutboxStatus.PENDING || outbox.getAttempts() > 0
+                || !outbox.getNextAttemptAt().isAfter(now.plus(bookingProperties.getOutbox().getClaimLease()))) {
+            return false;
+        }
+        outbox.setStatus(OutboxStatus.SKIPPED);
+        outbox.setLastError(truncate(note));
+        outbox.setIdempotencyKey(idempotencyKey + ":CANCELLED:" + outbox.getId());
+        log.info("Outbox {} ({}) cancelled before sending", outbox.getId(), idempotencyKey);
+        return true;
     }
 
     // Danh sách việc outbox cho admin, lọc theo trạng thái.

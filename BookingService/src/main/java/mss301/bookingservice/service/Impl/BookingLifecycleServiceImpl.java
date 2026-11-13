@@ -43,6 +43,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -234,8 +235,11 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
             return false;
         }
         List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId());
+        // 2026-11-13: buổi vắng còn chờ hoàn tiền vẫn có thể được trung tâm ghi nhận check-in hộ → chưa chốt booking.
         boolean unfinished = occurrences.stream()
-                .anyMatch(occurrence -> OccurrenceStatus.ACTIVE.contains(occurrence.getStatus()));
+                .anyMatch(occurrence -> OccurrenceStatus.ACTIVE.contains(occurrence.getStatus())
+                        || (occurrence.getStatus() == OccurrenceStatus.CAREGIVER_MISSED
+                        && findPendingMissedRefund(occurrence.getId()).isPresent()));
         if (unfinished) {
             return false;
         }
@@ -279,6 +283,13 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
     @Override
     public void requestRefund(Booking booking, List<UUID> occurrenceIds, RefundReason reason, CancelledBy cancelledBy,
                               UUID requestedBy, String keySuffix) {
+        requestRefund(booking, occurrenceIds, reason, cancelledBy, requestedBy, keySuffix, clock.instant());
+    }
+
+    // Xếp yêu cầu hoàn tiền gửi từ notBefore.
+    @Override
+    public void requestRefund(Booking booking, List<UUID> occurrenceIds, RefundReason reason, CancelledBy cancelledBy,
+                              UUID requestedBy, String keySuffix, Instant notBefore) {
         Instant now = clock.instant();
         // Mốc tính % hoàn: buổi chưa diễn ra gần nhất còn lại (PaymentService dùng cho bảng mốc 24h / 72h).
         List<BookingOccurrence> occurrences = bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId());
@@ -293,7 +304,26 @@ public class BookingLifecycleServiceImpl implements BookingLifecycleService {
         bookingOutboxService.enqueue(OutboxEventType.REFUND, booking.getId(), idempotencyKey,
                 bookingMapper.toRefundCreateRequest(booking.getId(), occurrenceIds, reason, cancelledBy, now,
                         firstUpcomingStartAt, requestedBy, idempotencyKey,
-                        occurrences.stream().filter(occurrence -> occurrenceIds.contains(occurrence.getId())).toList()));
+                        occurrences.stream().filter(occurrence -> occurrenceIds.contains(occurrence.getId())).toList()),
+                notBefore);
+    }
+
+    // Giờ gửi khoản hoàn buổi vắng (key theo id buổi, như markMissedByCaregiver xếp).
+    @Override
+    public Optional<Instant> findPendingMissedRefund(UUID occurrenceId) {
+        return bookingOutboxService.findPendingAt(missedRefundKey(occurrenceId));
+    }
+
+    // Hủy khoản hoàn buổi vắng chưa gửi.
+    @Override
+    public boolean cancelPendingMissedRefund(UUID occurrenceId, String note) {
+        return bookingOutboxService.cancelScheduled(missedRefundKey(occurrenceId), note);
+    }
+
+    // Cùng công thức key với requestRefund(..., keySuffix = id buổi).
+    private String missedRefundKey(UUID occurrenceId) {
+        return OutboxEventType.REFUND.name() + KEY_SEPARATOR + RefundReason.CAREGIVER_MISSED.name() + KEY_SEPARATOR
+                + occurrenceId;
     }
 
     // Hạn = bây giờ + timeout của policy, nhưng không quá mốc chốt thanh toán: hạn trả phần còn lại (RECURRING / CUSTOM)

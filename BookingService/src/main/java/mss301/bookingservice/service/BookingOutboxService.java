@@ -7,11 +7,22 @@ import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.enums.OutboxEventType;
 
 import java.util.List;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BookingOutboxService {
     // idempotencyKey xác định duy nhất một việc (vd REFUND:CAREGIVER_MISSED:<occurrenceId>) — xếp lại cùng key thì bỏ qua.
     void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload);
+
+    // 2026-11-13: như enqueue nhưng chỉ gửi từ notBefore (scheduler đọc next_attempt_at); notBefore ≤ bây giờ = gửi ngay.
+    void enqueue(OutboxEventType eventType, UUID aggregateId, String idempotencyKey, Object payload, Instant notBefore);
+
+    // Giờ gửi của việc còn chờ (PENDING) theo key; đã gửi / không có → rỗng.
+    Optional<Instant> findPendingAt(String idempotencyKey);
+
+    // Hủy việc chưa tới giờ gửi (SKIPPED, đổi key để key gốc dùng lại được). Đã tới giờ / đang gửi / đã gửi → false.
+    boolean cancelScheduled(String idempotencyKey, String note);
 
     // Lấy id việc outbox tới hạn gửi.
     List<UUID> findDueIds();

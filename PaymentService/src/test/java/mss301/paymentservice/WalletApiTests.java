@@ -1,5 +1,6 @@
 package mss301.paymentservice;
 
+import mss301.paymentservice.config.PaymentProperties;
 import mss301.paymentservice.entity.OccurrenceFinancial;
 import mss301.paymentservice.entity.Refund;
 import mss301.paymentservice.entity.Wallet;
@@ -14,9 +15,9 @@ import mss301.paymentservice.repository.RefundRepository;
 import mss301.paymentservice.repository.RemainingInvoiceRepository;
 import mss301.paymentservice.repository.WalletRepository;
 import mss301.paymentservice.repository.WalletTransactionRepository;
+import mss301.paymentservice.scheduler.WalletSettlementScheduler;
 import mss301.paymentservice.service.RefundDispatchService;
 import mss301.paymentservice.service.RemainingInvoiceService;
-import mss301.paymentservice.service.WalletSettlementService;
 import mss301.paymentservice.support.PaymentIntegrationTest;
 import mss301.paymentservice.support.PaymentTestServer;
 import org.junit.jupiter.api.Test;
@@ -54,7 +55,10 @@ class WalletApiTests extends PaymentIntegrationTest {
     RefundDispatchService refundDispatchService;
 
     @Autowired
-    WalletSettlementService walletSettlementService;
+    WalletSettlementScheduler walletSettlementScheduler;
+
+    @Autowired
+    PaymentProperties paymentProperties;
 
     @Autowired
     RefundRepository refundRepository;
@@ -508,7 +512,8 @@ class WalletApiTests extends PaymentIntegrationTest {
                         .param("to", BASE.plus(Duration.ofDays(10)).toString()))
                 .andExpect(jsonPath("$.result.ownerType").value("CENTER"))
                 .andExpect(jsonPath("$.result.serviceIncome").value(1800000))
-                .andExpect(jsonPath("$.result.commissionDeducted").value(200000))
+                // Khiếu nại vượt phần trung tâm nhận → nền tảng trả lại 200.000 hoa hồng của booking (khớp quyết toán).
+                .andExpect(jsonPath("$.result.commissionDeducted").value(0))
                 .andExpect(jsonPath("$.result.complaintDebits").value(1800000))
                 .andExpect(jsonPath("$.result.totalIncome").value(0));
         mockMvc.perform(get("/api/v1/wallets/me").header("Authorization", manager(centerId)))
@@ -519,6 +524,49 @@ class WalletApiTests extends PaymentIntegrationTest {
                 .andExpect(jsonPath("$.result.ownerType").value("PLATFORM"))
                 .andExpect(jsonPath("$.result.liabilities").isArray())
                 .andExpect(jsonPath("$.result.pendingWithdrawalCount").isNumber());
+    }
+
+    // 2026-11-13: cọc 30 % rồi trả nốt 70 % trước buổi đầu, mọi buổi làm xong → trung tâm nhận đủ giá trừ hoa hồng, nền
+    // tảng nhận hoa hồng (không chỉ phần cọc).
+    @Test
+    void depositThenRemainingPaidAndAllVisitsDoneSettlesTheFullPrice() throws Exception {
+        UUID customerId = UUID.randomUUID();
+        UUID centerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        List<UUID> occurrenceIds = List.of(UUID.randomUUID(), UUID.randomUUID());
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        for (int i = 0; i < occurrenceIds.size(); i++) {
+            occurrences.add(PaymentTestServer.occurrence(occurrenceIds.get(i), i + 1,
+                    BASE.plus(Duration.ofDays(5 + i)), "SCHEDULED", PRICE));
+        }
+        SERVER.putBooking(bookingId, customerId, centerId, "AWAITING_INITIAL_PAYMENT", BASE.plus(Duration.ofHours(24)),
+                occurrences);
+        SERVER.setPaymentTerms(bookingId, 30, BASE.plus(Duration.ofDays(2)));
+        payDeposit(new BookingSetup(bookingId, customerId, centerId, occurrenceIds, List.of()));
+        UUID invoiceId = remainingInvoiceRepository.findByBookingId(bookingId).orElseThrow().getId();
+        JsonNode session = body(mockMvc.perform(post("/api/v1/remaining-invoices/{id}/payments", invoiceId)
+                        .header("Authorization", customer(customerId))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"provider\":\"VNPAY\"}"))
+                .andExpect(status().isOk())).get("result");
+        ipn(session, "00").andExpect(jsonPath("$.RspCode").value("00"));
+
+        occurrences.get(0).put("status", "COMPLETED");
+        occurrences.get(1).put("status", "COMPLETED");
+        clock.set(BASE.plus(Duration.ofDays(8)));
+        BigDecimal platformBefore = balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER);
+        settleDue();
+
+        // 2 buổi × 1.000.000: trung tâm 2 × 900.000, nền tảng 2 × 100.000 (hoa hồng 10 %).
+        assertThat(balanceOf(WalletOwnerType.CENTER, centerId)).isEqualByComparingTo("1800000");
+        assertThat(balanceOf(WalletOwnerType.PLATFORM, PLATFORM_OWNER).subtract(platformBefore))
+                .isEqualByComparingTo("200000");
+        mockMvc.perform(get("/api/v1/wallets/bookings/{id}/settlement", bookingId)
+                        .header("Authorization", manager(centerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.paidAmount").value(2000000))
+                .andExpect(jsonPath("$.result.centerNetAmount").value(1800000))
+                .andExpect(jsonPath("$.result.commissionAmount").value(200000))
+                .andExpect(jsonPath("$.result.pendingCount").value(0));
     }
 
     // 2026-11-11: một booking vừa có buổi caregiver vắng (hoàn 100 % vào ví khách) vừa có buổi làm đủ → trung tâm và nền
@@ -684,9 +732,15 @@ class WalletApiTests extends PaymentIntegrationTest {
         }
     }
 
+    // Chạy job thật với trang 1 booking: DB test chung luôn có booking khác còn chờ (đang làm, bị giữ) xếp trước, nên
+    // booking của test chỉ được quyết toán khi job đi hết các trang — chặn lỗi bỏ đói khi chỉ đọc trang đầu.
     private void settleDue() {
-        for (UUID bookingId : walletSettlementService.findDueBookingIds()) {
-            walletSettlementService.process(bookingId);
+        int batchSize = paymentProperties.getWallet().getSettlementBatchSize();
+        paymentProperties.getWallet().setSettlementBatchSize(1);
+        try {
+            walletSettlementScheduler.settleCompletedOccurrences();
+        } finally {
+            paymentProperties.getWallet().setSettlementBatchSize(batchSize);
         }
     }
 

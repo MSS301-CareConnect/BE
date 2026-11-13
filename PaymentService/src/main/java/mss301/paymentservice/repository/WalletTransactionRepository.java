@@ -59,15 +59,18 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
                             @Param("bookingId") UUID bookingId,
                             @Param("type") WalletTransactionType type);
 
-    // Hoa hồng nền tảng thu trên các buổi của một trung tâm (dashboard trung tâm thấy phần bị trừ).
+    // Tổng một loại bút toán gắn một trung tâm trên ví của một loại chủ (dashboard trung tâm: hoa hồng nền tảng thu và
+    // phần nền tảng trả lại khi hoàn khiếu nại — COMPLAINT_DEBIT có cả trên ví trung tâm nên phải lọc loại chủ ví).
     @Query("""
-            select coalesce(sum(t.amount), 0) from WalletTransaction t
-            where t.centerId = :centerId and t.type = :type and t.createdAt >= :from and t.createdAt <= :to
+            select coalesce(sum(t.amount), 0) from WalletTransaction t, Wallet w
+            where w.id = t.walletId and w.ownerType = :ownerType and t.centerId = :centerId and t.type = :type
+              and t.createdAt >= :from and t.createdAt <= :to
             """)
-    BigDecimal sumByCenter(@Param("centerId") UUID centerId,
-                           @Param("type") WalletTransactionType type,
-                           @Param("from") Instant from,
-                           @Param("to") Instant to);
+    BigDecimal sumByCenterAndOwnerType(@Param("centerId") UUID centerId,
+                                       @Param("ownerType") WalletOwnerType ownerType,
+                                       @Param("type") WalletTransactionType type,
+                                       @Param("from") Instant from,
+                                       @Param("to") Instant to);
 
     // 2026-11-10: số dư một ví theo trung tâm đã tạo ra khoản tiền (center_id của từng biến động) — chọn trung tâm xử lý
     // yêu cầu rút của khách / caregiver.

@@ -177,6 +177,21 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
                                                   @Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                                                   @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses);
 
+    // 2026-11-13: booking đang chạy có buổi caregiver vắng và không còn buổi nào chưa kết thúc — chờ khoản hoàn hẹn giờ.
+    @Query("""
+            select distinct b.id from Booking b
+            where b.deletedAt is null and b.status in (:confirmed, :inProgress)
+              and exists (select 1 from BookingOccurrence m where m.booking = b and m.deletedAt is null
+                          and m.status = :missed)
+              and not exists (select 1 from BookingOccurrence a where a.booking = b and a.deletedAt is null
+                              and a.status in :active)
+            """)
+    List<UUID> findBookingsWithMissedAndNoActive(@Param("confirmed") BookingStatus confirmed,
+                                                 @Param("inProgress") BookingStatus inProgress,
+                                                 @Param("missed") OccurrenceStatus missed,
+                                                 @Param("active") Collection<OccurrenceStatus> active,
+                                                 Pageable pageable);
+
     // OPS-06: buổi chưa bắt đầu, quá hạn check-in (start + check_in_late_minutes của booking, Q12), không có báo vắng,
     // của booking đang chạy → job MISSED (theo lô).
     @Query("""
@@ -244,6 +259,32 @@ public interface BookingOccurrenceRepository extends JpaRepository<BookingOccurr
     List<UUID> findUndecidedNoShowIds(@Param("occurrenceStatuses") Collection<OccurrenceStatus> occurrenceStatuses,
                                       @Param("endedBefore") Instant endedBefore,
                                       Pageable pageable);
+
+    // 2026-11-13: buổi chưa bắt đầu của booking đã trả cần người (chưa có / chờ thay) của một trung tâm, sớm nhất trước.
+    @Query(value = """
+            select o from BookingOccurrence o join fetch o.booking b
+            where b.centerId = :centerId
+              and o.deletedAt is null
+              and b.deletedAt is null
+              and b.status in :bookingStatuses
+              and (o.status = :pendingStatus or (o.needsReassignment = true and o.status in :notStarted))
+              and o.startAt > :now
+            order by o.startAt, o.id
+            """, countQuery = """
+            select count(o) from BookingOccurrence o join o.booking b
+            where b.centerId = :centerId
+              and o.deletedAt is null
+              and b.deletedAt is null
+              and b.status in :bookingStatuses
+              and (o.status = :pendingStatus or (o.needsReassignment = true and o.status in :notStarted))
+              and o.startAt > :now
+            """)
+    Page<BookingOccurrence> findCenterUnassigned(@Param("centerId") UUID centerId,
+                                                 @Param("bookingStatuses") Collection<BookingStatus> bookingStatuses,
+                                                 @Param("pendingStatus") OccurrenceStatus pendingStatus,
+                                                 @Param("notStarted") Collection<OccurrenceStatus> notStarted,
+                                                 @Param("now") Instant now,
+                                                 Pageable pageable);
 
     // Lịch của caregiver (theo user_id Identity = sub JWT) bắt đầu trong [from, to), theo trang (BK-06). bookingId null = mọi
     // booking; có giá trị = các buổi của caregiver trong một booking (trang chi tiết booking của caregiver, 2026-11-09).

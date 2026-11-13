@@ -80,3 +80,21 @@ buổi 1 caregiver vắng → khách nhận lại 1.000.000, trung tâm 1.800.00
   `features/shared/auth/portal-account-menu.tsx`, `features/shared/layout/ops-topbar.tsx`, menu admin + manager,
   `platform-finance-section.tsx`, `center-finance-section.tsx`, i18n `wallet-resources.ts`, `resources.ts`,
   `admin/layout-resources.ts`, `center-manager/layout-resources.ts`, `docs/ARCHITECTURE.md`.
+
+## 8. Rà soát lại 2026-11-13
+
+- Trả đủ (100 % ngay, hoặc cọc 30 % + phần còn lại 70 % — `markPaid` chia `charged_amount` cho từng buổi) và làm xong
+  buổi → mỗi buổi: trung tâm `SERVICE_SETTLEMENT` = giá − hoa hồng snapshot (10 %), nền tảng `COMMISSION_CREDIT`.
+  Cộng **khoảng 24 giờ sau khi buổi kết thúc** (BookingService giữ buổi COMPLETED trong cửa sổ khách phản ánh,
+  `customer-report-window`) + tối đa một lượt quét 10 phút. Ca chờ trung tâm xác nhận thì chờ tới khi trung tâm kết luận
+  (không tự hết hạn). Test mới `WalletApiTests.depositThenRemainingPaidAndAllVisitsDoneSettlesTheFullPrice`.
+- Dữ liệu dev: buổi `d56922b6…` (250.000, trả 100 %) → trung tâm 225.000 + nền tảng 25.000, khớp.
+- Sửa: job chỉ đọc trang đầu 100 booking ứng viên, không thứ tự; booking còn chờ (đang làm, trong 24 h, chờ xác nhận)
+  lượt nào cũng là ứng viên → quá 100 booking như vậy thì booking xếp sau không bao giờ được quyết toán. Nay
+  `findSettlementCandidateBookingIds` phân trang theo `bookingId` (`after`), `WalletSettlementScheduler` đi hết các trang.
+  Test `settleDue()` chạy scheduler thật với trang 1 booking. PaymentService 60/60 xanh. Cần rebuild `payment-service`.
+- Doanh thu hiển thị cho quản lý (`/center-manager/revenue`, `/center-manager/statistics`, cùng `GET /wallets/me/statistics`):
+  "Trung tâm thực nhận" = tiền buổi (đã trừ hoa hồng) + cọc giữ − trừ khiếu nại, khớp sổ ví. Sửa "Hoa hồng nền tảng đã
+  trừ": trước chỉ cộng `COMMISSION_CREDIT`, không trừ phần nền tảng trả lại khi hoàn khiếu nại (`COMPLAINT_DEBIT` trên ví
+  nền tảng) → lệch với khối quyết toán booking. Nay `sumByCenterAndOwnerType` (lọc ví PLATFORM) thay `sumByCenter`.
+  Test `completedVisitsAreSettled…` sửa kỳ vọng 200.000 → 0. Doanh thu vào kỳ theo ngày quyết toán (~24 h sau buổi).

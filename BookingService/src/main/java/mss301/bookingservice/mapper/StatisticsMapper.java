@@ -8,6 +8,10 @@ import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
 import mss301.bookingservice.dto.response.ResponsivenessStatisticsResponse;
 import mss301.bookingservice.dto.response.StatisticsTrendPointResponse;
 import mss301.bookingservice.repository.projection.TopCaregiverView;
+import mss301.bookingservice.repository.projection.CaregiverServiceCountView;
+import mss301.bookingservice.dto.response.CaregiverWorkStatisticsResponse;
+import mss301.bookingservice.dto.response.CaregiverServiceStatisticsResponse;
+import java.time.Instant;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import java.util.UUID;
@@ -35,4 +39,9 @@ public interface StatisticsMapper {
                                                               long expiredCount);
     StatisticsTrendPointResponse toTrendPointResponse(String period, long bookings, long completedVisits,
                                                       long cancelledVisits, long missedVisits);
+    CaregiverWorkStatisticsResponse toCaregiverWorkResponse(UUID caregiverId, long completedVisits, long upcomingVisits,
+            long missedVisits, long cancelledVisits, long customerNoShowVisits, long completedMinutes,
+            Instant lastCompletedAt, BigDecimal ratingAverage, long ratingCount,
+            List<CaregiverServiceStatisticsResponse> services);
+    List<CaregiverServiceStatisticsResponse> toServiceResponseList(List<CaregiverServiceCountView> services);
 }

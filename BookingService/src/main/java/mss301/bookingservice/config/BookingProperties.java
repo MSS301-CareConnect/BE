@@ -341,7 +341,7 @@ public class BookingProperties {
         Duration caregiverWithdrawalLead = Duration.ofHours(24);
 
         // Tự phân công (2026-11-09): chu kỳ quét buổi đã cọc chưa có người, thời gian chờ giữa hai lần thử cùng booking,
-        // số ứng viên tối đa tra hồ sơ để thử, chu kỳ nhắc trung tâm khi chưa tìm được người.
+        // số ứng viên tối đa tra hồ sơ để thử, các mốc nhắc trung tâm khi chưa tìm được người.
         @NotNull
         Duration autoAssignInterval = Duration.ofMinutes(1);
 
@@ -352,8 +352,15 @@ public class BookingProperties {
         @Max(20)
         int autoAssignCandidates = 5;
 
+        // 2026-11-13: báo trung tâm ngay lần đầu không tìm được người, rồi nhắc lại khi buổi thiếu người sớm nhất còn đúng
+        // các khoảng này tới giờ bắt đầu (đều phải lớn hơn unassignedCancelLead).
         @NotNull
-        Duration unassignedNotifyEvery = Duration.ofHours(24);
+        List<Duration> unassignedRemindBefore = new ArrayList<>(List.of(Duration.ofHours(48), Duration.ofHours(24),
+                Duration.ofHours(16)));
+
+        // Một lịch bị chia cho nhiều hơn số người này → báo trung tâm xem lại (2026-11-13).
+        @Min(1)
+        int splitCaregiverWarning = 3;
 
         // Buổi đã cọc còn khoảng này tới giờ bắt đầu mà vẫn chưa có người → hệ thống hủy buổi, hoàn 100 % (Q-B2).
         @NotNull

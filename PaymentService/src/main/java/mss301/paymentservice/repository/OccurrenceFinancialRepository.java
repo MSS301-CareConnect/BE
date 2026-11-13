@@ -18,12 +18,17 @@ public interface OccurrenceFinancialRepository extends JpaRepository<OccurrenceF
     List<OccurrenceFinancial> findAllByBookingId(UUID bookingId);
 
     // Ví (S1): booking đã trả khoản đầu còn buổi đã bắt đầu mà chưa chốt (chưa trạng thái cuối, chưa cộng cho trung tâm).
+    // Phân trang theo bookingId (sau :after): booking còn chờ (đang làm, trong 24h khách phản ánh, chờ trung tâm xác nhận)
+    // lượt nào cũng là ứng viên, nên phải đi hết danh sách để booking xếp sau không bị bỏ đói.
     @Query("""
             select distinct o.bookingId from OccurrenceFinancial o, BookingFinancial f
             where f.bookingId = o.bookingId and f.status <> :unpaidStatus
               and o.finalStatus is null and o.settledAt is null and o.startAt <= :cutoff
+              and (:after is null or o.bookingId > :after)
+            order by o.bookingId
             """)
     List<UUID> findSettlementCandidateBookingIds(@Param("unpaidStatus") BookingFinancialStatus unpaidStatus,
                                                  @Param("cutoff") Instant cutoff,
+                                                 @Param("after") UUID after,
                                                  Pageable pageable);
 }

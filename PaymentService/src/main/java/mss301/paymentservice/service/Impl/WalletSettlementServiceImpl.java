@@ -65,11 +65,11 @@ public class WalletSettlementServiceImpl implements WalletSettlementService {
 
     // Lấy id booking có buổi đã xong quá thời gian chờ để quyết toán.
     @Override
-    public List<UUID> findDueBookingIds() {
+    public List<UUID> findDueBookingIds(UUID after) {
         PaymentProperties.Wallet walletProperties = paymentProperties.getWallet();
         Instant cutoff = clock.instant().minus(walletProperties.getSettlementGrace());
         return occurrenceFinancialRepository.findSettlementCandidateBookingIds(BookingFinancialStatus.AWAITING_DEPOSIT,
-                cutoff, PageRequest.of(0, walletProperties.getSettlementBatchSize()));
+                cutoff, after, PageRequest.of(0, walletProperties.getSettlementBatchSize()));
     }
 
     // Quyết toán một booking: lấy trạng thái buổi từ BookingService rồi ghi tiền vào ví.

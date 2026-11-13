@@ -1,6 +1,10 @@
 package mss301.bookingservice.repository;
 
 import mss301.bookingservice.repository.projection.TopCaregiverView;
+import mss301.bookingservice.repository.projection.CaregiverVisitCountView;
+import mss301.bookingservice.repository.projection.CaregiverServiceCountView;
+import mss301.bookingservice.repository.projection.CaregiverRatingView;
+import mss301.bookingservice.enums.OccurrenceStatus;
 import mss301.bookingservice.repository.projection.StatisticsCountView;
 import mss301.bookingservice.repository.projection.RatingCountView;
 import mss301.bookingservice.repository.projection.OccurrenceStartView;
@@ -184,6 +188,47 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<TopCaregiverView> topCaregivers(@Param("centerId") UUID centerId, @Param("from") Instant from, @Param("to") Instant to,
                                         @Param("visibility") FeedbackVisibility visibility, @Param("ended") CareSessionStatus ended,
                                         Pageable pageable);
+
+    // Số buổi của từng caregiver theo trạng thái (mọi thời điểm), lọc tùy chọn theo trung tâm và caregiver.
+    @Query("""
+            select o.caregiverId as caregiverId, o.status as status, count(o) as visits,
+                sum(o.durationMinutes) as minutes, max(o.startAt) as lastStartAt
+            from BookingOccurrence o where o.deletedAt is null and o.caregiverId is not null
+              and (:centerId is null or o.booking.centerId = :centerId)
+              and (:caregiverId is null or o.caregiverId = :caregiverId)
+            group by o.caregiverId, o.status
+            """)
+    List<CaregiverVisitCountView> countCaregiverVisits(@Param("centerId") UUID centerId,
+                                                       @Param("caregiverId") UUID caregiverId);
+
+    // Buổi đã hoàn thành của từng caregiver theo dịch vụ. Buổi cũ không ghi careServiceId (booking một dịch vụ)
+    // khớp mọi dịch vụ của booking; count distinct để một buổi không bị đếm trùng trong cùng dịch vụ.
+    @Query("""
+            select o.caregiverId as caregiverId, d.careServiceId as careServiceId, max(d.serviceName) as serviceName,
+                count(distinct o.id) as completedVisits
+            from BookingOccurrence o join BookingDetail d on d.booking = o.booking
+            where o.deletedAt is null and o.status = :completed and o.caregiverId is not null
+              and (o.careServiceId is null or d.careServiceId = o.careServiceId)
+              and (:centerId is null or o.booking.centerId = :centerId)
+              and (:caregiverId is null or o.caregiverId = :caregiverId)
+            group by o.caregiverId, d.careServiceId
+            order by count(distinct o.id) desc
+            """)
+    List<CaregiverServiceCountView> countCaregiverServices(@Param("centerId") UUID centerId,
+                                                           @Param("caregiverId") UUID caregiverId,
+                                                           @Param("completed") OccurrenceStatus completed);
+
+    // Điểm trung bình và số đánh giá đang hiển thị của từng caregiver.
+    @Query("""
+            select f.caregiverId as caregiverId, avg(f.rating) as ratingAverage, count(f) as ratingCount
+            from Feedback f where f.deletedAt is null and f.visibility = :visibility
+              and (:centerId is null or f.centerId = :centerId)
+              and (:caregiverId is null or f.caregiverId = :caregiverId)
+            group by f.caregiverId
+            """)
+    List<CaregiverRatingView> summarizeCaregiverRatings(@Param("centerId") UUID centerId,
+                                                        @Param("caregiverId") UUID caregiverId,
+                                                        @Param("visibility") FeedbackVisibility visibility);
 
     @Query("""
             select distinct b.centerId from Booking b where b.deletedAt is null and (

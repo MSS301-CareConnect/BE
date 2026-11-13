@@ -208,6 +208,9 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 .toList();
         occurrenceMapper.updateDetail(services, customerPhone, customerName, findSessionId(occurrence), bookingVisits,
                 occurrenceResponse);
+        if (fullAccess && occurrence.getStatus() == OccurrenceStatus.CAREGIVER_MISSED) {
+            bookingLifecycleService.findPendingMissedRefund(id).ifPresent(occurrenceResponse::setMissedRefundAt);
+        }
         return APIResponse.success("Lấy chi tiết buổi chăm sóc thành công", occurrenceResponse);
     }
 
@@ -427,6 +430,38 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                 occurrence.getId());
     }
 
+    // Buổi cần người chăm sóc của trung tâm.
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<PageResponse<CaregiverOccurrenceResponse>> listUnassigned(UUID centerId, int page, int size) {
+        if (centerId == null) {
+            throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
+        }
+        Page<BookingOccurrence> occurrences = bookingOccurrenceRepository.findCenterUnassigned(centerId,
+                BookingStatus.DEPOSIT_PAID, OccurrenceStatus.PENDING_ASSIGNMENT, OccurrenceStatus.NOT_STARTED,
+                clock.instant(), PageRequests.unsorted(page, size));
+        PageResponse<CaregiverOccurrenceResponse> response = PageResponse.of(occurrences,
+                occurrenceMapper.toCaregiverResponseList(occurrences.getContent()));
+        return APIResponse.success("Lấy buổi cần phân công thành công", response);
+    }
+
+    // Booking đang chờ chốt chỉ vì khoản hoàn buổi vắng chưa gửi.
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findBookingsToFinalizeAfterMissedRefund() {
+        return bookingOccurrenceRepository.findBookingsWithMissedAndNoActive(BookingStatus.CONFIRMED,
+                BookingStatus.IN_PROGRESS, OccurrenceStatus.CAREGIVER_MISSED, OccurrenceStatus.ACTIVE,
+                PageRequest.of(0, SCAN_BATCH_SIZE));
+    }
+
+    // Chốt booking khi khoản hoàn buổi vắng đã gửi (finalizeIfDone tự kiểm còn chờ hay không).
+    @Override
+    @Transactional
+    public void finalizeAfterMissedRefund(UUID bookingId) {
+        bookingRepository.findForUpdateSkipLocked(bookingId)
+                .ifPresent(booking -> bookingLifecycleService.finalizeIfDone(booking, null));
+    }
+
     // Lấy id buổi đã tới giờ mà caregiver chưa check-in.
     @Override
     @Transactional(readOnly = true)
@@ -568,9 +603,28 @@ public class BookingOccurrenceServiceImpl implements BookingOccurrenceService {
                                        UUID changedBy, String reason, Instant now, CaregiverAbsenceSource source) {
         changeStatus(occurrence, OccurrenceStatus.CAREGIVER_MISSED, changedBy, reason, now);
         occurrence.setMissedReason(MissedReason.CAREGIVER);
+        // 2026-11-13: tiền chỉ về ví khách khi xong mọi buổi của booking trong ngày đó — caregiver quên check-in còn kịp
+        // giải trình để trung tâm ghi nhận check-in hộ (hủy khoản hoàn chưa gửi).
+        Instant refundAt = findDayEnd(booking, occurrence);
+        if (refundAt.isBefore(now)) {
+            refundAt = now;
+        }
         bookingLifecycleService.requestRefund(booking, List.of(occurrence.getId()), RefundReason.CAREGIVER_MISSED,
-                cancelledBy, changedBy, occurrence.getId().toString());
-        caregiverAbsenceService.record(occurrence, source);
+                cancelledBy, changedBy, occurrence.getId().toString(), refundAt);
+        caregiverAbsenceService.record(occurrence, source, refundAt);
+    }
+
+    // Giờ kết thúc muộn nhất của các buổi chưa hủy trong cùng ngày (múi giờ booking) với buổi này.
+    private Instant findDayEnd(Booking booking, BookingOccurrence occurrence) {
+        ZoneId zone = bookingProperties.getSchedule().getTimezone();
+        LocalDate day = occurrence.getStartAt().atZone(zone).toLocalDate();
+        return bookingOccurrenceRepository.findByBookingIdAndDeletedAtIsNullOrderByOccurrenceNoAsc(booking.getId()).stream()
+                .filter(visit -> visit.getStatus() != OccurrenceStatus.CANCELLED
+                        && visit.getStatus() != OccurrenceStatus.EXPIRED)
+                .filter(visit -> visit.getStartAt().atZone(zone).toLocalDate().equals(day))
+                .map(BookingOccurrence::getEndAt)
+                .max(Comparator.naturalOrder())
+                .orElse(occurrence.getEndAt());
     }
 
     // Mô tả ngắn buổi (số thứ tự + giờ bắt đầu) cho thông báo.

@@ -21,8 +21,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
 
@@ -137,6 +140,26 @@ public class CaregiverPortImpl implements CaregiverPort {
             }
         }
         return candidates == null ? List.of() : new ArrayList<>(candidates.values());
+    }
+
+    // Ứng viên đủ điều kiện tĩnh (không gửi khung giờ thì Provider bỏ qua lọc lịch).
+    @Override
+    public List<ProviderCaregiverCardResponse> findQualifiedCaregivers(UUID centerId, Collection<UUID> careServiceIds) {
+        return requestCandidates(centerId, careServiceIds, List.of());
+    }
+
+    // Buổi vi phạm lịch làm việc / ngày nghỉ theo từng lô 60 buổi.
+    @Override
+    public Set<Instant> findUnavailableStarts(UUID caregiverId, List<OccurrenceSlot> slots) {
+        Set<Instant> unavailable = new HashSet<>();
+        for (int from = 0; from < slots.size(); from += MAX_SLOTS_PER_CHECK) {
+            AvailabilityCheckResponse availability = requestAvailability(caregiverId,
+                    slots.subList(from, Math.min(from + MAX_SLOTS_PER_CHECK, slots.size())));
+            if (availability.getViolations() != null) {
+                availability.getViolations().forEach(violation -> unavailable.add(violation.getStartAt()));
+            }
+        }
+        return unavailable;
     }
 
     // Gọi ProviderService tìm caregiver phù hợp cho một lô khung giờ.

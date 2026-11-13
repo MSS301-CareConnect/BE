@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -52,6 +54,31 @@ public class CaregiverScheduleGuardImpl implements CaregiverScheduleGuard {
     @Override
     public boolean isCaregiverFree(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
         return findConflict(caregiverId, slots, excludeBookingId) == null;
+    }
+
+    // Buổi nào của danh sách bị trùng / sát buổi khác của caregiver.
+    @Override
+    public Set<Instant> findBusyStarts(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId) {
+        if (slots.isEmpty()) {
+            return Set.of();
+        }
+        Duration travelBuffer = bookingProperties.getSchedule().getTravelBuffer();
+        Instant rangeStart = slots.stream().map(OccurrenceSlot::getStartAt).min(Comparator.naturalOrder()).orElseThrow();
+        Instant rangeEnd = slots.stream().map(OccurrenceSlot::getEndAt).max(Comparator.naturalOrder()).orElseThrow();
+        List<BookingOccurrence> held = bookingOccurrenceRepository.findCaregiverOverlaps(caregiverId,
+                        rangeStart.minus(travelBuffer), rangeEnd.plus(travelBuffer), OccurrenceStatus.ACTIVE,
+                        BookingStatus.SCHEDULE_HOLDING).stream()
+                .filter(candidate -> !candidate.getBooking().getId().equals(excludeBookingId))
+                .toList();
+        Set<Instant> busy = new HashSet<>();
+        for (OccurrenceSlot slot : slots) {
+            boolean clash = held.stream().anyMatch(candidate -> candidate.getStartAt().minus(travelBuffer).isBefore(slot.getEndAt())
+                    && slot.getStartAt().isBefore(candidate.getEndAt().plus(travelBuffer)));
+            if (clash) {
+                busy.add(slot.getStartAt());
+            }
+        }
+        return busy;
     }
 
     // Khoảng nửa mở [start, end); buổi của cùng booking được nối liền nên bỏ qua.

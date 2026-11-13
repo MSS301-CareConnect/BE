@@ -22,6 +22,8 @@ public interface CaregiverAbsenceRepository extends JpaRepository<CaregiverAbsen
 
     boolean existsByOccurrenceIdAndDeletedAtIsNull(UUID occurrenceId);
 
+    Optional<CaregiverAbsence> findByOccurrenceIdAndDeletedAtIsNull(UUID occurrenceId);
+
     @Query("""
             select a from CaregiverAbsence a join fetch a.occurrence o join fetch a.booking b
             where a.id = :id and a.deletedAt is null

@@ -24,6 +24,6 @@ public interface CaregiverAssignmentService {
     List<UUID> findAutoAssignIds();
 
     // Không @Transactional: tìm ứng viên ngoài transaction, gán trong transaction ngắn (khóa booking → caregiver), báo
-    // caregiver / khách; vẫn còn buổi chưa có người → báo trung tâm (tối đa một lần / unassigned-notify-every).
+    // caregiver / khách; vẫn còn buổi chưa có người → báo trung tâm (lần đầu, rồi theo các mốc unassigned-remind-before).
     void autoAssign(UUID bookingId);
 }

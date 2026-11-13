@@ -244,7 +244,8 @@ public class BookingServiceImpl implements BookingService {
         log.info("Booking {} created by customer {} with {} occurrences", savedBooking.getBookingCode(), actorId, slots.size());
         BookingDetailResponse bookingDetailResponse = toDetailResponse(savedBooking, false);
         String message = savedBooking.getCaregiverId() == null
-                ? "Đặt lịch thành công, đã giữ chỗ — vui lòng thanh toán khoản đầu, trung tâm sẽ phân người chăm sóc"
+                ? "Đặt lịch thành công, đã giữ chỗ — hiện chưa có người chăm sóc trống lịch, hệ thống sẽ tiếp tục tìm"
+                        + " sau khi bạn thanh toán khoản đầu"
                 : "Đặt lịch thành công, đã giữ chỗ — vui lòng thanh toán khoản đầu";
         return APIResponse.success(message, bookingDetailResponse);
     }

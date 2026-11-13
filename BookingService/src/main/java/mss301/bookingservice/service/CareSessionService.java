@@ -1,5 +1,6 @@
 package mss301.bookingservice.service;
 
+import mss301.bookingservice.dto.request.CareSessionCenterCheckInRequest;
 import mss301.bookingservice.dto.request.CareSessionEndRequest;
 import mss301.bookingservice.dto.request.CareSessionForceEndRequest;
 import mss301.bookingservice.dto.request.CareSessionReviewRequest;
@@ -25,6 +26,10 @@ public interface CareSessionService {
 
     // OPS-02: caregiver được giao check-in buổi (từ 30 phút trước giờ bắt đầu tới trước giờ kết thúc), sinh checklist.
     APIResponse<CareSessionResponse> start(UUID actorId, CareSessionStartRequest request);
+
+    // 2026-11-13: caregiver quên bấm check-in → manager cùng trung tâm ghi nhận hộ (cùng điều kiện như check-in thường,
+    // giờ đến có thể lùi về trong khung check-in), kèm ghi chú vào ca và báo caregiver.
+    APIResponse<CareSessionResponse> checkInByCenter(UUID actorId, UUID centerId, CareSessionCenterCheckInRequest request);
 
     // OPS-04: caregiver check-out khi không còn việc PENDING; buổi COMPLETED; chốt booking nếu là buổi cuối.
     APIResponse<CareSessionResponse> end(UUID actorId, UUID id, CareSessionEndRequest request);

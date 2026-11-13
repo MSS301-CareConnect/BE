@@ -491,8 +491,12 @@ public class WalletServiceImpl implements WalletService {
         statisticsResponse.setForfeitIncome(totals.getOrDefault(WalletTransactionType.FORFEIT_CREDIT, BigDecimal.ZERO));
         statisticsResponse.setComplaintDebits(totals.getOrDefault(WalletTransactionType.COMPLAINT_DEBIT,
                 BigDecimal.ZERO));
-        statisticsResponse.setCommissionDeducted(walletTransactionRepository.sumByCenter(centerId,
-                WalletTransactionType.COMMISSION_CREDIT, from, to));
+        // Hoa hồng đã trừ = nền tảng thu − nền tảng trả lại khi hoàn khiếu nại (khớp khối quyết toán booking).
+        BigDecimal commission = walletTransactionRepository.sumByCenterAndOwnerType(centerId, WalletOwnerType.PLATFORM,
+                WalletTransactionType.COMMISSION_CREDIT, from, to);
+        BigDecimal commissionReturned = walletTransactionRepository.sumByCenterAndOwnerType(centerId,
+                WalletOwnerType.PLATFORM, WalletTransactionType.COMPLAINT_DEBIT, from, to);
+        statisticsResponse.setCommissionDeducted(commission.subtract(commissionReturned));
     }
 
     // Điền thống kê của nền tảng: hoa hồng và các khoản liên quan.

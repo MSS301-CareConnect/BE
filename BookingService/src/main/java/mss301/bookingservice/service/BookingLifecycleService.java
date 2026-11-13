@@ -6,7 +6,9 @@ import mss301.bookingservice.enums.BookingAction;
 import mss301.bookingservice.enums.CancelledBy;
 import mss301.bookingservice.enums.RefundReason;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BookingLifecycleService {
@@ -33,4 +35,14 @@ public interface BookingLifecycleService {
     // snapshot. keySuffix phân biệt từng lần (vd id buổi) để cùng một việc không bao giờ được hoàn hai lần.
     void requestRefund(Booking booking, List<UUID> occurrenceIds, RefundReason reason, CancelledBy cancelledBy,
                        UUID requestedBy, String keySuffix);
+
+    // 2026-11-13: như trên nhưng chỉ gửi từ notBefore (hoàn tiền buổi caregiver vắng chờ tới khi xong các buổi trong ngày).
+    void requestRefund(Booking booking, List<UUID> occurrenceIds, RefundReason reason, CancelledBy cancelledBy,
+                       UUID requestedBy, String keySuffix, Instant notBefore);
+
+    // Giờ sẽ hoàn tiền buổi caregiver vắng còn chờ gửi; đã gửi / không có → rỗng.
+    Optional<Instant> findPendingMissedRefund(UUID occurrenceId);
+
+    // Hủy khoản hoàn buổi vắng chưa gửi (trung tâm ghi nhận caregiver đã làm buổi). Đã / sắp gửi → false.
+    boolean cancelPendingMissedRefund(UUID occurrenceId, String note);
 }

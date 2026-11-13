@@ -3,6 +3,8 @@ package mss301.bookingservice.service;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 
 import java.util.List;
+import java.util.Set;
+import java.time.Instant;
 import java.util.UUID;
 
 public interface CaregiverScheduleGuard {
@@ -15,4 +17,7 @@ public interface CaregiverScheduleGuard {
 
     // Như checkCaregiverFree nhưng trả false thay vì ném lỗi — dùng khi thử lần lượt nhiều ứng viên.
     boolean isCaregiverFree(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId);
+
+    // 2026-11-13: giờ bắt đầu các buổi trùng / sát (travel-buffer) buổi của booking khác — một truy vấn cho cả khoảng.
+    Set<Instant> findBusyStarts(UUID caregiverId, List<OccurrenceSlot> slots, UUID excludeBookingId);
 }

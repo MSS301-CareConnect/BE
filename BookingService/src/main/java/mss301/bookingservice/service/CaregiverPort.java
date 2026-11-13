@@ -6,7 +6,9 @@ import mss301.bookingservice.dto.response.AssignedCaregiver;
 import mss301.bookingservice.dto.response.OccurrenceSlot;
 
 import java.util.Collection;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 // Caregiver bên ProviderService (qua gateway). Không gọi trong DB transaction đang mở.
@@ -31,4 +33,10 @@ public interface CaregiverPort {
     // Provider lỗi → 503 PROVIDER_UNAVAILABLE.
     List<ProviderCaregiverCardResponse> findFreeCaregivers(UUID centerId, Collection<UUID> careServiceIds,
                                                            List<OccurrenceSlot> slots);
+
+    // 2026-11-13: caregiver VERIFIED + ACTIVE của trung tâm làm được mọi dịch vụ, chưa xét lịch (tối đa một trang 50).
+    List<ProviderCaregiverCardResponse> findQualifiedCaregivers(UUID centerId, Collection<UUID> careServiceIds);
+
+    // Giờ bắt đầu các buổi caregiver KHÔNG nhận được theo lịch làm việc / ngày nghỉ (một lần gọi cho tối đa 60 buổi).
+    Set<Instant> findUnavailableStarts(UUID caregiverId, List<OccurrenceSlot> slots);
 }

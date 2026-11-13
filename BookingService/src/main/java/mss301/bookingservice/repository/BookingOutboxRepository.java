@@ -40,6 +40,8 @@ public interface BookingOutboxRepository extends JpaRepository<BookingOutbox, UU
 
     boolean existsByIdempotencyKeyAndDeletedAtIsNull(String idempotencyKey);
 
+    Optional<BookingOutbox> findByIdempotencyKeyAndDeletedAtIsNull(String idempotencyKey);
+
     // H-08: màn hình sự cố admin.
     Page<BookingOutbox> findByStatusAndDeletedAtIsNull(OutboxStatus status, Pageable pageable);
 

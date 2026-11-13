@@ -152,7 +152,7 @@ public class Booking extends BaseEntity {
     Integer centerReminderMinutes;
 
     // Tự phân công (2026-11-09): lần thử gần nhất (scheduler thử lại sau booking.schedule.auto-assign-retry) và lần gần nhất
-    // báo trung tâm "chưa tìm được người" (mỗi booking tối đa một lần / booking.schedule.unassigned-notify-every).
+    // báo trung tâm "chưa tìm được người" (lần đầu rồi theo các mốc booking.schedule.unassigned-remind-before).
     @Column(name = "auto_assign_attempted_at")
     Instant autoAssignAttemptedAt;
 

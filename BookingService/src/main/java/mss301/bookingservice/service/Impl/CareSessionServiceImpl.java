@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import mss301.bookingservice.config.BookingProperties;
+import mss301.bookingservice.dto.request.CareSessionCenterCheckInRequest;
 import mss301.bookingservice.dto.request.CareSessionEndRequest;
 import mss301.bookingservice.dto.request.CareSessionForceEndRequest;
 import mss301.bookingservice.dto.request.CareSessionReviewRequest;
@@ -45,6 +46,7 @@ import mss301.bookingservice.repository.CareSessionRepository;
 import mss301.bookingservice.repository.CareTaskRepository;
 import mss301.bookingservice.service.BookingLifecycleService;
 import mss301.bookingservice.service.BookingOccurrenceService;
+import mss301.bookingservice.service.CaregiverAbsenceService;
 import mss301.bookingservice.service.CareSessionService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -105,6 +107,7 @@ public class CareSessionServiceImpl implements CareSessionService {
     BookingNotificationService bookingNotificationService;
     CareSessionNoteRepository careSessionNoteRepository;
     BookingOccurrenceService bookingOccurrenceService;
+    CaregiverAbsenceService caregiverAbsenceService;
 
     // Chi tiết ca chăm sóc trong phạm vi người gọi.
     @Override
@@ -127,7 +130,7 @@ public class CareSessionServiceImpl implements CareSessionService {
         CareSessionResponse careSessionResponse;
         try {
             careSessionResponse = transactionTemplate.execute(status ->
-                    startInTransaction(actorId, request, occurrence.getBooking().getId()));
+                    startInTransaction(actorId, request, occurrence.getBooking().getId(), null, null));
         } catch (DataIntegrityViolationException e) {
             // Hai lần check-in song song: UNIQUE(occurrence_id) chặn lần thứ hai.
             throw new AppException(ErrorCode.SESSION_ALREADY_EXISTS);
@@ -136,6 +139,27 @@ public class CareSessionServiceImpl implements CareSessionService {
         log.info("Care session {} started for occurrence {} by caregiver {}", careSessionResponse.getSessionId(),
                 request.getOccurrenceId(), actorId);
         return APIResponse.success("Bắt đầu ca chăm sóc thành công", careSessionResponse);
+    }
+
+    // Trung tâm ghi nhận check-in hộ caregiver quên bấm: cùng luồng check-in, không đối chiếu vị trí.
+    @Override
+    public APIResponse<CareSessionResponse> checkInByCenter(UUID actorId, UUID centerId,
+                                                            CareSessionCenterCheckInRequest request) {
+        BookingOccurrence occurrence = bookingOccurrenceRepository.findWithBooking(request.getOccurrenceId())
+                .filter(found -> centerId.equals(found.getBooking().getCenterId()))
+                .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        CareSessionStartRequest startRequest = CareSessionStartRequest.builder()
+                .occurrenceId(request.getOccurrenceId()).build();
+        CareSessionResponse careSessionResponse;
+        try {
+            careSessionResponse = transactionTemplate.execute(status -> startInTransaction(actorId, startRequest,
+                    occurrence.getBooking().getId(), request.getCheckedInAt(), request.getNote().trim()));
+        } catch (DataIntegrityViolationException e) {
+            throw new AppException(ErrorCode.SESSION_ALREADY_EXISTS);
+        }
+        log.info("Care session {} checked in for occurrence {} by center manager {}",
+                careSessionResponse.getSessionId(), request.getOccurrenceId(), actorId);
+        return APIResponse.success("Đã ghi nhận check-in hộ người chăm sóc", careSessionResponse);
     }
 
     // Caregiver check-out: kết thúc ca và cập nhật buổi.
@@ -313,14 +337,23 @@ public class CareSessionServiceImpl implements CareSessionService {
         }
     }
 
-    // Khóa booking, kiểm điều kiện check-in rồi tạo ca và checklist.
-    private CareSessionResponse startInTransaction(UUID actorId, CareSessionStartRequest request, UUID bookingId) {
+    // Khóa booking, kiểm điều kiện check-in rồi tạo ca và checklist. centerNote != null: manager ghi nhận hộ (actorId là
+    // manager, giờ đến = requestedCheckInAt hoặc bây giờ); null: caregiver tự check-in lúc này.
+    private CareSessionResponse startInTransaction(UUID actorId, CareSessionStartRequest request, UUID bookingId,
+                                                   Instant requestedCheckInAt, String centerNote) {
+        boolean byCenter = centerNote != null;
+        // 2026-11-13: buổi đã bị đánh vắng mà khoản hoàn chưa gửi — trung tâm ghi nhận caregiver thực ra đã làm.
         // Khóa booking rồi tới buổi — cùng thứ tự với đổi trạng thái booking / đổi caregiver.
         Booking booking = bookingRepository.findForUpdate(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
         BookingOccurrence occurrence = bookingOccurrenceRepository.findForUpdate(request.getOccurrenceId())
-                .filter(found -> actorId.equals(found.getCaregiverUserId()))
+                .filter(found -> byCenter || actorId.equals(found.getCaregiverUserId()))
                 .orElseThrow(() -> new AppException(ErrorCode.OCCURRENCE_NOT_FOUND));
+        UUID caregiverUserId = occurrence.getCaregiverUserId();
+        if (caregiverUserId == null) {
+            throw new AppException(ErrorCode.OCCURRENCE_NO_CAREGIVER);
+        }
+        boolean restoring = byCenter && occurrence.getStatus() == OccurrenceStatus.CAREGIVER_MISSED;
         if (!BookingStatus.CAREGIVER_RECIPIENT_ACCESS.contains(booking.getStatus())) {
             throw new AppException(ErrorCode.BOOKING_NOT_CONFIRMED);
         }
@@ -331,12 +364,13 @@ public class CareSessionServiceImpl implements CareSessionService {
         if (careSessionRepository.existsByOccurrenceIdAndDeletedAtIsNull(occurrence.getId())) {
             throw new AppException(ErrorCode.SESSION_ALREADY_EXISTS);
         }
-        // 2026-11-11: một người không thể ở hai ca cùng lúc — phải check-out ca đang mở trước.
-        if (careSessionRepository.existsByCaregiverUserIdAndStatusAndDeletedAtIsNull(actorId,
+        // 2026-11-11: một người không thể ở hai ca cùng lúc — phải check-out ca đang mở trước. Buổi vắng được khôi phục
+        // là buổi đã qua, caregiver có thể đang ở ca sau.
+        if (!restoring && careSessionRepository.existsByCaregiverUserIdAndStatusAndDeletedAtIsNull(caregiverUserId,
                 CareSessionStatus.IN_PROGRESS)) {
             throw new AppException(ErrorCode.SESSION_ANOTHER_IN_PROGRESS);
         }
-        if (!OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())) {
+        if (!restoring && !OccurrenceStatus.WORKABLE.contains(occurrence.getStatus())) {
             throw new AppException(ErrorCode.INVALID_OCCURRENCE_TRANSITION);
         }
         // H-11: caregiver bị khóa / lưu trữ → buổi chờ đổi người, không cho check-in bằng tài khoản cũ.
@@ -347,13 +381,35 @@ public class CareSessionServiceImpl implements CareSessionService {
         // Q12: cửa sổ check-in theo center policy chụp trên booking; sau mốc muộn nhất buổi bị đánh MISSED.
         Instant earliestCheckIn = occurrence.getStartAt().minus(Duration.ofMinutes(booking.getCheckInEarlyMinutes()));
         Instant latestCheckIn = occurrence.getStartAt().plus(Duration.ofMinutes(booking.getCheckInLateMinutes()));
-        if (now.isBefore(earliestCheckIn) || !now.isBefore(latestCheckIn) || !now.isBefore(occurrence.getEndAt())) {
+        Instant checkInAt = requestedCheckInAt != null ? requestedCheckInAt : now;
+        if (!byCenter && (now.isBefore(earliestCheckIn) || !now.isBefore(latestCheckIn)
+                || !now.isBefore(occurrence.getEndAt()))) {
             throw new AppException(ErrorCode.SESSION_WINDOW_NOT_OPEN);
         }
-        CareSession newSession = careSessionMapper.toCareSession(request, occurrence, CareSessionStatus.IN_PROGRESS, now);
-        newSession.setLateMinutes(minutesBetween(occurrence.getStartAt(), now));
-        applyLocationCheck(newSession, booking, occurrence);
+        // Trung tâm ghi nhận được tới khi job MISSED chạy, nhưng giờ đến vẫn phải nằm trong khung check-in.
+        if (byCenter && (checkInAt.isAfter(now) || checkInAt.isBefore(earliestCheckIn)
+                || !checkInAt.isBefore(latestCheckIn) || !checkInAt.isBefore(occurrence.getEndAt()))) {
+            throw new AppException(ErrorCode.CHECK_IN_TIME_INVALID);
+        }
+        String centerReason = byCenter ? "Trung tâm ghi nhận check-in hộ người chăm sóc: " + centerNote : null;
+        if (restoring) {
+            if (!bookingLifecycleService.cancelPendingMissedRefund(occurrence.getId(), centerReason)) {
+                throw new AppException(ErrorCode.MISSED_REFUND_ALREADY_SENT);
+            }
+            occurrence.setMissedReason(null);
+            caregiverAbsenceService.excuseByCenterCheckIn(occurrence, actorId, centerReason);
+        }
+        CareSession newSession = careSessionMapper.toCareSession(request, occurrence, CareSessionStatus.IN_PROGRESS,
+                checkInAt);
+        newSession.setLateMinutes(minutesBetween(occurrence.getStartAt(), checkInAt));
+        if (!byCenter) {
+            applyLocationCheck(newSession, booking, occurrence);
+        }
         CareSession session = careSessionRepository.saveAndFlush(newSession);
+        if (byCenter) {
+            careSessionNoteRepository.save(careSessionMapper.toCareSessionNote(
+                    SessionNoteRequest.builder().content(centerReason).build(), session, actorId));
+        }
         List<CareTask> tasks = careTaskRepository.saveAll(buildTasks(session, booking, occurrence));
         OccurrenceStatus fromStatus = occurrence.getStatus();
         // 2026-11-11: check-in thẳng từ SCHEDULED (quên bấm nhận) cũng là nhận buổi.
@@ -361,14 +417,22 @@ public class CareSessionServiceImpl implements CareSessionService {
             occurrence.setAcknowledgedAt(now);
         }
         occurrence.setStatus(OccurrenceStatus.IN_PROGRESS);
-        occurrence.setActualStartAt(now);
+        occurrence.setActualStartAt(checkInAt);
         bookingEventRepository.save(bookingEventMapper.toStatusEvent(occurrence, BookingEventType.OCCURRENCE_STATUS_CHANGED,
-                fromStatus, OccurrenceStatus.IN_PROGRESS, actorId, null, now));
+                fromStatus, OccurrenceStatus.IN_PROGRESS, actorId, centerReason, now));
         if (booking.getStatus() == BookingStatus.CONFIRMED) {
             bookingLifecycleService.apply(booking, BookingAction.START, actorId, null);
         }
         notificationService.notify(List.of(booking.getCustomerId()), NotificationType.SESSION_STARTED,
-                Map.of(), "CARE_SESSION", session.getId());
+                restoring ? Map.of("body", "Trung tâm xác nhận người chăm sóc đã đến buổi " + occurrence.getOccurrenceNo()
+                        + " của lịch " + booking.getBookingCode() + " — buổi được ghi nhận, không hoàn tiền buổi này")
+                        : Map.of(), "CARE_SESSION", session.getId());
+        if (byCenter && !restoring) {
+            notificationService.notify(List.of(caregiverUserId), NotificationType.SESSION_STARTED,
+                    Map.of("body", "Trung tâm đã ghi nhận check-in hộ buổi " + occurrence.getOccurrenceNo() + " của lịch "
+                            + booking.getBookingCode() + ". Mở ca để làm checklist và check-out."),
+                    "CARE_SESSION", session.getId());
+        }
         if (session.getLocationFlag() != null) {
             bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.SESSION_LOCATION_FLAGGED,
                     Map.of("body", describeLocationFlag(session, booking, occurrence)), "CARE_SESSION", session.getId());

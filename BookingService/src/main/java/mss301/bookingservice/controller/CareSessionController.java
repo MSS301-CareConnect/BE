@@ -86,6 +86,15 @@ public class CareSessionController {
         return careSessionService.start(actorId, request);
     }
 
+    // API trung tâm ghi nhận check-in hộ caregiver quên bấm.
+    @PostMapping("/center-check-in")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<CareSessionResponse> checkInByCenter(@CurrentUserId UUID actorId,
+                                                            @CurrentCenterId UUID centerId,
+                                                            @Valid @RequestBody CareSessionCenterCheckInRequest request) {
+        return careSessionService.checkInByCenter(actorId, centerId, request);
+    }
+
     // API caregiver kết thúc ca (check-out).
     @PostMapping("/{id}/end")
     @PreAuthorize("hasRole('CAREGIVER')")

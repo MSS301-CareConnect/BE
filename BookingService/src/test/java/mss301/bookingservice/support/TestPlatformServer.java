@@ -75,6 +75,8 @@ public final class TestPlatformServer {
     // Khách đang nợ (Payment giả) và caregiver không có lịch rảnh (Provider giả) — BK-02.
     private final Set<UUID> debtors = ConcurrentHashMap.newKeySet();
     private final Set<UUID> unavailableCaregivers = ConcurrentHashMap.newKeySet();
+    // 2026-11-13: caregiver không có lịch làm việc ở các buổi bắt đầu lúc này (gán theo độ phủ).
+    private final Map<UUID, Set<Instant>> unavailableStarts = new ConcurrentHashMap<>();
     private final AtomicReference<String> lastCareRecipientRequestId = new AtomicReference<>();
     private final RSAKey signingKey;
     private final HttpServer server;
@@ -261,6 +263,10 @@ public final class TestPlatformServer {
         unavailableCaregivers.add(caregiverId);
     }
 
+    public void setCaregiverUnavailableAt(UUID caregiverId, Instant startAt) {
+        unavailableStarts.computeIfAbsent(caregiverId, id -> ConcurrentHashMap.newKeySet()).add(startAt);
+    }
+
     public List<String> remainingInvoiceKeys() {
         return remainingInvoiceKeys;
     }
@@ -421,13 +427,19 @@ public final class TestPlatformServer {
         }
         String centerId = params.getOrDefault("centerId", List.of("")).getFirst();
         List<String> serviceIds = params.getOrDefault("careServiceIds", List.of());
+        List<Instant> slotStarts = params.getOrDefault("slots", List.of()).stream()
+                .filter(slot -> slot.contains("/"))
+                .map(slot -> Instant.parse(slot.substring(0, slot.indexOf('/'))))
+                .toList();
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, Object> caregiver : caregivers.values()) {
             Object services = caregiver.get("careServiceIds");
             boolean coversServices = services instanceof List<?> list && list.containsAll(serviceIds);
             if (centerId.equals(caregiver.get("centerId")) && "VERIFIED".equals(caregiver.get("verificationStatus"))
                     && "ACTIVE".equals(caregiver.get("caregiverStatus")) && coversServices
-                    && !unavailableCaregivers.contains(UUID.fromString((String) caregiver.get("caregiverId")))) {
+                    && !unavailableCaregivers.contains(UUID.fromString((String) caregiver.get("caregiverId")))
+                    && slotStarts.stream().noneMatch(unavailableStarts.getOrDefault(
+                            UUID.fromString((String) caregiver.get("caregiverId")), Set.of())::contains)) {
                 items.add(Map.of("caregiverId", caregiver.get("caregiverId"), "centerId", centerId,
                         "ratingAverage", 4.5, "ratingCount", 2, "experienceYears", 3));
             }
@@ -511,13 +523,15 @@ public final class TestPlatformServer {
         }
         JsonNode body = objectMapper.readTree(exchange.getRequestBody());
         UUID caregiverId = UUID.fromString(body.get("caregiverId").asString());
-        boolean available = !unavailableCaregivers.contains(caregiverId);
         List<Object> violations = new ArrayList<>();
-        if (!available) {
-            JsonNode slot = body.get("slots").get(0);
-            violations.add(Map.of("startAt", slot.get("startAt").asString(), "endAt", slot.get("endAt").asString(),
-                    "reason", "NO_SCHEDULE"));
+        Set<Instant> blocked = unavailableStarts.getOrDefault(caregiverId, Set.of());
+        for (JsonNode slot : body.get("slots")) {
+            if (unavailableCaregivers.contains(caregiverId) || blocked.contains(Instant.parse(slot.get("startAt").asString()))) {
+                violations.add(Map.of("startAt", slot.get("startAt").asString(), "endAt", slot.get("endAt").asString(),
+                        "reason", "NO_SCHEDULE"));
+            }
         }
+        boolean available = violations.isEmpty();
         Map<String, Object> result = new HashMap<>();
         result.put("available", available);
         result.put("violations", violations);

@@ -22,13 +22,17 @@ public class WalletSettlementScheduler {
     @Scheduled(fixedDelayString = "${payment.wallet.settlement-scan-interval:10m}",
             initialDelayString = "${payment.wallet.settlement-scan-interval:10m}")
     public void settleCompletedOccurrences() {
-        List<UUID> bookingIds = walletSettlementService.findDueBookingIds();
-        for (UUID bookingId : bookingIds) {
-            try {
-                walletSettlementService.process(bookingId);
-            } catch (RuntimeException e) {
-                log.error("Wallet settlement crashed for booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
+        // Đi hết mọi trang: booking chưa chốt được vẫn là ứng viên, chỉ lấy trang đầu thì booking xếp sau bị bỏ đói.
+        List<UUID> bookingIds = walletSettlementService.findDueBookingIds(null);
+        while (!bookingIds.isEmpty()) {
+            for (UUID bookingId : bookingIds) {
+                try {
+                    walletSettlementService.process(bookingId);
+                } catch (RuntimeException e) {
+                    log.error("Wallet settlement crashed for booking {} ({})", bookingId, e.getClass().getSimpleName(), e);
+                }
             }
+            bookingIds = walletSettlementService.findDueBookingIds(bookingIds.getLast());
         }
     }
 }

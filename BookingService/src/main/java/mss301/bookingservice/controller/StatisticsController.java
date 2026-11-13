@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.OperationalStatisticsResponse;
+import mss301.bookingservice.dto.response.CaregiverWorkStatisticsResponse;
 import mss301.bookingservice.enums.RoleCode;
 import mss301.bookingservice.security.CurrentCenterId;
 import mss301.bookingservice.security.CurrentRoles;
@@ -13,6 +14,7 @@ import mss301.bookingservice.service.StatisticsService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -31,6 +33,15 @@ public class StatisticsController {
             @CurrentCenterId(required = false) UUID scopeCenterId, @RequestParam(required = false) UUID centerId,
             @RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to) {
         return statisticsService.centers(roles, scopeCenterId, centerId, from, to);
+    }
+
+    // API thành tích làm việc của caregiver: số buổi theo kết quả, giờ đã làm, đánh giá và dịch vụ.
+    @GetMapping("/caregivers")
+    @PreAuthorize("hasAnyRole('ADMIN','CENTER_MANAGER')")
+    public APIResponse<List<CaregiverWorkStatisticsResponse>> caregivers(@CurrentRoles Set<RoleCode> roles,
+            @CurrentCenterId(required = false) UUID scopeCenterId, @RequestParam(required = false) UUID centerId,
+            @RequestParam(required = false) UUID caregiverId) {
+        return statisticsService.caregivers(roles, scopeCenterId, centerId, caregiverId);
     }
 
     // API thống kê vận hành toàn hệ thống.

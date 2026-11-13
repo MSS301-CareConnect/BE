@@ -12,6 +12,7 @@ import mss301.bookingservice.enums.CaregiverAbsenceStatus;
 import mss301.bookingservice.enums.RoleCode;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
@@ -41,5 +42,8 @@ public interface CaregiverAbsenceService {
 
     // Gọi trong transaction vừa đánh buổi CAREGIVER_MISSED (booking + buổi đã khóa): ghi hồ sơ một lần cho buổi và báo
     // caregiver, trung tâm, khách. Buổi không có caregiver thì chỉ báo khách + trung tâm.
-    void record(BookingOccurrence occurrence, CaregiverAbsenceSource source);
+    void record(BookingOccurrence occurrence, CaregiverAbsenceSource source, Instant refundAt);
+
+    // 2026-11-13: trung tâm ghi nhận check-in hộ buổi đã bị đánh vắng → hồ sơ vắng của buổi thành EXCUSED kèm ghi chú.
+    void excuseByCenterCheckIn(BookingOccurrence occurrence, UUID actorId, String note);
 }

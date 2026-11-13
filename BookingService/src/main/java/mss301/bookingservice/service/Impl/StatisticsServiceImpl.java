@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import mss301.bookingservice.dto.response.APIResponse;
 import mss301.bookingservice.dto.response.OperationalStatisticsResponse;
+import mss301.bookingservice.dto.response.CaregiverWorkStatisticsResponse;
 import mss301.bookingservice.dto.response.OccurrenceStatisticsResponse;
 import mss301.bookingservice.dto.response.ComplaintStatisticsResponse;
 import mss301.bookingservice.dto.response.CenterOperationalStatsResponse;
@@ -25,6 +26,9 @@ import mss301.bookingservice.repository.projection.BookingResponseTimeView;
 import mss301.bookingservice.repository.projection.StatisticsCountView;
 import mss301.bookingservice.repository.projection.FeedbackRatingView;
 import mss301.bookingservice.repository.projection.OccurrenceStartView;
+import mss301.bookingservice.repository.projection.CaregiverVisitCountView;
+import mss301.bookingservice.repository.projection.CaregiverServiceCountView;
+import mss301.bookingservice.repository.projection.CaregiverRatingView;
 import mss301.bookingservice.service.StatisticsService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +42,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,10 +79,7 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Override
     @Transactional(readOnly = true)
     public APIResponse<OperationalStatisticsResponse> centers(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId, LocalDate from, LocalDate to) {
-        UUID effectiveCenterId = roles.contains(RoleCode.ADMIN) ? centerId : scopeCenterId;
-        if (!roles.contains(RoleCode.ADMIN) && effectiveCenterId == null) {
-            throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
-        }
+        UUID effectiveCenterId = resolveCenter(roles, scopeCenterId, centerId);
         LocalDate end = to == null ? LocalDate.now(clock.withZone(ZONE)) : to;
         LocalDate start = from == null ? end.withDayOfMonth(1) : from;
         validateRange(start, end);
@@ -104,6 +108,68 @@ public class StatisticsServiceImpl implements StatisticsService {
                 .map(id -> statisticsMapper.toCenterResponse(id, aggregate(id, fromInstant, toInstant))).toList();
         response.setByCenter(PageResponse.of(centers, items));
         return APIResponse.success("Lấy thống kê hệ thống thành công", response);
+    }
+
+    // Thành tích làm việc của caregiver (mọi thời điểm): manager chỉ thấy trung tâm của mình, admin lọc tùy chọn.
+    @Override
+    @Transactional(readOnly = true)
+    public APIResponse<List<CaregiverWorkStatisticsResponse>> caregivers(Set<RoleCode> roles, UUID scopeCenterId,
+                                                                         UUID centerId, UUID caregiverId) {
+        UUID effectiveCenterId = resolveCenter(roles, scopeCenterId, centerId);
+        Map<UUID, Map<OccurrenceStatus, CaregiverVisitCountView>> visits = new LinkedHashMap<>();
+        bookingRepository.countCaregiverVisits(effectiveCenterId, caregiverId).forEach(row -> visits
+                .computeIfAbsent(row.getCaregiverId(), id -> new EnumMap<>(OccurrenceStatus.class))
+                .put(row.getStatus(), row));
+        Map<UUID, List<CaregiverServiceCountView>> services = new LinkedHashMap<>();
+        bookingRepository.countCaregiverServices(effectiveCenterId, caregiverId, OccurrenceStatus.COMPLETED)
+                .forEach(row -> services.computeIfAbsent(row.getCaregiverId(), id -> new ArrayList<>()).add(row));
+        Map<UUID, CaregiverRatingView> ratings = new LinkedHashMap<>();
+        bookingRepository.summarizeCaregiverRatings(effectiveCenterId, caregiverId, FeedbackVisibility.VISIBLE)
+                .forEach(row -> ratings.put(row.getCaregiverId(), row));
+        Set<UUID> caregiverIds = new LinkedHashSet<>(visits.keySet());
+        caregiverIds.addAll(ratings.keySet());
+        if (caregiverId != null) {
+            caregiverIds.add(caregiverId);
+        }
+        List<CaregiverWorkStatisticsResponse> items = caregiverIds.stream()
+                .map(id -> toCaregiverWork(id, visits.getOrDefault(id, Map.of()), services.getOrDefault(id, List.of()),
+                        ratings.get(id)))
+                .sorted(Comparator.comparingLong(CaregiverWorkStatisticsResponse::getCompletedVisits).reversed())
+                .toList();
+        return APIResponse.success("Lấy thành tích caregiver thành công", items);
+    }
+
+    // Gộp số buổi theo trạng thái, dịch vụ và đánh giá của một caregiver thành một dòng thành tích.
+    private CaregiverWorkStatisticsResponse toCaregiverWork(UUID caregiverId,
+            Map<OccurrenceStatus, CaregiverVisitCountView> byStatus, List<CaregiverServiceCountView> services,
+            CaregiverRatingView rating) {
+        CaregiverVisitCountView completed = byStatus.get(OccurrenceStatus.COMPLETED);
+        long upcoming = OccurrenceStatus.CAREGIVER_HOLDING.stream().mapToLong(status -> visitsOf(byStatus, status)).sum();
+        BigDecimal average = rating == null || rating.getRatingAverage() == null ? null
+                : BigDecimal.valueOf(rating.getRatingAverage()).setScale(2, RoundingMode.HALF_UP);
+        return statisticsMapper.toCaregiverWorkResponse(caregiverId, visitsOf(byStatus, OccurrenceStatus.COMPLETED),
+                upcoming, visitsOf(byStatus, OccurrenceStatus.CAREGIVER_MISSED),
+                visitsOf(byStatus, OccurrenceStatus.CANCELLED), visitsOf(byStatus, OccurrenceStatus.CUSTOMER_NO_SHOW),
+                completed == null || completed.getMinutes() == null ? 0 : completed.getMinutes(),
+                completed == null ? null : completed.getLastStartAt(), average,
+                rating == null ? 0 : rating.getRatingCount(), statisticsMapper.toServiceResponseList(services));
+    }
+
+    // Số buổi của một trạng thái, 0 khi không có.
+    private long visitsOf(Map<OccurrenceStatus, CaregiverVisitCountView> byStatus, OccurrenceStatus status) {
+        CaregiverVisitCountView row = byStatus.get(status);
+        return row == null ? 0 : row.getVisits();
+    }
+
+    // Trung tâm hiệu lực: admin dùng tham số (null = mọi trung tâm), manager luôn dùng trung tâm của token.
+    private UUID resolveCenter(Set<RoleCode> roles, UUID scopeCenterId, UUID centerId) {
+        if (roles.contains(RoleCode.ADMIN)) {
+            return centerId;
+        }
+        if (scopeCenterId == null) {
+            throw new AppException(ErrorCode.CENTER_SCOPE_REQUIRED);
+        }
+        return scopeCenterId;
     }
 
     // Gom số liệu booking, buổi, đánh giá, khiếu nại, hết hạn của khoảng thời gian.

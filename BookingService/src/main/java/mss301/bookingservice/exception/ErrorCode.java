@@ -157,6 +157,9 @@ public enum ErrorCode {
     ABSENCE_EXPLANATION_REQUIRED(5272, "Describe what happened (10–1000 characters)", HttpStatus.BAD_REQUEST),
     ABSENCE_DECISION_REQUIRED(5273, "Choose whether the absence is excused or confirmed", HttpStatus.BAD_REQUEST),
     ABSENCE_CONCLUSION_NOTE_REQUIRED(5274, "A note is required when excusing an absence", HttpStatus.BAD_REQUEST),
+    CHECK_IN_TIME_INVALID(5275, "The arrival time must be inside the visit's check-in window and not in the future", HttpStatus.BAD_REQUEST),
+    OCCURRENCE_NO_CAREGIVER(5276, "This occurrence has no caregiver assigned", HttpStatus.CONFLICT),
+    MISSED_REFUND_ALREADY_SENT(5277, "The refund for this missed visit has already been sent to the customer", HttpStatus.CONFLICT),
 
     // PHÂN CÔNG / TRUNG TÂM
     CAREGIVER_REQUIRED(5400, "A caregiver must be assigned before accepting the booking", HttpStatus.CONFLICT),

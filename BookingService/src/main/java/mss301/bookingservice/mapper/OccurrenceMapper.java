@@ -106,6 +106,7 @@ public interface OccurrenceMapper {
     @Mapping(target = "reportStatus", ignore = true)
     @Mapping(target = "customerName", ignore = true)
     @Mapping(target = "bookingVisits", ignore = true)
+    @Mapping(target = "missedRefundAt", ignore = true)
     CaregiverOccurrenceResponse toCaregiverResponse(BookingOccurrence occurrence);
 
     @IterableMapping(qualifiedByName = "toCaregiverResponse")

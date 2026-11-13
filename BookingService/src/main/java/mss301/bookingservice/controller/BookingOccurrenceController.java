@@ -56,6 +56,15 @@ public class BookingOccurrenceController {
         return bookingOccurrenceService.list(actorId, from, to, status, bookingId, page, size);
     }
 
+    // API trung tâm xem các buổi đã trả còn cần người chăm sóc.
+    @GetMapping("/unassigned")
+    @PreAuthorize("hasRole('CENTER_MANAGER')")
+    public APIResponse<PageResponse<CaregiverOccurrenceResponse>> listUnassigned(@CurrentCenterId UUID centerId,
+                                                                                 @RequestParam(defaultValue = "0") int page,
+                                                                                 @RequestParam(defaultValue = "20") int size) {
+        return bookingOccurrenceService.listUnassigned(centerId, page, size);
+    }
+
     // API xem chi tiết một buổi chăm sóc.
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('CAREGIVER', 'CUSTOMER', 'CENTER_MANAGER', 'ADMIN', 'SERVICE')")

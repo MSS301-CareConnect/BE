@@ -171,34 +171,56 @@ public class CaregiverAbsenceServiceImpl implements CaregiverAbsenceService {
 
     // Ghi một lần vắng mặt của caregiver cho buổi và báo các bên.
     @Override
-    public void record(BookingOccurrence occurrence, CaregiverAbsenceSource source) {
+    public void record(BookingOccurrence occurrence, CaregiverAbsenceSource source, Instant refundAt) {
         Booking booking = occurrence.getBooking();
         String visit = describeVisit(occurrence);
-        // Khách không cần biết chuyện kỷ luật — chỉ biết buổi không diễn ra và tiền được hoàn (PaymentService hoàn 100 %
-        // vào ví cho lý do CAREGIVER_MISSED).
-        String customerBody = "Người chăm sóc không đến " + visit
-                + ". Toàn bộ số tiền bạn đã trả cho buổi này được hoàn vào ví CareConnect";
+        // 2026-11-13: khoản hoàn chờ tới khi xong các buổi trong ngày (refundAt) để trung tâm kịp ghi nhận check-in hộ
+        // nếu caregiver đã làm mà quên bấm.
+        String refundTime = TIME_FORMAT.withZone(bookingProperties.getSchedule().getTimezone()).format(refundAt);
+        // Khách không cần biết chuyện kỷ luật — chỉ biết buổi chưa được ghi nhận và khi nào tiền được hoàn (PaymentService
+        // hoàn 100 % vào ví cho lý do CAREGIVER_MISSED).
+        String customerBody = "Chưa có người chăm sóc check-in " + visit + ". Nếu trung tâm xác nhận buổi không diễn ra,"
+                + " toàn bộ số tiền bạn đã trả cho buổi này được hoàn vào ví CareConnect lúc " + refundTime;
         notificationService.notify(List.of(booking.getCustomerId()), NotificationType.OCCURRENCE_MISSED,
                 Map.of("body", customerBody), OCCURRENCE_REF, occurrence.getId());
         boolean recordable = occurrence.getCaregiverId() != null
                 && !caregiverAbsenceRepository.existsByOccurrenceIdAndDeletedAtIsNull(occurrence.getId());
         if (!recordable) {
             bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.OCCURRENCE_MISSED,
-                    Map.of("body", "Không có người chăm sóc check-in " + visit + ", khách được hoàn 100 %"),
+                    Map.of("body", "Không có người chăm sóc check-in " + visit + ", khách được hoàn 100 % lúc " + refundTime),
                     OCCURRENCE_REF, occurrence.getId());
             return;
         }
         CaregiverAbsence absence = caregiverAbsenceRepository.save(caregiverAbsenceMapper.toCaregiverAbsence(occurrence,
                 source, CaregiverAbsenceStatus.PENDING));
-        String caregiverBody = "Bạn bị ghi nhận vắng " + visit + ". Vui lòng gửi giải trình để trung tâm xem xét";
+        String caregiverBody = "Bạn bị ghi nhận vắng " + visit + ". Nếu bạn đã làm buổi này mà quên check-in, hãy gửi"
+                + " giải trình trước " + refundTime + " để trung tâm ghi nhận check-in hộ";
         notificationService.notify(List.of(occurrence.getCaregiverUserId()), NotificationType.CAREGIVER_ABSENCE_UPDATED,
                 Map.of("body", caregiverBody), OCCURRENCE_REF, occurrence.getId());
-        String centerBody = "Người chăm sóc vắng " + visit + ", khách được hoàn 100 % — cần xem giải trình, kết luận và"
-                + " sắp xếp người cho các buổi còn lại nếu cần";
+        String centerBody = "Người chăm sóc vắng " + visit + ", khách được hoàn 100 % lúc " + refundTime + " — xem giải"
+                + " trình; nếu người chăm sóc đã làm thì ghi nhận check-in hộ trước giờ đó";
         bookingNotificationService.notifyCenter(booking.getCenterId(), NotificationType.CAREGIVER_ABSENCE_UPDATED,
                 Map.of("body", centerBody), OCCURRENCE_REF, occurrence.getId());
         log.warn("Caregiver {} recorded absent for occurrence {} ({}) — absence {}", occurrence.getCaregiverId(),
                 occurrence.getId(), source, absence.getId());
+    }
+
+    // Hồ sơ vắng của buổi (nếu có) thành EXCUSED: caregiver thực ra đã làm buổi.
+    @Override
+    public void excuseByCenterCheckIn(BookingOccurrence occurrence, UUID actorId, String note) {
+        caregiverAbsenceRepository.findByOccurrenceIdAndDeletedAtIsNull(occurrence.getId())
+                .flatMap(found -> caregiverAbsenceRepository.findForUpdate(found.getId()))
+                .ifPresent(absence -> {
+                    absence.setStatus(CaregiverAbsenceStatus.EXCUSED);
+                    absence.setConclusionNote(note);
+                    absence.setConcludedBy(actorId);
+                    absence.setConcludedAt(clock.instant());
+                    notificationService.notify(List.of(absence.getCaregiverUserId()),
+                            NotificationType.CAREGIVER_ABSENCE_UPDATED,
+                            Map.of("body", "Trung tâm đã ghi nhận check-in hộ " + describeVisit(occurrence)
+                                    + ", không tính vắng. Mở ca để làm checklist và check-out"),
+                            OCCURRENCE_REF, occurrence.getId());
+                });
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────────

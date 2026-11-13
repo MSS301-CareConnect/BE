@@ -34,6 +34,9 @@ public class CaregiverOccurrenceResponse {
 
     Instant checkInClosesAt;
 
+    // 2026-11-13: buổi CAREGIVER_MISSED — giờ khoản hoàn 100 % sẽ gửi; còn giá trị = trung tâm còn ghi nhận check-in hộ được.
+    Instant missedRefundAt;
+
     Integer durationMinutes;
 
     // Dịch vụ của buổi (NULL = mọi dịch vụ của booking).
